@@ -1,5 +1,5 @@
-import { vi, type Mock } from 'vitest';
-import type { LagMonitorConstructor } from "./LagMonitor.js";
+import { vi, expect, type Mock } from 'vitest';
+import type { LagMonitor, LagMonitorConstructor } from "./LagMonitor.js";
 
 /**
  * Helper class for testing lag monitors with fake timers.
@@ -7,7 +7,7 @@ import type { LagMonitorConstructor } from "./LagMonitor.js";
  * and vitest's fake timers in sync and automatically create the monitor.
  *
  */
-export class LagMonitorTestDriver<T = unknown> {
+export class LagMonitorTestDriver<T extends LagMonitor = LagMonitor> {
     public monitor?: T;
     public mockLogger = { log : vi.fn() };
 
@@ -35,7 +35,7 @@ export class LagMonitorTestDriver<T = unknown> {
      * @example
      * const monitor = driver.createMonitor(ContinuousLag);
      */
-    createMonitor<M>(MonitorClass : LagMonitorConstructor<M>) : M {
+    createMonitor(MonitorClass : LagMonitorConstructor<T>) : T {
         this.monitor = new MonitorClass(
             this.interval,
             this.mockReport,
@@ -136,7 +136,7 @@ export class MacrotaskLagTestDriver {
     /**
      * Creates a MacrotaskLag monitor instance
     */
-   createMonitor<M>(MonitorClass : LagMonitorConstructor<M>) : M {
+   createMonitor<M extends LagMonitor>(MonitorClass : LagMonitorConstructor<M>) : M {
         return new MonitorClass(
             this.intervalMs,
             this.mockReport,
