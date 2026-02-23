@@ -1,0 +1,13 @@
+{
+  "name": "lag",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "new": "tsx packages/scripts/src/new-package.ts",
+    "build": "tsc -b"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
