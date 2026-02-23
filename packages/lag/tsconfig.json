@@ -1,4 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "../../ts/config/ts.json"
+  "extends": "../../ts/config/ts.json",
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.spec.ts",
+    "**/*.test.ts",
+    "**/test-*.ts"
+  ]
 }

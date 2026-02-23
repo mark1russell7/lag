@@ -1,19 +1,11 @@
 import { lagLoggingIntervalMs, longLagDuration, longLagThreshold, shortLagDuration, shortLagThreshold } from "./constants.js";
-import type { Logger } from "./types.js";
+import type { EventLoopLagAttributes, LagMeasurement, Logger } from "./types.js";
 
 type LagWindow = {
     duration : number;
     threshold : number;
     windowSize : number;
     max : number;
-}
-type LagMeasurement = {
-    value : number;
-    attributes : EventLoopLagAttributes;
-}
-type EventLoopLagAttributes = {
-    wasHidden : boolean;
-    [key: string] : any;
 }
 
 export class LagLogger {

@@ -1,3 +1,4 @@
+import type { Mock } from 'vitest';
 import { driftStepMs, highFrequencyLagIntervalMs } from "./constants.js";
 import { DriftLag } from "./DriftLag.js";
 import { LagMonitorTestDriver } from "./test-utils.js";
@@ -6,15 +7,14 @@ import { LagMonitorTestDriver } from "./test-utils.js";
 const INTERVAL = highFrequencyLagIntervalMs;
 
 describe('DriftLag', () => {
-    let mockReport : jest.Mock;
+    let mockReport : Mock;
     let currentTime : number;
     let driver : LagMonitorTestDriver<DriftLag>;
 
     beforeEach(() => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
         currentTime = 1000;
-        jest.spyOn(performance, 'now').mockImplementation(() => currentTime);
-        mockReport = jest.fn();
+        mockReport = vi.fn();
         driver = new LagMonitorTestDriver<DriftLag>(
             () => currentTime,
             (time) => currentTime = time,
@@ -24,8 +24,8 @@ describe('DriftLag', () => {
     });
 
     afterEach(() => {
-        jest.useRealTimers();
-        jest.restoreAllMocks();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
     });
 
     it.each([
@@ -43,10 +43,10 @@ describe('DriftLag', () => {
         currentTime += expectedElapsed;
 
         for(let i = 0; i < iterations; i++) {
-            jest.advanceTimersByTime(driftStepMs);
+            vi.advanceTimersByTime(driftStepMs);
         }
 
-        expect(mockReport).toHaveBeenCalledWith(1);
+        expect(mockReport).toHaveBeenCalledTimes(1);
     });
 
     it('rounds intervals down to nearest driftStepMs multiple', () => {
@@ -58,7 +58,7 @@ describe('DriftLag', () => {
         ];
 
         testCases.forEach(({requested, rounded, iterations}) => {
-            jest.clearAllTimers();
+            vi.clearAllTimers();
             currentTime = 1000;
             const testDriver = new LagMonitorTestDriver<DriftLag>(
                 () => currentTime,
@@ -70,7 +70,7 @@ describe('DriftLag', () => {
             currentTime += rounded;
 
             for(let i = 0; i < iterations; i++) {
-                jest.advanceTimersByTime(driftStepMs);
+                vi.advanceTimersByTime(driftStepMs);
             }
 
             expect(mockReport).toHaveBeenCalledTimes(1);
@@ -102,24 +102,24 @@ describe('DriftLag', () => {
         const error1 = new Error('First error');
         const error2 = new Error('Second error');
 
-        mockReport            
+        mockReport
             .mockImplementationOnce(() => { throw error1; })
             .mockImplementationOnce(() => { throw error2; });
 
         driver.createMonitor(DriftLag);
 
         driver.tick(0); // First call throws error1
-        expect(Logger.log).toHaveBeenCalledWith(
+        expect(driver.mockLogger.log).toHaveBeenCalledWith(
             'error',
-            expect.objectContaining({error : error1}),
-            expect.any(String)
+            'Error measuring/reporting lag.',
+            expect.objectContaining({ error : error1, type : 'LagMonitor', subtype : 'DriftLag' }),
         );
 
         driver.tick(0); // Second call throws error2
-        expect(Logger.log).toHaveBeenCalledWith(
+        expect(driver.mockLogger.log).toHaveBeenCalledWith(
             'error',
-            expect.objectContaining({error : error2}),
-            expect.any(String)
+            'Error measuring/reporting lag.',
+            expect.objectContaining({ error : error2, type : 'LagMonitor', subtype : 'DriftLag' }),
         );
 
         driver.tick(0);
@@ -128,7 +128,7 @@ describe('DriftLag', () => {
     });
 
     it('uses consistent setTimeout intervals regardless of lag', () => {
-        const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+        const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
         driver.createMonitor(DriftLag);
         driver.tickSequence([5, -5]);
         setTimeoutSpy.mock.calls.forEach(([_callback, interval]) => {

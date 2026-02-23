@@ -1,5 +1,6 @@
+import type { Mock } from 'vitest';
 import { highFrequencyLagIntervalMs, lagLoggingIntervalMs, longLagDuration, longLagThreshold, shortLagDuration, shortLagThreshold } from "./constants.js";
-import { LagLogger } from "./lagLogger.js";
+import { LagLogger } from "./LagLogger.js";
 import type { EventLoopLagAttributes } from "./types.js";
 
 const MEASUREMENT_INTERVAL = highFrequencyLagIntervalMs;
@@ -42,30 +43,32 @@ class TestDriver {
 describe('LagLogger', () => {
 
     let driver: TestDriver;
+    let mockLogger : { log : Mock };
 
     beforeEach(() => {
-        const monitor = new LagLogger(MEASUREMENT_INTERVAL)
+        mockLogger = { log : vi.fn() };
+        const monitor = new LagLogger(MEASUREMENT_INTERVAL, mockLogger)
         driver = new TestDriver(monitor);
-        jest.clearAllMocks();
+        vi.clearAllMocks();
     });
 
     it('should not log anything if utilization remains low', () => {
         driver.add(10, driver.reportSamples); // 10% utilization for an entire reporting window
-        expect(Logger.log).not.toHaveBeenCalled();
+        expect(mockLogger.log).not.toHaveBeenCalled();
     });
 
     it('should ignore all measurements if the tab was hidden', () => {
         driver.add(200 , driver.reportSamples, driver.hiddenAttributes); // 200% utilization but tab is hidden
-        expect(Logger.log).not.toHaveBeenCalled();
+        expect(mockLogger.log).not.toHaveBeenCalled();
     });
 
     it('should log warnings for both short and long-term violations if utilization is high enough', () => {
-        // Add a burths of 150% utilization long enough to violate both thresholds
+        // Add a burst of 150% utilization long enough to violate both thresholds
         driver.add(150, driver.longSamples);
         driver.fillToReport(driver.longSamples);
 
-        expect(Logger.log).toHaveBeenCalledTimes(2);
-        expect(Logger.log).toHaveBeenNthCalledWith(
+        expect(mockLogger.log).toHaveBeenCalledTimes(2);
+        expect(mockLogger.log).toHaveBeenNthCalledWith(
             1,
             'warn',
             'Average event loop lag exceeded threshold',
@@ -77,7 +80,7 @@ describe('LagLogger', () => {
             }),
         );
 
-        expect(Logger.log).toHaveBeenNthCalledWith(
+        expect(mockLogger.log).toHaveBeenNthCalledWith(
             2,
             'warn',
             'Average event loop lag exceeded threshold',
@@ -90,22 +93,22 @@ describe('LagLogger', () => {
         );
     });
     it('should reset its internal state after reporting', () => {
-        //First period: High utilizaiton triggers logs
+        //First period: High utilization triggers logs
         driver.add(200, driver.reportSamples);
-        expect(Logger.log).toHaveBeenCalled();
+        expect(mockLogger.log).toHaveBeenCalled();
 
-        jest.clearAllMocks();
+        vi.clearAllMocks();
 
         // Second period: Low utilization should not trigger logs if state was reset
         driver.add(10, driver.reportSamples);
-        expect(Logger.log).not.toHaveBeenCalled();
+        expect(mockLogger.log).not.toHaveBeenCalled();
     });
 
     it('should handle buffer size correctly without unbounded growth', () => {
         const excessiveMeasurements = driver.reportSamples  * 3;
         driver.add(150, excessiveMeasurements); // Add enough measurements to exceed buffer size multiple times
 
-        expect(Logger.log).toHaveBeenCalled();
+        expect(mockLogger.log).toHaveBeenCalled();
     });
 
     describe.each([
@@ -127,8 +130,8 @@ describe('LagLogger', () => {
             driver.add(utilization, samples);
             driver.fillToReport(samples);
 
-            expect(Logger.log).toHaveBeenCalledtimes(1);
-            expect(Logger.log).toHaveBeenCalledWith(
+            expect(mockLogger.log).toHaveBeenCalledTimes(1);
+            expect(mockLogger.log).toHaveBeenCalledWith(
                 'warn',
                 'Average event loop lag exceeded threshold',
                 expect.objectContaining({
@@ -144,7 +147,7 @@ describe('LagLogger', () => {
             const utilization = threshold - 10;
             driver.add(utilization, samples);
             driver.fillToReport(samples);
-            expect(Logger.log).not.toHaveBeenCalled();
+            expect(mockLogger.log).not.toHaveBeenCalled();
         });
     })
 });

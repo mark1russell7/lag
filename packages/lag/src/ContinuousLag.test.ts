@@ -1,37 +1,35 @@
+import type { Mock } from 'vitest';
 import { highFrequencyLagIntervalMs } from "./constants.js";
 import { ContinuousLag } from "./ContinuousLag.js";
 import { LagMonitorTestDriver } from "./test-utils.js";
 
-jest.mock('imports/logger');
-
 const INTERVAL = highFrequencyLagIntervalMs;
 
 describe('ContinuousLag', () => {
-    let mockReport : jest.Mock;
+    let mockReport : Mock;
     let currentTime : number;
     let driver : LagMonitorTestDriver<ContinuousLag>;
 
     beforeEach(() => {
-        jest.useFakeTimers();
+        vi.useFakeTimers();
         currentTime = 1000;
-        jest.spyOn(performance, 'now').mockImplementation(() => currentTime);
-        mockReport = jest.fn();
+        mockReport = vi.fn();
         driver = new LagMonitorTestDriver<ContinuousLag>(
             () => currentTime,
             (time) => currentTime = time,
             INTERVAL,
             mockReport
-        ); 
+        );
 
     });
 
     afterEach(() => {
-        jest.useRealTimers();
-        jest.restoreAllMocks();
+        vi.useRealTimers();
+        vi.restoreAllMocks();
     });
 
     it('starts the measurement loop immediately upon construction', () => {
-        const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+        const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
         driver.createMonitor(ContinuousLag);
         expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), INTERVAL);
         expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
@@ -54,7 +52,7 @@ describe('ContinuousLag', () => {
         driver.expectReportedLags([5, -2, 10]);
     });
 
-    it('logs errors and continues monitoring when repor throws', () => {
+    it('logs errors and continues monitoring when report throws', () => {
         const error1 = new Error('First error');
         const error2 = new Error('Second error');
 
@@ -64,19 +62,19 @@ describe('ContinuousLag', () => {
         driver.createMonitor(ContinuousLag);
         // First two calls throw errors
         driver.tick(0);
-        expect(Logger.log).toHaveBeenCalledWith(
+        expect(driver.mockLogger.log).toHaveBeenCalledWith(
             'error',
-            expect.objectContaining({error : error1}),
-            expect.any(String)
+            'Error measuring/reporting lag.',
+            expect.objectContaining({ error : error1, type : 'LagMonitor', subtype : 'ContinuousLag' }),
         );
         driver.tick(0);
-        expect(Logger.log).toHaveBeenCalledWith(
+        expect(driver.mockLogger.log).toHaveBeenCalledWith(
             'error',
-            expect.objectContaining({error : error2}),
-            expect.any(String)
+            'Error measuring/reporting lag.',
+            expect.objectContaining({ error : error2, type : 'LagMonitor', subtype : 'ContinuousLag' }),
         );
 
-        // Third call succeeds 
+        // Third call succeeds
         driver.tick(5);
         expect(mockReport).toHaveBeenLastCalledWith(5);
         expect(mockReport).toHaveBeenCalledTimes(3);

@@ -1,7 +1,7 @@
 import { highFrequencyLagIntervalMs, macrotaskLagIntervalMs, maxLagBuffer } from "./constants.js";
 import { ContinuousLag } from "./ContinuousLag.js";
 import { DriftLag } from "./DriftLag.js";
-import { LagLogger } from "./lagLogger.js";
+import { LagLogger } from "./LagLogger.js";
 import type { LagMonitor, LagMonitorConstructor } from "./LagMonitor.js";
 import { MacrotaskLag } from "./MacrotaskLag.js";
 import { PageHiddenTracker, type Document } from "./PageHiddenTracker.js";

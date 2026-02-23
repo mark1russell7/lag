@@ -1,21 +1,22 @@
+import type { Mock } from 'vitest';
 import { macrotaskLagIntervalMs } from "./constants.js";
 import { MacrotaskLag } from "./MacrotaskLag.js";
-import type { MacrotaskLagTestDriver } from "./test-utils.js";
+import { MacrotaskLagTestDriver } from "./test-utils.js";
 
 
 const INTERVAL = macrotaskLagIntervalMs;
 
 describe('MacrotaskLag', () => {
-    let mockReport : jest.Mock;
+    let mockReport : Mock;
     let driver : MacrotaskLagTestDriver;
 
     beforeEach(() => {
-        mockreport = jest.fn();
+        mockReport = vi.fn();
         driver = new MacrotaskLagTestDriver(INTERVAL, mockReport);
     });
 
     afterEach(() => {
-        jest.restoreAllMocks();
+        vi.restoreAllMocks();
     });
 
     describe('constructor', () => {
@@ -30,7 +31,7 @@ describe('MacrotaskLag', () => {
             const startTime = 1000;
             const endTime = 1010;
 
-            driver.mockPerformancetimes(startTime, endTime);
+            driver.mockPerformanceTimes(startTime, endTime);
             const macrotaskLag = driver.createMonitor(MacrotaskLag);
             const measurePromise = macrotaskLag.measure();
             const timeoutCallback = driver.getTimeoutCallback(0);
@@ -49,7 +50,7 @@ describe('MacrotaskLag', () => {
     describe('interval callback', () => {
         it('measures and reports lag value when interval fires', async () => {
             const lagValue = 15;
-            driver.mockPerformancetimes(1000, 1000 + lagValue);
+            driver.mockPerformanceTimes(1000, 1000 + lagValue);
             driver.createMonitor(MacrotaskLag);
             await driver.executeIntervalCycle();
             expect(mockReport).toHaveBeenCalledWith(lagValue);
@@ -59,19 +60,19 @@ describe('MacrotaskLag', () => {
         it('logs an error when the report function throws but continues monitoring', async () => {
             const testError = new Error('Report callback failed');
             mockReport.mockImplementationOnce(() => { throw testError; });
-            driver.mockPerformancetimes(1000, 1000);
+            driver.mockPerformanceTimes(1000, 1000);
             driver.createMonitor(MacrotaskLag);
             await driver.executeIntervalCycle();
-            expect(Logger.log).toHaveBeenCalledWith(
+            expect(driver.mockLogger.log).toHaveBeenCalledWith(
                 'error',
-                'Error measuring/reporting lag',
-                expect.objectContaining({error : testError, type : 'LagMonitor', subtype:'MacrotaskLag'}),
+                'Error measuring/reporting lag.',
+                expect.objectContaining({ error : testError, type : 'LagMonitor', subtype : 'MacrotaskLag' }),
             );
-            expect(mockReport).toHaveBeenCalledTimes(1);           
+            expect(mockReport).toHaveBeenCalledTimes(1);
         });
 
         it('handles multiple interval cycles independently', async () => {
-            driver.mockPerformancetimes(
+            driver.mockPerformanceTimes(
                 1000,
                 1005, // First cycle: 5ms lag
                 2000,
