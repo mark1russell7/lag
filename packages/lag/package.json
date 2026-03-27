@@ -9,6 +9,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./lag-worker.js": {
+      "types": "./dist/lag-worker.d.ts",
+      "import": "./dist/lag-worker.js"
+    },
+    "./WorkerLagMonitor.js": {
+      "types": "./dist/WorkerLagMonitor.d.ts",
+      "import": "./dist/WorkerLagMonitor.js"
+    },
+    "./worker-protocol.js": {
+      "types": "./dist/worker-protocol.d.ts",
+      "import": "./dist/worker-protocol.js"
     }
   },
   "scripts": {

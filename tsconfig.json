@@ -6,6 +6,9 @@
       "path": "packages/lag"
     },
     {
+      "path": "packages/lag-worker"
+    },
+    {
       "path": "packages/scripts"
     }
   ]
