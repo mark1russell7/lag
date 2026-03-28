@@ -63,7 +63,7 @@ export class LayoutShiftMonitor extends ObserverMonitor {
         return this.worstSessionValue;
     }
 
-    stop() : void {
+    override stop() : void {
         super.stop();
         this.sessionValue = 0;
         this.sessionStart = -1;

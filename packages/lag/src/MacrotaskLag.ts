@@ -1,5 +1,4 @@
 import { LagMonitor } from "./LagMonitor.js";
-import type { ClearIntervalFn, Clock, Logger, SetIntervalFn, SetTimeoutFn } from "./types.js";
 
 export class MacrotaskLag  extends LagMonitor{
     private handle?: number;

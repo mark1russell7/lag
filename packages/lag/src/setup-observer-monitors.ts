@@ -20,9 +20,9 @@ type ObserverMonitorDeps = {
 };
 
 export type ObserverMonitorHandles = {
-    loaf? : LongAnimationFrameMonitor;
-    eventTiming? : EventTimingMonitor;
-    layoutShift? : LayoutShiftMonitor;
+    loaf : LongAnimationFrameMonitor | undefined;
+    eventTiming : EventTimingMonitor | undefined;
+    layoutShift : LayoutShiftMonitor | undefined;
     stop() : void;
 };
 

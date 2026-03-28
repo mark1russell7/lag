@@ -45,11 +45,11 @@ export type AllMonitorDeps = {
 };
 
 export type AllMonitorHandles = {
-    observers? : ObserverMonitorHandles;
-    workerMonitor? : WorkerLagMonitor;
-    lifecycleTracker? : PageLifecycleTracker;
-    throttleDetector? : TimerThrottleDetector;
-    clockChecker? : ClockReliabilityChecker;
+    observers : ObserverMonitorHandles | undefined;
+    workerMonitor : WorkerLagMonitor | undefined;
+    lifecycleTracker : PageLifecycleTracker | undefined;
+    throttleDetector : TimerThrottleDetector | undefined;
+    clockChecker : ClockReliabilityChecker | undefined;
     gcDetector : GCSpikeDetector;
     stop() : void;
 };
@@ -98,7 +98,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
             clearIntervalFn,
             clock,
             meter,
-            pingIntervalMs : deps.workerPingIntervalMs,
+            ...(deps.workerPingIntervalMs !== undefined && { pingIntervalMs : deps.workerPingIntervalMs }),
         });
     }
 

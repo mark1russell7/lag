@@ -9,6 +9,9 @@
       "path": "packages/lag-worker"
     },
     {
+      "path": "packages/lag-integration-tests"
+    },
+    {
       "path": "packages/scripts"
     }
   ]

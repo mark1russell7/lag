@@ -1,0 +1,21 @@
+{
+  "name": "@render/lag-integration-tests",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@render/lag": "workspace:*",
+    "@render/lag-worker": "workspace:*",
+    "@mark1russell7/otel-ts": "file:../../../otel-ts"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.2",
+    "@vitest/browser": "^4.1.2",
+    "@vitest/browser-playwright": "^4.1.2",
+    "playwright": "^1.56.0"
+  }
+}

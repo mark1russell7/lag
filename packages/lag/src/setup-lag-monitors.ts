@@ -29,25 +29,25 @@ type Deps = [
 export function setupLagMonitors(
     deps : Deps
 ) : void {
-    const macroTask = setupLag(
-        'macrotask', 
-        MacrotaskLag, 
+    setupLag(
+        'macrotask',
+        MacrotaskLag,
         macrotaskLagIntervalMs,
         ...deps
     );
-    const continuous = setupLag(
-        'continuous', 
-        ContinuousLag, 
+    setupLag(
+        'continuous',
+        ContinuousLag,
         highFrequencyLagIntervalMs,
-        ...deps, 
+        ...deps,
         new LagLogger(
             highFrequencyLagIntervalMs,
             deps[1]
         )
     );
-    const drift = setupLag(
-        'drift', 
-        DriftLag, 
+    setupLag(
+        'drift',
+        DriftLag,
         highFrequencyLagIntervalMs,
         ...deps,
     );

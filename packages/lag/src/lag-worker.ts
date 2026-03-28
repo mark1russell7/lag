@@ -7,7 +7,14 @@ export type WorkerDeps = {
     clock : Clock;
 };
 
-export function createWorkerHandler(deps : WorkerDeps) {
+export type WorkerHandler = {
+    handleMessage : (message : MainToWorkerMessage) => void;
+    startTimingLoop : () => void;
+    readonly selfLag : number;
+    readonly running : boolean;
+};
+
+export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
     const { postMessage, setTimeoutFn, clock } = deps;
 
     let intervalMs = 100;
@@ -59,9 +66,9 @@ export function createWorkerHandler(deps : WorkerDeps) {
     }
 
     return {
-        handleMessage,
-        startTimingLoop,
-        get selfLag() { return selfLag; },
-        get running() { return running; },
+        handleMessage : handleMessage,
+        startTimingLoop : startTimingLoop,
+        get selfLag() : number { return selfLag; },
+        get running() : boolean { return running; },
     };
 }

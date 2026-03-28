@@ -69,7 +69,7 @@ export class EventTimingMonitor extends ObserverMonitor {
         return durations[p98Index]!;
     }
 
-    stop() : void {
+    override stop() : void {
         super.stop();
         this.interactions.clear();
         this.worstDuration = 0;

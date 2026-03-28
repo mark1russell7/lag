@@ -46,8 +46,6 @@ export function setupWorkerMonitor(deps : WorkerMonitorDeps) : WorkerLagMonitor 
         { unit : "ms" },
     );
 
-    let latestMeasurement : WorkerLagMeasurement | undefined;
-
     const roundtripMaxGauge = meter.createObservableGauge<Record<string, never>>(
         "lag_worker_roundtrip_max_gauge",
         { unit : "ms" },
@@ -71,7 +69,6 @@ export function setupWorkerMonitor(deps : WorkerMonitorDeps) : WorkerLagMonitor 
                 maxRoundtrip = measurement.roundTripMs;
             }
 
-            latestMeasurement = measurement;
         },
         logger,
         setIntervalFn,

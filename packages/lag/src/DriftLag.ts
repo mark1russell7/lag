@@ -1,6 +1,5 @@
 import { driftStepMs } from "./constants.js";
 import { LagMonitor } from "./LagMonitor.js";
-import type { ClearTimeoutFn, Clock, Logger, SetTimeoutFn } from "./types.js";
 
 export class DriftLag  extends LagMonitor {
     private lastLoopEndTime : number = this.clock.now();

@@ -5,8 +5,8 @@ export class GCSpikeDetector {
     private values : number[] = [];
 
     constructor(
-        private readonly windowSize = DEFAULT_WINDOW_SIZE,
-        private readonly spikeMultiplier = DEFAULT_SPIKE_MULTIPLIER,
+        private readonly windowSize : number = DEFAULT_WINDOW_SIZE,
+        private readonly spikeMultiplier : number = DEFAULT_SPIKE_MULTIPLIER,
     ) {}
 
     classify(value : number) : { likelyGCPause : boolean } {

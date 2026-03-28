@@ -1,9 +1,15 @@
-const noopObservable = { addCallback() {} };
-const noopInstrument = { record() {} };
+type NoopInstrument = { record(...args : unknown[]) : void };
+type NoopObservable = { addCallback(...args : unknown[]) : void };
 
-export function createNoopMeter() {
+const noopObservable : NoopObservable = { addCallback() {} };
+const noopInstrument : NoopInstrument = { record() {} };
+
+export function createNoopMeter() : {
+    createHistogram : (...args : unknown[]) => NoopInstrument;
+    createObservableGauge : (...args : unknown[]) => NoopObservable;
+} {
     return {
-        createHistogram: () => noopInstrument,
-        createObservableGauge: () => noopObservable,
+        createHistogram : () => noopInstrument,
+        createObservableGauge : () => noopObservable,
     };
 }

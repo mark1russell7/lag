@@ -7,7 +7,7 @@ import type {
 } from "./perf-types.js";
 
 export abstract class ObserverMonitor {
-    protected observer? : PerformanceObserverInstance;
+    protected observer : PerformanceObserverInstance | undefined;
 
     constructor(
         protected readonly entryType : string,
@@ -46,7 +46,7 @@ export abstract class ObserverMonitor {
 
     stop() : void {
         this.observer?.disconnect();
-        this.observer = undefined;
+        this.observer = undefined as PerformanceObserverInstance | undefined;
     }
 
     protected abstract processEntry(entry : PerformanceEntryLike) : void;

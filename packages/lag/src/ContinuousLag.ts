@@ -1,5 +1,4 @@
 import { LagMonitor } from "./LagMonitor.js";
-import type { ClearTimeoutFn, Clock, Logger, SetTimeoutFn } from "./types.js";
 
 
 export class ContinuousLag extends LagMonitor {

@@ -15,7 +15,7 @@ export type WorkerLagMeasurement = {
 };
 
 export class WorkerLagMonitor {
-    private handle? : number;
+    private handle : number | undefined;
     private seq = 0;
     private messageHandler : (event : { data : WorkerToMainMessage }) => void;
 
