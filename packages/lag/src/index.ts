@@ -30,12 +30,15 @@ export {
 
 // --- Phase 1: OTel integration ---
 export { createNoopMeter } from "./noop-meter.js";
+export { createOtelLoggerAdapter, createTeeLogger, type OtelLogger } from "./otel-logger-adapter.js";
 
 // --- Phase 2: Performance Observer monitors ---
 export { ObserverMonitor } from "./ObserverMonitor.js";
 export { LongAnimationFrameMonitor, type LoafReport } from "./LongAnimationFrameMonitor.js";
 export { EventTimingMonitor, type EventTimingReport } from "./EventTimingMonitor.js";
 export { LayoutShiftMonitor, type LayoutShiftReport } from "./LayoutShiftMonitor.js";
+export { PaintTimingMonitor, type PaintReport } from "./PaintTimingMonitor.js";
+export { LcpMonitor, type LcpReport } from "./LcpMonitor.js";
 export { setupObserverMonitors, type ObserverMonitorHandles } from "./setup-observer-monitors.js";
 export type {
     PerformanceEntryLike,
@@ -47,10 +50,65 @@ export type {
     EventTimingEntry,
     LayoutShiftEntry,
     LayoutShiftSource,
+    PaintEntry,
+    LcpEntry,
 } from "./perf-types.js";
+
+// --- Additional monitors (scheduling, frame, idle, memory) ---
+export {
+    SchedulingFairnessMonitor,
+    type SchedulingMeasurement,
+    type MessageChannelLike,
+    type MessageChannelConstructor,
+    type MessagePortLike,
+    type QueueMicrotaskFn,
+} from "./SchedulingFairnessMonitor.js";
+export {
+    FrameTimingMonitor,
+    type FrameMeasurement,
+    type RequestAnimationFrameFn,
+    type CancelAnimationFrameFn,
+} from "./FrameTimingMonitor.js";
+export {
+    IdleAvailabilityMonitor,
+    type IdleMeasurement,
+    type IdleDeadline,
+    type RequestIdleCallbackFn,
+    type CancelIdleCallbackFn,
+} from "./IdleAvailabilityMonitor.js";
+export {
+    MemoryMonitor,
+    defaultMemoryIntervalMs,
+    type MemoryMeasurement,
+    type MemorySource,
+    type LegacyMemory,
+    type MeasureMemoryResult,
+} from "./MemoryMonitor.js";
 
 // --- Phase 3: Measurement reliability ---
 export { PageLifecycleTracker, type PageLifecycleDocument, type PageLifecycleWindow, type PageLifecycleState } from "./PageLifecycleTracker.js";
+export {
+    LifecycleStateMachine,
+    summarizeTransitions,
+    type LifecycleState,
+    type LifecycleTrigger,
+    type StateTransition,
+    type LifecycleMark,
+    type LifecycleSummary,
+    type LifecycleDocument,
+    type LifecycleWindow,
+    type LifecycleEventTarget,
+} from "./LifecycleStateMachine.js";
+export {
+    ComputePressureMonitor,
+    pressureStateOrdinals,
+    type PressureState,
+    type PressureSource,
+    type PressureRecord,
+    type PressureObserverInstance,
+    type PressureObserverInit,
+    type PressureMeasurement,
+} from "./ComputePressureMonitor.js";
 export { TimerThrottleDetector } from "./TimerThrottleDetector.js";
 export { ClockReliabilityChecker, type PerformanceLike } from "./ClockReliabilityChecker.js";
 export { GCSpikeDetector } from "./GCSpikeDetector.js";

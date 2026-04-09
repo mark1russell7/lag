@@ -2,8 +2,11 @@ import { expect } from "vitest";
 import { init } from "@mark1russell7/otel-ts";
 import {
     setupAllMonitors,
+    createOtelLoggerAdapter,
+    createTeeLogger,
     type AllMonitorHandles,
 } from "@render/lag";
+import { createLagWorker } from "@render/lag-worker";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
 const MIMIR_QUERY_URL = "http://localhost:9009/prometheus/api/v1/query";
@@ -46,20 +49,30 @@ describe("Lag Monitor Integration", () => {
             serviceName: SERVICE_NAME,
             endpoint: OTLP_ENDPOINT,
             metricsExportIntervalMs: 5_000,
-            // Disable tracing/logs/faro — we only need metrics
-            tracing: false,
-            logs: false,
+            tracing: true,
+            logs: true,
             faro: false,
         });
+
+        // Tee logger: console + OTel Logs (Loki)
+        const consoleLogger = {
+            log: (level: string, message: string, args: unknown) => {
+                console.log(`[${level}] ${message}`, args);
+            },
+        };
+        const otelLogger = createOtelLoggerAdapter(otel.getLogger("lag"));
+        const logger = createTeeLogger(consoleLogger, otelLogger);
+
+        // Memory source: try modern API, fall back to legacy
+        const perfAny = window.performance as unknown as {
+            memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number };
+            measureUserAgentSpecificMemory?: () => Promise<{ bytes: number; breakdown: never[] }>;
+        };
 
         // Set up all lag monitors with real browser APIs
         handles = setupAllMonitors({
             document,
-            logger: {
-                log: (level: string, message: string, args: unknown) => {
-                    console.log(`[${level}] ${message}`, args);
-                },
-            },
+            logger,
             setIntervalFn: (fn, ms) => window.setInterval(fn, ms),
             clearIntervalFn: (id) => window.clearInterval(id),
             setTimeoutFn: (fn, ms) => window.setTimeout(fn, ms),
@@ -68,6 +81,24 @@ describe("Lag Monitor Integration", () => {
             meter: otel.getMeter("lag"),
             PerformanceObserver: window.PerformanceObserver,
             performance: window.performance,
+            window: window,
+            worker: createLagWorker(),
+            workerPingIntervalMs: 500,
+
+            // New monitors
+            MessageChannel: window.MessageChannel,
+            queueMicrotask: (cb: () => void) => window.queueMicrotask(cb),
+            requestAnimationFrame: (cb: (t: number) => number) => window.requestAnimationFrame(cb),
+            cancelAnimationFrame: (h: number) => window.cancelAnimationFrame(h),
+            requestIdleCallback: window.requestIdleCallback?.bind(window),
+            cancelIdleCallback: window.cancelIdleCallback?.bind(window),
+            memorySource: {
+                readLegacy: perfAny.memory ? () => perfAny.memory : undefined,
+                measureModern: perfAny.measureUserAgentSpecificMemory
+                    ? () => perfAny.measureUserAgentSpecificMemory!()
+                    : undefined,
+            },
+            memoryIntervalMs: 5_000,
         });
     });
 
@@ -123,6 +154,61 @@ describe("Lag Monitor Integration", () => {
         // Feed it a value to verify it works
         const result = handles.gcDetector.classify(5);
         expect(result.likelyGCPause).toBe(false);
+    });
+
+    it("scheduling fairness monitor is wired", () => {
+        expect(handles.schedulingMonitor).toBeDefined();
+    });
+
+    it("frame timing monitor records frame deltas", async () => {
+        expect(handles.frameMonitor).toBeDefined();
+        // Wait for several rAF callbacks
+        await wait(500);
+        // The monitor reports each frame; we can't easily inspect closures here,
+        // but if the monitor is wired, the metrics will flow to OTel
+        expect(handles.frameMonitor!.getDroppedFrameRate()).toBeGreaterThanOrEqual(0);
+    });
+
+    it("idle availability monitor is wired (if supported)", () => {
+        // requestIdleCallback is supported in Chromium
+        if (window.requestIdleCallback) {
+            expect(handles.idleMonitor).toBeDefined();
+        }
+    });
+
+    it("memory monitor samples heap (if performance.memory is available)", async () => {
+        const perfAny = window.performance as unknown as { memory?: unknown };
+        if (perfAny.memory) {
+            expect(handles.memoryMonitor).toBeDefined();
+            // Wait for at least one sample
+            await wait(500);
+        }
+    });
+
+    it("page lifecycle tracker is wired", () => {
+        expect(handles.lifecycleTracker).toBeDefined();
+    });
+
+    it("paint and LCP monitors are wired", () => {
+        expect(handles.paintMonitor).toBeDefined();
+        expect(handles.lcpMonitor).toBeDefined();
+    });
+
+    it("emits a synthetic log to verify Loki bridge", () => {
+        // Use the otel logger directly to emit a record (the lag monitors only
+        // log on errors, so without this we'd never see anything in Loki).
+        const logger = otel.getLogger("lag-integration-test");
+        logger.emit({
+            severityText: "info",
+            severityNumber: 9,
+            body: "Integration test log: lag monitor stack initialized",
+            attributes: {
+                "test.suite": "lag-integration-tests",
+                "test.event": "stack-initialized",
+            },
+        });
+        // Test passes if no exception
+        expect(true).toBe(true);
     });
 
     it("flushes metrics to OTLP endpoint", async () => {

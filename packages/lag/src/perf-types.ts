@@ -67,3 +67,22 @@ export type LayoutShiftEntry = PerformanceEntryLike & {
     lastInputTime : number;
     sources : LayoutShiftSource[];
 };
+
+// --- Paint Timing ---
+
+export type PaintEntry = PerformanceEntryLike & {
+    entryType : "paint";
+    name : "first-paint" | "first-contentful-paint";
+};
+
+// --- Largest Contentful Paint ---
+
+export type LcpEntry = PerformanceEntryLike & {
+    entryType : "largest-contentful-paint";
+    renderTime : number;
+    loadTime : number;
+    size : number;
+    id : string;
+    url : string;
+    element : unknown;
+};

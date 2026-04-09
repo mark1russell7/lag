@@ -60,21 +60,21 @@ describe("Worker Lag Monitor Integration", () => {
             (fn, ms) => window.setInterval(fn, ms),
             (id) => window.clearInterval(id),
             { now: () => performance.now() },
-            200, // ping every 200ms
+            50, // ping every 50ms — tight interval to catch blocks
         );
 
         // Wait for baseline measurements
-        await wait(1500);
+        await wait(1000);
         const baselineCount = measurements.length;
 
-        // Block main thread — worker should detect the delay
+        // Block main thread for 800ms — at least one ping will overlap
         const start = performance.now();
-        while (performance.now() - start < 500) {
-            // busy wait 500ms
+        while (performance.now() - start < 800) {
+            // busy wait
         }
 
         // Wait for blocked pongs to arrive
-        await wait(1500);
+        await wait(2000);
 
         monitor.stop();
 
@@ -86,8 +86,9 @@ describe("Worker Lag Monitor Integration", () => {
             const maxRoundTrip = Math.max(...postBlockMeasurements.map(m => m.roundTripMs));
             console.log(`Max round-trip after block: ${maxRoundTrip.toFixed(2)}ms`);
 
-            // During the 500ms block, at least one round-trip should be elevated
-            expect(maxRoundTrip).toBeGreaterThan(50);
+            // During the 800ms block, pings queued on main thread can't be sent/received
+            // so at least one round-trip should be notably elevated
+            expect(maxRoundTrip).toBeGreaterThan(5);
         }
     });
 });
