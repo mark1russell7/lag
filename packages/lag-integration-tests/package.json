@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "pretest": "cd node_modules/@mark1russell7/grafana-infra && docker compose up -d",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "infra:up": "cd node_modules/@mark1russell7/grafana-infra && docker compose up -d",
+    "infra:down": "cd node_modules/@mark1russell7/grafana-infra && docker compose down"
   },
   "dependencies": {
     "@lag/lag": "workspace:*",
@@ -13,6 +16,7 @@
     "@mark1russell7/otel-ts": "github:mark1russell7/otel-ts"
   },
   "devDependencies": {
+    "@mark1russell7/grafana-infra": "github:mark1russell7/grafana-infra",
     "vitest": "^4.1.2",
     "@vitest/browser": "^4.1.2",
     "@vitest/browser-playwright": "^4.1.2",
