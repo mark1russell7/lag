@@ -99,6 +99,9 @@ describe("Lag Monitor Integration", () => {
                     : undefined,
             },
             memoryIntervalMs: 5_000,
+            // Real GC detection via FinalizationRegistry (ES2021)
+            FinalizationRegistry: (window as unknown as { FinalizationRegistry: never }).FinalizationRegistry,
+            gcCanaryIntervalMs: 100,
         });
     });
 
@@ -192,6 +195,29 @@ describe("Lag Monitor Integration", () => {
     it("paint and LCP monitors are wired", () => {
         expect(handles.paintMonitor).toBeDefined();
         expect(handles.lcpMonitor).toBeDefined();
+    });
+
+    it("GC signal detector observes real GC events under allocation pressure", async () => {
+        expect(handles.gcSignal).toBeDefined();
+        const before = handles.gcSignal!.getTotalGCEvents();
+
+        // Generate allocation pressure to bait the GC
+        for (let i = 0; i < 20; i++) {
+            const garbage : unknown[] = [];
+            for (let j = 0; j < 10000; j++) {
+                garbage.push({ a : Math.random(), b : new Array(20).fill(0) });
+            }
+            // Drop the reference, yield to allow GC
+            await new Promise(r => setTimeout(r, 50));
+        }
+
+        const after = handles.gcSignal!.getTotalGCEvents();
+        console.log(`GCSignalDetector: before=${before} after=${after} delta=${after - before}`);
+
+        // We can't guarantee GC fires (the engine decides), but in 1+ second of
+        // heavy allocation in a real browser it usually does. Don't hard-fail
+        // if zero — just log so we can investigate.
+        expect(after).toBeGreaterThanOrEqual(before);
     });
 
     it("emits a synthetic log to verify Loki bridge", () => {

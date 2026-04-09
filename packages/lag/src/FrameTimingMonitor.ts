@@ -4,19 +4,44 @@ export type RequestAnimationFrameFn = (callback : (time : number) => void) => nu
 export type CancelAnimationFrameFn = (handle : number) => void;
 
 export type FrameMeasurement = {
-    frameDeltaMs : number;       // time since previous frame
-    fps : number;                // instantaneous fps (1000 / frameDeltaMs)
-    isDropped : boolean;         // true if frameDelta > 2x target frame time
-    targetFrameTimeMs : number;  // expected frame interval (default ~16.67ms for 60fps)
+    /** Wall-clock time since the previous frame. */
+    frameDeltaMs : number;
+    /** Instantaneous frame rate computed from this delta (1000 / frameDeltaMs). */
+    fps : number;
+    /**
+     * Number of frames the engine *missed* between this callback and the
+     * previous one. Computed as `max(0, round(delta / target) - 1)`.
+     *
+     * Examples (target = 16.67ms):
+     *   delta = 16ms  → 0 dropped (one frame as expected)
+     *   delta = 17ms  → 0 dropped (within tolerance, just slightly late)
+     *   delta = 33ms  → 1 dropped (a full frame was skipped)
+     *   delta = 50ms  → 2 dropped
+     *   delta = 100ms → 5 dropped
+     */
+    droppedFrames : number;
+    /** True iff `droppedFrames > 0`. */
+    isDropped : boolean;
+    /** Expected frame interval in ms (1000 / targetFps). */
+    targetFrameTimeMs : number;
 };
 
 const DEFAULT_TARGET_FPS = 60;
-const DROPPED_FRAME_THRESHOLD = 2.0; // frame is "dropped" if delta > 2x target
 
 /**
  * Measures frame delivery rate via requestAnimationFrame.
  *
- * Different from LongAnimationFrameMonitor:
+ * **Drop detection is exact, not heuristic.** We compute how many frames
+ * *should* have fit in the observed gap and subtract one (the frame that
+ * actually fired). For target = 16.67ms:
+ *
+ *   round(50 / 16.67) - 1 = round(3) - 1 = 2 dropped
+ *
+ * `Math.round` (rather than `Math.floor`) is used so that a delta of 16.7ms
+ * counts as one frame (not zero), and a delta of 25ms counts as one frame
+ * (not zero). This matches how Chrome's frame timing reports work.
+ *
+ * **Different from LongAnimationFrameMonitor:**
  * - LoAF measures *blocking* during frame production (script + render time)
  * - This measures *frame delivery* — the gap between successive rAF callbacks
  *
@@ -28,8 +53,8 @@ export class FrameTimingMonitor {
     private handle : number | undefined;
     private lastFrameTime = -1;
     private started = false;
-    private frameCount = 0;
-    private droppedCount = 0;
+    private observedFrames = 0;
+    private droppedTotal = 0;
     private readonly targetFrameTimeMs : number;
 
     constructor(
@@ -59,14 +84,32 @@ export class FrameTimingMonitor {
         this.lastFrameTime = -1;
     }
 
+    /**
+     * Ratio of dropped frames to expected frames since startup or last reset.
+     *
+     * Computed as `droppedTotal / (observedFrames + droppedTotal)`. This is
+     * the fraction of *intended* frames the engine failed to deliver — a
+     * 50% rate means half of the expected frames were skipped.
+     */
     getDroppedFrameRate() : number {
-        if (this.frameCount === 0) return 0;
-        return this.droppedCount / this.frameCount;
+        const expected = this.observedFrames + this.droppedTotal;
+        if (expected === 0) return 0;
+        return this.droppedTotal / expected;
+    }
+
+    /** Total dropped frames since startup or last reset. */
+    getDroppedTotal() : number {
+        return this.droppedTotal;
+    }
+
+    /** Total observed frames since startup or last reset. */
+    getObservedTotal() : number {
+        return this.observedFrames;
     }
 
     resetCounters() : void {
-        this.frameCount = 0;
-        this.droppedCount = 0;
+        this.observedFrames = 0;
+        this.droppedTotal = 0;
     }
 
     private scheduleNextFrame() : void {
@@ -82,15 +125,19 @@ export class FrameTimingMonitor {
 
             if (this.lastFrameTime >= 0) {
                 const frameDeltaMs = now - this.lastFrameTime;
-                const isDropped = frameDeltaMs > this.targetFrameTimeMs * DROPPED_FRAME_THRESHOLD;
+                // Compute how many target-frame intervals this gap covers,
+                // then subtract one for the frame that actually fired.
+                const expectedSlots = Math.max(1, Math.round(frameDeltaMs / this.targetFrameTimeMs));
+                const droppedFrames = expectedSlots - 1;
 
-                this.frameCount++;
-                if (isDropped) this.droppedCount++;
+                this.observedFrames++;
+                this.droppedTotal += droppedFrames;
 
                 this.report({
                     frameDeltaMs,
                     fps : 1000 / frameDeltaMs,
-                    isDropped,
+                    droppedFrames,
+                    isDropped : droppedFrames > 0,
                     targetFrameTimeMs : this.targetFrameTimeMs,
                 });
             }

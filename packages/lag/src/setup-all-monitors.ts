@@ -37,6 +37,10 @@ import { PageLifecycleTracker } from "./PageLifecycleTracker.js";
 import { TimerThrottleDetector } from "./TimerThrottleDetector.js";
 import { ClockReliabilityChecker } from "./ClockReliabilityChecker.js";
 import { GCSpikeDetector } from "./GCSpikeDetector.js";
+import {
+    GCSignalDetector,
+    type FinalizationRegistryConstructor,
+} from "./GCSignalDetector.js";
 import { SchedulingFairnessMonitor } from "./SchedulingFairnessMonitor.js";
 import { FrameTimingMonitor } from "./FrameTimingMonitor.js";
 import { IdleAvailabilityMonitor } from "./IdleAvailabilityMonitor.js";
@@ -101,6 +105,10 @@ export type AllMonitorDeps = {
     PressureObserver? : PressureObserverInit;
     pressureSources? : PressureSource[];
     pressureSampleIntervalMs? : number;
+
+    // Optional: Real GC detection via FinalizationRegistry (ES2021)
+    FinalizationRegistry? : FinalizationRegistryConstructor;
+    gcCanaryIntervalMs? : number;
 };
 
 export type AllMonitorHandles = {
@@ -118,6 +126,7 @@ export type AllMonitorHandles = {
     lcpMonitor : LcpMonitor | undefined;
     lifecycleStateMachine : LifecycleStateMachine | undefined;
     pressureMonitor : ComputePressureMonitor | undefined;
+    gcSignal : GCSignalDetector | undefined;
     stop() : void;
 };
 
@@ -430,6 +439,43 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         currentPressureMonitor = pressureMonitor;
     }
 
+    // 16. GC signal detection via FinalizationRegistry (real GC events)
+    let gcSignal : GCSignalDetector | undefined;
+    if (deps.FinalizationRegistry) {
+        const gcEventCounter = meter.createHistogram<{ source : string }>(
+            "lag_gc_event_counter_histogram", { unit : "count" });
+        const gcRateGauge = meter.createObservableGauge<Record<string, never>>(
+            "lag_gc_recent_rate_gauge", { unit : "events" });
+
+        let currentGcSignal : GCSignalDetector | undefined;
+        gcRateGauge.addCallback((result) => {
+            if (currentGcSignal) {
+                // Events in the last 60 seconds — a useful "is GC active" view
+                result.observe(currentGcSignal.getRecentGCEvents(60_000));
+            }
+        });
+
+        // Wrap GCSignalDetector so we can record events as they happen.
+        // We do this by patching the registry construction to record metrics.
+        const wrappedFR = function <T>(this : unknown, cleanup : (held : T) => void) {
+            const originalRegistry = new deps.FinalizationRegistry!<T>((held : T) => {
+                gcEventCounter.record(1, { source : "canary" });
+                cleanup(held);
+            });
+            return originalRegistry;
+        } as unknown as FinalizationRegistryConstructor;
+
+        gcSignal = new GCSignalDetector(
+            wrappedFR,
+            clock,
+            setIntervalFn,
+            clearIntervalFn,
+            logger,
+            deps.gcCanaryIntervalMs ?? 250,
+        );
+        currentGcSignal = gcSignal;
+    }
+
     return {
         observers,
         workerMonitor,
@@ -445,6 +491,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         lcpMonitor,
         lifecycleStateMachine,
         pressureMonitor,
+        gcSignal,
         stop() {
             observers?.stop();
             workerMonitor?.stop();
@@ -457,6 +504,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
             lcpMonitor?.stop();
             (lifecycleStateMachine as unknown as { __stopPoll? : () => void } | undefined)?.__stopPoll?.();
             pressureMonitor?.stop();
+            gcSignal?.stop();
         },
     };
 }

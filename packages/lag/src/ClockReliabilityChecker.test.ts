@@ -37,25 +37,12 @@ describe("ClockReliabilityChecker", () => {
         expect(checker.isCrossOriginIsolated()).toBe(false);
     });
 
-    it("detects stale timeOrigin", () => {
-        const twoHoursAgo = Date.now() - 3 * 60 * 60 * 1000; // 3 hours ago
-        const performance = {
+    it("exposes the time origin from performance", () => {
+        const checker = new ClockReliabilityChecker({
             now : () => 0,
-            timeOrigin : twoHoursAgo,
-        };
-
-        const checker = new ClockReliabilityChecker(performance);
-        expect(checker.isTimeOriginStale(Date.now())).toBe(true);
-    });
-
-    it("reports fresh timeOrigin", () => {
-        const performance = {
-            now : () => 0,
-            timeOrigin : Date.now() - 60_000, // 1 minute ago
-        };
-
-        const checker = new ClockReliabilityChecker(performance);
-        expect(checker.isTimeOriginStale(Date.now())).toBe(false);
+            timeOrigin : 1234567890,
+        });
+        expect(checker.getTimeOrigin()).toBe(1234567890);
     });
 
     it("handles zero-delta clock (all identical readings)", () => {

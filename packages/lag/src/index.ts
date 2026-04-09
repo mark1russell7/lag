@@ -109,9 +109,14 @@ export {
     type PressureObserverInit,
     type PressureMeasurement,
 } from "./ComputePressureMonitor.js";
-export { TimerThrottleDetector } from "./TimerThrottleDetector.js";
+export { TimerThrottleDetector, type TimerThrottleConfig } from "./TimerThrottleDetector.js";
 export { ClockReliabilityChecker, type PerformanceLike } from "./ClockReliabilityChecker.js";
 export { GCSpikeDetector } from "./GCSpikeDetector.js";
+export {
+    GCSignalDetector,
+    type FinalizationRegistryConstructor,
+    type FinalizationRegistryInstance,
+} from "./GCSignalDetector.js";
 
 // --- Phase 4: Web Worker monitor ---
 export { WorkerLagMonitor, type WorkerLike, type WorkerLagMeasurement } from "./WorkerLagMonitor.js";

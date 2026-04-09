@@ -44,7 +44,7 @@ describe("FrameTimingMonitor", () => {
         expect(reports).toHaveLength(0);
     });
 
-    it("reports frame delta after the second frame", () => {
+    it("reports zero dropped frames for an on-time frame", () => {
         const { reports, fireFrameAt } = createDriver();
 
         fireFrameAt(100);
@@ -53,39 +53,65 @@ describe("FrameTimingMonitor", () => {
         expect(reports).toHaveLength(1);
         expect(reports[0]!.frameDeltaMs).toBeCloseTo(16.67, 1);
         expect(reports[0]!.fps).toBeCloseTo(60, 0);
+        expect(reports[0]!.droppedFrames).toBe(0);
         expect(reports[0]!.isDropped).toBe(false);
     });
 
-    it("flags dropped frames when delta > 2x target", () => {
+    it("reports exact dropped frame count for a delayed frame", () => {
         const { reports, fireFrameAt } = createDriver();
 
+        // 50ms gap at 60fps = ~3 frame slots → 2 dropped frames
         fireFrameAt(0);
-        fireFrameAt(50); // 50ms gap = ~3 frames at 60fps
+        fireFrameAt(50);
 
+        expect(reports[0]!.droppedFrames).toBe(2);
         expect(reports[0]!.isDropped).toBe(true);
     });
 
-    it("tracks dropped frame rate", () => {
+    it("counts a 100ms gap as 5 dropped frames at 60fps", () => {
+        const { reports, fireFrameAt } = createDriver();
+
+        // 100ms / 16.67 = 6 slots, 6 - 1 = 5 dropped
+        fireFrameAt(0);
+        fireFrameAt(100);
+
+        expect(reports[0]!.droppedFrames).toBe(5);
+    });
+
+    it("tolerates slightly-late frames (16.67 → 17ms)", () => {
+        const { reports, fireFrameAt } = createDriver();
+
+        fireFrameAt(0);
+        fireFrameAt(17); // very slightly late, still rounds to 1 slot
+        expect(reports[0]!.droppedFrames).toBe(0);
+    });
+
+    it("tracks total dropped frames and dropped frame rate", () => {
         const { monitor, fireFrameAt } = createDriver();
 
         fireFrameAt(0);
-        fireFrameAt(16.67);  // good
-        fireFrameAt(33.34);  // good
-        fireFrameAt(100);    // dropped (66ms gap)
-        fireFrameAt(116.67); // good
+        fireFrameAt(16.67);  // 0 dropped, 1 observed
+        fireFrameAt(33.34);  // 0 dropped, 1 observed
+        // 100 - 33.34 = 66.66ms gap. round(66.66 / 16.67) = 4 slots, -1 = 3 dropped
+        fireFrameAt(100);
+        fireFrameAt(116.67); // 0 dropped, 1 observed
 
-        // 1 dropped out of 4 reported frames
-        expect(monitor.getDroppedFrameRate()).toBeCloseTo(0.25);
+        expect(monitor.getDroppedTotal()).toBe(3);
+        expect(monitor.getObservedTotal()).toBe(4);
+        // Rate = dropped / (observed + dropped) = 3 / 7
+        expect(monitor.getDroppedFrameRate()).toBeCloseTo(3 / 7);
     });
 
     it("resets counters", () => {
         const { monitor, fireFrameAt } = createDriver();
 
         fireFrameAt(0);
-        fireFrameAt(100); // dropped
-        expect(monitor.getDroppedFrameRate()).toBe(1);
+        fireFrameAt(100);
+        expect(monitor.getDroppedTotal()).toBe(5);
 
         monitor.resetCounters();
+        expect(monitor.getDroppedTotal()).toBe(0);
+        expect(monitor.getObservedTotal()).toBe(0);
         expect(monitor.getDroppedFrameRate()).toBe(0);
     });
 
@@ -119,6 +145,7 @@ describe("FrameTimingMonitor", () => {
         cb2(33.33);
 
         expect(reports[0]!.targetFrameTimeMs).toBeCloseTo(33.33, 1);
-        expect(reports[0]!.isDropped).toBe(false); // 33.33ms is exactly target, not 2x
+        // 33.33ms / 33.33ms = 1 slot, 0 dropped
+        expect(reports[0]!.droppedFrames).toBe(0);
     });
 });
