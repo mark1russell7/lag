@@ -1,10 +1,8 @@
-// --- Original exports (unchanged) ---
-export { ContinuousLag } from "./ContinuousLag.js";
+// --- Original exports ---
 export { DriftLag } from "./DriftLag.js";
 export { MacrotaskLag } from "./MacrotaskLag.js";
 export { LagMonitor, type LagMonitorConstructor } from "./LagMonitor.js";
 export { LagLogger } from "./LagLogger.js";
-export { PageHiddenTracker, type Document } from "./PageHiddenTracker.js";
 export { setupLagMonitors } from "./setup-lag-monitors.js";
 export type {
     Logger,
@@ -86,7 +84,6 @@ export {
 } from "./MemoryMonitor.js";
 
 // --- Phase 3: Measurement reliability ---
-export { PageLifecycleTracker, type PageLifecycleDocument, type PageLifecycleWindow, type PageLifecycleState } from "./PageLifecycleTracker.js";
 export {
     LifecycleStateMachine,
     summarizeTransitions,

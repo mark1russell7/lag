@@ -1,5 +1,5 @@
 {
-  "name": "@render/lag-integration-tests",
+  "name": "@lag/lag-integration-tests",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,9 +8,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@render/lag": "workspace:*",
-    "@render/lag-worker": "workspace:*",
-    "@mark1russell7/otel-ts": "file:../../../otel-ts"
+    "@lag/lag": "workspace:*",
+    "@lag/lag-worker": "workspace:*",
+    "@mark1russell7/otel-ts": "github:mark1russell7/otel-ts"
   },
   "devDependencies": {
     "vitest": "^4.1.2",

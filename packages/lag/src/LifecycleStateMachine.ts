@@ -100,8 +100,18 @@ export class LifecycleStateMachine {
         this.attachListeners();
     }
 
-    /** Returns the current lifecycle state. */
+    /**
+     * Returns the current lifecycle state.
+     *
+     * **Race condition handling (from PageHiddenTracker):**
+     * `document.visibilityState` is updated synchronously per the spec,
+     * but `visibilitychange` fires asynchronously. A macrotask could read
+     * the state between the synchronous update and the async event, missing
+     * a hidden period. We re-read `visibilityState` directly here to catch
+     * that case.
+     */
     getState() : LifecycleState {
+        this.syncFromDocument();
         return this.currentState;
     }
 
@@ -110,8 +120,8 @@ export class LifecycleStateMachine {
      * Call resolve(mark) later to get all transitions that occurred after.
      */
     mark() : LifecycleMark {
+        this.syncFromDocument(); // catch any pending sync-only visibility change
         const id = Symbol();
-        // Mark points just after the most recent transition
         this.marks.set(id, this.transitions.length);
         return { id };
     }
@@ -120,15 +130,41 @@ export class LifecycleStateMachine {
      * Get all transitions that have occurred since the mark, then drop the mark.
      * Triggers buffer compaction. Returns an empty array if the mark is unknown
      * (e.g., already resolved).
+     *
+     * **Race condition handling:** we sync from `document.visibilityState`
+     * both before collecting results AND after resetting, mirroring the
+     * original PageHiddenTracker.getAndReset() pattern.
      */
     resolve(mark : LifecycleMark) : StateTransition[] {
+        this.syncFromDocument(); // capture any pending state change
+
         const startIdx = this.marks.get(mark.id);
         if (startIdx === undefined) return [];
 
         const result = this.transitions.slice(startIdx);
         this.marks.delete(mark.id);
         this.compact();
+
+        this.syncFromDocument(); // re-check after compaction
         return result;
+    }
+
+    /**
+     * Returns true if the page was hidden (or frozen/terminated) at any point
+     * since the last call, then resets. Useful for any code that needs a
+     * simple boolean gate — e.g., to decide whether a measurement taken
+     * during this period is reliable or should be discarded.
+     *
+     * Uses the sync-from-document race condition fix internally.
+     */
+    private hiddenSinceLastCheck = false;
+
+    getAndResetHidden() : boolean {
+        this.syncFromDocument();
+        const was = this.hiddenSinceLastCheck || this.currentState === "hidden";
+        this.hiddenSinceLastCheck = false;
+        this.syncFromDocument();
+        return was;
     }
 
     /**
@@ -183,6 +219,28 @@ export class LifecycleStateMachine {
         }
     }
 
+    /**
+     * Re-read document.visibilityState directly (synchronously) and fire a
+     * transition if the state machine is out of sync.
+     *
+     * This prevents a race condition: document.visibilityState is updated
+     * synchronously per the spec
+     * https://html.spec.whatwg.org/multipage/interaction.html#page-visibility
+     * but the visibilitychange event is dispatched asynchronously. Thus if a
+     * macrotask is enqueued to report lag ahead of the visibilitychange event,
+     * we could miss this and our metrics would be skewed.
+     */
+    private syncFromDocument() : void {
+        if (this.document.visibilityState === "hidden") {
+            if (this.currentState !== "hidden" && this.currentState !== "frozen" && this.currentState !== "terminated") {
+                this.transition("hidden", "visibilitychange");
+            }
+        } else if (this.currentState === "hidden") {
+            const focused = this.document.hasFocus ? this.document.hasFocus() : true;
+            this.transition(focused ? "active" : "passive", "visibilitychange");
+        }
+    }
+
     private computeInitialState() : LifecycleState {
         if (this.document.visibilityState === "hidden") return "hidden";
         const focused = this.document.hasFocus ? this.document.hasFocus() : true;
@@ -193,6 +251,9 @@ export class LifecycleStateMachine {
         if (to === this.currentState) return;
         const from = this.currentState;
         this.currentState = to;
+        if (to === "hidden" || to === "frozen" || to === "terminated") {
+            this.hiddenSinceLastCheck = true;
+        }
         this.transitions.push({
             from,
             to,

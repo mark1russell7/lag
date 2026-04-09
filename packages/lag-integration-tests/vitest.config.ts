@@ -5,8 +5,8 @@ import path from "node:path";
 export default defineConfig({
     resolve: {
         alias: {
-            "@render/lag": path.resolve(__dirname, "../lag/src"),
-            "@render/lag-worker": path.resolve(__dirname, "../lag-worker/src"),
+            "@lag/lag": path.resolve(__dirname, "../lag/src"),
+            "@lag/lag-worker": path.resolve(__dirname, "../lag-worker/src"),
         },
     },
     optimizeDeps: {

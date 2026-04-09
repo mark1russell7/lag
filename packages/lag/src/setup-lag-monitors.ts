@@ -1,14 +1,14 @@
 import { highFrequencyLagIntervalMs, macrotaskLagIntervalMs, maxLagBuffer } from "./constants.js";
-import { ContinuousLag } from "./ContinuousLag.js";
 import { DriftLag } from "./DriftLag.js";
 import { LagLogger } from "./LagLogger.js";
 import type { LagMonitor, LagMonitorConstructor } from "./LagMonitor.js";
 import { MacrotaskLag } from "./MacrotaskLag.js";
-import { PageHiddenTracker, type Document } from "./PageHiddenTracker.js";
+import { LifecycleStateMachine, type LifecycleDocument, type LifecycleWindow } from "./LifecycleStateMachine.js";
 import type { ClearIntervalFn, Clock, EventLoopLagAttributes, LagMeasurement, Logger, SetIntervalFn, SetTimeoutFn } from "./types.js";
 
 type Deps = [
-    Document,
+    LifecycleDocument,
+    LifecycleWindow,
     Logger,
     SetIntervalFn,
     ClearIntervalFn,
@@ -29,27 +29,38 @@ type Deps = [
 export function setupLagMonitors(
     deps : Deps
 ) : void {
+    // Create a single LifecycleStateMachine shared by all monitors
+    const lifecycle = new LifecycleStateMachine(deps[0], deps[1], deps[7], deps[2]);
+
     setupLag(
         'macrotask',
         MacrotaskLag,
         macrotaskLagIntervalMs,
-        ...deps
-    );
-    setupLag(
-        'continuous',
-        ContinuousLag,
-        highFrequencyLagIntervalMs,
-        ...deps,
-        new LagLogger(
-            highFrequencyLagIntervalMs,
-            deps[1]
-        )
+        lifecycle,
+        deps[2],
+        deps[3],
+        deps[4],
+        deps[5],
+        deps[6],
+        deps[7],
+        deps[8],
     );
     setupLag(
         'drift',
         DriftLag,
         highFrequencyLagIntervalMs,
-        ...deps,
+        lifecycle,
+        deps[2],
+        deps[3],
+        deps[4],
+        deps[5],
+        deps[6],
+        deps[7],
+        deps[8],
+        new LagLogger(
+            highFrequencyLagIntervalMs,
+            deps[2]
+        )
     );
 }
 
@@ -60,7 +71,7 @@ function setupLag<T extends LagMonitor>(
     name : string,
     LagClass : LagMonitorConstructor<T>,
     monitorInterval : number,
-    document : Document,
+    lifecycle : LifecycleStateMachine,
     logger : Logger,
     setIntervalFn : SetIntervalFn,
     clearIntervalFn : ClearIntervalFn,
@@ -78,10 +89,6 @@ function setupLag<T extends LagMonitor>(
     lagLogger? : LagLogger,
 
 ) : T {
-    const pageHiddenTracker = new PageHiddenTracker(
-        document
-    );
-
     const lagHistogram = meter.createHistogram<EventLoopLagAttributes>(
         `lag_${name}_histogram`,
         {unit : 'ms'}
@@ -121,7 +128,7 @@ function setupLag<T extends LagMonitor>(
         monitorInterval,
         (value : number) => {
             const attributes : EventLoopLagAttributes = {
-                wasHidden : pageHiddenTracker.getAndReset(),
+                wasHidden : lifecycle.getAndResetHidden(),
             };
             if(attributes.wasHidden) {
                 return;

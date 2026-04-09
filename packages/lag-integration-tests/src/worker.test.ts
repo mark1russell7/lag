@@ -1,6 +1,6 @@
 import { expect, vi } from "vitest";
-import { createLagWorker } from "@render/lag-worker";
-import { WorkerLagMonitor, type WorkerLagMeasurement } from "@render/lag";
+import { createLagWorker } from "@lag/lag-worker";
+import { WorkerLagMonitor, type WorkerLagMeasurement } from "@lag/lag";
 
 function wait(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));

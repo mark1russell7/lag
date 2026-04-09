@@ -43,10 +43,10 @@ describe("createOtelLoggerAdapter", () => {
         const otelLogger = { emit : vi.fn() };
         const adapter = createOtelLoggerAdapter(otelLogger);
 
-        adapter.log("warn", "lag detected", { type : "ContinuousLag", lagMs : 250 });
+        adapter.log("warn", "lag detected", { type : "DriftLag", lagMs : 250 });
 
         expect(otelLogger.emit.mock.calls[0]![0].attributes).toEqual({
-            type : "ContinuousLag",
+            type : "DriftLag",
             lagMs : 250,
         });
     });

@@ -5,8 +5,8 @@ import {
     createOtelLoggerAdapter,
     createTeeLogger,
     type AllMonitorHandles,
-} from "@render/lag";
-import { createLagWorker } from "@render/lag-worker";
+} from "@lag/lag";
+import { createLagWorker } from "@lag/lag-worker";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
 const MIMIR_QUERY_URL = "http://localhost:9009/prometheus/api/v1/query";

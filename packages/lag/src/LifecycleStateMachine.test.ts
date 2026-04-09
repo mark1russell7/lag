@@ -126,6 +126,8 @@ describe("LifecycleStateMachine", () => {
         m.fireWin("pagehide", { persisted : true });
         expect(sm.getState()).toBe("frozen");
 
+        // Browser sets visibilityState back to "visible" when restoring from BFCache
+        (m.document as { visibilityState : string }).visibilityState = "visible";
         m.fireWin("pageshow", { persisted : true });
         expect(sm.getState()).toBe("active");
     });

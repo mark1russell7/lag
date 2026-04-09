@@ -1,9 +1,8 @@
 import type { ClearIntervalFn, Clock, Logger, SetIntervalFn, SetTimeoutFn } from "./types.js";
-import type { Document } from "./PageHiddenTracker.js";
 import type { PerformanceObserverInit } from "./perf-types.js";
 import type { WorkerLike } from "./WorkerLagMonitor.js";
 import type { PerformanceLike } from "./ClockReliabilityChecker.js";
-import type { PageLifecycleDocument, PageLifecycleWindow } from "./PageLifecycleTracker.js";
+import type { LifecycleDocument, LifecycleWindow } from "./LifecycleStateMachine.js";
 import type {
     MessageChannelConstructor,
     QueueMicrotaskFn,
@@ -21,10 +20,6 @@ import type {
 } from "./IdleAvailabilityMonitor.js";
 import type { MemorySource, MemoryMeasurement } from "./MemoryMonitor.js";
 import type {
-    LifecycleDocument,
-    LifecycleWindow as LifecycleSmWindow,
-} from "./LifecycleStateMachine.js";
-import type {
     PressureObserverInit,
     PressureSource,
     PressureMeasurement,
@@ -33,7 +28,6 @@ import { setupLagMonitors } from "./setup-lag-monitors.js";
 import { setupObserverMonitors, type ObserverMonitorHandles } from "./setup-observer-monitors.js";
 import { setupWorkerMonitor } from "./setup-worker-monitor.js";
 import { WorkerLagMonitor } from "./WorkerLagMonitor.js";
-import { PageLifecycleTracker } from "./PageLifecycleTracker.js";
 import { TimerThrottleDetector } from "./TimerThrottleDetector.js";
 import { ClockReliabilityChecker } from "./ClockReliabilityChecker.js";
 import { GCSpikeDetector } from "./GCSpikeDetector.js";
@@ -62,7 +56,8 @@ type Meter = {
 const SCHEDULING_FAIRNESS_INTERVAL_MS = 5_000;
 
 export type AllMonitorDeps = {
-    document : Document;
+    document : LifecycleDocument;
+    window : LifecycleWindow;
     logger : Logger;
     setIntervalFn : SetIntervalFn;
     clearIntervalFn : ClearIntervalFn;
@@ -78,8 +73,7 @@ export type AllMonitorDeps = {
     worker? : WorkerLike;
     workerPingIntervalMs? : number;
 
-    // Optional: Enhanced lifecycle tracking
-    window? : PageLifecycleWindow;
+    // Optional: clock reliability
     performance? : PerformanceLike;
 
     // Optional: Scheduling fairness (microtask vs macrotask vs MessageChannel)
@@ -114,7 +108,6 @@ export type AllMonitorDeps = {
 export type AllMonitorHandles = {
     observers : ObserverMonitorHandles | undefined;
     workerMonitor : WorkerLagMonitor | undefined;
-    lifecycleTracker : PageLifecycleTracker | undefined;
     throttleDetector : TimerThrottleDetector | undefined;
     clockChecker : ClockReliabilityChecker | undefined;
     gcDetector : GCSpikeDetector;
@@ -132,7 +125,6 @@ export type AllMonitorHandles = {
 
 export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
     const {
-        document,
         logger,
         setIntervalFn,
         clearIntervalFn,
@@ -142,9 +134,10 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         meter,
     } = deps;
 
-    // 1. Always set up the existing timer-based monitors (unchanged behavior)
+    // 1. Set up the timer-based lag monitors (DriftLag + MacrotaskLag)
     setupLagMonitors([
-        document,
+        deps.document,
+        deps.window,
         logger,
         setIntervalFn,
         clearIntervalFn,
@@ -178,17 +171,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         });
     }
 
-    // 4. Enhanced lifecycle tracking
-    let lifecycleTracker : PageLifecycleTracker | undefined;
-    if (deps.window) {
-        lifecycleTracker = new PageLifecycleTracker(
-            deps.document as PageLifecycleDocument,
-            deps.window,
-            logger,
-        );
-    }
-
-    // 5. Timer throttle detection
+    // 4. Timer throttle detection
     const throttleDetector = new TimerThrottleDetector(setTimeoutFn, clock, logger);
     throttleDetector.start();
 
@@ -377,14 +360,14 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
 
     // 14. Lifecycle state machine (mark/resolve API)
     let lifecycleStateMachine : LifecycleStateMachine | undefined;
-    if (deps.lifecycleStateMachine && deps.window) {
+    if (deps.lifecycleStateMachine) {
         const transitionCounter = meter.createHistogram<{ from : string; to : string; trigger : string }>(
             "lag_lifecycle_transition_count_histogram",
             { unit : "count" },
         );
         lifecycleStateMachine = new LifecycleStateMachine(
-            deps.document as LifecycleDocument,
-            deps.window as LifecycleSmWindow,
+            deps.document,
+            deps.window,
             clock,
             logger,
         );
@@ -479,7 +462,6 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
     return {
         observers,
         workerMonitor,
-        lifecycleTracker,
         throttleDetector,
         clockChecker,
         gcDetector,

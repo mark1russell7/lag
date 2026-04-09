@@ -23,15 +23,15 @@ importers:
 
   packages/lag-integration-tests:
     dependencies:
-      '@mark1russell7/otel-ts':
-        specifier: file:../../../otel-ts
-        version: file:../otel-ts(zone.js@0.16.1)
-      '@render/lag':
+      '@lag/lag':
         specifier: workspace:*
         version: link:../lag
-      '@render/lag-worker':
+      '@lag/lag-worker':
         specifier: workspace:*
         version: link:../lag-worker
+      '@mark1russell7/otel-ts':
+        specifier: github:mark1russell7/otel-ts
+        version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/335f26432f867d90004644c84a10a27341161ba0(zone.js@0.16.1)
     devDependencies:
       '@vitest/browser':
         specifier: ^4.1.2
@@ -48,7 +48,7 @@ importers:
 
   packages/lag-worker:
     dependencies:
-      '@render/lag':
+      '@lag/lag':
         specifier: workspace:*
         version: link:../lag
 
@@ -241,8 +241,9 @@ packages:
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
 
-  '@mark1russell7/otel-ts@file:../otel-ts':
-    resolution: {directory: ../otel-ts, type: directory}
+  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/335f26432f867d90004644c84a10a27341161ba0':
+    resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/335f26432f867d90004644c84a10a27341161ba0}
+    version: 0.0.1
 
   '@opentelemetry/api-logs@0.213.0':
     resolution: {integrity: sha512-zRM5/Qj6G84Ej3F1yt33xBVY/3tnMxtL1fiDIxYbDWYaZ/eudVw3/PBiZ8G7JwUxXxjW8gU4g6LnOyfGKYHYgw==}
@@ -1133,7 +1134,7 @@ snapshots:
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
-  '@mark1russell7/otel-ts@file:../otel-ts(zone.js@0.16.1)':
+  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/335f26432f867d90004644c84a10a27341161ba0(zone.js@0.16.1)':
     dependencies:
       '@grafana/faro-web-sdk': 2.3.1
       '@grafana/faro-web-tracing': 2.3.1

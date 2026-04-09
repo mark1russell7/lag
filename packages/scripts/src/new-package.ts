@@ -17,10 +17,10 @@ const configs = [
 type Config = (typeof configs)[number]["value"];
 
 async function main(): Promise<void> {
-  p.intro("New @render package");
+  p.intro("New @lag package");
 
   const name = await p.text({
-    message: "Package name (without @render/)",
+    message: "Package name (without @lag/)",
     validate: (v) => {
       if (!v) return "Required";
       if (!/^[a-z][a-z0-9-]*$/.test(v)) return "Lowercase alphanumeric with hyphens";
@@ -54,7 +54,7 @@ async function main(): Promise<void> {
 
   // package.json
   const pkg: Record<string, unknown> = {
-    name: `@render/${name}`,
+    name: `@lag/${name}`,
     version: "0.0.0",
     private: true,
     ...(isEsm ? { type: "module" } : {}),
@@ -101,7 +101,7 @@ async function main(): Promise<void> {
   s.stop("Package created");
 
   p.note(`cd packages/${name}`, "Next steps");
-  p.outro(`@render/${name} is ready`);
+  p.outro(`@lag/${name} is ready`);
 }
 
 main();

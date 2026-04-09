@@ -1,4 +1,4 @@
-import { createWorkerHandler } from "@render/lag/lag-worker.js";
+import { createWorkerHandler } from "@lag/lag/lag-worker.js";
 
 const handler = createWorkerHandler({
     postMessage : (message) => self.postMessage(message),
