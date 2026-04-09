@@ -99,6 +99,7 @@ describe("Lag Monitor Integration", () => {
                     : undefined,
             },
             memoryIntervalMs: 5_000,
+            lifecycleStateMachine: true,
             // Real GC detection via FinalizationRegistry (ES2021)
             FinalizationRegistry: (window as unknown as { FinalizationRegistry: never }).FinalizationRegistry,
             gcCanaryIntervalMs: 100,
@@ -188,8 +189,8 @@ describe("Lag Monitor Integration", () => {
         }
     });
 
-    it("page lifecycle tracker is wired", () => {
-        expect(handles.lifecycleTracker).toBeDefined();
+    it("lifecycle state machine is wired", () => {
+        expect(handles.lifecycleStateMachine).toBeDefined();
     });
 
     it("paint and LCP monitors are wired", () => {
