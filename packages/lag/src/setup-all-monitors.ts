@@ -1,492 +1,258 @@
-import type { ClearIntervalFn, Clock, Logger, SetIntervalFn, SetTimeoutFn } from "./types.js";
-import type { PerformanceObserverInit } from "./perf-types.js";
-import type { WorkerLike } from "./WorkerLagMonitor.js";
-import type { PerformanceLike } from "./ClockReliabilityChecker.js";
-import type { LifecycleDocument, LifecycleWindow } from "./LifecycleStateMachine.js";
+/**
+ * Unified setup — orchestrates the monitor registry.
+ *
+ * This replaces the former "god function" with thin coordination:
+ *   1. Create a MonitorRegistry
+ *   2. Construct the lifecycle state machine (shared dependency)
+ *   3. Add instrumented factories to the registry, each guarded by the
+ *      presence of their respective capability deps
+ *   4. Return handles + a `stop()` that tears down the whole registry
+ *
+ * Adding a new monitor is a one-liner — no modifications elsewhere.
+ */
+
 import type {
-    MessageChannelConstructor,
-    QueueMicrotaskFn,
-    SchedulingMeasurement,
-} from "./SchedulingFairnessMonitor.js";
-import type {
-    RequestAnimationFrameFn,
-    CancelAnimationFrameFn,
-    FrameMeasurement,
-} from "./FrameTimingMonitor.js";
-import type {
-    RequestIdleCallbackFn,
-    CancelIdleCallbackFn,
-    IdleMeasurement,
-} from "./IdleAvailabilityMonitor.js";
-import type { MemorySource, MemoryMeasurement } from "./MemoryMonitor.js";
-import type {
-    PressureObserverInit,
-    PressureSource,
-    PressureMeasurement,
-} from "./ComputePressureMonitor.js";
-import { setupLagMonitors } from "./setup-lag-monitors.js";
-import { setupObserverMonitors, type ObserverMonitorHandles } from "./setup-observer-monitors.js";
-import { setupWorkerMonitor } from "./setup-worker-monitor.js";
-import { WorkerLagMonitor } from "./WorkerLagMonitor.js";
-import { TimerThrottleDetector } from "./TimerThrottleDetector.js";
-import { ClockReliabilityChecker } from "./ClockReliabilityChecker.js";
+    CoreDeps,
+    TimerDeps,
+    LifecycleDeps,
+    ObserverDeps,
+    FrameDeps,
+    IdleDeps,
+    SchedulingDeps,
+    MemoryDeps,
+    PressureDeps,
+    GCDeps,
+    WorkerMonitorDeps,
+    ClockReliabilityDeps,
+} from "./dep-groups.js";
+import { MonitorRegistry } from "./monitor-registry.js";
+
 import { GCSpikeDetector } from "./GCSpikeDetector.js";
+
+// Monitor class types (for typed accessors on AllMonitorHandles)
+import type { DriftLag } from "./DriftLag.js";
+import type { MacrotaskLag } from "./MacrotaskLag.js";
+import type { LongAnimationFrameMonitor } from "./LongAnimationFrameMonitor.js";
+import type { EventTimingMonitor } from "./EventTimingMonitor.js";
+import type { LayoutShiftMonitor } from "./LayoutShiftMonitor.js";
+import type { PaintTimingMonitor } from "./PaintTimingMonitor.js";
+import type { LcpMonitor } from "./LcpMonitor.js";
+import type { FrameTimingMonitor } from "./FrameTimingMonitor.js";
+import type { IdleAvailabilityMonitor } from "./IdleAvailabilityMonitor.js";
+import type { SchedulingFairnessMonitor } from "./SchedulingFairnessMonitor.js";
+import type { MemoryMonitor } from "./MemoryMonitor.js";
+import type { WorkerLagMonitor } from "./WorkerLagMonitor.js";
+import type { ComputePressureMonitor } from "./ComputePressureMonitor.js";
+import type { GCSignalDetector } from "./GCSignalDetector.js";
+import type { LifecycleStateMachine } from "./LifecycleStateMachine.js";
+import type { TimerThrottleDetector } from "./TimerThrottleDetector.js";
+import type { ClockReliabilityChecker } from "./ClockReliabilityChecker.js";
+
+// Instrumented factories
 import {
-    GCSignalDetector,
-    type FinalizationRegistryConstructor,
-} from "./GCSignalDetector.js";
-import { SchedulingFairnessMonitor } from "./SchedulingFairnessMonitor.js";
-import { FrameTimingMonitor } from "./FrameTimingMonitor.js";
-import { IdleAvailabilityMonitor } from "./IdleAvailabilityMonitor.js";
-import { MemoryMonitor, defaultMemoryIntervalMs } from "./MemoryMonitor.js";
-import { PaintTimingMonitor } from "./PaintTimingMonitor.js";
-import { LcpMonitor } from "./LcpMonitor.js";
-import { LifecycleStateMachine } from "./LifecycleStateMachine.js";
-import { ComputePressureMonitor } from "./ComputePressureMonitor.js";
+    createInstrumentedDriftLag,
+    createInstrumentedMacrotaskLag,
+    createInstrumentedLoaf,
+    createInstrumentedEventTiming,
+    createInstrumentedLayoutShift,
+    createInstrumentedPaintTiming,
+    createInstrumentedLcp,
+    createInstrumentedFrameTiming,
+    createInstrumentedIdleAvailability,
+    createInstrumentedSchedulingFairness,
+    createInstrumentedMemory,
+    createInstrumentedWorkerLag,
+    createInstrumentedComputePressure,
+    createInstrumentedGCSignal,
+    createInstrumentedLifecycle,
+    createInstrumentedThrottleDetector,
+    createInstrumentedClockReliability,
+} from "./instrumented/index.js";
 
-type Meter = {
-    createHistogram : <A>(name : string, options : { unit : string }) => {
-        record : (value : number, attributes? : A) => void;
-    };
-    createObservableGauge : <A>(name : string, options : { unit : string }) => {
-        addCallback : (callback : (observableResult : { observe : (value : number, attributes? : A) => void }) => void) => void;
-    };
-};
+/**
+ * Full dependency bag for setupAllMonitors.
+ *
+ * Required: CoreDeps (logger, clock, meter) + TimerDeps + LifecycleDeps.
+ * Everything else is optional, enabled by the presence of its capability deps.
+ */
+export type AllMonitorDeps =
+    & CoreDeps
+    & TimerDeps
+    & LifecycleDeps
+    & Partial<ObserverDeps>
+    & Partial<FrameDeps>
+    & Partial<IdleDeps>
+    & Partial<SchedulingDeps>
+    & Partial<MemoryDeps>
+    & Partial<PressureDeps>
+    & Partial<GCDeps>
+    & Partial<WorkerMonitorDeps>
+    & Partial<ClockReliabilityDeps>;
 
-const SCHEDULING_FAIRNESS_INTERVAL_MS = 5_000;
-
-export type AllMonitorDeps = {
-    document : LifecycleDocument;
-    window : LifecycleWindow;
-    logger : Logger;
-    setIntervalFn : SetIntervalFn;
-    clearIntervalFn : ClearIntervalFn;
-    setTimeoutFn : SetTimeoutFn;
-    clearTimeoutFn : ClearIntervalFn;
-    clock : Clock;
-    meter : Meter;
-
-    // Optional: Performance Observer support
-    PerformanceObserver? : PerformanceObserverInit;
-
-    // Optional: Worker support
-    worker? : WorkerLike;
-    workerPingIntervalMs? : number;
-
-    // Optional: clock reliability
-    performance? : PerformanceLike;
-
-    // Optional: Scheduling fairness (microtask vs macrotask vs MessageChannel)
-    MessageChannel? : MessageChannelConstructor;
-    queueMicrotask? : QueueMicrotaskFn;
-
-    // Optional: Frame timing via requestAnimationFrame
-    requestAnimationFrame? : RequestAnimationFrameFn;
-    cancelAnimationFrame? : CancelAnimationFrameFn;
-
-    // Optional: Idle availability via requestIdleCallback
-    requestIdleCallback? : RequestIdleCallbackFn;
-    cancelIdleCallback? : CancelIdleCallbackFn;
-
-    // Optional: Memory sampling
-    memorySource? : MemorySource;
-    memoryIntervalMs? : number;
-
-    // Optional: Lifecycle state machine (uses document + window for events)
-    lifecycleStateMachine? : boolean;
-
-    // Optional: Compute Pressure API (Chrome 125+)
-    PressureObserver? : PressureObserverInit;
-    pressureSources? : PressureSource[];
-    pressureSampleIntervalMs? : number;
-
-    // Optional: Real GC detection via FinalizationRegistry (ES2021)
-    FinalizationRegistry? : FinalizationRegistryConstructor;
-    gcCanaryIntervalMs? : number;
-};
-
+/**
+ * Handles returned by setupAllMonitors.
+ *
+ * The `registry` is the source of truth — typed getters are convenience
+ * accessors for consumers who want to grab a specific monitor by name.
+ * They return `undefined` if that monitor wasn't registered (missing deps)
+ * or failed to construct.
+ */
 export type AllMonitorHandles = {
-    observers : ObserverMonitorHandles | undefined;
-    workerMonitor : WorkerLagMonitor | undefined;
-    throttleDetector : TimerThrottleDetector | undefined;
-    clockChecker : ClockReliabilityChecker | undefined;
-    gcDetector : GCSpikeDetector;
-    schedulingMonitor : SchedulingFairnessMonitor | undefined;
-    frameMonitor : FrameTimingMonitor | undefined;
-    idleMonitor : IdleAvailabilityMonitor | undefined;
-    memoryMonitor : MemoryMonitor | undefined;
-    paintMonitor : PaintTimingMonitor | undefined;
-    lcpMonitor : LcpMonitor | undefined;
-    lifecycleStateMachine : LifecycleStateMachine | undefined;
-    pressureMonitor : ComputePressureMonitor | undefined;
-    gcSignal : GCSignalDetector | undefined;
+    /** Registry of all created handles. Use `registry.get(name)` for lookup. */
+    readonly registry : MonitorRegistry;
+
+    /** Stateless GC-spike classifier — always available, no setup deps. */
+    readonly gcDetector : GCSpikeDetector;
+
+    /** Tear down every registered monitor in LIFO order. */
     stop() : void;
+
+    // Typed accessors — each is lazy via getter so they stay in sync with the registry
+    readonly driftLag : DriftLag | undefined;
+    readonly macrotaskLag : MacrotaskLag | undefined;
+    readonly lifecycleStateMachine : LifecycleStateMachine | undefined;
+    readonly loafMonitor : LongAnimationFrameMonitor | undefined;
+    readonly eventTimingMonitor : EventTimingMonitor | undefined;
+    readonly layoutShiftMonitor : LayoutShiftMonitor | undefined;
+    readonly paintMonitor : PaintTimingMonitor | undefined;
+    readonly lcpMonitor : LcpMonitor | undefined;
+    readonly frameMonitor : FrameTimingMonitor | undefined;
+    readonly idleMonitor : IdleAvailabilityMonitor | undefined;
+    readonly schedulingMonitor : SchedulingFairnessMonitor | undefined;
+    readonly memoryMonitor : MemoryMonitor | undefined;
+    readonly workerMonitor : WorkerLagMonitor | undefined;
+    readonly pressureMonitor : ComputePressureMonitor | undefined;
+    readonly gcSignal : GCSignalDetector | undefined;
+    readonly throttleDetector : TimerThrottleDetector | undefined;
+    readonly clockChecker : ClockReliabilityChecker | undefined;
 };
+
+function monitorOf<T>(registry : MonitorRegistry, name : string) : T | undefined {
+    return registry.get<T>(name)?.monitor;
+}
 
 export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
-    const {
-        logger,
-        setIntervalFn,
-        clearIntervalFn,
-        setTimeoutFn,
-        clearTimeoutFn,
-        clock,
-        meter,
-    } = deps;
+    const registry = new MonitorRegistry();
 
-    // 1. Set up the timer-based lag monitors (DriftLag + MacrotaskLag)
-    setupLagMonitors([
-        deps.document,
-        deps.window,
-        logger,
-        setIntervalFn,
-        clearIntervalFn,
-        setTimeoutFn,
-        clearTimeoutFn,
-        clock,
-        meter,
-    ]);
+    // 1. Lifecycle first — the lag monitors need it for hidden filtering
+    const lifecycleHandle = registry.add(createInstrumentedLifecycle(deps));
+    const lifecycle = lifecycleHandle.monitor;
 
-    // 2. Performance Observer monitors (LoAF, INP, CLS)
-    let observers : ObserverMonitorHandles | undefined;
+    // 2. Timer-based lag (require lifecycle)
+    if (lifecycle) {
+        registry.add(createInstrumentedDriftLag(deps, lifecycle));
+        registry.add(createInstrumentedMacrotaskLag(deps, lifecycle));
+    }
+
+    // 3. Throttle detector — always available (pure timer math)
+    registry.add(createInstrumentedThrottleDetector({
+        logger : deps.logger,
+        clock : deps.clock,
+        meter : deps.meter,
+        setTimeoutFn : deps.setTimeoutFn,
+    }));
+
+    // 4. PerformanceObserver monitors
     if (deps.PerformanceObserver) {
-        observers = setupObserverMonitors({
-            logger,
+        const observerDeps = {
+            ...deps,
             PerformanceObserver : deps.PerformanceObserver,
-            meter,
-        });
+        };
+        registry.add(createInstrumentedLoaf(observerDeps));
+        registry.add(createInstrumentedEventTiming(observerDeps));
+        registry.add(createInstrumentedLayoutShift(observerDeps));
+        registry.add(createInstrumentedPaintTiming(observerDeps));
+        registry.add(createInstrumentedLcp(observerDeps));
     }
 
-    // 3. Worker monitor
-    let workerMonitor : WorkerLagMonitor | undefined;
-    if (deps.worker) {
-        workerMonitor = setupWorkerMonitor({
-            worker : deps.worker,
-            logger,
-            setIntervalFn,
-            clearIntervalFn,
-            clock,
-            meter,
-            ...(deps.workerPingIntervalMs !== undefined && { pingIntervalMs : deps.workerPingIntervalMs }),
-        });
-    }
-
-    // 4. Timer throttle detection
-    const throttleDetector = new TimerThrottleDetector(setTimeoutFn, clock, logger);
-    throttleDetector.start();
-
-    // 6. Clock reliability
-    let clockChecker : ClockReliabilityChecker | undefined;
-    if (deps.performance) {
-        clockChecker = new ClockReliabilityChecker(deps.performance);
-    }
-
-    // 7. GC spike detection
-    const gcDetector = new GCSpikeDetector();
-
-    // 8. Scheduling fairness (MessageChannel + queueMicrotask + setTimeout)
-    let schedulingMonitor : SchedulingFairnessMonitor | undefined;
-    if (deps.MessageChannel && deps.queueMicrotask) {
-        const microtaskHist = meter.createHistogram<SchedulingMeasurement>(
-            "lag_scheduling_microtask_histogram", { unit : "ms" });
-        const macrotaskHist = meter.createHistogram<SchedulingMeasurement>(
-            "lag_scheduling_macrotask_histogram", { unit : "ms" });
-        const messageChannelHist = meter.createHistogram<SchedulingMeasurement>(
-            "lag_scheduling_message_channel_histogram", { unit : "ms" });
-
-        schedulingMonitor = new SchedulingFairnessMonitor(
-            SCHEDULING_FAIRNESS_INTERVAL_MS,
-            (m : SchedulingMeasurement) => {
-                microtaskHist.record(m.microtaskMs, m);
-                macrotaskHist.record(m.macrotaskMs, m);
-                messageChannelHist.record(m.messageChannelMs, m);
-            },
-            logger,
-            setIntervalFn,
-            clearIntervalFn,
-            setTimeoutFn,
-            deps.queueMicrotask,
-            deps.MessageChannel,
-            clock,
-        );
-    }
-
-    // 9. Frame timing via requestAnimationFrame
-    let frameMonitor : FrameTimingMonitor | undefined;
+    // 5. Frame timing (requestAnimationFrame)
     if (deps.requestAnimationFrame && deps.cancelAnimationFrame) {
-        const frameDeltaHist = meter.createHistogram<FrameMeasurement>(
-            "lag_frame_delta_histogram", { unit : "ms" });
-        const fpsGauge = meter.createObservableGauge<Record<string, never>>(
-            "lag_frame_fps_gauge", { unit : "fps" });
-        const droppedRateGauge = meter.createObservableGauge<Record<string, never>>(
-            "lag_frame_dropped_rate_gauge", { unit : "ratio" });
-
-        let lastFps = 0;
-        let currentFrameMonitor : FrameTimingMonitor | undefined;
-        fpsGauge.addCallback((result) => {
-            if (lastFps > 0) result.observe(lastFps);
-        });
-        droppedRateGauge.addCallback((result) => {
-            if (currentFrameMonitor) {
-                result.observe(currentFrameMonitor.getDroppedFrameRate());
-            }
-        });
-
-        frameMonitor = new FrameTimingMonitor(
-            (m : FrameMeasurement) => {
-                frameDeltaHist.record(m.frameDeltaMs, m);
-                lastFps = m.fps;
-            },
-            logger,
-            deps.requestAnimationFrame,
-            deps.cancelAnimationFrame,
-            clock,
-        );
-        currentFrameMonitor = frameMonitor;
+        registry.add(createInstrumentedFrameTiming({
+            ...deps,
+            requestAnimationFrame : deps.requestAnimationFrame,
+            cancelAnimationFrame : deps.cancelAnimationFrame,
+        }));
     }
 
-    // 10. Idle availability via requestIdleCallback
-    let idleMonitor : IdleAvailabilityMonitor | undefined;
+    // 6. Idle availability (requestIdleCallback)
     if (deps.requestIdleCallback && deps.cancelIdleCallback) {
-        const idleRemainingHist = meter.createHistogram<IdleMeasurement>(
-            "lag_idle_time_remaining_histogram", { unit : "ms" });
-        const idleGapHist = meter.createHistogram<IdleMeasurement>(
-            "lag_idle_gap_histogram", { unit : "ms" });
-        const timeoutRateGauge = meter.createObservableGauge<Record<string, never>>(
-            "lag_idle_timeout_rate_gauge", { unit : "ratio" });
-
-        let currentIdleMonitor : IdleAvailabilityMonitor | undefined;
-        timeoutRateGauge.addCallback((result) => {
-            if (currentIdleMonitor) {
-                result.observe(currentIdleMonitor.getTimeoutRate());
-            }
-        });
-
-        idleMonitor = new IdleAvailabilityMonitor(
-            (m : IdleMeasurement) => {
-                idleRemainingHist.record(m.timeRemainingMs, m);
-                if (m.timeSinceLastIdleMs > 0) {
-                    idleGapHist.record(m.timeSinceLastIdleMs, m);
-                }
-            },
-            logger,
-            deps.requestIdleCallback,
-            deps.cancelIdleCallback,
-            clock,
-        );
-        currentIdleMonitor = idleMonitor;
+        registry.add(createInstrumentedIdleAvailability({
+            ...deps,
+            requestIdleCallback : deps.requestIdleCallback,
+            cancelIdleCallback : deps.cancelIdleCallback,
+        }));
     }
 
-    // 11. Memory monitor
-    let memoryMonitor : MemoryMonitor | undefined;
+    // 7. Scheduling fairness (MessageChannel + queueMicrotask)
+    if (deps.MessageChannel && deps.queueMicrotask) {
+        registry.add(createInstrumentedSchedulingFairness({
+            ...deps,
+            MessageChannel : deps.MessageChannel,
+            queueMicrotask : deps.queueMicrotask,
+        }));
+    }
+
+    // 8. Memory sampling
     if (deps.memorySource) {
-        const memoryUsedHist = meter.createHistogram<MemoryMeasurement>(
-            "lag_memory_used_bytes_histogram", { unit : "By" });
-        const memoryUsagePercentGauge = meter.createObservableGauge<Record<string, never>>(
-            "lag_memory_usage_percent_gauge", { unit : "%" });
-
-        let lastMeasurement : MemoryMeasurement | undefined;
-        memoryUsagePercentGauge.addCallback((result) => {
-            if (lastMeasurement?.usagePercent !== undefined) {
-                result.observe(lastMeasurement.usagePercent);
-            }
-        });
-
-        memoryMonitor = new MemoryMonitor(
-            deps.memoryIntervalMs ?? defaultMemoryIntervalMs,
-            deps.memorySource,
-            (m : MemoryMeasurement) => {
-                memoryUsedHist.record(m.usedBytes, m);
-                lastMeasurement = m;
-            },
-            logger,
-            setIntervalFn,
-            clearIntervalFn,
-            clock,
-        );
+        registry.add(createInstrumentedMemory({
+            ...deps,
+            memorySource : deps.memorySource,
+        }));
     }
 
-    // 12. Paint timing (FP, FCP) - one-shot, but observed via PerformanceObserver
-    let paintMonitor : PaintTimingMonitor | undefined;
-    if (deps.PerformanceObserver) {
-        const fpGauge = meter.createObservableGauge<Record<string, never>>(
-            "lag_paint_first_paint_gauge", { unit : "ms" });
-        const fcpGauge = meter.createObservableGauge<Record<string, never>>(
-            "lag_paint_first_contentful_paint_gauge", { unit : "ms" });
-
-        let currentPaintMonitor : PaintTimingMonitor | undefined;
-        fpGauge.addCallback((result) => {
-            if (currentPaintMonitor) {
-                const v = currentPaintMonitor.getFirstPaint();
-                if (v >= 0) result.observe(v);
-            }
-        });
-        fcpGauge.addCallback((result) => {
-            if (currentPaintMonitor) {
-                const v = currentPaintMonitor.getFirstContentfulPaint();
-                if (v >= 0) result.observe(v);
-            }
-        });
-
-        paintMonitor = new PaintTimingMonitor(
-            () => {},
-            logger,
-            deps.PerformanceObserver,
-        );
-        currentPaintMonitor = paintMonitor;
+    // 9. Worker ground-truth
+    if (deps.worker) {
+        registry.add(createInstrumentedWorkerLag({
+            ...deps,
+            worker : deps.worker,
+        }));
     }
 
-    // 13. LCP monitor
-    let lcpMonitor : LcpMonitor | undefined;
-    if (deps.PerformanceObserver) {
-        const lcpGauge = meter.createObservableGauge<Record<string, never>>(
-            "lag_lcp_gauge", { unit : "ms" });
-
-        let currentLcpMonitor : LcpMonitor | undefined;
-        lcpGauge.addCallback((result) => {
-            if (currentLcpMonitor) {
-                const v = currentLcpMonitor.getLCP();
-                if (v > 0) result.observe(v);
-            }
-        });
-
-        lcpMonitor = new LcpMonitor(
-            () => {},
-            logger,
-            deps.PerformanceObserver,
-        );
-        currentLcpMonitor = lcpMonitor;
-    }
-
-    // 14. Lifecycle state machine (mark/resolve API)
-    let lifecycleStateMachine : LifecycleStateMachine | undefined;
-    if (deps.lifecycleStateMachine) {
-        const transitionCounter = meter.createHistogram<{ from : string; to : string; trigger : string }>(
-            "lag_lifecycle_transition_count_histogram",
-            { unit : "count" },
-        );
-        lifecycleStateMachine = new LifecycleStateMachine(
-            deps.document,
-            deps.window,
-            clock,
-            logger,
-        );
-        // Periodically poll for new transitions and record metrics. Use a single
-        // long-lived mark; we resolve & re-mark on each poll.
-        let mark = lifecycleStateMachine.mark();
-        const transitionInterval = setIntervalFn(() => {
-            const transitions = lifecycleStateMachine!.resolve(mark);
-            for (const t of transitions) {
-                if (t.trigger !== "init") {
-                    transitionCounter.record(1, { from : t.from, to : t.to, trigger : t.trigger });
-                }
-            }
-            mark = lifecycleStateMachine!.mark();
-        }, 5_000);
-
-        // Tear down the polling interval on stop
-        const origStop = () => clearIntervalFn(transitionInterval);
-        // Attach to closure for the outer stop() to call
-        (lifecycleStateMachine as unknown as { __stopPoll : () => void }).__stopPoll = origStop;
-    }
-
-    // 15. Compute Pressure API (Chrome 125+)
-    let pressureMonitor : ComputePressureMonitor | undefined;
+    // 10. Compute Pressure API
     if (deps.PressureObserver) {
-        const pressureGauge = meter.createObservableGauge<Record<string, never>>(
-            "lag_pressure_state_gauge",
-            { unit : "ordinal" },
-        );
-        const pressureChangeHist = meter.createHistogram<PressureMeasurement>(
-            "lag_pressure_change_histogram",
-            { unit : "ordinal" },
-        );
-
-        let currentPressureMonitor : ComputePressureMonitor | undefined;
-        pressureGauge.addCallback((result) => {
-            if (currentPressureMonitor) {
-                const ord = currentPressureMonitor.getWorstStateOrdinal();
-                if (ord >= 0) result.observe(ord);
-            }
-        });
-
-        pressureMonitor = new ComputePressureMonitor(
-            deps.pressureSources ?? ["cpu"],
-            (m) => {
-                pressureChangeHist.record(m.stateOrdinal, m);
-            },
-            logger,
-            deps.PressureObserver,
-            deps.pressureSampleIntervalMs ?? 1_000,
-        );
-        currentPressureMonitor = pressureMonitor;
+        registry.add(createInstrumentedComputePressure({
+            ...deps,
+            PressureObserver : deps.PressureObserver,
+        }));
     }
 
-    // 16. GC signal detection via FinalizationRegistry (real GC events)
-    let gcSignal : GCSignalDetector | undefined;
+    // 11. Real GC signal via FinalizationRegistry
     if (deps.FinalizationRegistry) {
-        const gcEventCounter = meter.createHistogram<{ source : string }>(
-            "lag_gc_event_counter_histogram", { unit : "count" });
-        const gcRateGauge = meter.createObservableGauge<Record<string, never>>(
-            "lag_gc_recent_rate_gauge", { unit : "events" });
+        registry.add(createInstrumentedGCSignal({
+            ...deps,
+            FinalizationRegistry : deps.FinalizationRegistry,
+        }));
+    }
 
-        let currentGcSignal : GCSignalDetector | undefined;
-        gcRateGauge.addCallback((result) => {
-            if (currentGcSignal) {
-                // Events in the last 60 seconds — a useful "is GC active" view
-                result.observe(currentGcSignal.getRecentGCEvents(60_000));
-            }
-        });
-
-        // Wrap GCSignalDetector so we can record events as they happen.
-        // We do this by patching the registry construction to record metrics.
-        const wrappedFR = function <T>(this : unknown, cleanup : (held : T) => void) {
-            const originalRegistry = new deps.FinalizationRegistry!<T>((held : T) => {
-                gcEventCounter.record(1, { source : "canary" });
-                cleanup(held);
-            });
-            return originalRegistry;
-        } as unknown as FinalizationRegistryConstructor;
-
-        gcSignal = new GCSignalDetector(
-            wrappedFR,
-            clock,
-            setIntervalFn,
-            clearIntervalFn,
-            logger,
-            deps.gcCanaryIntervalMs ?? 250,
-        );
-        currentGcSignal = gcSignal;
+    // 12. Clock reliability (requires performance.now + timeOrigin)
+    if (deps.performance) {
+        registry.add(createInstrumentedClockReliability({
+            ...deps,
+            performance : deps.performance,
+        }));
     }
 
     return {
-        observers,
-        workerMonitor,
-        throttleDetector,
-        clockChecker,
-        gcDetector,
-        schedulingMonitor,
-        frameMonitor,
-        idleMonitor,
-        memoryMonitor,
-        paintMonitor,
-        lcpMonitor,
-        lifecycleStateMachine,
-        pressureMonitor,
-        gcSignal,
-        stop() {
-            observers?.stop();
-            workerMonitor?.stop();
-            throttleDetector?.stop();
-            schedulingMonitor?.stop();
-            frameMonitor?.stop();
-            idleMonitor?.stop();
-            memoryMonitor?.stop();
-            paintMonitor?.stop();
-            lcpMonitor?.stop();
-            (lifecycleStateMachine as unknown as { __stopPoll? : () => void } | undefined)?.__stopPoll?.();
-            pressureMonitor?.stop();
-            gcSignal?.stop();
-        },
+        registry,
+        gcDetector : new GCSpikeDetector(),
+        stop : () => registry.stopAll(),
+
+        get driftLag() { return monitorOf<DriftLag>(registry, "drift-lag"); },
+        get macrotaskLag() { return monitorOf<MacrotaskLag>(registry, "macrotask-lag"); },
+        get lifecycleStateMachine() { return monitorOf<LifecycleStateMachine>(registry, "lifecycle"); },
+        get loafMonitor() { return monitorOf<LongAnimationFrameMonitor>(registry, "loaf"); },
+        get eventTimingMonitor() { return monitorOf<EventTimingMonitor>(registry, "event-timing"); },
+        get layoutShiftMonitor() { return monitorOf<LayoutShiftMonitor>(registry, "layout-shift"); },
+        get paintMonitor() { return monitorOf<PaintTimingMonitor>(registry, "paint-timing"); },
+        get lcpMonitor() { return monitorOf<LcpMonitor>(registry, "lcp"); },
+        get frameMonitor() { return monitorOf<FrameTimingMonitor>(registry, "frame-timing"); },
+        get idleMonitor() { return monitorOf<IdleAvailabilityMonitor>(registry, "idle-availability"); },
+        get schedulingMonitor() { return monitorOf<SchedulingFairnessMonitor>(registry, "scheduling-fairness"); },
+        get memoryMonitor() { return monitorOf<MemoryMonitor>(registry, "memory"); },
+        get workerMonitor() { return monitorOf<WorkerLagMonitor>(registry, "worker-lag"); },
+        get pressureMonitor() { return monitorOf<ComputePressureMonitor>(registry, "compute-pressure"); },
+        get gcSignal() { return monitorOf<GCSignalDetector>(registry, "gc-signal"); },
+        get throttleDetector() { return monitorOf<TimerThrottleDetector>(registry, "throttle-detector"); },
+        get clockChecker() { return monitorOf<ClockReliabilityChecker>(registry, "clock-reliability"); },
     };
 }

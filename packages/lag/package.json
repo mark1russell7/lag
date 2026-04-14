@@ -1,5 +1,5 @@
 {
-  "name": "@lag/lag",
+  "name": "@lag/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",

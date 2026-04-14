@@ -1,15 +1,16 @@
-type NoopInstrument = { record(...args : unknown[]) : void };
-type NoopObservable = { addCallback(...args : unknown[]) : void };
+import type { Meter } from "./meter.js";
 
-const noopObservable : NoopObservable = { addCallback() {} };
-const noopInstrument : NoopInstrument = { record() {} };
-
-export function createNoopMeter() : {
-    createHistogram : (...args : unknown[]) => NoopInstrument;
-    createObservableGauge : (...args : unknown[]) => NoopObservable;
-} {
+/**
+ * A no-op Meter implementation — all `record()` and gauge callbacks are silent.
+ *
+ * Useful when:
+ * - Running the lag monitors without wanting to export telemetry (e.g. in
+ *   tests or environments without an OTel collector)
+ * - Providing a fallback for consumers who don't pass a real Meter
+ */
+export function createNoopMeter() : Meter {
     return {
-        createHistogram : () => noopInstrument,
-        createObservableGauge : () => noopObservable,
+        createHistogram : () => ({ record() {} }),
+        createObservableGauge : () => ({ addCallback() {} }),
     };
 }

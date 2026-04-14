@@ -1,5 +1,5 @@
 {
-  "name": "@lag/lag-integration-tests",
+  "name": "@lag/integration-tests",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "infra:down": "cd node_modules/@mark1russell7/grafana-infra && docker compose down"
   },
   "dependencies": {
-    "@lag/lag": "workspace:*",
-    "@lag/lag-worker": "workspace:*",
+    "@lag/core": "workspace:*",
+    "@lag/worker": "workspace:*",
     "@mark1russell7/otel-ts": "github:mark1russell7/otel-ts"
   },
   "devDependencies": {

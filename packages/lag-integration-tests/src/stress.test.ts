@@ -5,8 +5,8 @@ import {
     createOtelLoggerAdapter,
     createTeeLogger,
     type AllMonitorHandles,
-} from "@lag/lag";
-import { createLagWorker } from "@lag/lag-worker";
+} from "@lag/core";
+import { createLagWorker } from "@lag/worker";
 import {
     runWorkload,
     lightLoad,

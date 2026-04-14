@@ -5,8 +5,8 @@ import {
     createOtelLoggerAdapter,
     createTeeLogger,
     type AllMonitorHandles,
-} from "@lag/lag";
-import { createLagWorker } from "@lag/lag-worker";
+} from "@lag/core";
+import { createLagWorker } from "@lag/worker";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
 const MIMIR_QUERY_URL = "http://localhost:9009/prometheus/api/v1/query";
@@ -111,7 +111,7 @@ describe("Lag Monitor Integration", () => {
         await otel?.shutdown();
     });
 
-    it("collects ContinuousLag and DriftLag measurements by blocking the main thread", async () => {
+    it("collects DriftLag measurements by blocking the main thread", async () => {
         // Block main thread to generate measurable lag
         for (let i = 0; i < 5; i++) {
             blockMainThread(200); // 200ms block = ~100ms lag per measurement cycle
@@ -143,10 +143,14 @@ describe("Lag Monitor Integration", () => {
     });
 
     it("Performance Observer monitors are active", () => {
-        // Verify the observer handles were created
-        // Note: LoAF and EventTiming may not fire in an automated test
-        // because there's no real user interaction or animation frames
-        expect(handles.observers).toBeDefined();
+        // LoAF/INP/CLS/Paint/LCP all wired via individual instrumented factories.
+        // They may not fire in an automated test (no user interaction / animation),
+        // but the handles should exist.
+        expect(handles.loafMonitor).toBeDefined();
+        expect(handles.eventTimingMonitor).toBeDefined();
+        expect(handles.layoutShiftMonitor).toBeDefined();
+        expect(handles.paintMonitor).toBeDefined();
+        expect(handles.lcpMonitor).toBeDefined();
     });
 
     it("timer throttle detector is running", () => {
@@ -257,20 +261,20 @@ describe("Lag Monitor Integration", () => {
 
         // Query Mimir — this may fail if running without the Grafana stack
         // but the test still passes (we verify the client-side doesn't crash)
-        const continuousCount = await queryMimir(
-            `lag_continuous_histogram_count{service_name="${SERVICE_NAME}"}`,
+        const driftCount = await queryMimir(
+            `lag_drift_histogram_count{service_name="${SERVICE_NAME}"}`,
         );
         const macrotaskCount = await queryMimir(
             `lag_macrotask_histogram_count{service_name="${SERVICE_NAME}"}`,
         );
 
         // Log what we got — useful for debugging
-        console.log(`Mimir query results: continuous=${continuousCount}, macrotask=${macrotaskCount}`);
+        console.log(`Mimir query results: drift=${driftCount}, macrotask=${macrotaskCount}`);
 
         // If Mimir is available, we expect metrics
         // If not available (CI without docker), test still passes
-        if (continuousCount > 0) {
-            expect(continuousCount).toBeGreaterThan(0);
+        if (driftCount > 0) {
+            expect(driftCount).toBeGreaterThan(0);
             console.log("Metrics confirmed in Mimir!");
         }
     });

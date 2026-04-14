@@ -3,7 +3,6 @@ export { DriftLag } from "./DriftLag.js";
 export { MacrotaskLag } from "./MacrotaskLag.js";
 export { LagMonitor, type LagMonitorConstructor } from "./LagMonitor.js";
 export { LagLogger } from "./LagLogger.js";
-export { setupLagMonitors } from "./setup-lag-monitors.js";
 export type {
     Logger,
     SetTimeoutFn,
@@ -27,8 +26,27 @@ export {
 } from "./constants.js";
 
 // --- Phase 1: OTel integration ---
+export type { Meter, Histogram, ObservableGauge, ObservableResult } from "./meter.js";
 export { createNoopMeter } from "./noop-meter.js";
 export { createOtelLoggerAdapter, createTeeLogger, type OtelLogger } from "./otel-logger-adapter.js";
+
+// --- Architecture: handles, registry, dep groups ---
+export type { MonitorHandle } from "./monitor-handle.js";
+export { MonitorRegistry } from "./monitor-registry.js";
+export type {
+    CoreDeps,
+    TimerDeps,
+    LifecycleDeps,
+    ObserverDeps,
+    FrameDeps,
+    IdleDeps,
+    SchedulingDeps,
+    MemoryDeps,
+    PressureDeps,
+    GCDeps,
+    WorkerMonitorDeps,
+    ClockReliabilityDeps,
+} from "./dep-groups.js";
 
 // --- Phase 2: Performance Observer monitors ---
 export { ObserverMonitor } from "./ObserverMonitor.js";
@@ -37,7 +55,6 @@ export { EventTimingMonitor, type EventTimingReport } from "./EventTimingMonitor
 export { LayoutShiftMonitor, type LayoutShiftReport } from "./LayoutShiftMonitor.js";
 export { PaintTimingMonitor, type PaintReport } from "./PaintTimingMonitor.js";
 export { LcpMonitor, type LcpReport } from "./LcpMonitor.js";
-export { setupObserverMonitors, type ObserverMonitorHandles } from "./setup-observer-monitors.js";
 export type {
     PerformanceEntryLike,
     PerformanceObserverInit,
@@ -118,8 +135,10 @@ export {
 // --- Phase 4: Web Worker monitor ---
 export { WorkerLagMonitor, type WorkerLike, type WorkerLagMeasurement } from "./WorkerLagMonitor.js";
 export { createWorkerHandler, type WorkerDeps } from "./lag-worker.js";
-export { setupWorkerMonitor } from "./setup-worker-monitor.js";
 export type { MainToWorkerMessage, WorkerToMainMessage, PingMessage, PongMessage, ConfigMessage, StopMessage } from "./worker-protocol.js";
 
 // --- Phase 5: Unified setup ---
 export { setupAllMonitors, type AllMonitorDeps, type AllMonitorHandles } from "./setup-all-monitors.js";
+
+// --- Instrumented factories (one per monitor, each returns a MonitorHandle) ---
+export * from "./instrumented/index.js";

@@ -1,5 +1,5 @@
 {
-  "name": "@lag/lag-worker",
+  "name": "@lag/worker",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,6 +15,6 @@
     "build": "tsc -b"
   },
   "dependencies": {
-    "@lag/lag": "workspace:*"
+    "@lag/core": "workspace:*"
   }
 }

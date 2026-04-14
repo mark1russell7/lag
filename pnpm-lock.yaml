@@ -23,10 +23,10 @@ importers:
 
   packages/lag-integration-tests:
     dependencies:
-      '@lag/lag':
+      '@lag/core':
         specifier: workspace:*
         version: link:../lag
-      '@lag/lag-worker':
+      '@lag/worker':
         specifier: workspace:*
         version: link:../lag-worker
       '@mark1russell7/otel-ts':
@@ -51,7 +51,7 @@ importers:
 
   packages/lag-worker:
     dependencies:
-      '@lag/lag':
+      '@lag/core':
         specifier: workspace:*
         version: link:../lag
 

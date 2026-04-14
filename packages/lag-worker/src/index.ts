@@ -1,4 +1,4 @@
-import type { WorkerLike } from "@lag/lag/WorkerLagMonitor.js";
+import type { WorkerLike } from "@lag/core/WorkerLagMonitor.js";
 
 export function createLagWorker() : WorkerLike {
     const worker = new Worker(
