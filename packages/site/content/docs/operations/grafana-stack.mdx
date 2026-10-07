@@ -1,0 +1,16 @@
+---
+title: Grafana stack
+description: The backend that receives the data from the browser, with Grafana Alloy, Mimir, Loki, Tempo and Grafana.
+order: 50
+status: draft
+---
+
+The browser exports the metrics with OTLP over HTTP. Grafana Alloy receives the data and sends the metrics to Mimir, the logs to Loki and the traces to Tempo. The integration tests start this stack with Docker Compose before they run.
+
+## Start the stack
+
+## Send data from a page
+
+## Ports and addresses
+
+## Stop the stack

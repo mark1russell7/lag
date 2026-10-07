@@ -1,0 +1,22 @@
+---
+title: Browser support
+description: Which browsers have the APIs that the monitors use, and what happens when an API is missing.
+order: 2
+status: draft
+---
+
+import { apiSupport, apiSupportNotes } from "./browser-support.data";
+
+This page shows which browsers have the APIs that the monitors use. `setupAllMonitors()` starts a monitor only if its APIs are in the deps that the caller gives. A monitor that fails to start does not stop the other monitors.
+
+<Callout type="caution" title="Not verified">
+  Examine each cell against the release notes of the browser before you use the table to make a decision.
+</Callout>
+
+## Support by API
+
+<SupportMatrix rows={apiSupport} footnotes={apiSupportNotes} caption="Browser support of the APIs that the monitors use" />
+
+## What happens when an API is missing
+
+## Sources

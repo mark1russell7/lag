@@ -1,0 +1,75 @@
+---
+title: Writing style
+description: The rules for the text of this site, and how to add a page.
+order: 70
+status: draft
+---
+
+Write every page in ASD-STE100 Simplified Technical English. Use one MDX file for each page. The site makes the sidebar, the table of contents and the links to the previous and next pages from the files.
+
+## Simplified Technical English
+
+- Use the active voice.
+- Use the simple present tense for descriptions.
+- Use the imperative for instructions. Write one instruction in each sentence.
+- Write at most 20 words in an instruction, and at most 25 words in a description.
+- Write at most 6 sentences in a paragraph.
+- Do not use contractions.
+- Use one word for one meaning: "use", not "utilize"; "start", not "initiate"; "show", not "display"; "make sure", not "ensure"; "about", not "approximately".
+- Write API names, file names and commands in code format, for example `setupAllMonitors()`.
+
+## Add a page
+
+1. Add an `.mdx` file in `packages/site/content/docs`, `packages/site/content/thesis` or `packages/site/content/research`. The path of the file is the path of the page.
+2. Add the frontmatter: `title`, `description`, `order` and, for a page that is not complete, `status: draft`.
+3. Start the text at heading level 2 (`##`). The page shows the title as the heading of level 1.
+
+The table of contents shows the headings of level 2 and 3.
+
+## Frontmatter
+
+| Field | Type | What it does |
+| --- | --- | --- |
+| `title` | Text | The title of the page, in the sidebar and as the level 1 heading. |
+| `description` | Text | One sentence under the title. |
+| `order` | Number | The position in the section. Lower numbers come first. |
+| `status` | `draft` or `final` | Optional. A draft page shows a note that it is a draft. |
+
+## Order and groups
+
+The pages in a folder show as one group in the sidebar. The group has the position of the lowest `order` in the folder. Give each section one range of numbers, for example 10 to 19 for the pages in `concepts/`.
+
+## Components
+
+Each MDX page can use these components without an import. Put the data for a component in a TypeScript file next to the page, for example `browser-support.data.ts`. Then import the data in the page.
+
+| Component | Use it for |
+| --- | --- |
+| `Callout` | A note, a warning or a caution. |
+| `Figure` | Content with a caption. |
+| `Tabs` and `Tab` | Content in tabs, for example one command for each tool. |
+| `Mermaid` | A state, sequence or flow diagram. The `chart` prop gives the diagram text. |
+| `ArchitectureMap` | The map of the system. |
+| `PlotFigure` | A chart. The page gives the Plot options and a text alternative. |
+| `MetricTable` | The metrics of a monitor. |
+| `SupportMatrix` | The browser support of features. |
+
+To add a component, add it to `packages/site/src/mdx/component-map.tsx`.
+
+## Callouts
+
+<Callout type="note">
+  A note gives information that helps the reader.
+</Callout>
+
+<Callout type="caution">
+  A caution tells the reader about a risk to performance or to other parts of the system.
+</Callout>
+
+<Callout type="warning">
+  A warning tells the reader about a risk of wrong measurements or lost data.
+</Callout>
+
+## Drafts
+
+Set `status: draft` on a page that is not complete, or on a page with facts that nobody examined. Then the page shows a note that it is a draft. Do not write facts about the library that the code or the tests do not show.

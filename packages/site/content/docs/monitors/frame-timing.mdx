@@ -1,0 +1,22 @@
+---
+title: Frame timing
+description: Measures the time between animation frame callbacks, the frame rate and the dropped frames.
+order: 28
+status: draft
+---
+
+import { frameTimingMetrics } from "./metrics.data";
+
+`FrameTimingMonitor` measures the time between two `requestAnimationFrame` callbacks. It also reports the frame rate and the part of the frames that the page dropped. The dropped-frame rate assumes a 60 Hz screen.
+
+## What it measures
+
+## How it works
+
+## Metrics
+
+<MetricTable metrics={frameTimingMetrics} />
+
+## Configuration
+
+## Limits

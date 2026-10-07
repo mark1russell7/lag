@@ -1,0 +1,24 @@
+---
+title: The event loop
+description: How tasks, microtasks and frames share the main thread, and why one long task delays all the work after it.
+order: 10
+status: draft
+---
+
+import { eventLoopChart } from "./diagrams.data";
+
+The browser runs JavaScript, style, layout and paint on one main thread. A task runs to its end before the next task starts. If a task is long, it delays every input, timer and frame after it. Each monitor measures this delay in a different way.
+
+<Mermaid
+  chart={eventLoopChart}
+  title="A simplified event loop"
+  caption="A simplified view of the event loop. The real loop has more queues and more rules."
+/>
+
+## Tasks and microtasks
+
+## Frames and rendering
+
+## What a long task does
+
+## How each monitor sees the delay

@@ -1,0 +1,20 @@
+---
+title: Timer throttling
+description: Reports when the browser throttles the timers of the page.
+order: 34
+status: draft
+---
+
+import { throttleMetrics } from "./metrics.data";
+
+`TimerThrottleDetector` reports 1 while the browser throttles timers, and 0 at other times. Throttled timers make the measurements of timer-based monitors unreliable.
+
+## What it measures
+
+## How it works
+
+## Metrics
+
+<MetricTable metrics={throttleMetrics} />
+
+## Limits

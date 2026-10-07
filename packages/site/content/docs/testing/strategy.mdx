@@ -1,0 +1,40 @@
+---
+title: Test strategy
+description: The kinds of tests in the project, where they run, and how the results get to this site.
+order: 60
+status: draft
+---
+
+import { heavyProfileChart, heavyProfileTable } from "./strategy.data";
+
+The unit tests of `@lag/core` use fake timers, so they are fast and give the same result each time. The integration tests run the monitors in a real Chromium, with Vitest browser mode and Playwright. The stress tests use the workload profiles of `@lag/load` to make main-thread load.
+
+<Tabs label="Test commands">
+  <Tab label="Unit tests">
+    Run `pnpm --filter @lag/core test`.
+  </Tab>
+  <Tab label="Browser tests">
+    Run `npx vitest run` in `packages/lag-integration-tests`. Without Docker, the OTLP export fails quietly. The assertions do not depend on the export.
+  </Tab>
+  <Tab label="Site tests">
+    Run `pnpm --filter @lag/site test`.
+  </Tab>
+</Tabs>
+
+## Unit tests
+
+## Browser tests
+
+## Stress tests and workload profiles
+
+<PlotFigure
+  title="Lag event durations of the heavy profile"
+  description="One box for each lag spec of the heavy profile. Each box shows the middle half of the sampled durations; the line in the box is the median."
+  options={heavyProfileChart}
+  table={heavyProfileTable}
+  caption="Samples of the duration distribution of each lag spec in the heavy profile of @lag/load, with seed 42. The page only draws the numbers. It runs no load."
+/>
+
+## Coverage and mutation testing
+
+## How the results get to this site

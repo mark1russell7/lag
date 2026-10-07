@@ -1,0 +1,22 @@
+---
+title: Memory
+description: Samples the memory use of the page with the best API that the browser has.
+order: 31
+status: draft
+---
+
+import { memoryMetrics } from "./metrics.data";
+
+`MemoryMonitor` samples the memory use of the page. If the page is cross-origin isolated, it uses `measureUserAgentSpecificMemory()`. Otherwise, it uses the Chrome `performance.memory` API. The `source` attribute tells which API measured the value.
+
+## What it measures
+
+## Cross-origin isolation
+
+## Metrics
+
+<MetricTable metrics={memoryMetrics} />
+
+## Configuration
+
+## Limits

@@ -1,0 +1,27 @@
+---
+title: Page lifecycle
+description: The lifecycle states that the monitors track, and why some monitors pause while the page is hidden.
+order: 11
+status: draft
+---
+
+import { lifecycleChart } from "./diagrams.data";
+import { lifecycleMetrics } from "../monitors/metrics.data";
+
+`LifecycleStateMachine` tracks the Page Lifecycle state of the page: active, passive, hidden, frozen or terminated. Browsers throttle timers and stop animation frames in hidden tabs. For this reason, the timer, frame and idle monitors pause while the page is hidden or frozen.
+
+<Mermaid
+  chart={lifecycleChart}
+  title="Page Lifecycle states and the events that change them"
+  caption="A simplified view of the states. A pagehide event can occur in any state."
+/>
+
+## The states
+
+## The transitions
+
+## How the monitors use the state
+
+## The transition metric
+
+<MetricTable metrics={lifecycleMetrics} />

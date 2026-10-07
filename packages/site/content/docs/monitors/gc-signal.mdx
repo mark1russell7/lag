@@ -1,0 +1,20 @@
+---
+title: Garbage collection signal
+description: Detects garbage collection cycles with a FinalizationRegistry canary.
+order: 33
+status: draft
+---
+
+import { gcMetrics } from "./metrics.data";
+
+`GCSignalDetector` detects garbage collection cycles with a `FinalizationRegistry` canary. It counts a cycle when the browser finalizes the canary object.
+
+## What it measures
+
+## How it works
+
+## Metrics
+
+<MetricTable metrics={gcMetrics} />
+
+## Limits
