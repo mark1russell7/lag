@@ -11,7 +11,8 @@
     "test:chromium": "pnpm --filter @lag/integration-tests test:chromium",
     "test:integration": "pnpm --filter @lag/integration-tests test",
     "test:e2e": "pnpm --filter @lag/integration-tests test:e2e",
-    "coverage": "pnpm --filter @lag/core coverage"
+    "coverage": "pnpm --filter @lag/core coverage",
+    "mutation": "pnpm --filter @lag/core mutation"
   },
   "devDependencies": {
     "tsx": "^4.21.0",

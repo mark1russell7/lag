@@ -10,3 +10,8 @@
 
 # Coverage reports (pnpm coverage)
 **/coverage/
+
+# Mutation testing (pnpm mutation): reports and the incremental file
+**/reports/mutation/
+**/reports/stryker-incremental.json
+**/.stryker-tmp/
