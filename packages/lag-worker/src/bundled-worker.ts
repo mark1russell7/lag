@@ -1,6 +1,7 @@
 import { createWorkerHandler, type HangEvent } from "@lag/core/lag-worker.js";
 import type { HangOptions } from "@lag/core/worker-protocol.js";
 import { encodeOtlpLogs } from "@lag/core/otlp-json.js";
+import { formatEventLine } from "@lag/core/event-line.js";
 import { createIndexedDbHangJournal } from "@lag/core/browser/indexeddb-journal.js";
 
 // Read timeOrigin one time: Safari calculates it again from the wall clock at each read
@@ -15,14 +16,16 @@ const clock = { now : () => origin + performance.now() };
 function reportHang(event : HangEvent, options : HangOptions) : void {
     const target = options.report;
     if (!target) return;
+    const attributes = { ...event.attributes, phase : event.phase, duration_ms : event.durationMs };
     const body = encodeOtlpLogs(target.resource ?? {}, "@lag/worker", [{
         // OTLP log times are wall-clock times, as the OpenTelemetry SDK writes them
         timeMs : Date.now(),
         eventName : "lag.main_thread.hang",
         severityText : "WARN",
         severityNumber : 13,
-        body : `Main thread hang ${event.phase}`,
-        attributes : { ...event.attributes, phase : event.phase, duration_ms : event.durationMs },
+        // The same line as the events of the main thread (the name and the attributes)
+        body : formatEventLine("lag.main_thread.hang", attributes),
+        attributes,
     }]);
     // sendBeacon does not exist in workers; keepalive lets the request finish if the page closes
     fetch(target.url, { method : "POST", headers : { "Content-Type" : "application/json" }, body, keepalive : true })

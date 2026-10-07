@@ -91,7 +91,7 @@ All durations are in milliseconds. All metrics are counters or histograms. The a
 | MemoryMonitor | `lag_memory_usage_ratio_histogram` | histogram | `1` |  | The used heap divided by the heap limit. Only the legacy source supplies the limit. |
 | ComputePressureMonitor | `lag_pressure_state_histogram` | histogram | `1` | `source` | The compute pressure state of each record: 0 nominal, 1 fair, 2 serious, 3 critical. |
 | GCSignalDetector | `lag_gc_events` | counter | `{gc}` |  | The number of garbage collections that the detector saw. |
-| LifecycleStateMachine | `lag_lifecycle_transitions` | counter | `{transition}` | `from`, `to`, `trigger` | The number of page lifecycle transitions. |
+| LifecycleStateMachine | `lag_lifecycle_transitions` | counter | `{transition}` | `from`, `to`, `trigger` | The number of page lifecycle transitions. A restore from the back/forward cache always counts, with the trigger pageshow, also when the state does not change (Chromium makes the page visible before pageshow). |
 | TimerThrottleDetector | `lag_timer_calibrations` | counter | `{calibration}` | `throttled` | The number of timer calibration rounds. A throttled round shows that the browser slowed the timers. |
 | ClockReliabilityChecker | `lag_clock_resolution_histogram` | histogram | `ms` |  | The resolution of performance.now(). The checker measures it one time for each page. |
 | ClockDriftMonitor | `lag_clock_skew_histogram` | histogram | `ms` |  | The absolute difference between Date.now() and the absolute monotonic clock (timeOrigin from the start plus performance.now()). |

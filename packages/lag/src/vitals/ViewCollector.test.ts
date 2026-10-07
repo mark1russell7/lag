@@ -119,6 +119,16 @@ describe("ViewCollector", () => {
             });
         });
 
+        it("leaves out the interaction that started a soft navigation, also when its entry comes late", () => {
+            const view : PageView = { id : "view", navigationType : "soft-navigation", startTime : 3_000, interactionId : 77 };
+            const c = new ViewCollector(view, describeNode);
+            c.addEvent(event({ interactionId : 77, startTime : 3_000, duration : 240, name : "click" }));
+            expect(byName(c.values())["INP"]).toBeUndefined();
+
+            c.addEvent(event({ interactionId : 80, startTime : 4_000, duration : 96 }));
+            expect(byName(c.values())["INP"]!.value).toBe(96);
+        });
+
         it("counts the processing of other events in the frame, as web-vitals does", () => {
             const c = collector();
             // A pointerover handler (no interaction) runs in the frame of the click, after the click handler

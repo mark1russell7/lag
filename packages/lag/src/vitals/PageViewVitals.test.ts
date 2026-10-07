@@ -505,7 +505,7 @@ describe("PageViewVitals", () => {
         });
 
         it("gives no value for a vital whose entry type the browser does not have, as web-vitals", () => {
-            // Firefox has no layout-shift entries. Safari also has no event entries.
+            // Firefox has no layout-shift entries. Safari before 26.2 also has no event entries.
             const t = setup({ supported : ["paint", "largest-contentful-paint"] });
             t.observer.deliver("paint", paintEntry(500));
             t.observer.deliver("largest-contentful-paint", lcpEntry(800));

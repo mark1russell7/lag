@@ -72,8 +72,9 @@ const FRAME_GROUP_MS = 8;
 
 /**
  * The collector looks for the frame of a new entry in this number of recent
- * frames (web-vitals keeps 50). The facts of an INP candidate keep the group
- * of their frame.
+ * frames. web-vitals keeps 10 or more recent frames, and the frames of its
+ * candidates. Here, the facts of an INP candidate keep the group of their
+ * frame.
  */
 const MAX_RECENT_FRAMES = 50;
 
@@ -124,6 +125,9 @@ export class ViewCollector {
         const frame = this.frameOf(entry);
         const id = entry.interactionId;
         if (!id) return;
+        // As web-vitals: the interaction that started a soft navigation belongs to the view that ended,
+        // also when the browser delivers one of its entries after the soft-navigation entry
+        if (this.view.navigationType === "soft-navigation" && id === this.view.interactionId) return;
         this.inp.add(id, entry.duration);
         if (!this.inp.has(id)) return;
 

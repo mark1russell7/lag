@@ -5,8 +5,10 @@ import type { Clock } from "./types.js";
  * - `hidden`: the page was hidden. Browsers throttle timers and stop
  *   `requestAnimationFrame`.
  * - `frozen`: the page was frozen or in the back/forward cache.
- * - `suspend`: the system or the browser process stopped (for example, the
- *   device slept) while the monotonic clock continued.
+ * - `suspend`: the system or the browser process stopped, for example while
+ *   the device slept. The worker finds a suspend in which the monotonic clock
+ *   continued (Windows). The clock-drift monitor finds a suspend in which it
+ *   stopped (macOS, Linux, Android and iOS).
  */
 export type UnreliableReason = "hidden" | "frozen" | "suspend";
 

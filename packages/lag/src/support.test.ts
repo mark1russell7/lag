@@ -63,11 +63,11 @@ describe("OTLP JSON encoding", () => {
 });
 
 describe("event sinks", () => {
-    it("the OTel event sink emits a log record with the event name as its body, without empty attributes", () => {
+    it("the OTel event sink emits a log record with the event name, without empty attributes", () => {
         const otelLogger = { emit : vi.fn() };
         createOtelEventSink(otelLogger).emit("browser.web_vital", {
-            name : "INP",
             value : 240,
+            name : "INP",
             missing : undefined as unknown as string,
         });
 
@@ -75,9 +75,20 @@ describe("event sinks", () => {
             eventName : "browser.web_vital",
             severityText : "INFO",
             severityNumber : 9,
-            body : "browser.web_vital",
+            body : "browser.web_vital name=INP value=240",
             attributes : { name : "INP", value : 240 },
         });
+    });
+
+    it("gives each event a different body, so that Loki keeps events of the same millisecond", () => {
+        const otelLogger = { emit : vi.fn() };
+        const sink = createOtelEventSink(otelLogger);
+        for (const name of ["lcp", "fcp", "ttfb"]) sink.emit("browser.web_vital", { "browser.web_vital.name" : name });
+        sink.emit("lag.stall", { kind : "hang", target : "#a b", empty : "", note : 'say "hi"', ok : true });
+
+        const bodies = otelLogger.emit.mock.calls.map(([record]) => (record as { body : string }).body);
+        expect(new Set(bodies).size).toBe(4);
+        expect(bodies[3]).toBe('lag.stall empty="" kind=hang note="say \\"hi\\"" ok=true target="#a b"');
     });
 
     it("the no-op event sink accepts events", () => {

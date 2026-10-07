@@ -1,6 +1,7 @@
 import type { Logger } from "./types.js";
 import type { AttributeValue } from "./meter.js";
 import type { EventSink } from "./events.js";
+import { formatEventLine } from "./event-line.js";
 
 // Duck-typed OTel Logger interface — matches @opentelemetry/api-logs Logger
 // without taking a hard dependency on the OTel package.
@@ -87,6 +88,7 @@ export function createOtelLoggerAdapter(otelLogger : OtelLogger) : Logger {
  * This function makes an event sink that sends each event as an OTel log
  * record with `eventName`. The OpenTelemetry conventions for events make
  * `eventName` necessary. The sink removes the attributes that have no value.
+ * The body has the name and the attributes (refer to `formatEventLine`).
  */
 export function createOtelEventSink(otelLogger : OtelLogger) : EventSink {
     return {
@@ -99,8 +101,7 @@ export function createOtelEventSink(otelLogger : OtelLogger) : EventSink {
                 eventName : name,
                 severityText : "INFO",
                 severityNumber : 9,
-                // A log pipeline can drop or merge records that have an empty body
-                body : name,
+                body : formatEventLine(name, clean),
                 attributes : clean,
             });
         },
