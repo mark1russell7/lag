@@ -165,7 +165,7 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
         "The number of garbage collections that the detector saw."),
 
     lifecycleTransitions : metric("lag_lifecycle_transitions", "counter", "{transition}", "LifecycleStateMachine",
-        "The number of page lifecycle transitions.",
+        "The number of page lifecycle transitions. A restore from the back/forward cache always counts, with the trigger pageshow, also when the state does not change (Chromium makes the page visible before pageshow).",
         {
             from : LIFECYCLE_STATES,
             to : LIFECYCLE_STATES,

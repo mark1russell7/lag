@@ -57,7 +57,7 @@ All durations are in milliseconds. All metrics are counters or histograms. The a
 | Monitor | Metric | Type | Unit | Attributes | Description |
 | --- | --- | --- | --- | --- | --- |
 | DriftLag | `lag_drift_histogram` | histogram | `ms` |  | The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag. |
-| DriftLag | `lag_drift_baseline_histogram` | histogram | `ms` |  | The idle duration of one timer step, from the recent steps that are not blocks: the timer granularity of the browser and the operating system. DriftLag subtracts it. |
+| DriftLag | `lag_drift_baseline_histogram` | histogram | `ms` |  | The idle duration of one timer step: the mean of the recent steps that are not blocks. It is the timer granularity of the browser and the operating system. DriftLag subtracts it. |
 | MacrotaskLag | `lag_macrotask_histogram` | histogram | `ms` |  | The time that a zero-delay timeout waits in the task queue. The monitor measures one sample every 5 seconds. |
 | MeasurementConditions | `lag_samples_discarded` | counter | `{sample}` | `reason` | The number of samples that a monitor did not record because the measurement window was not valid. |
 | MeasurementConditions | `lag_stalls` | counter | `{stall}` | `kind` | The number of stall episodes: very long samples (5000 ms or more) of all monitors whose windows overlap count as one episode. A hang has no evidence of a suspend. A suspend has evidence that the system stopped. |
@@ -75,10 +75,10 @@ All durations are in milliseconds. All metrics are counters or histograms. The a
 | EventTimingMonitor | `lag_event_presentation_delay_histogram` | histogram | `ms` | `interaction` | The time from the end of the event handlers to the next paint. |
 | LayoutShiftMonitor | `lag_layout_shift_histogram` | histogram | `1` |  | The score of each layout shift that did not follow user input. |
 | PageViewVitals | `lag_web_vital_inp_histogram` | histogram | `ms` | `navigation_type` | Interaction to Next Paint (INP) for each page view. |
-| PageViewVitals | `lag_web_vital_cls_histogram` | histogram | `1` | `navigation_type` | Cumulative Layout Shift (CLS) for each page view. |
+| PageViewVitals | `lag_web_vital_cls_histogram` | histogram | `1` | `navigation_type` | Cumulative Layout Shift (CLS) for each page view, in browsers that have layout-shift entries. |
 | PageViewVitals | `lag_web_vital_lcp_histogram` | histogram | `ms` | `navigation_type` | Largest Contentful Paint (LCP) for each page view. |
 | PageViewVitals | `lag_web_vital_fcp_histogram` | histogram | `ms` | `navigation_type` | First Contentful Paint (FCP) for each page view. |
-| PageViewVitals | `lag_web_vital_ttfb_histogram` | histogram | `ms` | `navigation_type` | Time to First Byte (TTFB) for each page view that has a network response. |
+| PageViewVitals | `lag_web_vital_ttfb_histogram` | histogram | `ms` | `navigation_type` | Time to First Byte (TTFB) for each page view. A restore from the back/forward cache and a soft navigation have no network response and get 0, as in web-vitals. A page without a navigation entry gets no value. |
 | FrameTimingMonitor | `lag_frame_delta_histogram` | histogram | `ms` |  | The time between two animation frame callbacks. |
 | FrameTimingMonitor | `lag_frames` | counter | `{frame}` | `outcome` | The number of delivered frames and the estimated number of dropped frames. |
 | IdleAvailabilityMonitor | `lag_idle_time_remaining_histogram` | histogram | `ms` |  | The idle time that was available when an idle callback started. |
