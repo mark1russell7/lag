@@ -1,96 +1,126 @@
 # lag
 
-Main-thread responsiveness monitoring for browser apps, exported as OpenTelemetry metrics.
+The library measures the lag of the main thread in browser apps, on the devices of real users. It exports the results as OpenTelemetry metrics and events.
 
-A set of independent monitors, each watching one signal of main-thread health: timer drift, task-queue delay, long animation frames, interaction latency (INP), layout shifts, frame delivery, idle time, memory, compute pressure, GC, and a Web Worker that measures main-thread blocking from outside the main thread. `setupAllMonitors()` wires all of them to an OTel `Meter`. The dashboard lives in [grafana-infra](https://github.com/mark1russell7/grafana-infra).
+Each monitor measures one signal, for example blocked time, queueing delay, hangs, frame delays, input latency (INP) or the Core Web Vitals of each page view. The library calibrates each probe against the browser and the operating system. It discards each sample that a hidden page, a frozen page or a system suspend makes incorrect.
+
+The website in `packages/site` has the documentation, the thesis, the research and the test results.
 
 ## Packages
 
-| Package | Purpose |
-| --- | --- |
-| `@lag/core` (`packages/lag`) | The monitors, their OTel wiring, `setupAllMonitors`. No DOM or OTel dependency: every browser API is injected through duck-typed deps, so it is fully unit-testable with fake timers. |
-| `@lag/worker` (`packages/lag-worker`) | `createLagWorker()` — the Web Worker behind the worker-lag monitor. Bundler-friendly (`new Worker(new URL(...))`). |
-| `@lag/integration-tests` | Real-Chromium tests (Vitest browser mode + Playwright), stress profiles, and a seedable lag generator. Exports to the Grafana stack when it's running. |
-| `@lag/scripts` | `pnpm new` scaffolds a workspace package. |
+| Package | Folder | What it does |
+| --- | --- | --- |
+| `@lag/core` | `packages/lag` | The monitors, the measurement conditions, the metric catalog, the browser adapter and `setupAllMonitors()`. It has no DOM or OpenTelemetry dependency. |
+| `@lag/worker` | `packages/lag-worker` | The Web Worker of the worker-lag monitor. It sends heartbeats, detects hangs and keeps the hang journal in IndexedDB. |
+| `@lag/load` | `packages/load` | Synthetic main-thread load for the tests and the playground. |
+| `@lag/report` | `packages/report` | The data format of the test reports, and the converters from Vitest, Istanbul and Stryker. |
+| `@lag/ste-lint` | `packages/ste-lint` | A linter for the writing rules of ASD-STE100 Simplified Technical English. |
+| `@lag/site` | `packages/site` | The website. |
+| Integration tests | `packages/lag-integration-tests` | The browser tests (Vitest browser mode and Playwright). |
+| Scripts | `packages/scripts` | `pnpm new` and the other scripts of the repository. |
 
 ## Usage
 
 ```ts
-import { setupAllMonitors, createOtelLoggerAdapter } from "@lag/core";
+import { init } from "@mark1russell7/otel-ts";
+import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
 import { createLagWorker } from "@lag/worker";
 
-const worker = createLagWorker();
-const monitors = setupAllMonitors({
-    meter : otelMeter,                                   // any @opentelemetry/api Meter
-    logger : createOtelLoggerAdapter(otelLogger),        // or any { log(level, message, args) }
-    clock : { now : () => performance.now() },
-    setTimeoutFn : (fn, ms) => setTimeout(fn, ms),
-    clearTimeoutFn : (id) => clearTimeout(id),
-    setIntervalFn : (fn, ms) => setInterval(fn, ms),
-    clearIntervalFn : (id) => clearInterval(id),
-    document,
-    window,
-    // Optional — each enables its monitor(s):
-    performance,
-    PerformanceObserver,
-    requestAnimationFrame : (cb) => requestAnimationFrame(cb),
-    cancelAnimationFrame : (id) => cancelAnimationFrame(id),
-    requestIdleCallback : (cb, opts) => requestIdleCallback(cb, opts),
-    cancelIdleCallback : (id) => cancelIdleCallback(id),
-    MessageChannel,
-    queueMicrotask : (cb) => queueMicrotask(cb),
-    FinalizationRegistry,
-    memorySource : { readLegacy : () => (performance as any).memory },
-    worker,                                              // needs `performance` too
-});
+const otel = init({ serviceName : "shop", endpoint : "http://localhost:4318", histogramAggregation : "exponential" });
 
-// Later: releases every timer, listener, observer and gauge callback.
+const worker = createLagWorker();
+const monitors = setupAllMonitors(createBrowserDeps(window, {
+    meter : otel.getMeter("lag"),
+    logger : createOtelLoggerAdapter(otel.getLogger("lag")),
+    events : createOtelEventSink(otel.getLogger("lag-events")),
+    worker,
+    workerHangReport : { url : "http://localhost:4318/v1/logs", resource : { "service.name" : "shop" } },
+}));
+
+// Record the pending values of the monitors before each export
+otel.onBeforeFlush(() => monitors.flush());
+
+// Later
 monitors.stop();
-worker.terminate(); // the caller owns the worker
+worker.terminate();
 ```
 
-`packages/lag-integration-tests/src/harness.ts` (`createBrowserDeps`) is a complete, type-checked example.
+`createBrowserDeps()` examines each browser API. Thus each browser gets the monitors that it can support. For example, Safari has no `requestIdleCallback`, so the idle monitor does not start there.
 
-Each monitor is also usable on its own, either as a class (`new DriftLag(...)`) or through its instrumented factory (`createInstrumentedDriftLag(deps, lifecycle)`), which returns a `MonitorHandle` with an error boundary and a `stop()`.
+You can also use each monitor alone, as a class (`new DriftLag(...)`) or through its factory (`createInstrumentedDriftLag(deps, conditions)`). A factory gives a `MonitorHandle` with an error boundary and a `stop()`.
 
 ## Metrics
 
-All durations are in ms. Gauges named `*_max_gauge`, `*_avg_gauge` or `*_rate_gauge` cover the period since the previous collection.
+All durations are in milliseconds. All metrics are counters or histograms. The attributes have a small, fixed set of values. Details with many values (CSS selectors, URLs, IDs) go into the events. The table comes from the metric catalog (`packages/lag/src/metric-catalog.ts`): do not edit it here. Use `pnpm readme:metrics` to make it again.
 
-| Monitor | Metrics | What it measures |
-| --- | --- | --- |
-| DriftLag | `lag_drift_histogram`, `lag_drift_max_gauge`, `lag_drift_avg_gauge` | Chains 5ms timeouts across a 100ms window and reports how late the window ended. Every blocking task in the window adds up. Also feeds LagLogger warnings (sustained lag over 2s and 5s windows). |
-| MacrotaskLag | `lag_macrotask_histogram`, `lag_macrotask_max_gauge`, `lag_macrotask_avg_gauge` | Every 5s, how long a `setTimeout(0)` waits in the task queue. |
-| WorkerLagMonitor | `lag_worker_main_block_histogram`, `lag_worker_main_block_max_gauge`, `lag_worker_self_lag_histogram` | The worker sends timestamped heartbeats from its own timer. The wait until the main thread handles each one is main-thread blocking, measured while it happens, not after. |
-| LongAnimationFrameMonitor | `lag_loaf_blocking_histogram`, `lag_loaf_duration_histogram` | Frames longer than 50ms (LoAF API). |
-| EventTimingMonitor | `lag_inp_histogram`, `lag_inp_input_delay_histogram`, `lag_inp_processing_histogram`, `lag_inp_presentation_delay_histogram`, `lag_inp_worst_gauge` | Every interaction event of 16ms or more, split into its phases, plus the page's INP. |
-| LayoutShiftMonitor | `lag_cls_shift_histogram`, `lag_cls_worst_session_gauge` | Layout shifts, and CLS (the worst session window). |
-| PaintTimingMonitor, LcpMonitor | `lag_paint_first_paint_gauge`, `lag_paint_first_contentful_paint_gauge`, `lag_lcp_gauge` | FP, FCP, LCP. |
-| FrameTimingMonitor | `lag_frame_delta_histogram`, `lag_frame_fps_gauge`, `lag_frame_dropped_rate_gauge` | Gaps between rAF callbacks; dropped frames assume 60Hz. |
-| IdleAvailabilityMonitor | `lag_idle_time_remaining_histogram`, `lag_idle_gap_histogram`, `lag_idle_timeout_rate_gauge` | How often the main thread goes idle, and for how long. |
-| SchedulingFairnessMonitor | `lag_scheduling_macrotask_histogram`, `lag_scheduling_message_channel_histogram`, `lag_scheduling_microtask_histogram` | Latency of `setTimeout(0)`, `postMessage` and `queueMicrotask` queued at the same instant. Microtask is a ~0 baseline. |
-| MemoryMonitor | `lag_memory_used_bytes_histogram` (`source`), `lag_memory_usage_percent_gauge` | `measureUserAgentSpecificMemory()` when cross-origin isolated, otherwise Chrome's `performance.memory`. |
-| ComputePressureMonitor | `lag_pressure_change_histogram` (`source`), `lag_pressure_state_gauge` | Compute Pressure API state, 0=nominal … 3=critical. |
-| GCSignalDetector | `lag_gc_events`, `lag_gc_recent_rate_gauge` | GC cycles, detected with a FinalizationRegistry canary. |
-| LifecycleStateMachine | `lag_lifecycle_transitions` (`from`, `to`, `trigger`) | Page Lifecycle transitions: active, passive, hidden, frozen, terminated. |
-| TimerThrottleDetector | `lag_timer_throttled_gauge` | 1 while the browser is throttling timers. |
-| ClockReliabilityChecker | `lag_clock_resolution_gauge` | `performance.now()` resolution: about 5–20μs when cross-origin isolated, 100μs–1ms otherwise. |
+<!-- metrics:start -->
+| Monitor | Metric | Type | Unit | Attributes | Description |
+| --- | --- | --- | --- | --- | --- |
+| DriftLag | `lag_drift_histogram` | histogram | `ms` |  | The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag. |
+| DriftLag | `lag_drift_baseline_histogram` | histogram | `ms` |  | The idle duration of one timer step, from the recent steps that are not blocks: the timer granularity of the browser and the operating system. DriftLag subtracts it. |
+| MacrotaskLag | `lag_macrotask_histogram` | histogram | `ms` |  | The time that a zero-delay timeout waits in the task queue. The monitor measures one sample every 5 seconds. |
+| MeasurementConditions | `lag_samples_discarded` | counter | `{sample}` | `reason` | The number of samples that a monitor did not record because the measurement window was not valid. |
+| MeasurementConditions | `lag_stalls` | counter | `{stall}` | `kind` | The number of very long samples. A hang has no evidence of a suspend. A suspend overlaps evidence that the system stopped. |
+| MeasurementConditions | `lag_stall_duration_histogram` | histogram | `ms` | `kind` | The duration of each very long sample. |
+| WorkerLagMonitor | `lag_worker_main_block_histogram` | histogram | `ms` |  | The time that a worker heartbeat waited for the main thread. This is main-thread blocking, measured from outside the main thread. |
+| WorkerLagMonitor | `lag_worker_self_lag_histogram` | histogram | `ms` |  | The lateness of the heartbeat timer of the worker. A high value shows that the worker itself did not operate. |
+| WorkerLagMonitor | `lag_worker_clock_offset_histogram` | histogram | `ms` |  | The absolute offset between the worker clock and the main-thread clock, from the clock synchronization exchange. |
+| WorkerLagMonitor | `lag_main_thread_hangs` | counter | `{hang}` | `outcome` | The number of main-thread hangs that the worker detected. In a hang, the main thread does not acknowledge heartbeats. The outcome `abandoned` means that the page closed or crashed during the hang. The next page of the origin reports it from the hang journal. |
+| WorkerLagMonitor | `lag_main_thread_hang_duration_histogram` | histogram | `ms` | `outcome` | The duration of each main-thread hang. For an abandoned hang, the duration until the worker saw the hang for the last time. |
+| LongAnimationFrameMonitor | `lag_loaf_blocking_histogram` | histogram | `ms` |  | The blocking duration of each long animation frame. |
+| LongAnimationFrameMonitor | `lag_loaf_duration_histogram` | histogram | `ms` |  | The total duration of each long animation frame. |
+| EventTimingMonitor | `lag_event_duration_histogram` | histogram | `ms` | `interaction` | The duration of each interaction event of 16 ms or more, from input to the next paint. |
+| EventTimingMonitor | `lag_event_input_delay_histogram` | histogram | `ms` | `interaction` | The time from the input to the start of the event handlers. |
+| EventTimingMonitor | `lag_event_processing_histogram` | histogram | `ms` | `interaction` | The time that the event handlers used to process the event. |
+| EventTimingMonitor | `lag_event_presentation_delay_histogram` | histogram | `ms` | `interaction` | The time from the end of the event handlers to the next paint. |
+| LayoutShiftMonitor | `lag_layout_shift_histogram` | histogram | `1` |  | The score of each layout shift that did not follow user input. |
+| PageViewVitals | `lag_web_vital_inp_histogram` | histogram | `ms` | `navigation_type` | Interaction to Next Paint (INP) for each page view. |
+| PageViewVitals | `lag_web_vital_cls_histogram` | histogram | `1` | `navigation_type` | Cumulative Layout Shift (CLS) for each page view. |
+| PageViewVitals | `lag_web_vital_lcp_histogram` | histogram | `ms` | `navigation_type` | Largest Contentful Paint (LCP) for each page view. |
+| PageViewVitals | `lag_web_vital_fcp_histogram` | histogram | `ms` | `navigation_type` | First Contentful Paint (FCP) for each page view. |
+| PageViewVitals | `lag_web_vital_ttfb_histogram` | histogram | `ms` | `navigation_type` | Time to First Byte (TTFB) for each page view that has a network response. |
+| FrameTimingMonitor | `lag_frame_delta_histogram` | histogram | `ms` |  | The time between two animation frame callbacks. |
+| FrameTimingMonitor | `lag_frames` | counter | `{frame}` | `outcome` | The number of delivered frames and the estimated number of dropped frames. |
+| IdleAvailabilityMonitor | `lag_idle_time_remaining_histogram` | histogram | `ms` |  | The idle time that was available when an idle callback started. |
+| IdleAvailabilityMonitor | `lag_idle_gap_histogram` | histogram | `ms` |  | The time between two idle callbacks. |
+| IdleAvailabilityMonitor | `lag_idle_callbacks` | counter | `{callback}` | `timed_out` | The number of idle callbacks. A callback that timed out started because no idle period came before its timeout. |
+| SchedulingFairnessMonitor | `lag_scheduling_microtask_histogram` | histogram | `ms` |  | The latency of a queueMicrotask callback. This value stays near 0 and is a baseline. |
+| SchedulingFairnessMonitor | `lag_scheduling_macrotask_histogram` | histogram | `ms` |  | The latency of a zero-delay timeout. |
+| SchedulingFairnessMonitor | `lag_scheduling_message_channel_histogram` | histogram | `ms` |  | The latency of a MessageChannel message. |
+| MemoryMonitor | `lag_memory_used_bytes_histogram` | histogram | `By` | `source` | The used heap memory of each sample. |
+| MemoryMonitor | `lag_memory_usage_ratio_histogram` | histogram | `1` |  | The used heap divided by the heap limit. Only the legacy source supplies the limit. |
+| ComputePressureMonitor | `lag_pressure_state_histogram` | histogram | `1` | `source` | The compute pressure state of each record: 0 nominal, 1 fair, 2 serious, 3 critical. |
+| GCSignalDetector | `lag_gc_events` | counter | `{gc}` |  | The number of garbage collections that the detector saw. |
+| LifecycleStateMachine | `lag_lifecycle_transitions` | counter | `{transition}` | `from`, `to`, `trigger` | The number of page lifecycle transitions. |
+| TimerThrottleDetector | `lag_timer_calibrations` | counter | `{calibration}` | `throttled` | The number of timer calibration rounds. A throttled round shows that the browser slowed the timers. |
+| ClockReliabilityChecker | `lag_clock_resolution_histogram` | histogram | `ms` |  | The resolution of performance.now(). The checker measures it one time for each page. |
+| ClockDriftMonitor | `lag_clock_skew_histogram` | histogram | `ms` |  | The absolute difference between Date.now() and the absolute monotonic clock (timeOrigin from the start plus performance.now()). |
+| ClockDriftMonitor | `lag_clock_jumps` | counter | `{jump}` | `direction`, `kind` | The number of discontinuities between the wall clock and the monotonic clock: a suspend (the monotonic clock stopped while the device slept) or a step of the system clock. |
+| BrowserReportMonitor | `lag_browser_reports` | counter | `{report}` | `type` | The number of reports from the Reporting API, for example interventions and deprecations. |
+| SharedLivenessMonitor | `lag_liveness_block_histogram` | histogram | `ms` |  | The duration of each main-thread block that a worker saw through shared memory. |
+<!-- metrics:end -->
 
 ## Design rules
 
-- **Hidden pages are excluded.** Browsers throttle timers and stop rAF in hidden tabs, so anything measured there reflects power policy, not the app. Timer-, frame- and idle-driven monitors pause while the page is hidden or frozen. Samples whose window overlapped a hidden period are discarded through a per-monitor `HiddenGate`.
-- **Attributes are low-cardinality only.** Metric attributes are fixed enums (`source`, lifecycle states). Values, timestamps and IDs never become attributes, because each distinct attribute set is a separate time series.
-- **`stop()` releases everything:** timers, DOM listeners, PerformanceObservers, gauge callbacks and the worker loop. `setup-all-monitors.test.ts` checks this with `vi.getTimerCount() === 0`.
-- **Every dependency is injected.** Monitors never touch globals, and the duck types are checked against the real OTel and DOM types by the integration package's typecheck.
+- **Calibrated probes.** A timer step takes longer than its requested delay, also on an idle page. DriftLag subtracts the idle step duration of its environment. On an idle page, the old probe reported 16 ms of lag for each 100 ms window in Chromium and 211 ms in Firefox and WebKit. The calibrated probe reports less than 0.5 ms.
+- **Valid samples only.** Timer, frame and idle monitors pause while the page is hidden or frozen. A sample that overlaps a hidden, frozen or suspended interval is discarded and counted in `lag_samples_discarded`.
+- **An outside observer.** A Web Worker sends heartbeats from its own timer. During a main-thread hang, the worker reports the hang itself.
+- **The page view as the unit.** Each event has the ID of its page view.
+- **Low-cardinality attributes.** Each distinct set of attributes is a separate series. Measured values, timestamps and IDs are not attributes.
+- **Full teardown.** `stop()` releases each timer, listener, observer and worker loop. The tests make sure that no timer or listener stays.
+- **No globals in the core.** Only `createBrowserDeps()` reads the browser globals. All other parts get their dependencies as arguments, so that the unit tests can use fake time.
 
 ## Development
 
 ```sh
 pnpm install
 pnpm build              # tsc -b
-pnpm typecheck          # build + type-check all tests
-pnpm test               # unit tests (@lag/core, fake timers)
-pnpm test:integration   # real Chromium; starts the Grafana stack via docker compose first
+pnpm typecheck          # build, then type-check the tests
+pnpm test               # unit tests of @lag/core (fake timers)
+pnpm test:integration   # browser tests; they start the Grafana stack with docker compose first
+pnpm lint:ste           # the writing rules of the README, the site and the TSDoc comments
 ```
 
-To run the browser tests without Docker, run `npx vitest run` in `packages/lag-integration-tests`. OTLP export fails quietly, and the assertions don't depend on it.
+To add a package, use `pnpm new --name <name> --config <config>`. Do not write `package.json` files yourself.
+
+The Grafana stack (Alloy, Mimir, Loki, Tempo and Grafana) is in [grafana-infra](https://github.com/mark1russell7/grafana-infra). The OpenTelemetry setup is in [otel-ts](https://github.com/mark1russell7/otel-ts).

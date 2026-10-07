@@ -8,7 +8,9 @@
     "typecheck": "tsc -b && pnpm -r --if-present typecheck",
     "test": "pnpm --filter @lag/core test",
     "test:integration": "pnpm --filter @lag/integration-tests test",
-    "lint:ste": "tsx packages/ste-lint/src/cli.ts"
+    "lint:ste": "tsx packages/ste-lint/src/cli.ts",
+    "readme:metrics": "tsx packages/scripts/src/readme-metrics.ts",
+    "readme:metrics:check": "tsx packages/scripts/src/readme-metrics.ts --check"
   },
   "devDependencies": {
     "tsx": "^4.21.0",
