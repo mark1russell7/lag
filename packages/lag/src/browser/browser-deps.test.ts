@@ -95,6 +95,7 @@ describe("createBrowserDeps", () => {
     it("passes the options through", () => {
         const worker : WorkerLike = { postMessage : vi.fn(), addEventListener : vi.fn(), removeEventListener : vi.fn() };
         const events = { emit : vi.fn() };
+        const pageContext = () => ({ "session.id" : "session-a" });
         const deps = createBrowserDeps(createGlobals(), {
             ...options(),
             events,
@@ -103,6 +104,7 @@ describe("createBrowserDeps", () => {
             workerHangReport : { url : "https://otel.example/v1/logs" },
             memoryIntervalMs : 5_000,
             softNavigations : true,
+            pageContext,
         });
 
         expect(deps).toMatchObject({
@@ -112,6 +114,7 @@ describe("createBrowserDeps", () => {
             workerHangReport : { url : "https://otel.example/v1/logs" },
             memoryIntervalMs : 5_000,
             softNavigations : true,
+            pageContext,
         });
     });
 

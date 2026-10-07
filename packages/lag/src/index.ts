@@ -1,4 +1,4 @@
-// --- Original exports ---
+// --- Timer-based lag monitors ---
 export { DriftLag, type DriftLagOptions } from "./DriftLag.js";
 export { MacrotaskLag, type PostTaskFn } from "./MacrotaskLag.js";
 export { createMessageTaskQueue, type MessageTaskQueue } from "./message-task.js";
@@ -27,7 +27,7 @@ export {
     lagLoggingIntervalMs,
 } from "./constants.js";
 
-// --- Phase 1: OTel integration ---
+// --- Metrics, events and the OpenTelemetry adapters ---
 export type {
     Meter,
     Histogram,
@@ -102,7 +102,7 @@ export type {
     CrashReportContextLike,
 } from "./dep-groups.js";
 
-// --- Phase 2: Performance Observer monitors ---
+// --- PerformanceObserver monitors ---
 export { ObserverMonitor } from "./ObserverMonitor.js";
 export { LongAnimationFrameMonitor, type LoafReport, type LoafScriptSummary } from "./LongAnimationFrameMonitor.js";
 export { EventTimingMonitor, interactionType, type EventTimingReport } from "./EventTimingMonitor.js";
@@ -144,7 +144,7 @@ export {
     type PageSource,
 } from "./vitals/types.js";
 
-// --- Additional monitors (scheduling, frame, idle, memory) ---
+// --- Scheduling, frame, idle and memory monitors ---
 export {
     SchedulingFairnessMonitor,
     type SchedulingMeasurement,
@@ -175,7 +175,7 @@ export {
     type MeasureMemoryResult,
 } from "./MemoryMonitor.js";
 
-// --- Phase 3: Measurement reliability ---
+// --- Lifecycle, pressure, timers, clocks, reports and GC ---
 export {
     LifecycleStateMachine,
     summarizeTransitions,
@@ -219,7 +219,7 @@ export {
     type FinalizationRegistryInstance,
 } from "./GCSignalDetector.js";
 
-// --- Phase 4: Web Worker monitor ---
+// --- The worker monitor, the worker protocol and the hang journal ---
 export {
     WorkerLagMonitor,
     type WorkerLike,
@@ -268,7 +268,7 @@ export type {
     HangReportTarget,
 } from "./worker-protocol.js";
 
-// --- Phase 5: Unified setup ---
+// --- Setup and the browser adapter ---
 export { setupAllMonitors, type AllMonitorDeps, type AllMonitorHandles } from "./setup-all-monitors.js";
 export { createBrowserDeps, type BrowserGlobals, type BrowserDepsOptions } from "./browser/browser-deps.js";
 export { createPageSource, type PageDocument, type PagePerformance } from "./browser/page-source.js";
@@ -283,5 +283,5 @@ export {
 } from "./hang-journal.js";
 export { createRandomId } from "./random-id.js";
 
-// --- Instrumented factories (one per monitor, each returns a MonitorHandle) ---
+// --- The instrumented factories: one for each monitor, each gives a MonitorHandle ---
 export * from "./instrumented/index.js";

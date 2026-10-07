@@ -63,7 +63,7 @@ describe("OTLP JSON encoding", () => {
 });
 
 describe("event sinks", () => {
-    it("the OTel event sink emits a log record with the event name, without empty attributes", () => {
+    it("the OTel event sink emits a log record with the event name as its body, without empty attributes", () => {
         const otelLogger = { emit : vi.fn() };
         createOtelEventSink(otelLogger).emit("browser.web_vital", {
             name : "INP",
@@ -75,6 +75,7 @@ describe("event sinks", () => {
             eventName : "browser.web_vital",
             severityText : "INFO",
             severityNumber : 9,
+            body : "browser.web_vital",
             attributes : { name : "INP", value : 240 },
         });
     });

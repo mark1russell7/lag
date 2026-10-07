@@ -31,14 +31,16 @@ Then install them with `pnpm install`.
 ## Start the monitors
 
 ```ts
-import { init } from "@mark1russell7/otel-ts";
+import { createInstanceId, init } from "@mark1russell7/otel-ts";
 import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
 import { createLagWorker } from "@lag/worker";
 
 const endpoint = "http://localhost:4318";
+const serviceInstanceId = createInstanceId();
 
 const otel = init({
     serviceName : "shop",
+    serviceInstanceId,
     endpoint,
     histogramAggregation : "exponential",
 });
@@ -49,7 +51,11 @@ const monitors = setupAllMonitors(createBrowserDeps(window, {
     logger : createOtelLoggerAdapter(otel.getLogger("lag")),
     events : createOtelEventSink(otel.getLogger("lag-events")),
     worker,
-    workerHangReport : { url : `${endpoint}/v1/logs`, resource : { "service.name" : "shop" } },
+    workerHangReport : {
+        url : `${endpoint}/v1/logs`,
+        resource : { "service.name" : "shop", "service.instance.id" : serviceInstanceId },
+    },
+    pageContext : () => ({ "session.id" : otel.getSessionId() }),
 }));
 
 // Record the pending values of the monitors before each export
@@ -58,11 +64,13 @@ otel.onBeforeFlush(() => monitors.flush());
 
 The code does these steps:
 
-1. `init()` starts the OpenTelemetry SDK. Each call gets a new `service.instance.id`, and histograms use the exponential aggregation (native histograms in Mimir).
+1. `init()` starts the OpenTelemetry SDK with a new `service.instance.id`. Histograms use the exponential aggregation (native histograms in Mimir).
 2. `createLagWorker()` starts the Web Worker of the worker-lag monitor.
 3. `createBrowserDeps(window, options)` gets the browser APIs. It examines each API, thus each browser gets the monitors that it can support.
 4. `setupAllMonitors()` starts the monitors and gives their handles.
 5. `onBeforeFlush` makes sure that the export at page hide contains the final values of the page view.
+
+The worker sends its hang reports without the OpenTelemetry SDK, because the main thread cannot operate during a hang. `workerHangReport.resource` gives the reports the same `service.instance.id` as the page. `pageContext` gives them the session ID.
 
 <Callout type="warning">
   Connect `monitors.flush()` to the exporter. In Chromium, an exporter that listens to `pagehide` before the monitors can flush before the monitors record their final values. Refer to [page lifecycle](/docs/concepts/page-lifecycle).

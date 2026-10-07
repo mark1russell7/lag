@@ -44,6 +44,30 @@ describe("createInstrumentedPageViewContext", () => {
         expect(fake.listenerCount()).toBe(0);
     });
 
+    it("adds the attributes of the app, and reads them again at each new view", () => {
+        const fake = fakeVitals(view("view-1"));
+        const receiver = { setContext : vi.fn() };
+        let session = "session-a";
+        createInstrumentedPageViewContext({ logger : { log : vi.fn() }, pageContext : () => ({ "session.id" : session, "lag.page_view.id" : "not this" }) }, fake.vitals, [receiver]);
+        session = "session-b";
+        fake.startView(view("view-2"));
+
+        expect(receiver.setContext.mock.calls).toEqual([
+            [{ "session.id" : "session-a", "lag.page_view.id" : "view-1" }],
+            [{ "session.id" : "session-b", "lag.page_view.id" : "view-2" }],
+        ]);
+    });
+
+    it("logs a failure of the function of the app and continues with the page-view ID", () => {
+        const fake = fakeVitals(view("view-1"));
+        const logger = { log : vi.fn() };
+        const receiver = { setContext : vi.fn() };
+        createInstrumentedPageViewContext({ logger, pageContext : () => { throw new Error("no session"); } }, fake.vitals, [receiver]);
+
+        expect(receiver.setContext).toHaveBeenCalledWith({ "lag.page_view.id" : "view-1" });
+        expect(logger.log).toHaveBeenCalledWith("warn", "The pageContext function failed.", expect.anything());
+    });
+
     it("initializes the crash-report context, sets the view ID, and deletes it on stop", async () => {
         const fake = fakeVitals(view("view-1"));
         const crashReport = { initialize : vi.fn(() => Promise.resolve()), set : vi.fn(), delete : vi.fn() };

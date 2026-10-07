@@ -189,6 +189,14 @@ export type PageDeps = {
     describeNode? : (node : unknown) => string;
     /** When true, each soft navigation starts a new page view (Chromium 151 and later). The default is false. */
     softNavigations? : boolean;
+    /**
+     * A function that gives more attributes for the context of the page, for
+     * example `() => ({ "session.id": otel.getSessionId() })`. The worker
+     * adds the context to its hang reports, because it sends them without
+     * the OpenTelemetry SDK of the page. The monitors read the function at
+     * the start of each page view.
+     */
+    pageContext? : () => Readonly<Record<string, string>>;
 };
 
 /**

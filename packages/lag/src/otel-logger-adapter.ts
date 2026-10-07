@@ -99,6 +99,8 @@ export function createOtelEventSink(otelLogger : OtelLogger) : EventSink {
                 eventName : name,
                 severityText : "INFO",
                 severityNumber : 9,
+                // A log pipeline can drop or merge records that have an empty body
+                body : name,
                 attributes : clean,
             });
         },

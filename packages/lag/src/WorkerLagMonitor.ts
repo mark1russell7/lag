@@ -112,6 +112,7 @@ export class WorkerLagMonitor {
     start() : void {
         if (this.running) return;
         this.running = true;
+        this.heartbeatSeen = false;
         this.worker.addEventListener("message", this.onMessage);
         this.worker.postMessage({
             type : "start",

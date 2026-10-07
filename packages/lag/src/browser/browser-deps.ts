@@ -75,6 +75,8 @@ export type BrowserDepsOptions = {
     hangJournal? : boolean;
     /** When true (the default), the page-view ID goes into the crash-report context of the browser (Chrome 145 and later). */
     crashReportContext? : boolean;
+    /** More attributes for the hang reports of the worker, for example the session ID. Refer to `PageDeps.pageContext`. */
+    pageContext? : () => Readonly<Record<string, string>>;
 };
 
 /** The method `name` of `target`, bound to `target`, or `undefined` if `target` has no such method. */
@@ -146,6 +148,7 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         performance,
         page : createPageSource(globals.document, performance),
         ...(options.softNavigations !== undefined ? { softNavigations : options.softNavigations } : {}),
+        ...(options.pageContext ? { pageContext : options.pageContext } : {}),
         ...(PerformanceObserver ? { PerformanceObserver } : {}),
         ...(requestAnimationFrame && cancelAnimationFrame ? { requestAnimationFrame, cancelAnimationFrame } : {}),
         ...(requestIdleCallback && cancelIdleCallback ? { requestIdleCallback, cancelIdleCallback } : {}),

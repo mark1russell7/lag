@@ -65,15 +65,21 @@ The monitors work with each OpenTelemetry SDK for JavaScript. Make sure that you
 During a hang, the main thread cannot send anything. Thus the worker sends its hang reports itself, as OTLP/HTTP JSON log records, to `workerHangReport.url`:
 
 ```ts
+const serviceInstanceId = createInstanceId();
+const otel = init({ serviceName : "shop", serviceInstanceId, endpoint : "https://collector.example.com" });
+
 createBrowserDeps(window, {
     // ...
     worker,
     workerHangReport : {
         url : "https://collector.example.com/v1/logs",
-        resource : { "service.name" : "shop" },
+        resource : { "service.name" : "shop", "service.instance.id" : serviceInstanceId },
     },
+    pageContext : () => ({ "session.id" : otel.getSessionId() }),
 });
 ```
+
+Give the hang reports the same `service.instance.id` as the SDK of the page. Then a query can join them with the metrics of the page. The worker adds the attributes of `pageContext`, for example the session ID, and the ID of the current page view to each report.
 
 The worker uses `fetch` with `keepalive`, because workers do not have `sendBeacon`. The collector must accept cross-origin requests from the page (CORS) for `POST` with the `Content-Type: application/json` header.
 

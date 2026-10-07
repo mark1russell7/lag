@@ -1,4 +1,4 @@
-import type { CoreDeps, CrashReportContextLike, CrashReportDeps } from "../dep-groups.js";
+import type { CoreDeps, CrashReportContextLike, CrashReportDeps, PageDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import type { PageViewVitals } from "../vitals/PageViewVitals.js";
 import type { PageView } from "../vitals/ViewCollector.js";
@@ -27,7 +27,7 @@ export type PageViewContext = {
  * Thus, they must have the ID before a hang starts.
  */
 export function createInstrumentedPageViewContext(
-    deps : Pick<CoreDeps, "logger"> & Partial<CrashReportDeps>,
+    deps : Pick<CoreDeps, "logger"> & Partial<CrashReportDeps> & Partial<Pick<PageDeps, "pageContext">>,
     vitals : PageViewVitals,
     receivers : readonly PageContextReceiver[],
 ) : MonitorHandle<PageViewContext> {
@@ -36,8 +36,18 @@ export function createInstrumentedPageViewContext(
         const crashContextReady = crashReport ? initializeCrashContext(crashReport) : Promise.resolve();
         let attributes : Record<string, string> = {};
 
+        /** The attributes of the app. A failure of the function of the app gives no attributes. */
+        const appContext = () : Readonly<Record<string, string>> => {
+            try {
+                return deps.pageContext?.() ?? {};
+            } catch (error) {
+                deps.logger.log("warn", "The pageContext function failed.", { error, type : "PageViewContext" });
+                return {};
+            }
+        };
+
         const apply = (view : PageView) : void => {
-            attributes = { [PAGE_VIEW_KEY] : view.id };
+            attributes = { ...appContext(), [PAGE_VIEW_KEY] : view.id };
             for (const receiver of receivers) receiver.setContext(attributes);
             if (crashReport) {
                 crashContextReady
