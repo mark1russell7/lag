@@ -17,11 +17,10 @@ import {
     kitchenSink,
     type WorkloadResult,
 } from "@lag/load";
-import { createBrowserDeps, createConsoleLogger, createTeeMeter, wait, type TeeMeter } from "./harness.js";
+import { createBrowserDeps, createConsoleLogger, createTeeMeter, waitForMimirCount, type TeeMeter } from "./harness.js";
 import { recordMeasurement } from "./commands.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
-const MIMIR_QUERY_URL = "http://localhost:9009/prometheus/api/v1/query";
 const SERVICE_NAME = "lag-stress-test";
 
 // Stress profile durations — kept short enough to fit a CI budget but long
@@ -199,19 +198,8 @@ describe("Lag Monitor Stress Tests", () => {
     it("exports the heavy profile to Mimir", async (ctx) => {
         ctx.skip(!inject("e2e"), "Needs the Grafana stack: run pnpm test:e2e.");
         // Each profile shut its SDK down, which flushed the metrics. Alloy forwards them to Mimir.
-        let count = 0;
-        for (let attempt = 0; attempt < 10 && count === 0; attempt++) {
-            await wait(3_000);
-            try {
-                const query = `lag_drift_histogram_count{service_name="${SERVICE_NAME}-heavy"}`;
-                const response = await fetch(`${MIMIR_QUERY_URL}?query=${encodeURIComponent(query)}`);
-                const json = await response.json() as { data? : { result? : Array<{ value : [number, string] }> } };
-                count = Number(json.data?.result?.[0]?.value[1] ?? 0);
-            } catch {
-                // Mimir is not ready yet
-            }
-        }
+        const count = await waitForMimirCount("lag_drift_histogram", `${SERVICE_NAME}-heavy`, 45_000);
         console.log(`Mimir: lag_drift_histogram_count for the heavy profile = ${count}`);
         expect(count).toBeGreaterThan(0);
-    }, 60_000);
+    }, 90_000);
 });

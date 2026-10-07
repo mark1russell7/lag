@@ -157,6 +157,39 @@ export function createSummaryMeter() : SummaryMeter {
     };
 }
 
+const MIMIR_QUERY_URL = "http://localhost:9009/prometheus/api/v1/query";
+
+/**
+ * The number of `metric` samples (the `_count` series of a histogram) that
+ * Mimir has for `service`, or 0 if Mimir has none or does not answer.
+ * Mimir translates the OTLP resource attribute service.name into the `job`
+ * label; a `service_name` label exists only if Mimir promotes the attribute.
+ * The query accepts both, and the `_milliseconds` unit suffix that Mimir adds
+ * when it is configured to.
+ */
+export async function queryMimirCount(metric : string, service : string) : Promise<number> {
+    const name = `__name__=~"${metric}(_milliseconds)?_count"`;
+    const query = `sum({${name}, service_name="${service}"}) or sum({${name}, job=~"(.+/)?${service}"})`;
+    try {
+        const response = await fetch(`${MIMIR_QUERY_URL}?query=${encodeURIComponent(query)}`);
+        const json = await response.json() as { data? : { result? : Array<{ value : [number, string] }> } };
+        return Number(json.data?.result?.[0]?.value[1] ?? 0);
+    } catch {
+        // Mimir is not reachable: expected without the Grafana stack
+        return 0;
+    }
+}
+
+/** Polls `queryMimirCount` until it is above 0 or `timeoutMs` passes: Alloy batches for 5 s, then Mimir ingests. */
+export async function waitForMimirCount(metric : string, service : string, timeoutMs : number) : Promise<number> {
+    const deadline = performance.now() + timeoutMs;
+    for (;;) {
+        const count = await queryMimirCount(metric, service);
+        if (count > 0 || performance.now() > deadline) return count;
+        await wait(3_000);
+    }
+}
+
 export function createConsoleLogger(levels : readonly string[] = ["trace", "debug", "info", "warn", "error"]) : Logger {
     return {
         log(level, message, args) {

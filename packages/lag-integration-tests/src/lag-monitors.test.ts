@@ -14,29 +14,16 @@ import {
     createBrowserDeps,
     createConsoleLogger,
     createTeeMeter,
+    queryMimirCount,
     wait,
+    waitForMimirCount,
     type TeeMeter,
 } from "./harness.js";
 import { features } from "./features.js";
 import { recordMeasurement } from "./commands.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
-const MIMIR_QUERY_URL = "http://localhost:9009/prometheus/api/v1/query";
 const SERVICE_NAME = "lag-integration-test";
-
-// Query Mimir for a metric; 0 when the Grafana stack isn't running
-async function queryMimir(query : string) : Promise<number> {
-    try {
-        const res = await fetch(`${MIMIR_QUERY_URL}?query=${encodeURIComponent(query)}`);
-        const json = await res.json();
-        if (json.data?.result?.length > 0) {
-            return parseFloat(json.data.result[0].value[1]);
-        }
-    } catch {
-        // Mimir not reachable — expected without the docker stack
-    }
-    return 0;
-}
 
 /** The monitors that setupAllMonitors registers in every browser. */
 const ALWAYS = [
@@ -256,14 +243,14 @@ describe("Lag Monitor Integration", () => {
 
     it("flushes metrics to the OTLP endpoint", async () => {
         await otel.shutdown();
-        // Give Alloy time to forward to Mimir
-        await wait(inject("e2e") ? 15_000 : 1_000);
-
-        const driftCount = await queryMimir(`lag_drift_histogram_count{service_name="${SERVICE_NAME}"}`);
+        // Alloy batches for 5 s before it forwards to Mimir. Without the stack, one query returns 0 at once.
+        const driftCount = inject("e2e")
+            ? await waitForMimirCount("lag_drift_histogram", SERVICE_NAME, 45_000)
+            : await queryMimirCount("lag_drift_histogram", SERVICE_NAME);
         console.log(`Mimir: lag_drift_histogram_count=${driftCount}`);
         // Required in the e2e project (pnpm test:e2e starts the Grafana stack); optional elsewhere
         if (inject("e2e")) {
             expect(driftCount).toBeGreaterThan(0);
         }
-    }, 60_000);
+    }, 90_000);
 });
