@@ -47,7 +47,7 @@ const STATUS_MAP : Record<string, TestStatus> = {
     disabled : "skipped",
 };
 
-/** Makes `file` relative to `rootDir`, with forward slashes. */
+/** This function makes `file` relative to `rootDir`, with forward slashes. */
 export function relativePath(file : string, rootDir : string) : string {
     const normalize = (p : string) : string => p.replace(/\\/g, "/");
     const root = normalize(rootDir).replace(/\/$/, "");

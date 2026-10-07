@@ -8,8 +8,9 @@ const origin = performance.timeOrigin;
 const clock = { now : () => origin + performance.now() };
 
 /**
- * Sends a hang report as an OTLP/HTTP JSON log record. The main thread is
- * blocked while a hang starts, so only the worker can send this report.
+ * This function sends a hang report as an OTLP/HTTP JSON log record. The
+ * main thread is blocked while a hang starts. Thus, only the worker can send
+ * this report.
  */
 function reportHang(event : HangEvent, options : HangOptions) : void {
     const target = options.report;

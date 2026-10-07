@@ -1,24 +1,25 @@
 /**
- * Seedable pseudo-random number generator (mulberry32).
+ * A pseudo-random number generator with a seed (mulberry32).
  *
- * Math.random() is non-seedable and produces non-reproducible test runs.
- * This RNG is fast, statistically good for stress testing (NOT crypto), and
- * fully reproducible — same seed → same sequence.
+ * `Math.random()` has no seed. Thus, a test run with it cannot be repeated
+ * with the same values. This generator is fast and statistically good for
+ * stress tests, but not for cryptography. It is fully reproducible: the same
+ * seed gives the same sequence.
  */
 export type Rng = {
-    /** Uniform float in [0, 1). */
+    /** A uniform float in [0, 1). */
     next() : number;
-    /** Uniform integer in [min, max] inclusive. */
+    /** A uniform integer in [min, max], with the two limits. */
     int(min : number, max : number) : number;
-    /** Uniform float in [min, max). */
+    /** A uniform float in [min, max). */
     range(min : number, max : number) : number;
-    /** Standard normal sample via Box-Muller. */
+    /** A standard normal sample, from the Box-Muller transform. */
     normal() : number;
-    /** Pick one element from an array uniformly. */
+    /** One element of the array, with a uniform probability. */
     pick<T>(arr : readonly T[]) : T;
-    /** Bernoulli trial — true with probability p. */
+    /** A Bernoulli trial: `true` with the probability `p`. */
     bool(p : number) : boolean;
-    /** Get the current seed (for reproducibility/logging). */
+    /** The seed that the generator started with (for reproducibility and logs). */
     seed() : number;
 };
 

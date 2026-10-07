@@ -1,7 +1,10 @@
 import type { WorkerLike } from "@lag/core/WorkerLagMonitor.js";
 
 export type LagWorker = WorkerLike & {
-    /** Kill the worker thread. The caller owns the worker: stopping a monitor doesn't do this. */
+    /**
+     * This method stops the worker thread (`worker.terminate()`). The caller
+     * owns the worker. The stop of a monitor does not stop the worker.
+     */
     terminate() : void;
 };
 

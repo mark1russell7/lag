@@ -8,10 +8,10 @@ import { createHandle } from "./shared.js";
 const MAX_EVENTS_PER_MINUTE = 10;
 
 /**
- * Constructs a BrowserReportMonitor wired to the `lag_browser_reports`
- * counter, labeled with `type`. With `deps.events`, each report also emits a
- * `lag.browser_report` event with its ID, message and source (at most 10
- * events each minute).
+ * This factory makes a `BrowserReportMonitor` that records into the
+ * `lag_browser_reports` counter, with the attribute `type`. With
+ * `deps.events`, each report also emits a `lag.browser_report` event with
+ * its ID, message and source (no more than 10 events each minute).
  */
 export function createInstrumentedBrowserReports(
     deps : CoreDeps & ReportingDeps & Partial<EventDeps>,

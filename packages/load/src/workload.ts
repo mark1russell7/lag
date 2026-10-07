@@ -3,9 +3,10 @@ import type { Distribution } from "./distributions.js";
 import type { LagGenerator } from "./generators.js";
 
 /**
- * A LagSpec couples a generator with a distribution that produces its
- * `durationMs` argument. Optionally weight it relative to other specs in
- * a workload — heavier weight = more frequent selection.
+ * A `LagSpec` couples a generator with a distribution that gives its
+ * `durationMs` argument. You can give the spec a weight relative to the
+ * other specs of a workload. A heavier weight gives a more frequent
+ * selection.
  */
 export type LagSpec = {
     name : string;
@@ -15,19 +16,19 @@ export type LagSpec = {
 };
 
 export type WorkloadOptions = {
-    /** Total wall-clock time the workload runs for, in ms. */
+    /** The total elapsed time of the workload, in ms. */
     durationMs : number;
 
-    /** Distribution producing inter-event idle gaps in ms. */
+    /** The distribution of the idle gaps between the events, in ms. */
     interEventGapDist : Distribution;
 
     /** The set of lag specs to draw from. */
     specs : LagSpec[];
 
-    /** RNG seed (default: time-based). */
+    /** The seed of the random number generator. The default is `Date.now()`. */
     seed? : number | undefined;
 
-    /** Optional callback fired before each lag event. */
+    /** An optional callback that the workload uses before each lag event. */
     onEvent? : (event : WorkloadEvent) => void;
 };
 
@@ -50,7 +51,8 @@ const wait = (ms : number) : Promise<void> =>
     new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Picks a spec from the workload according to its weights.
+ * This function picks a spec from the workload, with the probabilities of
+ * the weights.
  */
 function pickSpec(rng : Rng, specs : LagSpec[]) : LagSpec {
     const total = specs.reduce((s, c) => s + (c.weight ?? 1), 0);
@@ -63,15 +65,19 @@ function pickSpec(rng : Rng, specs : LagSpec[]) : LagSpec {
 }
 
 /**
- * Runs a synthetic workload for `durationMs` wall-clock time.
+ * This function starts a synthetic workload for `durationMs` of elapsed
+ * time.
  *
- * Each iteration:
- *   1. Picks a lag spec (weighted)
- *   2. Samples a duration from the spec's distribution
- *   3. Waits a random idle gap
- *   4. Fires the lag generator
+ * Each iteration does these steps:
  *
- * Returns a summary of what happened. Reproducible given the same seed.
+ * 1. Wait for a random idle gap. Stop if the elapsed time is `durationMs`
+ *    or more.
+ * 2. Pick a lag spec, with the weights.
+ * 3. Sample a duration from the distribution of the spec.
+ * 4. Start the lag generator.
+ *
+ * The function gives a summary of the events. With the same seed, it picks
+ * the same sequence of gaps, specs and durations.
  */
 export async function runWorkload(options : WorkloadOptions) : Promise<WorkloadResult> {
     const seed = options.seed ?? Date.now();

@@ -26,7 +26,11 @@ function isConfig(v: string | undefined): v is Config {
   return configs.some((c) => c.value === v);
 }
 
-/** Reads `--name <name>` and `--config <config>`; a missing value is asked for interactively. */
+/**
+ * This function reads the value of a flag, for example `--name <name>` or
+ * `--config <config>`. If the value is missing, the caller asks for it
+ * interactively.
+ */
 function readArg(flag: string): string | undefined {
   const index = process.argv.indexOf(flag);
   return index >= 0 ? process.argv[index + 1] : undefined;

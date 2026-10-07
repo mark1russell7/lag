@@ -11,7 +11,10 @@ export type LayoutShiftReport = {
     sources : LayoutShiftEntry["sources"];
 };
 
-/** Observes layout shifts that did not follow user input, and calculates the page-lifetime CLS. */
+/**
+ * This monitor observes the layout shifts that did not follow user input,
+ * and it calculates the CLS for the lifetime of the page.
+ */
 export class LayoutShiftMonitor extends ObserverMonitor {
     private readonly cls = new ClsCalculator();
 

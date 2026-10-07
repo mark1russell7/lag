@@ -1,7 +1,8 @@
 /**
- * A random ID of 32 hexadecimal digits, from `crypto.getRandomValues` when it
- * exists (in all browsers and workers, also on insecure pages), else from
- * `Math.random`.
+ * This function makes a random ID of 32 hexadecimal digits. It uses
+ * `crypto.getRandomValues` if it exists, and `Math.random` if not.
+ * `crypto.getRandomValues` exists in all browsers and workers, also on pages
+ * that are not secure contexts.
  */
 export function createRandomId() : string {
     const bytes = new Uint8Array(16);

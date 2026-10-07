@@ -1,10 +1,10 @@
 /**
- * Lag generators — the actual workloads that create different *kinds* of
- * main thread pressure. Distinct from distributions, which only describe
- * "how much".
+ * Lag generators: the workloads that make different *types* of main-thread
+ * pressure. They are different from distributions, which describe only "how
+ * much".
  *
- * Each generator returns a Promise<void> that resolves once the lag event
- * has fully completed (including any deferred work).
+ * Each generator gives a `Promise<void>` that resolves when the lag event is
+ * complete, with all deferred work.
  */
 export type LagGenerator = (durationMs : number) => Promise<void>;
 
@@ -14,8 +14,9 @@ const wait = (ms : number) : Promise<void> =>
 // ─── 1. Sync busy-wait ──────────────────────────────────────────────────────
 
 /**
- * Pure CPU blocking via busy loop. Spends `durationMs` of wall time blocking
- * the main thread. This is the gold standard for triggering lag monitors.
+ * Pure CPU blocking with a busy loop. The generator blocks the main thread
+ * for `durationMs` of elapsed time. This is the gold standard to trigger lag
+ * monitors.
  */
 export const syncBusyWait : LagGenerator = (durationMs) => {
     return new Promise<void>((resolve) => {
@@ -30,8 +31,9 @@ export const syncBusyWait : LagGenerator = (durationMs) => {
 // ─── 2. Sync busy-wait with computation (defeats optimizer) ─────────────────
 
 /**
- * Same as syncBusyWait but does math the optimizer can't elide. Some JIT
- * engines may optimize away an empty busy loop; this version forces real work.
+ * The same as `syncBusyWait`, but it does math that the optimizer cannot
+ * remove. Some JIT engines can remove an empty busy loop. This version
+ * forces real work.
  */
 export const syncCompute : LagGenerator = (durationMs) => {
     return new Promise<void>((resolve) => {
@@ -51,12 +53,12 @@ export const syncCompute : LagGenerator = (durationMs) => {
 // ─── 3. GC pressure ─────────────────────────────────────────────────────────
 
 /**
- * Allocates large numbers of short-lived objects to trigger GC pressure.
- * GC pauses appear as sudden spikes in lag measurements — useful for
- * exercising GCSpikeDetector.
+ * This generator allocates large numbers of short-lived objects to make GC
+ * pressure. GC pauses appear as sudden spikes in lag measurements. Use this
+ * generator to exercise `GCSignalDetector`.
  *
- * `durationMs` is interpreted as a budget; the generator allocates as much
- * garbage as it can in that window.
+ * The generator uses `durationMs` as a budget: it allocates as much garbage
+ * as it can in that window.
  */
 export const gcPressure : LagGenerator = (durationMs) => {
     return new Promise<void>((resolve) => {
@@ -78,9 +80,10 @@ export const gcPressure : LagGenerator = (durationMs) => {
 // ─── 4. Microtask flood ─────────────────────────────────────────────────────
 
 /**
- * Queues `count` microtasks back-to-back. Microtasks run between macrotasks
- * and starve the macrotask queue if abused. Each microtask does a tiny bit
- * of work to make the scheduling cost measurable.
+ * This generator queues `count` microtasks, one after the other. Microtasks
+ * operate between macrotasks, and too many microtasks starve the macrotask
+ * queue. Each microtask does a little work, so that the scheduling cost is
+ * measurable.
  */
 export function microtaskFlood(count : number) : LagGenerator {
     return () => new Promise<void>((resolve) => {
@@ -103,9 +106,9 @@ export function microtaskFlood(count : number) : LagGenerator {
 // ─── 5. Macrotask flood ─────────────────────────────────────────────────────
 
 /**
- * Queues `count` setTimeout(0) macrotasks back-to-back. Each one yields to
- * the event loop. Stresses MacrotaskLag and creates measurable scheduling
- * delay.
+ * This generator queues `count` `setTimeout(0)` macrotasks, one after the
+ * other. Each one yields to the event loop. The generator stresses
+ * `MacrotaskLag` and makes a measurable scheduling delay.
  */
 export function macrotaskFlood(count : number) : LagGenerator {
     return () => new Promise<void>((resolve) => {
@@ -127,9 +130,9 @@ export function macrotaskFlood(count : number) : LagGenerator {
 // ─── 6. Promise chain ───────────────────────────────────────────────────────
 
 /**
- * Chained promise resolution — forms a microtask chain via Promise.then.
- * Slightly different from queueMicrotask: each .then enqueues a microtask
- * but also creates a new Promise object.
+ * A chain of promise resolutions: a microtask chain through `Promise.then`.
+ * It is a little different from `queueMicrotask`: each `.then` queues a
+ * microtask, but it also makes a new `Promise` object.
  */
 export function promiseChain(length : number) : LagGenerator {
     return () => {
@@ -147,9 +150,10 @@ export function promiseChain(length : number) : LagGenerator {
 // ─── 7. Layout thrashing ────────────────────────────────────────────────────
 
 /**
- * Forces synchronous layout/style recalculation by alternating reads and
- * writes on the DOM. This is a notoriously expensive pattern that should
- * trigger LongAnimationFrame entries with `forcedStyleAndLayoutDuration > 0`.
+ * This generator forces a synchronous recalculation of layout and style,
+ * with alternate reads and writes on the DOM. This pattern is notoriously
+ * expensive. It can make long animation frame entries with
+ * `forcedStyleAndLayoutDuration > 0`.
  */
 export const layoutThrash : LagGenerator = (durationMs) => {
     return new Promise<void>((resolve) => {
@@ -175,9 +179,11 @@ export const layoutThrash : LagGenerator = (durationMs) => {
 // ─── 8. Long animation frame ────────────────────────────────────────────────
 
 /**
- * Schedules a requestAnimationFrame callback that does `durationMs` of work
- * inside the frame production phase. This generates a LoAF entry whose
- * `blockingDuration` matches the work time.
+ * This generator schedules a `requestAnimationFrame` callback that does
+ * `durationMs` of work in the production phase of the frame. The browser
+ * then reports a long animation frame entry. Its `blockingDuration` is
+ * approximately the work time minus 50 ms, because the blocking duration of
+ * a long task is its duration minus 50 ms.
  */
 export function longAnimationFrame(durationMs : number) : LagGenerator {
     return () => new Promise<void>((resolve) => {
@@ -196,7 +202,7 @@ export function longAnimationFrame(durationMs : number) : LagGenerator {
 // ─── 9. Sleep / yield ───────────────────────────────────────────────────────
 
 /**
- * Idle period — yields the event loop for `durationMs`. Used to space out
- * lag events in workload sequences.
+ * An idle period: the generator yields the event loop for `durationMs`. Use
+ * it to space out the lag events in workload sequences.
  */
 export const sleep : LagGenerator = (durationMs) => wait(durationMs);

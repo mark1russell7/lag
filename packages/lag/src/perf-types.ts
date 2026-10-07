@@ -13,14 +13,18 @@ export type PerformanceEntryList = {
 };
 
 export type PerformanceObserverOptions = {
-    /** Event Timing only: minimum entry duration to report (browser default 104ms, minimum 16ms). */
+    /**
+     * The minimum duration of an entry that the browser reports, for Event
+     * Timing only. The default of the browser is 104 ms. The smallest
+     * permitted value is 16 ms.
+     */
     durationThreshold? : number;
 };
 
 export type PerformanceObserverInstance = {
     observe(options : PerformanceObserverOptions & { type : string; buffered? : boolean }) : void;
     disconnect() : void;
-    /** Removes and gives the entries that the browser has not delivered yet. */
+    /** This method removes and gives the entries that the browser did not deliver yet. */
     takeRecords?() : PerformanceEntryLike[];
 };
 
@@ -29,8 +33,9 @@ export type PerformanceObserverInit = {
         callback : (list : PerformanceEntryList, observer : PerformanceObserverInstance) => void,
     ) : PerformanceObserverInstance;
     /**
-     * Entry types this browser supports. Browsers ignore unsupported types in
-     * `observe()` with only a console warning, so this is the reliable check.
+     * The entry types that the browser supports. In `observe()`, browsers
+     * ignore a type that they do not support, and they show only a warning
+     * in the console. Thus, this list is the reliable check.
      */
     readonly supportedEntryTypes? : readonly string[];
 };
@@ -45,7 +50,7 @@ export type LoafScriptEntry = {
     executionStart : number;
     duration : number;
     forcedStyleAndLayoutDuration : number;
-    /** Time the script spent in synchronous pauses such as `alert()`. */
+    /** The time that the script spent in synchronous pauses, for example in `alert()`. */
     pauseDuration? : number;
     sourceURL : string;
     sourceFunctionName? : string;

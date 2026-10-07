@@ -12,18 +12,19 @@ const DEFAULT_SAMPLES = 8;
 const ALIGNED_MARGIN_MS = 1;
 
 /**
- * Estimates the offset between the worker clock and the main-thread clock
- * with an NTP-style exchange: the main thread sends a request at `t0`, the
- * worker answers with its time `t1`, and the answer arrives at `t2`. Then
- * `offset = t1 - (t0 + t2) / 2`, with an uncertainty of `(t2 - t0) / 2`. Of
- * several exchanges, the one with the shortest round trip is the most exact.
+ * This class estimates the offset between the worker clock and the
+ * main-thread clock with an NTP-style exchange. The main thread sends a
+ * request at `t0`, the worker answers with its time `t1`, and the answer
+ * arrives at `t2`. Then `offset = t1 - (t0 + t2) / 2`, with an uncertainty
+ * of `(t2 - t0) / 2`. When there are many exchanges, the exchange with the
+ * shortest round trip is the most accurate.
  *
  * The HR-Time specification aligns `timeOrigin + now()` across a window and
- * its workers, but browsers do not: Chromium takes one anchor for each
- * context, thus a worker can have a constant offset. When each context reads
- * `timeOrigin` only one time (`createAbsoluteClock`), the offset stays
- * constant for the life of the worker. Thus the most accurate estimate of
- * all synchronizations (the shortest round trip) is the result. Each new
+ * its workers, but browsers do not. Chromium takes one anchor for each
+ * context. Thus, a worker can have a constant offset. When each context
+ * reads `timeOrigin` only one time (`createAbsoluteClock`), the offset stays
+ * constant for the life of the worker. Thus, the result is the most accurate
+ * estimate of all synchronizations (the shortest round trip). Each new
  * synchronization is a new chance to measure while the main thread is idle.
  */
 export class WorkerClockSync {
@@ -40,7 +41,10 @@ export class WorkerClockSync {
         private readonly sampleCount : number = DEFAULT_SAMPLES,
     ) {}
 
-    /** Starts a new synchronization. An unfinished one is discarded. The best earlier result stays. */
+    /**
+     * This method starts a new synchronization. It discards an unfinished
+     * synchronization. The best earlier result stays.
+     */
     begin() : void {
         this.sentAt.clear();
         this.samples = [];
@@ -48,7 +52,7 @@ export class WorkerClockSync {
         this.sendNext();
     }
 
-    /** Call this for each `sync-reply` from the worker. */
+    /** Use this method for each `sync-reply` from the worker. */
     onReply(id : number, workerTime : number) : void {
         const t0 = this.sentAt.get(id);
         if (t0 === undefined) return;

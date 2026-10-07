@@ -1,9 +1,10 @@
 import type { Rng } from "./rng.js";
 
 /**
- * A `Distribution` is a function that, given an RNG, returns a numeric sample
- * (typically a duration in milliseconds). All distributions clamp to [min, max]
- * so callers can bound worst-case behavior.
+ * A `Distribution` is a function that takes an RNG and gives a numeric
+ * sample, usually a duration in milliseconds. The distributions with `min`
+ * and `max` parameters clamp their samples to [min, max]. Thus, the callers
+ * can bound the worst-case behavior.
  */
 export type Distribution = (rng : Rng) => number;
 
@@ -14,14 +15,14 @@ const clamp = (v : number, min : number, max : number) : number =>
 
 // ─── Uniform ────────────────────────────────────────────────────────────────
 
-/** Uniform random in [min, max). */
+/** A uniform random value in [min, max). */
 export function uniform(min : number, max : number) : Distribution {
     return (rng) => rng.range(min, max);
 }
 
 // ─── Constant ───────────────────────────────────────────────────────────────
 
-/** Always returns the same value (useful for baselines/control). */
+/** A distribution that always gives the same value (for baselines and control groups). */
 export function constant(value : number) : Distribution {
     return () => value;
 }
@@ -29,8 +30,8 @@ export function constant(value : number) : Distribution {
 // ─── Normal (Gaussian) ──────────────────────────────────────────────────────
 
 /**
- * Normal distribution N(mean, stddev), clamped to [min, max].
- * Use for noise around a typical value (e.g., typical request latency).
+ * A normal distribution N(mean, stddev), clamped to [min, max]. Use it for
+ * noise around a typical value, for example a typical request latency.
  */
 export function normal(
     mean : number,
@@ -44,9 +45,9 @@ export function normal(
 // ─── Exponential ────────────────────────────────────────────────────────────
 
 /**
- * Exponential distribution with given rate (lambda).
- * Mean = 1/lambda. Heavy on small values, occasional larger ones.
- * Models inter-arrival times of independent events.
+ * An exponential distribution with the rate `lambda`. The mean is
+ * `1 / lambda`. Most values are small, and some values are larger. The
+ * distribution models the inter-arrival times of independent events.
  */
 export function exponential(
     lambda : number,
@@ -62,13 +63,15 @@ export function exponential(
 // ─── Power Law (Pareto) ─────────────────────────────────────────────────────
 
 /**
- * Pareto distribution — the classic "long tail".
- * `xMin` is the lower bound; `alpha` controls tail heaviness (smaller α → fatter tail).
+ * A Pareto distribution: the classic "long tail". `xMin` is the lower bound.
+ * `alpha` controls the heaviness of the tail: a smaller `alpha` gives a
+ * fatter tail.
  *
- * P(X > x) = (xMin / x)^alpha
+ * `P(X > x) = (xMin / x)^alpha`
  *
- * Real-world response times, lag spikes, GC pauses, and "1% tail" latencies
- * often follow power laws. Use this to stress p95/p99 monitors.
+ * Real-world response times, lag spikes, GC pauses and "1% tail" latencies
+ * frequently follow power laws. Use this distribution to stress p95 and p99
+ * monitors.
  */
 export function powerLaw(
     xMin : number,
@@ -84,8 +87,9 @@ export function powerLaw(
 // ─── Bimodal ────────────────────────────────────────────────────────────────
 
 /**
- * Picks between two underlying distributions with the given probability.
- * Use for "fast/slow" patterns: e.g., 95% cache hits + 5% cache misses.
+ * This function picks one of two distributions for each sample: `distA`
+ * with the probability `pA`, and `distB` if not. Use it for "fast/slow"
+ * patterns, for example 95% cache hits and 5% cache misses.
  */
 export function bimodal(
     pA : number,
@@ -97,7 +101,10 @@ export function bimodal(
 
 // ─── Mixture ────────────────────────────────────────────────────────────────
 
-/** Generalized n-component mixture (weights need not sum to 1; they're normalized). */
+/**
+ * A mixture of n components. The sum of the weights can be different from 1,
+ * because the function normalizes the weights.
+ */
 export function mixture(
     components : Array<{ weight : number; dist : Distribution }>,
 ) : Distribution {
@@ -115,14 +122,14 @@ export function mixture(
 // ─── Evolutionary ───────────────────────────────────────────────────────────
 
 /**
- * An "evolutionary" distribution where the underlying parameters drift over
- * time according to a random walk. Each call advances the internal state by
- * one step. Useful for simulating gradually-degrading conditions.
+ * An "evolutionary" distribution: the value drifts over time as a random
+ * walk. Each call advances the internal state by one step. Use it to
+ * simulate conditions that degrade gradually.
  *
- * @param initial   Starting value
- * @param stepStdDev Standard deviation of each random walk step
- * @param min       Lower clamp
- * @param max       Upper clamp
+ * @param initial   The start value
+ * @param stepStdDev The standard deviation of each step of the random walk
+ * @param min       The lower clamp
+ * @param max       The upper clamp
  */
 export function evolutionary(
     initial : number,
@@ -140,10 +147,11 @@ export function evolutionary(
 // ─── On/Off (bursty) ────────────────────────────────────────────────────────
 
 /**
- * Bursty traffic — periods of activity followed by idle periods.
- * Returns the active distribution during "on" phases and 0 during "off".
+ * Bursty traffic: periods of activity, then idle periods. In an "on" phase,
+ * the distribution gives the samples of `activeDist`. In an "off" phase, it
+ * gives 0.
  *
- * Each call advances the phase counter. State is internal.
+ * Each call advances the phase counter. The state is internal.
  */
 export function burst(
     onLength : number,
@@ -161,7 +169,7 @@ export function burst(
 
 // ─── Take a series of N samples ─────────────────────────────────────────────
 
-/** Convenience: pull N samples from a distribution as an array. */
+/** This function takes `count` samples from a distribution and gives them as an array. */
 export function sample(dist : Distribution, count : number, rng : Rng) : number[] {
     const out = new Array<number>(count);
     for (let i = 0; i < count; i++) out[i] = dist(rng);

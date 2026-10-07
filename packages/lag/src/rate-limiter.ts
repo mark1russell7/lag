@@ -1,9 +1,9 @@
 import type { Clock } from "./types.js";
 
 /**
- * Permits at most `limit` actions in each window of `windowMs`. Use it to
- * keep event volume small, for example one attribution event for each long
- * frame.
+ * This class permits no more than `limit` actions in each window of
+ * `windowMs`. Use it to keep the number of events small, for example one
+ * attribution event for each long frame.
  */
 export class RateLimiter {
     private windowStart = -Infinity;
@@ -15,7 +15,7 @@ export class RateLimiter {
         private readonly windowMs : number,
     ) {}
 
-    /** True if the action is permitted now. A permitted action uses one unit of the limit. */
+    /** True if the action is permitted at this time. A permitted action uses one unit of the limit. */
     tryAcquire() : boolean {
         const now = this.clock.now();
         if (now - this.windowStart >= this.windowMs) {
@@ -29,8 +29,8 @@ export class RateLimiter {
 }
 
 /**
- * Removes the query string and the fragment from a URL. They can contain
- * tokens or personal data, and they make values unique.
+ * This function removes the query string and the fragment from a URL. They
+ * can contain tokens or personal data. They also make the values unique.
  */
 export function stripUrlParameters(url : string) : string {
     const end = url.search(/[?#]/);

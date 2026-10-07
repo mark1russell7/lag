@@ -38,9 +38,10 @@ function isPrimitiveArray(value : unknown) : value is string[] | number[] | bool
 }
 
 /**
- * OTel attribute values must be primitives or homogeneous primitive arrays;
- * exporters drop anything else. Errors become the semantic-convention
- * `exception.*` attributes, other objects are JSON-encoded.
+ * An OTel attribute value must be a primitive, or an array of primitives of
+ * one type. Exporters drop all other values. Thus, an `Error` becomes the
+ * `exception.*` attributes of the semantic conventions. Other objects become
+ * JSON strings.
  */
 function toAttributes(args : unknown) : Record<string, AttributeValue> {
     const attributes : Record<string, AttributeValue> = {};
@@ -83,9 +84,9 @@ export function createOtelLoggerAdapter(otelLogger : OtelLogger) : Logger {
 }
 
 /**
- * Sends each event as an OTel log record with `eventName` set, as the
- * OpenTelemetry event conventions require. Attributes without a value are
- * left out.
+ * This function makes an event sink that sends each event as an OTel log
+ * record with `eventName`. The OpenTelemetry conventions for events make
+ * `eventName` necessary. The sink removes the attributes that have no value.
  */
 export function createOtelEventSink(otelLogger : OtelLogger) : EventSink {
     return {

@@ -8,14 +8,18 @@ import { METRICS, createHistogram } from "../metric-catalog.js";
 import { createHandle, validatedRecorder } from "./shared.js";
 
 /**
- * Constructs a MacrotaskLag monitor wired to `lag_macrotask_histogram`.
+ * This factory makes a `MacrotaskLag` monitor that records into
+ * `lag_macrotask_histogram`.
  *
- * MacrotaskLag measures how long a setTimeout(0) waits in the task queue — a
- * proxy for queue depth. It samples every 5 seconds, too sparsely for the
- * LagLogger windows; DriftLag covers those. With `conditions`, the monitor
- * pauses while the page is hidden, and invalid samples are not recorded.
- * With `deps.MessageChannel`, each measurement starts in a message task, so
- * that the 4 ms clamp of nested timers does not apply.
+ * `MacrotaskLag` measures how long a `setTimeout(0)` waits in the task
+ * queue. The value is an indirect measure of the queue depth. The monitor
+ * samples every 5 seconds. This rate is too low for the `LagLogger` windows,
+ * but `DriftLag` covers those windows.
+ *
+ * With `conditions`, the monitor pauses while the page is hidden, and it
+ * does not record the samples that are not valid. With
+ * `deps.MessageChannel`, each measurement starts in a message task. Thus,
+ * the 4 ms clamp of nested timers does not apply.
  */
 export function createInstrumentedMacrotaskLag(
     deps : CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">>,

@@ -1,17 +1,21 @@
 import type { Clock, Logger } from "./types.js";
 
 /**
- * Duck-typed FinalizationRegistry — no DOM lib dependency required.
+ * A duck-typed `FinalizationRegistry`, without a dependency on the DOM
+ * library.
  *
- * This API is part of the JavaScript spec (ES2021) and is supported in all
- * modern engines: V8 (Chrome/Node), JSC (Safari), SpiderMonkey (Firefox).
+ * This API is part of the JavaScript specification (ES2021). All modern
+ * engines support it: V8 (Chrome and Node.js), JSC (Safari) and
+ * SpiderMonkey (Firefox).
  *
- * Notes from the spec:
- * - Cleanup callbacks fire AFTER an object is collected, as a separate task.
- * - The engine MAY batch callbacks or delay them.
- * - The engine MAY decide not to fire callbacks at all in some cases (e.g.,
- *   abrupt page termination).
- * - Callbacks must NEVER fire synchronously during JS execution.
+ * The specification gives these rules:
+ * - Cleanup callbacks fire *after* the engine collects an object, as a
+ *   separate task.
+ * - The engine can put callbacks in a batch, or delay them.
+ * - In some cases, the engine can decide not to fire the callbacks, for
+ *   example when the page stops abruptly.
+ * - The engine must not fire callbacks synchronously during the execution
+ *   of JavaScript.
  */
 export type FinalizationRegistryInstance<T> = {
     register(target : object, heldValue : T, unregisterToken? : object) : void;
@@ -25,21 +29,23 @@ export type FinalizationRegistryConstructor = new <T>(
 const DEFAULT_HISTORY_SIZE = 200;
 
 /**
- * Detects garbage collection cycles via FinalizationRegistry.
+ * This class finds garbage collection cycles through `FinalizationRegistry`.
  *
- * Exactly one sacrificial "canary" object is in flight at a time: it is
- * registered with a FinalizationRegistry and immediately dropped. When the
- * engine collects it, the cleanup callback records a GC event and arms the
- * next canary. One canary per GC means one event per GC — allocating canaries
- * on a timer instead would count every canary a single GC swept up.
+ * At one time, only one "canary" object is in flight. The detector
+ * registers it with a `FinalizationRegistry` and drops it immediately. When
+ * the engine collects it, the cleanup callback records a GC event and arms
+ * the next canary. Thus, one canary for each GC gives one event for each GC.
+ * A timer that makes canaries is not correct, because then one GC that
+ * collects many canaries counts as many events.
  *
- * Only GCs that collect the canary are seen: engines may leave young objects
- * to a later cycle, so this undercounts minor GCs rather than overcounting.
+ * The detector sees only the GCs that collect the canary. Engines can leave
+ * young objects to a later cycle. Thus, the detector counts too few minor
+ * GCs, but not too many.
  *
  * Use cases:
- *   - Tag lag measurements with "GC recently happened" for forensic analysis.
- *   - Track GC frequency over time to detect allocation pressure.
- *   - Correlate p99 lag spikes with GC timing.
+ *   - Add "a GC occurred recently" to lag measurements, for a later analysis.
+ *   - Follow the GC frequency over time, to find allocation pressure.
+ *   - Correlate the p99 lag spikes with the times of the GCs.
  */
 export class GCSignalDetector {
     private readonly registry : FinalizationRegistryInstance<undefined>;
@@ -71,8 +77,8 @@ export class GCSignalDetector {
     }
 
     /**
-     * Returns true if at least one GC event has been observed within the
-     * last `withinMs` milliseconds.
+     * True if the detector observed at least one GC event in the last
+     * `withinMs` milliseconds.
      */
     didGCRecently(withinMs : number) : boolean {
         const last = this.gcTimestamps[this.gcTimestamps.length - 1];
@@ -80,8 +86,8 @@ export class GCSignalDetector {
     }
 
     /**
-     * Returns the number of GC events observed within the given time window
-     * (looking backward from now).
+     * The number of GC events that the detector observed in the last
+     * `windowMs` milliseconds, back from the current time.
      */
     getRecentGCEvents(windowMs : number) : number {
         const now = this.clock.now();
@@ -93,12 +99,12 @@ export class GCSignalDetector {
         return count;
     }
 
-    /** Total number of GC events observed since startup. */
+    /** The total number of GC events that the detector observed since its construction. */
     getTotalGCEvents() : number {
         return this.totalGCEvents;
     }
 
-    /** Returns timestamps for testing/inspection. */
+    /** The timestamps of the recent GC events, oldest first, for tests and inspection. */
     getEventTimestamps() : readonly number[] {
         return this.gcTimestamps;
     }

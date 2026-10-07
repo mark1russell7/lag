@@ -17,12 +17,14 @@ function nodeName(node : NodeLike) : string {
 }
 
 /**
- * Makes a short CSS-like selector for a DOM node, as web-vitals does: `#id`
- * (and stop), or `tag.class1.class2` with sorted classes, joined with `>`
- * from the root down, at most `maxLength` characters.
+ * This function makes a short CSS-like selector for a DOM node, as
+ * web-vitals does. Each part is `#id` (then the function stops), or
+ * `tag.class1.class2` with the classes in sorted order. The function joins
+ * the parts with `>`, from the root down. The result has no more than
+ * `maxLength` characters, but the part of the node itself can be longer.
  *
- * The selector is for events only. It identifies elements, so it must never
- * be a metric attribute.
+ * The selector is for events only. It identifies elements, so it must not
+ * be a metric attribute at any time.
  */
 export function describeNode(node : unknown, maxLength : number = DEFAULT_MAX_LENGTH) : string {
     let selector = "";

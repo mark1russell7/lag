@@ -13,7 +13,7 @@ export type TestStatus = "passed" | "failed" | "skipped" | "todo";
 /** The type of a test suite. */
 export type SuiteKind = "unit" | "browser" | "e2e" | "benchmark" | "soak" | "lint";
 
-/** The runtime of a suite: "node", or a browser name such as "chromium", "firefox", "webkit" or "chrome". */
+/** The runtime of a suite: "node", or a browser name, for example "chromium", "firefox", "webkit" or "chrome". */
 export type Environment = string;
 
 export type TestCaseResult = {
@@ -69,7 +69,11 @@ export type MutantStatus = "Killed" | "Survived" | "NoCoverage" | "Timeout" | "C
 export type MutationFile = {
     file : string;
     counts : Partial<Record<MutantStatus, number>>;
-    /** Killed and timed-out mutants divided by all valid mutants, from 0 to 100. */
+    /**
+     * The number of `Killed` and `Timeout` mutants divided by the number of
+     * valid mutants (`Killed`, `Timeout`, `Survived` and `NoCoverage`), from 0
+     * to 100.
+     */
     score : number;
 };
 

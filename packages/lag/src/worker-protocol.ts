@@ -63,14 +63,15 @@ export type LivenessStartMessage = {
     pollIntervalMs : number;
 };
 
-/** Main → worker: stop watching the liveness counter. */
+/** Main → worker: stop the liveness watcher. */
 export type LivenessStopMessage = {
     type : "liveness-stop";
 };
 
 /**
- * Worker → main: one per interval, sent from the worker's own timer so it
- * keeps flowing while the main thread is blocked.
+ * Worker → main: one heartbeat for each interval. The worker sends it from
+ * its own timer, so that the heartbeats continue while the main thread is
+ * blocked.
  *
  * `sentAt` is `performance.timeOrigin + performance.now()` in the worker: an
  * absolute timestamp, comparable with the same expression on the main thread
@@ -80,7 +81,7 @@ export type HeartbeatMessage = {
     type : "heartbeat";
     seq : number;
     sentAt : number;
-    /** How late the worker's own timer fired for this heartbeat. */
+    /** How late the timer of the worker fired for this heartbeat. */
     workerSelfLagMs : number;
 };
 
@@ -91,7 +92,7 @@ export type SyncReplyMessage = {
     workerTime : number;
 };
 
-/** Worker → main: a hang ended. The main thread reads this when it can run again. */
+/** Worker → main: a hang ended. The main thread reads this message when it can operate again. */
 export type HangEndedMessage = {
     type : "hang-ended";
     /** The worker's absolute time of the last acknowledgement before the hang. */

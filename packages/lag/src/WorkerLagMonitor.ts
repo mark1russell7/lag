@@ -11,20 +11,22 @@ export type WorkerLike = {
 
 export type WorkerLagMeasurement = {
     /**
-     * How long the heartbeat waited before the main thread processed it.
-     * Near zero when the main thread is responsive; while it is blocked,
-     * heartbeats queue up and each reports how long it waited.
+     * How long the heartbeat waited before the main thread processed it. The
+     * value is near zero when the main thread is responsive. While the main
+     * thread is blocked, heartbeats queue up, and each one reports how long
+     * it waited.
      */
     deliveryDelayMs : number;
     /**
-     * How late the worker's own timer fired. High values mean the worker was
-     * itself starved or stopped, so heartbeats were sent late too.
+     * How late the timer of the worker fired. A high value means that the
+     * worker itself was starved or stopped. Thus, the worker also sent the
+     * heartbeats late.
      */
     workerSelfLagMs : number;
     seq : number;
 };
 
-/** A period in which the worker itself did not run, in main-thread monotonic time. */
+/** A period in which the worker itself did not operate, in the monotonic time of the main thread. */
 export type SystemStall = {
     start : number;
     end : number;
@@ -32,9 +34,9 @@ export type SystemStall = {
 };
 
 export type WorkerLagEvents = {
-    /** The worker did not run for at least `systemStallThresholdMs`: evidence of a system suspend. */
+    /** The worker did not operate for `systemStallThresholdMs` or more. This is evidence of a system suspend. */
     onSystemStall? : (stall : SystemStall) => void;
-    /** A hang that the worker detected has ended. */
+    /** A hang that the worker detected ended. */
     onHangEnded? : (durationMs : number) => void;
     onClockSync? : (result : ClockSyncResult) => void;
 };
@@ -45,9 +47,9 @@ export type WorkerLagMonitorOptions = {
     clearTimeoutFn : ClearTimeoutFn;
     /** Without hang options, the worker does not detect hangs. */
     hang? : HangOptions;
-    /** Default: 5000ms. */
+    /** The smallest self lag of the worker that is a system stall. The default is 5000 ms. */
     systemStallThresholdMs? : number;
-    /** How often to synchronize the clocks again. Default: 60 000ms. */
+    /** The time between two clock synchronizations. The default is 60,000 ms. */
     clockSyncIntervalMs? : number;
     events? : WorkerLagEvents;
     /** The ID of this page instance, for the hang journal of the worker. */
@@ -56,23 +58,29 @@ export type WorkerLagMonitorOptions = {
 
 const DEFAULT_SYSTEM_STALL_THRESHOLD_MS = 5_000;
 const DEFAULT_CLOCK_SYNC_INTERVAL_MS = 60_000;
-/** The watchdog waits for the first heartbeat this many intervals, and at least `MIN_WATCHDOG_MS`. */
+/**
+ * For the first heartbeat, the watchdog waits this number of heartbeat
+ * intervals, and not less than `MIN_WATCHDOG_MS`.
+ */
 const WATCHDOG_INTERVALS = 5;
 const MIN_WATCHDOG_MS = 5_000;
 
 /**
- * Ground-truth main-thread blocking, measured from outside the main thread.
+ * This monitor measures the "ground truth" of main-thread blocking, from
+ * outside the main thread.
  *
- * Timer-based monitors (DriftLag, MacrotaskLag) run on the main thread, so
- * they can only see a block after it ends. Here a Web Worker sends
- * heartbeats from its own timer (see `createWorkerHandler`). Each heartbeat
- * has an absolute send time, and the delay until the main thread handles it
- * is the time the main thread could not process messages.
+ * The timer-based monitors (`DriftLag` and `MacrotaskLag`) operate on the
+ * main thread. Thus, they can see a block only after it ends. In this
+ * monitor, a Web Worker sends heartbeats from its own timer (refer to
+ * `createWorkerHandler`). Each heartbeat has an absolute send time. The
+ * delay until the main thread handles the heartbeat is the time in which the
+ * main thread could not process messages.
  *
- * The monitor also:
- * - acknowledges each heartbeat, so the worker can detect and report hangs;
- * - synchronizes the two clocks and corrects the delay by the offset;
- * - reports system stalls, in which the worker itself did not run.
+ * The monitor also does these tasks:
+ * - It acknowledges each heartbeat, so that the worker can detect and report
+ *   hangs.
+ * - It synchronizes the two clocks, and it corrects the delay by the offset.
+ * - It reports system stalls, in which the worker itself did not operate.
  */
 export class WorkerLagMonitor {
     private running = false;
@@ -89,7 +97,7 @@ export class WorkerLagMonitor {
         private readonly worker : WorkerLike,
         private readonly report : (measurement : WorkerLagMeasurement) => void,
         private readonly logger : Logger,
-        /** The absolute clock of the main thread. The worker must use the same kind of clock. */
+        /** The absolute clock of the main thread. The worker must use the same type of clock. */
         private readonly clock : AbsoluteClock,
         private readonly options : WorkerLagMonitorOptions,
     ) {
@@ -117,8 +125,8 @@ export class WorkerLagMonitor {
     }
 
     /**
-     * Gives the worker the context of the page, for example the ID of the
-     * current page view. The worker adds it to its hang reports.
+     * This method gives the worker the context of the page, for example the
+     * ID of the current page view. The worker adds it to its hang reports.
      */
     setContext(attributes : Record<string, string>) : void {
         this.context = { ...attributes };
@@ -146,11 +154,11 @@ export class WorkerLagMonitor {
     }
 
     /**
-     * A worker that cannot load (an import error, a Content-Security-Policy
-     * without `worker-src`, a crash) sends nothing, and nothing else reports
-     * it. The watchdog warns when no heartbeat came in two checks: the first
-     * check can run before the queued heartbeats, after a long task at the
-     * start of the page.
+     * A worker that cannot load sends nothing, and nothing else reports the
+     * problem. Examples are an import error, a Content-Security-Policy
+     * without `worker-src`, or a crash. The watchdog warns when no heartbeat
+     * came in two checks. The first check can occur before the queued
+     * heartbeats, after a long task at the start of the page.
      */
     private startWatchdog(checks : number) : void {
         const delay = Math.max(MIN_WATCHDOG_MS, WATCHDOG_INTERVALS * this.options.heartbeatIntervalMs);

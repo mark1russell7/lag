@@ -1,16 +1,18 @@
 import { LagMonitor } from "./LagMonitor.js";
 
-/** Runs a callback in a new task, for example through `createMessageTaskQueue(...).post`. */
+/** A function that starts a callback in a new task, for example `createMessageTaskQueue(...).post`. */
 export type PostTaskFn = (callback : () => void) => void;
 
 /**
- * Every `expectedElapsedTimeMs`, measures how long a zero-delay setTimeout
- * waits in the task queue — a proxy for task-queue congestion.
+ * This monitor measures how long a zero-delay `setTimeout` waits in the task
+ * queue, one time in each `expectedElapsedTimeMs`. The value is an indirect
+ * measure of the congestion of the task queue.
  *
  * With `postTask`, each measurement starts in a message task. Without it,
  * the measurement starts in the `setInterval` callback. Browsers count the
- * repeats of `setInterval` as nested timers and clamp a nested timeout to
- * 4 ms or more, thus expect a floor of approximately 4 ms without `postTask`.
+ * repeats of `setInterval` as nested timers, and they clamp a nested timeout
+ * to 4 ms or more. Thus, without `postTask`, the values have a minimum of
+ * approximately 4 ms.
  */
 export class MacrotaskLag extends LagMonitor {
     private handle : number | undefined;

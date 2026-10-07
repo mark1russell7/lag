@@ -10,7 +10,8 @@
 The tool reads these file types:
 
 - **Markdown and MDX files.** The tool examines paragraphs, list items, block quotes, headings and table cells. It ignores front matter, fenced code, indented code, HTML blocks, JSX tags, MDX `import` and `export` lines, MDX expressions and link destinations.
-- **TypeScript and JavaScript files.** The tool examines only the doc comments (`/** ... */`). The TypeScript compiler parses each file, so comment syntax in a string or in a regular expression is not a comment. The tool ignores the names after `@param` and `@typeParam`, and it ignores `@example` sections. It examines the text of the other tags.
+- **TypeScript and JavaScript files.** The tool examines the doc comments (`/** ... */`). The TypeScript compiler parses each file, so comment syntax in a string or in a regular expression is not a comment. The tool ignores the names after `@param` and `@typeParam`, and it ignores `@example` sections. It examines the text of the other tags.
+- **TSX and JSX files.** The tool also examines the text that the JSX shows. This text is the text of the elements, and the string values of some attributes, for example `title`, `aria-label` and `alt`. Inline elements, for example `strong` and `a`, stay in the text of their parent. A `code` element and a `{...}` expression each count as one word. The text of headings (`h1` to `h6`), of some short elements (for example `button` and `td`) and of the attributes is a fragment.
 
 Each code span, `{@link ...}` tag, URL and quoted text counts as one word (STE Rule 8.6). The word rules do not examine the text in them. Thus, put code, file names, commands and quoted words in code font.
 

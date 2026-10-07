@@ -1,14 +1,14 @@
 /**
- * Instrumented factories — each function constructs a monitor and wires it
- * to OTel instruments from the metric catalog. Returns a MonitorHandle with
- * an error boundary and a stop() that releases timers, listeners and
- * observers.
+ * The instrumented factories. Each function makes a monitor and connects it
+ * to the OTel instruments of the metric catalog. Each function gives a
+ * `MonitorHandle` with an error boundary, and a `stop()` that releases the
+ * timers, listeners and observers.
  *
- * Each factory takes ONLY the dep groups it actually uses. Timer-driven
- * factories also take optional MeasurementConditions to pause while the page
- * is hidden and to discard invalid samples. Adding a new monitor = adding a
- * new file here + one line in setup-all-monitors.ts + its metrics in the
- * catalog.
+ * Each factory takes *only* the dependency groups that it uses. The
+ * timer-driven factories also take optional `MeasurementConditions`. With
+ * them, the monitor pauses while the page is hidden, and it discards the
+ * samples that are not valid. To add a monitor, add a file here, one line in
+ * `setup-all-monitors.ts`, and its metrics in the catalog.
  */
 
 // Timer-based lag monitors

@@ -2,13 +2,14 @@ import type { Attributes, InstrumentOptions, Meter } from "./meter.js";
 import type { ClearIntervalFn, SetIntervalFn } from "./types.js";
 
 /**
- * A Meter that sends its records to another context (usually a worker that
- * hosts the OpenTelemetry SDK), so that aggregation, encoding and export do
- * not run on the main thread.
+ * A `Meter` that sends its records to a different context, usually a worker
+ * that hosts the OpenTelemetry SDK. Thus, the aggregation, the encoding and
+ * the export do not occur on the main thread.
  *
- * The forwarding meter sends one message when an instrument is created, and
- * one batch of records each `flushIntervalMs`. The other side applies the
- * messages to a real Meter with `createMeterReceiver`.
+ * The forwarding meter sends one message for each instrument that it makes.
+ * It sends the records in batches: one batch each `flushIntervalMs`, and one
+ * batch when the buffer is full. The other side applies the messages to a
+ * real `Meter` with `createMeterReceiver`.
  */
 
 export type ForwardedInstrument = {
@@ -33,18 +34,21 @@ export type MessageTarget = {
 
 export type ForwardingMeter = {
     readonly meter : Meter;
-    /** Sends the buffered records now. */
+    /** This method sends the buffered records immediately. */
     flush() : void;
-    /** Sends the buffered records and stops the flush timer. */
+    /** This method sends the buffered records and stops the flush timer. */
     dispose() : void;
 };
 
 export type ForwardingMeterOptions = {
     setIntervalFn : SetIntervalFn;
     clearIntervalFn : ClearIntervalFn;
-    /** Default: 1000ms. */
+    /** The default is 1000 ms. */
     flushIntervalMs? : number;
-    /** Records above this number are sent at once. Default: 500. */
+    /**
+     * When the buffer has this number of records, the meter sends them
+     * immediately. The default is 500.
+     */
     maxBufferedRecords? : number;
 };
 
@@ -90,8 +94,9 @@ export function createForwardingMeter(target : MessageTarget, options : Forwardi
 }
 
 /**
- * The receiving side: applies forwarded messages to `meter` (for example the
- * OpenTelemetry Meter in a worker). Unknown instrument IDs are ignored.
+ * This function makes the receiving side. The receiver applies the forwarded
+ * messages to `meter`, for example to the OpenTelemetry `Meter` in a worker.
+ * It ignores the records of an unknown instrument ID.
  */
 export function createMeterReceiver(meter : Meter) : { handleMessage(message : ForwardedMetricMessage) : void } {
     const instruments = new Map<number, (value : number, attributes? : Attributes) => void>();

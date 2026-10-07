@@ -4,7 +4,7 @@ import type { PageViewVitals } from "../vitals/PageViewVitals.js";
 import type { PageView } from "../vitals/ViewCollector.js";
 import { createHandle } from "./shared.js";
 
-/** The crash-report context of the page has this many bytes for the keys and values of the monitors. */
+/** The crash-report context of the page has this number of bytes for the keys and the values of the monitors. */
 const CRASH_CONTEXT_BYTES = 512;
 
 const PAGE_VIEW_KEY = "lag.page_view.id";
@@ -21,10 +21,10 @@ export type PageViewContext = {
 };
 
 /**
- * Gives the ID of the current page view to the worker (for its hang
- * reports) and to the crash-report context of the browser (Chrome 145 and
- * later). Both of them report while the main thread cannot run, thus they
- * must have the ID before a hang starts.
+ * This factory gives the ID of the current page view to the worker (for its
+ * hang reports) and to the crash-report context of the browser (Chrome 145
+ * and later). Both of them report while the main thread cannot operate.
+ * Thus, they must have the ID before a hang starts.
  */
 export function createInstrumentedPageViewContext(
     deps : Pick<CoreDeps, "logger"> & Partial<CrashReportDeps>,
@@ -62,9 +62,10 @@ export function createInstrumentedPageViewContext(
 }
 
 /**
- * The crash-report context needs `initialize(length)` before the first
- * `set`. A second `initialize` fails, for example when an other script of the
- * page initialized the context already. Then `set` works.
+ * `initialize(length)` is necessary before the first `set` of the
+ * crash-report context. A second `initialize` fails, for example when
+ * another script of the page initialized the context already. In that case,
+ * `set` operates correctly.
  */
 function initializeCrashContext(crashReport : CrashReportContextLike) : Promise<unknown> {
     try {

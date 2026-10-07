@@ -10,12 +10,15 @@ import { createHandle } from "./shared.js";
 const DEFAULT_SAMPLE_INTERVAL_MS = 1_000;
 
 /**
- * Constructs a ComputePressureMonitor wired to `lag_pressure_state_histogram`
- * (the state ordinal of each record: 0 nominal, 1 fair, 2 serious,
- * 3 critical), labeled with `source`.
+ * This factory makes a `ComputePressureMonitor` that records into
+ * `lag_pressure_state_histogram`, with the attribute `source`. The value is
+ * the state ordinal of each record: 0 nominal, 1 fair, 2 serious, 3
+ * critical.
  *
- * Silently degrades on browsers without PressureObserver (currently Chromium
- * only). The monitor itself logs a warning when observe() rejects.
+ * In a browser without `PressureObserver`, the monitor records nothing, and
+ * it does not throw an error. At this time, only Chromium on desktop has
+ * `PressureObserver`. The monitor itself logs a warning when the observer
+ * is not available or when `observe()` rejects.
  */
 export function createInstrumentedComputePressure(
     deps : CoreDeps & PressureDeps,

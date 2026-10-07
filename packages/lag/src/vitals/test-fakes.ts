@@ -22,7 +22,7 @@ export function createFakeEventTarget() {
             const index = listeners.findIndex(l => l.type === type && l.listener === listener && l.capture === (options?.capture === true));
             if (index >= 0) listeners.splice(index, 1);
         },
-        /** Calls the capture listeners first, as a browser does at the target. */
+        /** This method sends the event to the capture listeners first, as a browser does at the target. */
         dispatch(type : string, event? : unknown) {
             const matching = listeners.filter(l => l.type === type);
             for (const l of [...matching.filter(m => m.capture), ...matching.filter(m => !m.capture)]) l.listener(event);
@@ -33,7 +33,7 @@ export function createFakeEventTarget() {
     };
 }
 
-/** A PerformanceObserver fake. `deliver` gives entries now. `queue` keeps them for `takeRecords`. */
+/** A fake `PerformanceObserver`. `deliver` gives entries immediately. `queue` keeps them for `takeRecords`. */
 export function createFakePerformanceObserver(supportedEntryTypes? : readonly string[]) {
     type Callback = (list : PerformanceEntryList, observer : PerformanceObserverInstance) => void;
     const observers = new Set<FakeObserver>();

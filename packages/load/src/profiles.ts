@@ -19,16 +19,18 @@ import {
 import type { WorkloadOptions } from "./workload.js";
 
 /**
- * Pre-built workload profiles for stress testing the lag monitoring stack.
+ * Ready-made workload profiles, for stress tests of the lag monitoring
+ * stack.
  *
- * Each profile is a function returning a WorkloadOptions for a given duration.
- * Pass `seed` for reproducibility.
+ * Each profile is a function that gives the `WorkloadOptions` for a given
+ * duration. Give a `seed` to repeat a run with the same values.
  */
 
 // ─── Light load ────────────────────────────────────────────────────────────
 /**
- * Mostly idle with occasional small CPU spikes (~5–20ms). Designed to look
- * like a calm app: no dropped frames, sub-100ms p99 lag.
+ * Mostly idle, with occasional small CPU spikes (approximately 5 to 20 ms).
+ * The profile looks like a calm app: no dropped frames, and a p99 lag below
+ * 100 ms.
  */
 export function lightLoad(durationMs : number, seed? : number) : WorkloadOptions {
     return {
@@ -54,7 +56,7 @@ export function lightLoad(durationMs : number, seed? : number) : WorkloadOptions
 
 // ─── Moderate load ─────────────────────────────────────────────────────────
 /**
- * Realistic mid-range web app: occasional layout, mid-range CPU, some
+ * A realistic mid-range web app: occasional layout, mid-range CPU, and some
  * macrotask scheduling pressure.
  */
 export function moderateLoad(durationMs : number, seed? : number) : WorkloadOptions {
@@ -93,8 +95,9 @@ export function moderateLoad(durationMs : number, seed? : number) : WorkloadOpti
 
 // ─── Heavy load ────────────────────────────────────────────────────────────
 /**
- * Sustained CPU pressure with occasional huge spikes (power law tail).
- * Should trigger every monitor: dropped frames, GC spikes, throttle warnings.
+ * Sustained CPU pressure with occasional huge spikes (a power-law tail). The
+ * profile tries to trigger all monitors: dropped frames, GC spikes and
+ * throttle warnings.
  */
 export function heavyLoad(durationMs : number, seed? : number) : WorkloadOptions {
     return {
@@ -138,8 +141,9 @@ export function heavyLoad(durationMs : number, seed? : number) : WorkloadOptions
 
 // ─── Bursty load ───────────────────────────────────────────────────────────
 /**
- * Bimodal: most events are tiny (~5ms), but ~5% are huge (~500ms).
- * Stresses p99 detection and the worst-case-tracking gauges.
+ * Bimodal: most events are tiny (approximately 5 ms), but approximately 5%
+ * are huge (approximately 400 ms). The profile stresses the measurement of
+ * the p99 and of the worst case.
  */
 export function burstyLoad(durationMs : number, seed? : number) : WorkloadOptions {
     return {
@@ -169,11 +173,11 @@ export function burstyLoad(durationMs : number, seed? : number) : WorkloadOption
 
 // ─── Evolutionary load ─────────────────────────────────────────────────────
 /**
- * Conditions degrade over time — typical of memory leaks or accumulating
- * state. Lag durations follow a random walk that drifts upward.
+ * Conditions degrade over time, as with memory leaks or with state that
+ * accumulates. The lag durations follow a random walk that drifts upward.
  *
- * Great for testing whether the dashboard catches "things getting worse"
- * vs. point-in-time regressions.
+ * Use this profile to test if the dashboard finds "things getting worse",
+ * compared to point-in-time regressions.
  */
 export function evolutionaryLoad(durationMs : number, seed? : number) : WorkloadOptions {
     return {
@@ -200,7 +204,8 @@ export function evolutionaryLoad(durationMs : number, seed? : number) : Workload
 
 // ─── Mixed kitchen sink ────────────────────────────────────────────────────
 /**
- * Throws everything at the monitors at once. The acid test.
+ * This profile gives all types of workload to the monitors at the same time.
+ * It is the acid test.
  */
 export function kitchenSink(durationMs : number, seed? : number) : WorkloadOptions {
     return {

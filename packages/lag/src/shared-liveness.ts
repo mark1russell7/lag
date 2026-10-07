@@ -2,21 +2,21 @@ import type { Clock, ClearIntervalFn, SetIntervalFn, SetTimeoutFn } from "./type
 
 /**
  * Shared-memory liveness: the main thread increments a counter in a
- * `SharedArrayBuffer` while it runs, and a worker reads the counter at a
+ * `SharedArrayBuffer` while it operates, and a worker reads the counter at a
  * short interval. A counter that does not change for longer than a threshold
- * shows a main-thread block, measured from outside the main thread while it
- * happens, with no messages.
+ * shows a main-thread block. The worker measures the block from outside the
+ * main thread while it occurs, with no messages.
  *
- * `SharedArrayBuffer` requires cross-origin isolation (COOP and COEP
- * headers). The worker compares counter values only, so the two clocks do not
- * have to agree.
+ * Cross-origin isolation (the COOP and COEP headers) is necessary for
+ * `SharedArrayBuffer`. The worker compares only the counter values. Thus,
+ * the two clocks can disagree.
  */
 
 /** The buffer size: one 32-bit counter. */
 export const LIVENESS_BUFFER_BYTES = 4;
 
 export type LivenessBeacon = {
-    /** Call this from main-thread callbacks that run often. */
+    /** Use this method in main-thread callbacks that occur frequently. */
     beat() : void;
 };
 
@@ -26,9 +26,10 @@ export function createLivenessBeacon(buffer : SharedArrayBuffer) : LivenessBeaco
 }
 
 /**
- * Returns a `setTimeout` replacement whose callbacks beat before they run.
- * Give it to a monitor that schedules short timers (DriftLag schedules one
- * every 5 ms), so the monitor does not need to know about the beacon.
+ * This function gives a replacement for `setTimeout`. Its callbacks beat
+ * before they start. Give it to a monitor that schedules short timers
+ * (`DriftLag` schedules one every 5 ms). Thus, the monitor does not know
+ * about the beacon.
  */
 export function beatingSetTimeout(setTimeoutFn : SetTimeoutFn, beacon : LivenessBeacon) : SetTimeoutFn {
     return (handler, timeout) => setTimeoutFn(() => {
@@ -37,16 +38,16 @@ export function beatingSetTimeout(setTimeoutFn : SetTimeoutFn, beacon : Liveness
     }, timeout);
 }
 
-/** A main-thread block that the watcher saw. Times are the watcher's clock. */
+/** A main-thread block that the watcher saw. The times are in the clock of the watcher. */
 export type LivenessBlock = {
     startedAt : number;
     durationMs : number;
 };
 
 export type LivenessWatcherOptions = {
-    /** A counter that does not change for this long is a block. Default: 50ms. */
+    /** A counter that does not change for this long is a block. The default is 50 ms. */
     thresholdMs? : number;
-    /** How often the watcher reads the counter. Default: 5ms. */
+    /** The interval at which the watcher reads the counter. The default is 5 ms. */
     pollIntervalMs? : number;
 };
 
@@ -54,13 +55,13 @@ const DEFAULT_THRESHOLD_MS = 50;
 const DEFAULT_POLL_INTERVAL_MS = 5;
 
 /**
- * The worker side: reads the counter at `pollIntervalMs` and reports each
- * block when the counter changes again. The duration is the time from the
- * last change before the block to the first change after it.
+ * The worker side. The watcher reads the counter at `pollIntervalMs`, and it
+ * reports each block when the counter changes again. The duration is the
+ * time from the last change before the block to the first change after it.
  *
- * The watcher cannot tell a block from a main thread that has no timers to
- * run. Start it only while a frequent beat (for example DriftLag) runs, and
- * stop it while the page is hidden.
+ * The watcher cannot tell the difference between a block and a main thread
+ * without timers. Start it only while a frequent beat operates, for example
+ * the beat of `DriftLag`. Stop it while the page is hidden.
  */
 export class LivenessWatcher {
     private handle : number | undefined;

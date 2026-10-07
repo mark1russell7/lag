@@ -1,4 +1,4 @@
-/** INP never needs more than this many of the longest interactions (as in web-vitals). */
+/** INP uses no more than this number of the longest interactions (as in web-vitals). */
 const MAX_TRACKED_INTERACTIONS = 10;
 
 /** INP ignores one outlier for each 50 interactions. */
@@ -7,18 +7,19 @@ const INTERACTIONS_PER_OUTLIER = 50;
 type Interaction = { id : number; duration : number };
 
 /**
- * Calculates Interaction to Next Paint (INP) from Event Timing entries.
+ * This class calculates Interaction to Next Paint (INP) from Event Timing
+ * entries.
  *
- * INP is the longest interaction, with one outlier ignored for each 50
- * interactions. The calculator keeps only the 10 longest interactions. Several
- * events (for example pointerdown, pointerup and click) share one
- * `interactionId`; the longest one counts.
+ * INP is the longest interaction, but the calculation ignores one outlier
+ * for each 50 interactions. The calculator keeps only the 10 longest
+ * interactions. Some events share one `interactionId`, for example
+ * `pointerdown`, `pointerup` and `click`. The longest of these events counts.
  *
  * The number of interactions comes from `readInteractionCount` when the
- * browser supplies it (`performance.interactionCount`). Otherwise the
- * calculator counts the interactions that it saw. That count is a lower
- * bound, because fast interactions produce no entry, so INP can be slightly
- * too high for pages with many fast interactions.
+ * browser gives it (`performance.interactionCount`). If not, the calculator
+ * counts the interactions that it saw. That count is a lower bound, because
+ * fast interactions make no entry. Thus, INP can be a little too high for
+ * pages with many fast interactions.
  */
 export class InpCalculator {
     /** The longest interactions, sorted by duration, longest first. */
@@ -33,7 +34,7 @@ export class InpCalculator {
         this.interactionCountAtStart = readInteractionCount?.() ?? 0;
     }
 
-    /** Adds one Event Timing entry. Entries without an `interactionId` are ignored. */
+    /** This method adds one Event Timing entry. It ignores an entry without an `interactionId`. */
     add(interactionId : number, duration : number) : void {
         if (!interactionId) return;
         // Interaction IDs increase monotonically
@@ -76,7 +77,7 @@ export class InpCalculator {
         return this.longest[index]!.duration;
     }
 
-    /** The interaction ID of the interaction that `getINP()` returns, or 0. */
+    /** The interaction ID of the interaction that `getINP()` gives, or 0. */
     getINPInteractionId() : number {
         if (this.longest.length === 0) return 0;
         const index = Math.min(
@@ -95,7 +96,7 @@ export class InpCalculator {
         return this.longest.some(i => i.id === interactionId);
     }
 
-    /** Starts a new calculation, for example for a new page view. */
+    /** This method starts a new calculation, for example for a new page view. */
     reset() : void {
         this.longest = [];
         this.observedInteractions = 0;

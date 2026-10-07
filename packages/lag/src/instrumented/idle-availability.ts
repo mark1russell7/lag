@@ -6,12 +6,14 @@ import { METRICS, createCounter, createHistogram } from "../metric-catalog.js";
 import { createHandle } from "./shared.js";
 
 /**
- * Constructs an IdleAvailabilityMonitor wired to two histograms and the
- * `lag_idle_callbacks` counter.
+ * This factory makes an `IdleAvailabilityMonitor` that records into two
+ * histograms and into the `lag_idle_callbacks` counter.
  *
- * The fleet timeout rate is `rate(lag_idle_callbacks{timed_out="true"})`
- * divided by the rate of all callbacks. With `conditions`, the monitor
- * pauses while the page is hidden.
+ * The timeout rate of the fleet is
+ * `rate(lag_idle_callbacks{timed_out="true"})` divided by the rate of all
+ * callbacks. With `conditions`, the monitor pauses while the page is hidden.
+ * Also, it does not record a callback whose gap overlaps an unreliable
+ * interval.
  */
 export function createInstrumentedIdleAvailability(
     deps : CoreDeps & IdleDeps,

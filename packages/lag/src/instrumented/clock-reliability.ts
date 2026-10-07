@@ -4,14 +4,19 @@ import { ClockReliabilityChecker } from "../ClockReliabilityChecker.js";
 import { METRICS, createHistogram } from "../metric-catalog.js";
 import { createHandle } from "./shared.js";
 
-/** Measure after page load work has settled; the measurement reads the clock in a tight loop. */
+/**
+ * The factory waits this time before it measures, so that the work of the
+ * page load is usually complete. The measurement reads the clock in a tight
+ * loop.
+ */
 const MEASURE_DELAY_MS = 5_000;
 
 /**
- * Constructs a ClockReliabilityChecker wired to
- * `lag_clock_resolution_histogram`: one sample for each page, 5 seconds after
- * setup. Cross-origin-isolated contexts report 20 μs or less; other contexts
- * report 100 μs to 1 ms (the Spectre mitigation).
+ * This factory makes a `ClockReliabilityChecker` that records into
+ * `lag_clock_resolution_histogram`: one sample for each page, 5 seconds
+ * after the setup. Cross-origin-isolated contexts report 20 μs or less.
+ * Other contexts report 100 μs to 1 ms, because of the mitigation of
+ * Spectre.
  */
 export function createInstrumentedClockReliability(
     deps : CoreDeps & PerformanceDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn">,

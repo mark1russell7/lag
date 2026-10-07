@@ -37,21 +37,23 @@ export type MemoryMeasurement = {
 const DEFAULT_INTERVAL_MS = 30_000;
 
 /**
- * Periodically samples JS heap memory.
+ * This monitor samples the JavaScript heap memory at a fixed interval.
  *
- * Two sources:
- * - **Legacy** `performance.memory` (Chrome only, non-standard, no permissions needed)
- * - **Modern** `performance.measureUserAgentSpecificMemory()` (standard, requires
- *   Cross-Origin-Isolation headers, async, more accurate)
+ * It has two sources:
+ * - **Legacy**: `performance.memory`. It is in Chrome only, it is not
+ *   standard, and it does not ask for permissions.
+ * - **Modern**: `performance.measureUserAgentSpecificMemory()`. It is
+ *   standard, asynchronous and more accurate. It operates only with the
+ *   cross-origin isolation headers.
  *
- * The monitor uses the modern API if available, and falls back to legacy for
- * good once the modern API fails. A slow upward trend in usedBytes points at a
- * leak.
+ * The monitor uses the modern API if it is available. After the first
+ * failure of the modern API, the monitor uses the legacy API permanently. A
+ * slow increase of `usedBytes` can show a leak.
  */
 export class MemoryMonitor {
     private handle : number | undefined;
     private started = false;
-    /** The modern API can take many seconds (it waits for a GC); never overlap samples. */
+    /** The modern API can take many seconds, because it waits for a GC. Thus, the samples must not overlap. */
     private sampling = false;
     private modernFailed = false;
 
@@ -103,7 +105,7 @@ export class MemoryMonitor {
         }
     }
 
-    /** Prefer the modern API: more accurate, and includes workers. */
+    /** The monitor prefers the modern API, because it is more accurate and it includes the workers. */
     private async measureModern() : Promise<MemoryMeasurement | undefined> {
         if (!this.source.measureModern || this.modernFailed) return undefined;
         try {

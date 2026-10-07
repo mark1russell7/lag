@@ -8,10 +8,12 @@ import { createHandle } from "./shared.js";
 const DEFAULT_INTERVAL_MS = 5_000;
 
 /**
- * Constructs a SchedulingFairnessMonitor wired to three histograms: the
- * latency of `queueMicrotask` (a near-zero baseline), `setTimeout(0)` and
- * `MessageChannel`. See SchedulingFairnessMonitor for how to read them
- * together. With `conditions`, the monitor pauses while the page is hidden.
+ * This factory makes a `SchedulingFairnessMonitor` that records into three
+ * histograms: the latency of `queueMicrotask` (a near-zero baseline), of
+ * `setTimeout(0)` and of `MessageChannel`. To read them together, refer to
+ * `SchedulingFairnessMonitor`. With `conditions`, the monitor pauses while
+ * the page is hidden. Also, it does not record a cycle that overlaps an
+ * unreliable interval.
  */
 export function createInstrumentedSchedulingFairness(
     deps : CoreDeps & TimerDeps & SchedulingDeps,

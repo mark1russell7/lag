@@ -2,15 +2,18 @@ import { driftStepMs } from "./constants.js";
 import { LagMonitor } from "./LagMonitor.js";
 
 export type DriftLagOptions = {
-    /** The requested delay of each timer step. Default: `driftStepMs` (5 ms). */
+    /** The requested delay of each timer step. The default is `driftStepMs` (5 ms). */
     stepMs? : number;
-    /** The number of recent steps that give the baseline. Default: 100. */
+    /** The number of recent steps that give the baseline. The default is 100. */
     baselineSteps? : number;
 };
 
 const DEFAULT_BASELINE_STEPS = 100;
 
-/** Steps longer than the median plus this (or plus half the median) are blocks, not jitter. */
+/**
+ * A step is a block, not jitter, if it is longer than the median plus the
+ * larger of this value and half the median.
+ */
 const MIN_JITTER_MS = 4;
 
 function median(sorted : readonly number[]) : number {
@@ -20,8 +23,9 @@ function median(sorted : readonly number[]) : number {
 
 /**
  * The idle duration of one step: the mean of the steps that are not blocks.
- * The mean, not the median, because timer jitter is skewed to the right:
- * with the median, an idle window shows a few milliseconds of lag.
+ * The function uses the mean, not the median, because timer jitter is
+ * skewed to the right. With the median, an idle window shows a few
+ * milliseconds of lag.
  */
 function idleStepMs(steps : readonly number[]) : number {
     const sorted = [...steps].sort((a, b) => a - b);
@@ -38,25 +42,26 @@ function idleStepMs(steps : readonly number[]) : number {
 }
 
 /**
- * Measures event-loop lag with a chain of short timeouts. A block anywhere
- * in the window delays the chain, thus the lag of a window contains all the
- * blocking in it. A single long timeout notices only a block at its deadline.
+ * This monitor measures event-loop lag with a chain of short timeouts. A
+ * block anywhere in the window delays the chain. Thus, the lag of a window
+ * contains all the blocking in it. One long timeout finds only a block at
+ * its deadline.
  *
  * Calibration: a timer step takes longer than its requested delay, also on
  * an idle thread. The extra time comes from the timer granularity of the
- * browser and the operating system. Measured on an idle page on Windows, a
- * 5 ms step takes approximately 5.7 ms in Chromium and 16 ms in Firefox and
- * WebKit (the 15.6 ms timer tick of the system). WebKit on macOS aligns
- * nested timers to a grid of 4 ms, or 30 ms in Low Power Mode.
+ * browser and the operating system. On an idle page on Windows, a 5 ms step
+ * takes approximately 5.7 ms in Chromium. It takes 16 ms in Firefox and
+ * WebKit, because of the 15.6 ms timer tick of the system. WebKit on macOS
+ * aligns nested timers to a grid of 4 ms, or 30 ms in Low Power Mode.
  *
- * Thus the monitor calculates the idle duration of one step from the recent
- * steps (the baseline): the mean of the steps that are not longer than the
- * median plus max(4 ms, half the median). The lag of a window is its
- * duration minus the number of steps multiplied by the baseline. The number
- * of steps changes with the baseline, so that a window stays near
- * `expectedElapsedTimeMs`.
+ * Thus, the monitor calculates the idle duration of one step from the recent
+ * steps. This value is the baseline. It is the mean of the steps that are
+ * not longer than the median plus max(4 ms, half the median). The lag of a
+ * window is its duration minus the number of steps multiplied by the
+ * baseline. The number of steps changes with the baseline, so that a window
+ * stays near `expectedElapsedTimeMs`.
  *
- * A long step is a block, not jitter, thus a block does not change the
+ * A long step is a block, not jitter. Thus, a block does not change the
  * baseline. If the thread is busy during more than half of the steps, the
  * baseline increases and the monitor reports less lag. The worker monitor
  * measures that case correctly.
@@ -106,7 +111,7 @@ export class DriftLag extends LagMonitor {
         return this.recentSteps.length > 0 ? idleStepMs(this.recentSteps) : this.stepMs;
     }
 
-    /** The lag of the window that ends now, and the start of the next window. */
+    /** This method gives the lag of the window that ends at this time, and starts the next window. */
     measure() : number {
         const now = this.clock.now();
         const lag = now - this.windowStart - this.stepsInWindow * this.getBaselineMs();

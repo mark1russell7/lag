@@ -9,21 +9,22 @@ import { findAbandonedHangs } from "../hang-journal.js";
 import { createRandomId } from "../random-id.js";
 
 /**
- * One heartbeat each second: a main-thread block of length B is seen with a
- * probability of about min(1, B / 1000 ms), for one small message each second.
+ * One heartbeat each second. The monitor sees a main-thread block of length
+ * B with a probability of approximately min(1, B / 1000 ms). The cost is one
+ * small message each second.
  */
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 1_000;
 const DEFAULT_HANG_THRESHOLD_MS = 5_000;
 
 /**
- * Constructs a WorkerLagMonitor wired to:
+ * This factory makes a `WorkerLagMonitor` that records into:
  * - `lag_worker_main_block_histogram`: how long each heartbeat waited for
  *   the main thread (main-thread blocking, measured from outside it)
- * - `lag_worker_self_lag_histogram`: the worker's own timer lateness
- * - `lag_worker_clock_offset_histogram`: the result of each clock
+ * - `lag_worker_self_lag_histogram`: the lateness of the timer of the worker
+ * - `lag_worker_clock_offset_histogram`: the absolute offset of each clock
  *   synchronization
  * - `lag_main_thread_hangs` and `lag_main_thread_hang_duration_histogram`:
- *   hangs that the worker detected
+ *   the hangs that the worker detected
  *
  * A heartbeat for which the worker itself was late by 5 s or more is
  * evidence of a system suspend. With `conditions`, the factory adds it to the

@@ -5,9 +5,10 @@ import { METRICS, createCounter } from "../metric-catalog.js";
 import { createHandle } from "./shared.js";
 
 /**
- * Constructs a GCSignalDetector wired to the `lag_gc_events` counter: +1 for
- * each garbage collection that the detector saw, when the engine runs the
- * finalization callback. The GC rate is `rate(lag_gc_events[1m])`.
+ * This factory makes a `GCSignalDetector` that records into the
+ * `lag_gc_events` counter. The counter increases by 1 for each garbage
+ * collection that the detector saw, when the engine starts the finalization
+ * callback. The GC rate is `rate(lag_gc_events[1m])`.
  */
 export function createInstrumentedGCSignal(
     deps : CoreDeps & GCDeps,

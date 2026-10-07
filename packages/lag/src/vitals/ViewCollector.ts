@@ -50,18 +50,19 @@ type EventFacts = {
 /**
  * The value of INP after a back/forward cache restore or a soft navigation,
  * when there were interactions but none had an entry. Entries come only for
- * interactions of 16 ms or more. web-vitals gives the same value.
+ * interactions of 16 ms or more. The web-vitals library gives the same
+ * value.
  */
 export const SHORT_INTERACTION_ESTIMATE_MS = 8;
 
 /** Entries whose render times are this close belong to one frame (as in web-vitals). */
 const FRAME_GROUP_MS = 8;
 
-/** The collector keeps at most this many entries for one interaction. */
+/** The collector keeps no more than this number of entries for one interaction. */
 const MAX_ENTRIES_PER_INTERACTION = 16;
 
 /**
- * Collects the vitals of one page view. The page-view orchestrator
+ * This class collects the vitals of one page view. The page-view orchestrator
  * (`PageViewVitals`) gives the entries to the collector. The collector
  * applies the rules of the metrics, as web-vitals does:
  * - INP: the interactions from the start of the view. The `first-input`
@@ -90,7 +91,7 @@ export class ViewCollector {
         this.clsReportable = view.navigationType === "back-forward-cache" || view.navigationType === "soft-navigation";
     }
 
-    /** Adds an `event` or a `first-input` entry. */
+    /** This method adds an `event` or a `first-input` entry. */
     addEvent(entry : EventEntryLike) : void {
         const id = entry.interactionId;
         if (!id || entry.startTime < this.view.startTime) return;
@@ -178,10 +179,10 @@ export class ViewCollector {
  * The longest entry of the interaction gives the latency and the start of
  * the interaction. The processing phase spans all entries of the
  * interaction in the same frame. For example, a click has `pointerdown`,
- * `pointerup` and `click` entries that end at the same paint: `pointerdown`
- * is the longest, but the handler of `click` does the processing. web-vitals
- * also adds the events of other interactions in the same frame. This
- * collector uses only the entries of the interaction.
+ * `pointerup` and `click` entries that end at the same paint. `pointerdown`
+ * is the longest, but the handler of `click` does the processing. The
+ * web-vitals library also adds the events of other interactions in the same
+ * frame. This collector uses only the entries of the interaction.
  */
 function interactionAttribution(entries : readonly EventFacts[], latency : number) : Record<string, string | number> {
     const longest = entries.reduce((a, b) => (b.duration > a.duration ? b : a));

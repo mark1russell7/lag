@@ -21,16 +21,18 @@ export type IdleMeasurement = {
 const DEFAULT_TIMEOUT_MS = 1000;
 
 /**
- * Measures main thread idle availability via requestIdleCallback.
+ * This monitor measures the idle availability of the main thread through
+ * `requestIdleCallback`.
  *
- * This is the *inverse* of lag: instead of measuring how late callbacks fire,
- * it measures how often the main thread is genuinely idle and how much time
- * is available during those idle windows.
+ * This value is the *inverse* of lag. The monitor does not measure how late
+ * callbacks fire. It measures how frequently the main thread is really idle,
+ * and how much time is available in those idle windows.
  *
- * Healthy main thread: idle callbacks fire frequently with high timeRemaining().
- * Stressed main thread: long gaps between idle fires, low timeRemaining(), or
- * `didTimeout=true` (meaning the browser had to force the callback because no
- * idle window appeared within the timeout).
+ * On a healthy main thread, idle callbacks fire frequently, with a high
+ * `timeRemaining()`. On a stressed main thread, the gaps between idle
+ * callbacks are long, `timeRemaining()` is low, or `didTimeout` is `true`.
+ * `didTimeout` shows that the browser forced the callback, because no idle
+ * window came before the timeout.
  */
 export class IdleAvailabilityMonitor {
     private handle : number | undefined;
@@ -84,7 +86,7 @@ export class IdleAvailabilityMonitor {
         this.handle = handle;
     }
 
-    /** `handle` identifies this callback's chain; report() may stop or restart the monitor. */
+    /** `handle` identifies the chain of this callback, because `report()` can stop or restart the monitor. */
     private onIdle(deadline : IdleDeadline, handle : number) : void {
         if (!this.started || this.handle !== handle) return;
 

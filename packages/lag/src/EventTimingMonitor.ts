@@ -16,16 +16,17 @@ export type EventTimingReport = {
 };
 
 /**
- * The browser default (104ms) would hide most interactions, skewing both the
- * per-event histograms and the INP calculation. 16ms is the minimum the spec
- * allows.
+ * The browser default (104 ms) hides most interactions. Thus, it gives a
+ * bias to the histograms of the events and to the INP calculation. 16 ms is
+ * the minimum that the specification permits.
  */
 const DURATION_THRESHOLD_MS = 16;
 
 /**
- * Observes Event Timing entries for user interactions and calculates the
- * page-lifetime INP. Pass `readInteractionCount` (for example
- * `() => performance.interactionCount`) where the browser supports it.
+ * This monitor observes the Event Timing entries of user interactions, and
+ * it calculates the INP for the lifetime of the page. Give
+ * `readInteractionCount` (for example `() => performance.interactionCount`)
+ * when the browser supports it.
  */
 export class EventTimingMonitor extends ObserverMonitor {
     private readonly inp : InpCalculator;
@@ -70,7 +71,7 @@ export class EventTimingMonitor extends ObserverMonitor {
         return this.inp.getLongestDuration();
     }
 
-    /** INP for the page lifetime since the monitor started. */
+    /** The INP for the lifetime of the page, since the monitor started. */
     getINP() : number {
         return this.inp.getINP();
     }
@@ -86,7 +87,10 @@ export class EventTimingMonitor extends ObserverMonitor {
     }
 }
 
-/** Maps an event type to the low-cardinality `interaction` metric attribute. */
+/**
+ * This function maps an event type to a value of the `interaction` metric
+ * attribute. The attribute has a low cardinality.
+ */
 export function interactionType(eventName : string) : "pointer" | "keyboard" | "other" {
     if (eventName.startsWith("key")) return "keyboard";
     if (eventName.startsWith("pointer") || eventName.startsWith("mouse") || eventName === "click"

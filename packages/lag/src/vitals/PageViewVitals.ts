@@ -12,7 +12,7 @@ import type { NavigationType, PageSource, VitalValue } from "./types.js";
 export type VitalsReport = {
     view : PageView;
     values : VitalValue[];
-    /** True when the view has ended. No report for this view comes after it. */
+    /** True when the view ended. No report for this view comes after it. */
     final : boolean;
 };
 
@@ -68,7 +68,7 @@ class EntryObserver extends ObserverMonitor {
         super(type, logger, Ctor, options);
     }
 
-    /** Removes the entries that the browser has not delivered yet. */
+    /** This method removes and gives the entries that the browser did not deliver yet. */
     takePending() : PerformanceEntryLike[] {
         return this.takePendingEntries();
     }
@@ -99,9 +99,11 @@ function defaultCreateId() : string {
  * `report`. These are the checkpoints:
  * - The page becomes hidden.
  * - A new view starts.
+ * - `flush()`.
  * - `stop()`.
+ *
  * Before each checkpoint, the instance processes the entries that the
- * browser has not delivered yet. The caller decides what to do with repeated
+ * browser did not deliver yet. The caller decides what to do with repeated
  * reports.
  *
  * The load metrics (FCP, LCP) of the first view count only before the page
@@ -162,21 +164,22 @@ export class PageViewVitals {
         return this.collector.values();
     }
 
-    /** Calls `listener` when a new page view starts. The return value removes the listener. */
+    /** This method sends each new page view to `listener` when the view starts. It gives a function that removes the listener. */
     subscribe(listener : (view : PageView) => void) : () => void {
         this.viewListeners.add(listener);
         return () => { this.viewListeners.delete(listener); };
     }
 
     /**
-     * Reports the current values of the current view now. Use it before an
-     * exporter flushes, so that the export contains the latest values.
+     * This method reports the current values of the current view
+     * immediately. Use it before an exporter flushes, so that the export
+     * contains the latest values.
      */
     flush() : void {
         if (this.started && !this.stopped) this.checkpoint(false);
     }
 
-    /** Reports the current view as final and stops the observers. A stopped instance cannot start again. */
+    /** This method reports the current view as final and stops the observers. A stopped instance cannot start again. */
     stop() : void {
         if (this.stopped) return;
         this.checkpoint(true);
@@ -323,9 +326,10 @@ export class PageViewVitals {
     }
 
     /**
-     * Processes the entries that the browser has not delivered, in the
-     * sequence of their start times. A soft-navigation entry among them
-     * starts a new view, and the entries after it go to the new view.
+     * This method processes the entries that the browser did not deliver
+     * yet, in the sequence of their start times. A soft-navigation entry
+     * among them starts a new view, and the entries after it go to the new
+     * view.
      */
     private drain() : void {
         if (this.draining) return;

@@ -8,13 +8,15 @@ import { METRICS, createHistogram } from "../metric-catalog.js";
 import { createHandle, validatedRecorder } from "./shared.js";
 
 /**
- * Constructs a DriftLag monitor wired to `lag_drift_histogram`, to
- * `lag_drift_baseline_histogram` (the calibrated idle step) and to
- * LagLogger, which logs sustained lag over 2 s and 5 s windows.
+ * This factory makes a `DriftLag` monitor that records into
+ * `lag_drift_histogram`, into `lag_drift_baseline_histogram` (the calibrated
+ * idle step) and into `LagLogger`. `LagLogger` logs sustained lag in windows
+ * of 2 s and 5 s.
  *
- * This is the primary high-frequency lag signal (one sample per 100 ms).
- * With `conditions`, the monitor pauses while the page is hidden, and a
- * sample whose window overlaps an unreliable interval is not recorded.
+ * This monitor gives the primary high-frequency lag signal (one sample for
+ * each 100 ms). With `conditions`, the monitor pauses while the page is
+ * hidden. Also, it does not record a sample whose window overlaps an
+ * unreliable interval.
  */
 export function createInstrumentedDriftLag(
     deps : CoreDeps & TimerDeps,

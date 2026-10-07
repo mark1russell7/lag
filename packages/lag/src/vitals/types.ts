@@ -87,6 +87,6 @@ export type PageSource = {
     wasDiscarded() : boolean;
     /** The start times of the `visibility-state` entries with the name `hidden` (Chromium only). */
     hiddenTimes() : readonly number[];
-    /** Adds a listener for the activation of a prerendered page. The return value removes the listener. */
+    /** This method adds a listener for the activation of a prerendered page. It gives a function that removes the listener. */
     onActivation(listener : () => void) : () => void;
 };

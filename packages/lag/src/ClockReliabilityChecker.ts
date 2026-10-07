@@ -1,25 +1,29 @@
 import type { PerformanceLike } from "./types.js";
 
 /**
- * `performance.now()` resolution is a multiple of 5μs (Chrome) or 20μs
- * (Firefox) in cross-origin-isolated contexts, and 100μs (Chrome) to 1ms
- * (Firefox, Safari) otherwise — a Spectre mitigation. 50μs separates the two
- * groups with margin on both sides.
+ * The resolution of `performance.now()` is a multiple of 5 μs (Chrome) or
+ * 20 μs (Firefox and Safari) in cross-origin-isolated contexts. In other
+ * contexts, it is 100 μs (Chrome) to 1 ms (Firefox and Safari). This
+ * coarsening is a mitigation of Spectre. 50 μs separates the two groups,
+ * with a margin on the two sides.
  *
- * `globalThis.crossOriginIsolated` is the authoritative flag; this checker
- * answers the question that matters for measurements: how fine is the clock?
+ * `globalThis.crossOriginIsolated` is the authoritative flag. This checker
+ * answers the question that is important for measurements: how fine is the
+ * clock?
  */
 const HIGH_RES_THRESHOLD_MS = 0.05;
 
 /**
- * Stop sampling after this many clock ticks. Any single tick already shows
- * the resolution; a few more guard against a partial first step.
+ * The checker stops the sampling after this number of clock ticks. One tick
+ * already shows the resolution. More ticks give protection against a
+ * partial first step.
  */
 const RESOLUTION_TICKS = 5;
 
 /**
- * Upper bound on `performance.now()` calls (a few ms of CPU). A 1ms clock
- * may not tick 5 times within it, but one tick is enough.
+ * The maximum number of `performance.now()` calls (a few ms of CPU time). A
+ * 1 ms clock possibly does not tick 5 times in these calls, but one tick is
+ * enough.
  */
 const MAX_SAMPLES = 100_000;
 
@@ -31,12 +35,13 @@ export class ClockReliabilityChecker {
     ) {}
 
     /**
-     * Estimates the resolution of `performance.now()`: the smallest non-zero
-     * delta between consecutive readings. Measured once, then cached — the
-     * resolution doesn't change during a page's lifetime.
+     * This method estimates the resolution of `performance.now()`: the
+     * smallest delta between consecutive readings that is not zero. The
+     * method measures the resolution one time and keeps the result, because
+     * the resolution does not change during the lifetime of a page.
      *
-     * Returns 0 if the clock never advanced while sampling (a very coarse
-     * clock); the next call samples again.
+     * The method gives 0 if the clock did not advance during the sampling (a
+     * very coarse clock). Then the next call samples again.
      */
     getResolutionMs() : number {
         if (this.resolutionMs === undefined) {
@@ -47,16 +52,17 @@ export class ClockReliabilityChecker {
         return this.resolutionMs;
     }
 
-    /** True if `performance.now()` has cross-origin-isolated precision (finer than 50μs). */
+    /** True if `performance.now()` has the precision of a cross-origin-isolated context (finer than 50 μs). */
     isHighResolution() : boolean {
         const resolution = this.getResolutionMs();
         return resolution > 0 && resolution < HIGH_RES_THRESHOLD_MS;
     }
 
     /**
-     * Returns the page's time origin (wall-clock ms when the navigation
-     * started). Useful for converting `performance.now()` values into wall
-     * timestamps for cross-system correlation.
+     * This method gives the time origin of the page: the wall-clock time, in
+     * ms, when the navigation started. Use it to change `performance.now()`
+     * values into wall-clock timestamps, and to correlate them with other
+     * systems.
      */
     getTimeOrigin() : number {
         return this.performance.timeOrigin;

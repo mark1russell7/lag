@@ -2,7 +2,7 @@ import { ObserverMonitor } from "./ObserverMonitor.js";
 import type { PerformanceEntryLike, PerformanceObserverInit, LoafEntry } from "./perf-types.js";
 import type { Logger } from "./types.js";
 
-/** The script that ran longest in a long animation frame. */
+/** The script with the longest duration in a long animation frame. */
 export type LoafScriptSummary = {
     invoker : string;
     invokerType : string;
@@ -16,9 +16,10 @@ export type LoafReport = {
     duration : number;
     startTime : number;
     /**
-     * Time from the start of the frame's rendering phase (rAF callbacks,
-     * style, layout, paint) to the end of the frame. 0 when the frame did not
-     * render — browsers report `renderStart = 0` in that case.
+     * The time from the start of the rendering phase of the frame
+     * (`requestAnimationFrame` callbacks, style, layout and paint) to the end
+     * of the frame. The value is 0 when the frame did not render. In that
+     * case, browsers report `renderStart = 0`.
      */
     renderDuration : number;
     scriptCount : number;

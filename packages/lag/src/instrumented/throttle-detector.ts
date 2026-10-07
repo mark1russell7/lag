@@ -12,13 +12,14 @@ export type ThrottleDetectorDeps = CoreDeps & Pick<TimerDeps, "setTimeoutFn" | "
 };
 
 /**
- * Constructs a TimerThrottleDetector wired to the `lag_timer_calibrations`
- * counter, labeled with `throttled`. The fraction of throttled rounds is
+ * This factory makes a `TimerThrottleDetector` that records into the
+ * `lag_timer_calibrations` counter, with the attribute `throttled`. The
+ * fraction of throttled rounds is
  * `rate(lag_timer_calibrations{throttled="true"})` divided by the rate of
  * all rounds.
  *
- * Deliberately not paused while hidden: detecting background throttling is
- * the point.
+ * The detector does not pause while the page is hidden, because its function
+ * is to find the throttling of background pages.
  */
 export function createInstrumentedThrottleDetector(
     deps : ThrottleDetectorDeps,

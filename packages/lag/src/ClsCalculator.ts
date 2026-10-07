@@ -4,12 +4,13 @@ const SESSION_GAP_MS = 1_000;
 const SESSION_MAX_MS = 5_000;
 
 /**
- * Calculates Cumulative Layout Shift (CLS) from layout-shift entries.
+ * This class calculates Cumulative Layout Shift (CLS) from layout-shift
+ * entries.
  *
- * Shifts group into session windows. A window ends after a gap of more than
- * 1 second, or when it is 5 seconds long. CLS is the score of the worst
- * window. The caller must leave out shifts that followed user input
- * (`hadRecentInput`).
+ * The calculator puts the shifts into session windows. A window ends after
+ * a gap of more than 1 second, or when it is 5 seconds long. CLS is the
+ * score of the worst window. The caller must leave out the shifts that
+ * followed user input (`hadRecentInput`).
  */
 export class ClsCalculator {
     private sessionValue = 0;
@@ -20,7 +21,7 @@ export class ClsCalculator {
     private largestShift : { value : number; sources : readonly unknown[] } | undefined;
     private largestShiftInSession : { value : number; sources : readonly unknown[] } | undefined;
 
-    /** Adds one shift and returns the score of its session window. */
+    /** This method adds one shift and gives the score of its session window. */
     add(startTime : number, value : number, sources : readonly unknown[] = []) : number {
         if (
             this.sessionStart < 0 ||

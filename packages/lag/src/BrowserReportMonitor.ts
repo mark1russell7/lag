@@ -1,6 +1,6 @@
 import type { Logger } from "./types.js";
 
-/** Duck-typed Reporting API report (`ReportingObserver` callback item). */
+/** A duck-typed report of the Reporting API (an item of the `ReportingObserver` callback). */
 export type ReportLike = {
     type : string;
     url : string;
@@ -40,9 +40,10 @@ function readBody(body : unknown) : Omit<BrowserReport, "type"> {
 }
 
 /**
- * Observes Reporting API reports that the page itself can read:
- * interventions (the browser blocked or changed an action, for example a
- * slow script or a heavy ad) and deprecations.
+ * This monitor observes the reports of the Reporting API that the page
+ * itself can read: interventions and deprecations. In an intervention, the
+ * browser blocked or changed an action, for example a slow script or a
+ * heavy ad.
  *
  * Crash reports (for example "oom" or "unresponsive") go only to the server
  * endpoints in the `Reporting-Endpoints` header, because the page is gone.

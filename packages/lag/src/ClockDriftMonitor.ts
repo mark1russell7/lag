@@ -38,17 +38,17 @@ export type ClockJump = {
 };
 
 export type ClockDriftOptions = {
-    /** The time between samples. Default: 1000 ms. */
+    /** The time between samples. The default is 1000 ms. */
     intervalMs? : number;
-    /** The smallest change of the skew that is a discontinuity. Default: 50 ms. */
+    /** The smallest change of the skew that is a discontinuity. The default is 50 ms. */
     minJumpMs? : number;
     /**
      * The smallest change of the skew, as a fraction of the time between the
-     * samples, that is a discontinuity. Default: 0.03. This tolerance lets
-     * the operating system correct the wall clock gradually.
+     * samples, that is a discontinuity. The default is 0.03. This tolerance
+     * lets the operating system correct the wall clock gradually.
      */
     jumpRate? : number;
-    /** The smallest forward change that can be a suspend. Default: 1000 ms. */
+    /** The smallest forward change that can be a suspend. The default is 1000 ms. */
     suspendMinMs? : number;
 };
 
@@ -61,15 +61,16 @@ const MAX_READ_SPREAD_MS = 1;
 type Reading = { skew : number; monotonic : number };
 
 /**
- * Compares the wall clock (`Date.now()`) with the absolute monotonic clock
- * at a fixed interval, and finds discontinuities.
+ * This monitor compares the wall clock (`Date.now()`) with the absolute
+ * monotonic clock at a fixed interval, and it finds discontinuities.
  *
  * No browser API reports clock steps or system sleep. The comparison of the
- * two clocks is the standard method (Chromium's suspend detector and Sentry
- * use it too). Each sample reads the monotonic clock before and after the
- * wall clock, and ignores the sample when the two reads are far apart. The
- * threshold is max(50 ms, 3% of the interval), because operating systems
- * correct the wall clock gradually.
+ * two clocks is the standard method (the suspend detector of Chromium and
+ * Sentry also use it). For each sample, the monitor reads the monotonic
+ * clock before and after the wall clock. It ignores the sample when the two
+ * reads are far apart. The threshold of a discontinuity is max(50 ms, 3% of
+ * the interval), because operating systems correct the wall clock
+ * gradually.
  *
  * The monitor does not change measurements that use the monotonic clock: a
  * change of the wall clock does not affect them.

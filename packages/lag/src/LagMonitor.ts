@@ -5,12 +5,13 @@ export type LagMonitorConstructor<T extends LagMonitor = LagMonitor> = new (
 ) => T;
 
 /**
- * Base class for timer-driven lag monitors.
+ * The base class of the timer-driven lag monitors.
  *
- * Subclasses start themselves at the end of their *own* constructor. The base
- * constructor must not call `start()`: with ES2022 class fields, subclass
- * field initializers run after `super()` returns and would overwrite whatever
- * state `start()` had set (e.g. the timer handle `stop()` needs to clear).
+ * Each subclass starts itself at the end of its *own* constructor. The base
+ * constructor must not start the monitor. With ES2022 class fields, a
+ * subclass initializes its fields after `super()`. Thus, the field
+ * initializers replace the state that `start()` set, for example the timer
+ * handle that `stop()` must clear.
  */
 export abstract class LagMonitor {
     abstract start() : void;

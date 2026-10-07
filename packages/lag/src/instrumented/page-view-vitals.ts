@@ -20,12 +20,13 @@ const DEFINITIONS : Readonly<Record<VitalName, MetricDefinition>> = {
 type VitalAttributes = { navigation_type : NavigationType };
 
 /**
- * Constructs PageViewVitals with one histogram for each vital, with the
- * attribute `navigation_type`, and with `browser.web_vital` events.
+ * This factory makes `PageViewVitals` with one histogram for each vital,
+ * with the attribute `navigation_type`, and with `browser.web_vital` events.
  *
  * The histogram of a vital gets one value for each page view: the value at
- * the first report, usually when the page becomes hidden for the first time.
- * A histogram cannot remove a value, thus later changes go only into events.
+ * the first report. Usually, the first report occurs when the page becomes
+ * hidden for the first time. A histogram cannot remove a value, thus later
+ * changes go only into events.
  * For example, the INP of a page view can increase when the user comes back
  * to the tab. Each event has a `delta`. The latest event for each
  * `browser.web_vital.id` has the final value.
@@ -75,10 +76,10 @@ export function createInstrumentedPageViewVitals(
 }
 
 /**
- * Sends one `browser.web_vital` event with the attribute names of the
- * OpenTelemetry semantic conventions (v1.44). The attribution and the page
- * view attributes have the `lag.` prefix, because the conventions do not
- * define them.
+ * This function sends one `browser.web_vital` event with the attribute names
+ * of the OpenTelemetry semantic conventions (v1.44). The attribution and the
+ * page view attributes have the `lag.` prefix, because the conventions do
+ * not define them.
  */
 function emitVital(events : EventSink, view : PageView, vital : VitalValue, last : number | undefined) : void {
     const name = vital.name.toLowerCase();

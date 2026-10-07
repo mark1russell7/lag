@@ -1,17 +1,22 @@
 /**
- * Duck-typed OpenTelemetry Meter interface.
+ * A duck-typed interface for the OpenTelemetry `Meter`.
  *
- * Structural subset of `@opentelemetry/api`'s Meter that covers only the
- * instruments this package uses. Any object with this shape works: the real
- * OTel Meter, a no-op for tests, or a recording mock.
+ * These types are a structural subset of the `Meter` of `@opentelemetry/api`.
+ * They cover only the instruments that this package uses. You can use any
+ * object with this shape: the real OTel `Meter`, a no-op meter for tests, or
+ * a mock that records the values.
  *
- * The package uses only counters and histograms. Both aggregate correctly
- * across many browsers. A gauge does not: the value from one browser has no
- * meaning for a fleet, and under cumulative temporality the OTel SDK sends
- * the last value again after a callback stops observing it.
+ * The package uses only counters and histograms. The values of both
+ * aggregate correctly across many browsers. The values of a gauge do not.
+ * The value from one browser has no meaning for a fleet. Also, with
+ * cumulative temporality, the OTel SDK sends the last value again when a
+ * callback no longer observes it.
  */
 
-/** Mirrors `@opentelemetry/api`'s AttributeValue: primitives or homogeneous primitive arrays. */
+/**
+ * The same type as `AttributeValue` of `@opentelemetry/api`. A value is a
+ * primitive, or an array of primitives of one type.
+ */
 export type AttributeValue =
     | string
     | number
@@ -20,7 +25,7 @@ export type AttributeValue =
     | Array<null | undefined | number>
     | Array<null | undefined | boolean>;
 
-/** Mirrors `@opentelemetry/api`'s Attributes. */
+/** The same type as `Attributes` of `@opentelemetry/api`. */
 export type Attributes = { [key : string] : AttributeValue | undefined };
 
 export type Histogram<A extends Attributes = Attributes> = {

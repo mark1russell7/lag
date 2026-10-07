@@ -17,20 +17,21 @@ export type WorkerDeps = {
     postMessage : (message : WorkerToMainMessage) => void;
     setTimeoutFn : SetTimeoutFn;
     clearTimeoutFn : ClearTimeoutFn;
-    /** Must return absolute time: `performance.timeOrigin + performance.now()`. */
+    /** The clock must give absolute time: `performance.timeOrigin + performance.now()`. */
     clock : Clock;
     /**
-     * Called when a hang starts and when it ends. The worker calls it while
-     * the main thread is blocked, so it must not depend on the main thread.
+     * The worker uses this function when a hang starts and when it ends. It
+     * does so while the main thread is blocked. Thus, the function must not
+     * depend on the main thread.
      */
     reportHang? : (event : HangEvent, options : HangOptions) => void;
-    /** Required for the shared-memory liveness watcher. */
+    /** This function and `clearIntervalFn` are necessary for the shared-memory liveness watcher. */
     setIntervalFn? : SetIntervalFn;
     clearIntervalFn? : ClearIntervalFn;
     /**
      * Persistent storage for hangs in progress. When the main thread sends a
-     * `pageId`, the worker keeps a record of each hang until it ends, so that
-     * the next page can report a hang that the page did not survive.
+     * `pageId`, the worker keeps a record of each hang until the hang ends.
+     * Thus, the next page can report a hang that the page did not survive.
      */
     journal? : HangJournal;
 };
@@ -41,15 +42,15 @@ export type WorkerHandler = {
 };
 
 /**
- * Worker-side half of WorkerLagMonitor:
- * - a heartbeat loop on the worker's own timer, with a timestamp in each
- *   heartbeat;
- * - answers to clock synchronization requests;
+ * The worker side of `WorkerLagMonitor`. It has these functions:
+ * - a heartbeat loop on the timer of the worker, with a timestamp in each
+ *   heartbeat
+ * - answers to clock synchronization requests
  * - hang detection: when the main thread does not acknowledge heartbeats for
- *   `hang.thresholdMs`, the worker reports a hang itself;
+ *   `hang.thresholdMs`, the worker reports a hang itself
  * - with a journal, a persistent record of each hang in progress.
  *
- * Idle until the main thread sends `start`.
+ * The handler is idle until the main thread sends `start`.
  */
 export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
     const { postMessage, setTimeoutFn, clearTimeoutFn, clock, reportHang, setIntervalFn, clearIntervalFn, journal } = deps;

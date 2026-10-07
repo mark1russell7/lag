@@ -1,13 +1,14 @@
 /**
  * The catalog of all metrics and events that the instrumented factories
- * emit. The factories create their instruments from these definitions, and
- * the documentation shows them. A test makes sure that the two agree.
+ * emit. The factories make their instruments from these definitions, and
+ * the documentation shows them. A test makes sure that the instruments of
+ * the factories agree with the catalog.
  *
- * Rules for every metric:
- * - The kind is a counter or a histogram, so that values from many browsers
- *   aggregate correctly.
- * - Attributes have a small, fixed set of values. Measured values,
- *   timestamps and IDs are never attributes.
+ * The rules for each metric:
+ * - The `kind` is a counter or a histogram. Thus, the values from many
+ *   browsers aggregate correctly.
+ * - An attribute has a small, fixed set of values. A measured value, a
+ *   timestamp or an ID is not an attribute at any time.
  */
 
 import type { Attributes, Counter, Histogram, Meter } from "./meter.js";
@@ -22,7 +23,7 @@ export type MetricDefinition = {
     /** The monitor that emits the metric. */
     monitor : string;
     description : string;
-    /** Attribute name to its permitted values. */
+    /** A map from each attribute name to its permitted values. */
     attributes : Readonly<Record<string, readonly string[]>>;
 };
 
@@ -65,7 +66,7 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
     drift : metric("lag_drift_histogram", "histogram", "ms", "DriftLag",
         "The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag."),
     driftBaseline : metric("lag_drift_baseline_histogram", "histogram", "ms", "DriftLag",
-        "The idle duration of one timer step (the median of the recent steps): the timer granularity of the browser and the operating system. DriftLag subtracts it."),
+        "The idle duration of one timer step, from the recent steps that are not blocks: the timer granularity of the browser and the operating system. DriftLag subtracts it."),
     macrotask : metric("lag_macrotask_histogram", "histogram", "ms", "MacrotaskLag",
         "The time that a zero-delay timeout waits in the task queue. The monitor measures one sample every 5 seconds."),
 
@@ -82,7 +83,7 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
     workerMainBlock : metric("lag_worker_main_block_histogram", "histogram", "ms", "WorkerLagMonitor",
         "The time that a worker heartbeat waited for the main thread. This is main-thread blocking, measured from outside the main thread."),
     workerSelfLag : metric("lag_worker_self_lag_histogram", "histogram", "ms", "WorkerLagMonitor",
-        "The lateness of the worker's own heartbeat timer. A high value shows that the worker itself did not run."),
+        "The lateness of the heartbeat timer of the worker. A high value shows that the worker itself did not operate."),
     workerClockOffset : metric("lag_worker_clock_offset_histogram", "histogram", "ms", "WorkerLagMonitor",
         "The absolute offset between the worker clock and the main-thread clock, from the clock synchronization exchange."),
     hangs : metric("lag_main_thread_hangs", "counter", "{hang}", "WorkerLagMonitor",
@@ -104,7 +105,7 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
         "The time from the input to the start of the event handlers.",
         { interaction : INTERACTION_TYPES }),
     eventProcessing : metric("lag_event_processing_histogram", "histogram", "ms", "EventTimingMonitor",
-        "The time that the event handlers ran.",
+        "The time that the event handlers used to process the event.",
         { interaction : INTERACTION_TYPES }),
     eventPresentationDelay : metric("lag_event_presentation_delay_histogram", "histogram", "ms", "EventTimingMonitor",
         "The time from the end of the event handlers to the next paint.",
@@ -136,11 +137,11 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
         { outcome : ["delivered", "dropped"] }),
 
     idleTimeRemaining : metric("lag_idle_time_remaining_histogram", "histogram", "ms", "IdleAvailabilityMonitor",
-        "The idle time that was available when an idle callback ran."),
+        "The idle time that was available when an idle callback started."),
     idleGap : metric("lag_idle_gap_histogram", "histogram", "ms", "IdleAvailabilityMonitor",
         "The time between two idle callbacks."),
     idleCallbacks : metric("lag_idle_callbacks", "counter", "{callback}", "IdleAvailabilityMonitor",
-        "The number of idle callbacks. A callback that timed out ran because no idle period came in time.",
+        "The number of idle callbacks. A callback that timed out started because no idle period came before its timeout.",
         { timed_out : ["true", "false"] }),
 
     schedulingMicrotask : metric("lag_scheduling_microtask_histogram", "histogram", "ms", "SchedulingFairnessMonitor",
@@ -266,13 +267,19 @@ function assertKind(definition : MetricDefinition, kind : MetricKind) : void {
     }
 }
 
-/** Creates the histogram that `definition` describes. */
+/**
+ * This function makes the histogram that `definition` describes. It throws
+ * an error if the definition is not a histogram.
+ */
 export function createHistogram<A extends Attributes = Attributes>(meter : Meter, definition : MetricDefinition) : Histogram<A> {
     assertKind(definition, "histogram");
     return meter.createHistogram<A>(definition.name, { unit : definition.unit, description : definition.description });
 }
 
-/** Creates the counter that `definition` describes. */
+/**
+ * This function makes the counter that `definition` describes. It throws an
+ * error if the definition is not a counter.
+ */
 export function createCounter<A extends Attributes = Attributes>(meter : Meter, definition : MetricDefinition) : Counter<A> {
     assertKind(definition, "counter");
     return meter.createCounter<A>(definition.name, { unit : definition.unit, description : definition.description });

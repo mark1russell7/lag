@@ -1,8 +1,8 @@
 /**
- * Helpers shared by the instrumented factories.
+ * The helpers that the instrumented factories share.
  *
- * Every factory creates its instruments from the metric catalog
- * (`metric-catalog.ts`), which also states the attribute rules.
+ * Each factory makes its instruments from the metric catalog
+ * (`metric-catalog.ts`), which also gives the attribute rules.
  */
 
 import type { Logger } from "../types.js";
@@ -10,9 +10,10 @@ import type { MonitorHandle } from "../monitor-handle.js";
 import type { MeasurementConditions, SampleValidator } from "../measurement-conditions.js";
 
 /**
- * Runs `build` behind an error boundary: if construction throws (e.g. a
- * browser API is missing), logs a warning and returns a handle with
- * `monitor: undefined` and a no-op `stop()`.
+ * This function starts `build` behind an error boundary. If the construction
+ * throws an error, for example because a browser API is missing, the
+ * function logs a warning. Then it gives a handle with `monitor: undefined`
+ * and a `stop()` that does nothing.
  */
 export function createHandle<T>(
     name : string,
@@ -29,10 +30,11 @@ export function createHandle<T>(
 }
 
 /**
- * Returns the function that a timer-driven monitor reports through: it
- * submits each sample to a validator when `conditions` exist, and records it
- * directly when they do not. `windowMs` gives the length of the measurement
- * window that ends now.
+ * This function gives the recorder through which a timer-driven monitor
+ * reports. With `conditions`, `submit` sends each sample to a validator.
+ * Without `conditions`, `submit` records the sample directly. `windowMs`
+ * gives the length of the measurement window that ends at this time.
+ * `dispose` cancels the samples that wait for evidence.
  */
 export function validatedRecorder(
     conditions : MeasurementConditions | undefined,

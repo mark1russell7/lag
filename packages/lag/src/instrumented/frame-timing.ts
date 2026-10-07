@@ -6,13 +6,15 @@ import { METRICS, createCounter, createHistogram } from "../metric-catalog.js";
 import { createHandle } from "./shared.js";
 
 /**
- * Constructs a FrameTimingMonitor wired to `lag_frame_delta_histogram` and
- * the `lag_frames` counter (delivered and dropped frames).
+ * This factory makes a `FrameTimingMonitor` that records into
+ * `lag_frame_delta_histogram` and into the `lag_frames` counter (delivered
+ * and dropped frames).
  *
- * The fleet dropped-frame rate is `rate(lag_frames{outcome="dropped"})`
- * divided by the rate of all frames. With `conditions`, the monitor pauses
- * while the page is hidden (rAF does not run there), and a frame gap that
- * overlaps an unreliable interval is not recorded.
+ * The dropped-frame rate of the fleet is
+ * `rate(lag_frames{outcome="dropped"})` divided by the rate of all frames.
+ * With `conditions`, the monitor pauses while the page is hidden, because
+ * `requestAnimationFrame` does not operate in a hidden page. Also, the
+ * monitor does not record a frame gap that overlaps an unreliable interval.
  */
 export function createInstrumentedFrameTiming(
     deps : CoreDeps & FrameDeps,

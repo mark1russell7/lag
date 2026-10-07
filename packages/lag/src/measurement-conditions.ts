@@ -15,33 +15,35 @@ export type Pausable = {
  */
 export type StallKind = "hang" | "suspend";
 
-/** Why a sample was not recorded. */
+/** The reason why a monitor did not record a sample. */
 export type DiscardReason = UnreliableReason;
 
-/** Decides whether a sample is valid before a monitor records it. */
+/** The validator decides if a sample is valid, before a monitor records it. */
 export type SampleValidator = {
     /**
-     * Records `value` through `record` if the measurement window (the last
-     * `windowMs` milliseconds) does not overlap an unreliable interval. A
-     * value at or above the outlier threshold waits for late evidence before
-     * the validator decides.
+     * This method records `value` through `record` if the measurement window
+     * (the last `windowMs` milliseconds) does not overlap an unreliable
+     * interval. A value at or above the outlier threshold waits for late
+     * evidence before the validator decides.
      */
     submit(value : number, windowMs : number, record : (value : number) => void) : void;
-    /** Cancels the samples that wait for evidence. */
+    /** This method cancels the samples that wait for evidence. */
     dispose() : void;
 };
 
 /**
- * What timer-driven monitors need to know about measurement validity. The
- * instrumented factories depend on this type, not on the page lifecycle.
+ * The information about measurement validity that the timer-driven monitors
+ * use. The instrumented factories depend on this type, not on the page
+ * lifecycle.
  */
 export type MeasurementConditions = {
     readonly tracker : ReliabilityTracker;
     createValidator() : SampleValidator;
     /**
-     * Stops `monitor` while the page is hidden or frozen and starts it again
-     * when the page is visible. Returns the function that undoes this. Call it
-     * before you stop the monitor permanently.
+     * This method stops `monitor` while the page is hidden or frozen, and
+     * starts it again when the page is visible. It gives the function that
+     * cancels this behavior. Use that function before you stop the monitor
+     * permanently.
      */
     pauseWhileHidden(monitor : Pausable) : () => void;
     dispose() : void;
@@ -53,9 +55,9 @@ export type MeasurementConditionsOptions = {
     clearTimeoutFn : ClearTimeoutFn;
     lifecycle? : LifecycleStateMachine;
     tracker? : ReliabilityTracker;
-    /** Samples at or above this value wait for late evidence. Default: 5000ms. */
+    /** Samples at or above this value wait for late evidence. The default is 5000 ms. */
     outlierThresholdMs? : number;
-    /** How long an outlier waits for evidence. Default: 2000ms. */
+    /** The time that an outlier waits for evidence. The default is 2000 ms. */
     confirmDelayMs? : number;
     onStall? : (kind : StallKind, valueMs : number) => void;
     onDiscard? : (reason : DiscardReason) => void;
@@ -70,9 +72,9 @@ function unreliableReason(state : LifecycleState) : UnreliableReason | undefined
 }
 
 /**
- * Builds the measurement conditions for a set of monitors. With a
- * `lifecycle`, hidden and frozen periods become unreliable intervals, and
- * `pauseWhileHidden` stops monitors during them.
+ * This function makes the measurement conditions for a set of monitors. With
+ * a `lifecycle`, the hidden and frozen periods become unreliable intervals,
+ * and `pauseWhileHidden` stops the monitors during them.
  */
 export function createMeasurementConditions(options : MeasurementConditionsOptions) : MeasurementConditions {
     const { clock, setTimeoutFn, clearTimeoutFn, lifecycle } = options;

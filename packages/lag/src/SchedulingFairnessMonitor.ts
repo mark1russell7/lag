@@ -9,7 +9,10 @@ export type MessageChannelLike = {
 
 export type MessagePortLike = {
     postMessage(data : unknown) : void;
-    /** The monitor never reads the event; `never` lets the real `MessagePort` (whose handler takes a MessageEvent) fit. */
+    /**
+     * The monitor does not read the event. The type `never` lets the real
+     * `MessagePort` fit, because its handler takes a `MessageEvent`.
+     */
     onmessage : ((event : never) => void) | null;
     start? : () => void;
     close? : () => void;
@@ -26,28 +29,34 @@ export type SchedulingMeasurement = {
 };
 
 /**
- * Measures how long three scheduling primitives take to run a callback queued
- * at the same instant:
+ * This monitor measures the time that three scheduling primitives take to
+ * start a callback. The monitor queues the three callbacks at the same
+ * instant:
  *
- * - **Macrotask** (`setTimeout(0)`): waits behind every queued task.
- * - **MessageChannel** (`port.postMessage`): also a task, without the timer
- *   rules. It is the most direct view of the delay of the task queue.
- * - **Microtask** (`queueMicrotask`): runs as soon as the measuring task ends,
- *   so it only captures the remainder of that task and stays near 0. It is a
- *   zero baseline, not a signal of its own — microtasks cannot be starved by
- *   other tasks.
+ * - **Macrotask** (`setTimeout(0)`): the callback waits behind all queued
+ *   tasks.
+ * - **MessageChannel** (`port.postMessage`): the callback is also a task,
+ *   but without the timer rules. It gives the most direct view of the delay
+ *   of the task queue.
+ * - **Microtask** (`queueMicrotask`): the callback starts immediately after
+ *   the measuring task ends. Thus, it measures only the remainder of that
+ *   task, and the value stays near 0. It is a zero baseline, not a signal of
+ *   its own, because other tasks cannot starve a microtask.
  *
  * Each cycle starts in a message task (`createMessageTaskQueue`), not in the
- * `setInterval` callback. In a message task the timer nesting level is 0,
- * thus the browser does not clamp the `setTimeout(0)` to 4 ms.
+ * `setInterval` callback. In a message task, the timer nesting level is 0.
+ * Thus, the browser does not clamp the `setTimeout(0)` to 4 ms.
  *
- * Both task-based latencies rise when the task queue backs up.
+ * The two task latencies increase when the task queue fills.
  */
 export class SchedulingFairnessMonitor {
     private handle : number | undefined;
     private tasks : MessageTaskQueue | undefined;
     private started = false;
-    /** Bumped on start(): a cycle still in flight from before a stop/start must not report. */
+    /**
+     * `start()` increments this value. A cycle that started before a stop
+     * and a new start must not report.
+     */
     private generation = 0;
 
     constructor(

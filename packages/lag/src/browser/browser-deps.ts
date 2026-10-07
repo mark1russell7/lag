@@ -53,7 +53,7 @@ export type BrowserDepsOptions = {
     logger : Logger;
     meter : Meter;
     events? : EventSink;
-    /** The worker that runs the `@lag/worker` handler. Without it, the worker monitors stay off. */
+    /** The worker in which the `@lag/worker` handler operates. Without it, the worker monitors stay off. */
     worker? : WorkerLike;
     workerHeartbeatIntervalMs? : number;
     workerHangReport? : HangReportTarget;
@@ -77,13 +77,13 @@ export type BrowserDepsOptions = {
     crashReportContext? : boolean;
 };
 
-/** The method `name` of `target`, bound to `target`. Undefined if `target` has no such method. */
+/** The method `name` of `target`, bound to `target`, or `undefined` if `target` has no such method. */
 function method<F>(target : object, name : string) : F | undefined {
     const value : unknown = (target as Record<string, unknown>)[name];
     return typeof value === "function" ? value.bind(target) as F : undefined;
 }
 
-/** `value` if it is a function (for example a constructor), else undefined. */
+/** `value` if it is a function (for example a constructor), or `undefined` if not. */
 function constructorOf<C>(value : unknown) : C | undefined {
     return typeof value === "function" ? value as C : undefined;
 }
@@ -101,7 +101,7 @@ function memorySourceOf(performance : BrowserGlobals["performance"]) : MemorySou
 /**
  * The browser adapter: it gets the dependencies of `setupAllMonitors` from
  * the browser globals. It examines each optional API. A missing API stops
- * only the monitors that use it, for example Safari has no
+ * only the monitors that use it. For example, Safari has no
  * `requestIdleCallback`, thus the idle monitor stays off there.
  *
  * Each function from the browser is bound to its object, because browsers

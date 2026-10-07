@@ -11,11 +11,12 @@ type TransitionAttributes = {
 };
 
 /**
- * Constructs a LifecycleStateMachine wired to the `lag_lifecycle_transitions`
- * counter, labeled with `from`, `to` and `trigger`.
+ * This factory makes a `LifecycleStateMachine` that records into the
+ * `lag_lifecycle_transitions` counter, with the attributes `from`, `to` and
+ * `trigger`.
  *
  * The measurement conditions of the other monitors use this machine. Stop it
- * last (the registry's LIFO order does).
+ * last. The LIFO order of the registry does this.
  */
 export function createInstrumentedLifecycle(
     deps : CoreDeps & LifecycleDeps,

@@ -6,10 +6,10 @@ import { EVENTS, METRICS, createCounter, createHistogram } from "../metric-catal
 import { createHandle } from "./shared.js";
 
 /**
- * Constructs a ClockDriftMonitor wired to `lag_clock_skew_histogram` (the
- * absolute skew of each sample) and the `lag_clock_jumps` counter, with the
- * attributes `direction` and `kind`. With `deps.events`, each discontinuity
- * also sends a `lag.clock.jump` event.
+ * This factory makes a `ClockDriftMonitor` that records into
+ * `lag_clock_skew_histogram` (the absolute skew of each sample) and into the
+ * `lag_clock_jumps` counter, with the attributes `direction` and `kind`.
+ * With `deps.events`, each discontinuity also sends a `lag.clock.jump` event.
  *
  * The monitor does not pause while the page is hidden, because the device
  * can sleep while the page is hidden.

@@ -1,13 +1,15 @@
 /**
- * Unified setup — orchestrates the monitor registry.
+ * This module is the unified setup. It controls the monitor registry with
+ * these steps:
  *
- *   1. Create a MonitorRegistry
- *   2. Construct the lifecycle state machine, the page-view vitals (their
- *      page view gives its ID to every event) and the measurement
- *      conditions (shared by every timer-driven monitor)
- *   3. Add instrumented factories to the registry, each guarded by the
- *      presence of their respective capability deps
- *   4. Return handles + a `stop()` that tears down the whole registry
+ * 1. Make a `MonitorRegistry`.
+ * 2. Make the lifecycle state machine, the page-view vitals and the
+ *    measurement conditions. The current page view gives its ID to every
+ *    event. All timer-driven monitors share the measurement conditions.
+ * 3. Add the instrumented factories to the registry. The setup adds a
+ *    factory only if its capability dependencies are present.
+ * 4. Give the handles, a `stop()` that stops the full registry, and a
+ *    `flush()`.
  */
 
 import type {
@@ -84,10 +86,12 @@ import {
 import type { PageViewContext } from "./instrumented/page-view-context.js";
 
 /**
- * Full dependency bag for setupAllMonitors.
+ * All dependencies of `setupAllMonitors`.
  *
- * Required: CoreDeps (logger, clock, meter) + TimerDeps + LifecycleDeps.
- * Everything else is optional, enabled by the presence of its capability deps.
+ * These groups are necessary: `CoreDeps` (the logger, the clock and the
+ * meter), `TimerDeps` and `LifecycleDeps`. All other groups are optional.
+ * When an optional group is present, the setup enables the monitors that
+ * use it.
  */
 export type AllMonitorDeps =
     & CoreDeps
@@ -111,25 +115,26 @@ export type AllMonitorDeps =
     & Partial<CrashReportDeps>;
 
 /**
- * Handles returned by setupAllMonitors.
+ * The handles that `setupAllMonitors` gives.
  *
- * The `registry` is the source of truth — typed getters are convenience
- * accessors for consumers who want to grab a specific monitor by name.
- * They return `undefined` if that monitor wasn't registered (missing deps)
- * or failed to construct.
+ * The `registry` is the source of truth. The typed getters let a consumer
+ * get one monitor by its name. A getter gives `undefined` if the setup did
+ * not register the monitor because a dependency is missing. It also gives
+ * `undefined` if the construction of the monitor failed.
  */
 export type AllMonitorHandles = {
-    /** Registry of all created handles. Use `registry.get(name)` for lookup. */
+    /** The registry of all handles that the setup made. Use `registry.get(name)` to find a handle. */
     readonly registry : MonitorRegistry;
 
-    /** Tear down every registered monitor in LIFO order. */
+    /** This method stops all registered monitors in LIFO order. */
     stop() : void;
 
     /**
-     * Records the values that the monitors keep until a checkpoint (the
-     * page-view vitals). Connect it to the "before flush" hook of the
-     * exporter. Then the final export of a page contains these values, also
-     * when the exporter gets the `pagehide` event before the monitors do.
+     * This method records the values that the monitors keep until a
+     * checkpoint (the page-view vitals). Connect it to the "before flush"
+     * hook of the exporter. Then the final export of a page contains these
+     * values, also when the exporter gets the `pagehide` event before the
+     * monitors.
      */
     flush() : void;
 
@@ -162,8 +167,9 @@ function monitorOf<T>(registry : MonitorRegistry, name : string) : T | undefined
 }
 
 /**
- * Builds the measurement conditions with counters for discarded samples and
- * stalls, and a `lag.stall` event for each stall.
+ * This function makes the measurement conditions. They count the discarded
+ * samples and the stalls, record the duration of each stall, and emit a
+ * `lag.stall` event for each stall.
  */
 function createConditions(deps : AllMonitorDeps, lifecycle : LifecycleStateMachine | undefined) : MeasurementConditions {
     const discarded = createCounter<{ reason : string }>(deps.meter, METRICS.samplesDiscarded);

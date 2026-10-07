@@ -7,9 +7,10 @@ import { createHandle } from "./shared.js";
 type InteractionAttributes = { interaction : ReturnType<typeof interactionType> };
 
 /**
- * Constructs an EventTimingMonitor wired to four histograms. Each interaction
- * event of 16 ms or more adds one sample to each, labeled with the
- * interaction type (`pointer`, `keyboard` or `other`).
+ * This factory makes an `EventTimingMonitor` that records into four
+ * histograms. Each interaction event of 16 ms or more adds one sample to
+ * each histogram, with the interaction type as an attribute (`pointer`,
+ * `keyboard` or `other`).
  *
  * INP for each page view comes from the page-view vitals
  * (`createInstrumentedPageViewVitals`), not from this factory.

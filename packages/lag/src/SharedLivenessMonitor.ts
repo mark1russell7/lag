@@ -3,9 +3,9 @@ import type { WorkerLike } from "./WorkerLagMonitor.js";
 import type { WorkerToMainMessage } from "./worker-protocol.js";
 
 export type SharedLivenessOptions = {
-    /** A counter that does not change for this long is a block. Default: 50ms. */
+    /** A counter that does not change for this long is a block. The default is 50 ms. */
     thresholdMs? : number;
-    /** How often the worker reads the counter. Default: 5ms. */
+    /** The interval at which the worker reads the counter. The default is 5 ms. */
     pollIntervalMs? : number;
 };
 
@@ -14,12 +14,13 @@ const DEFAULT_POLL_INTERVAL_MS = 5;
 
 /**
  * The main-thread side of the shared-memory liveness watcher. It gives the
- * worker the shared buffer and receives the blocks that the worker saw.
- * The main thread must beat the counter often (see `beatingSetTimeout`).
+ * worker the shared buffer and receives the blocks that the worker saw. The
+ * main thread must beat the counter frequently (refer to
+ * `beatingSetTimeout`).
  *
- * Unlike Long Animation Frames, this works in every engine that supports
- * `SharedArrayBuffer`, including Firefox and Safari. It needs cross-origin
- * isolation.
+ * This monitor is different from Long Animation Frames: it operates in each
+ * engine that supports `SharedArrayBuffer`, also in Firefox and Safari.
+ * Cross-origin isolation is necessary for it.
  */
 export class SharedLivenessMonitor {
     private running = false;

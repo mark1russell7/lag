@@ -9,14 +9,15 @@ import { METRICS, createHistogram } from "../metric-catalog.js";
 import { createHandle } from "./shared.js";
 
 /**
- * Constructs a MemoryMonitor wired to two histograms:
- * - `lag_memory_used_bytes_histogram`, labeled with `source` ("modern" or
- *   "legacy": they measure different things)
- * - `lag_memory_usage_ratio_histogram`, the used heap divided by the heap
- *   limit (legacy source only)
+ * This factory makes a `MemoryMonitor` that records into two histograms:
+ * - `lag_memory_used_bytes_histogram`, with the attribute `source`
+ *   ("modern" or "legacy"). The two sources measure different things.
+ * - `lag_memory_usage_ratio_histogram`: the used heap divided by the heap
+ *   limit (only for the legacy source).
  *
- * MemoryMonitor prefers `measureUserAgentSpecificMemory()` (requires
- * cross-origin isolation) and falls back to Chrome's `performance.memory`.
+ * `MemoryMonitor` prefers `measureUserAgentSpecificMemory()`, for which
+ * cross-origin isolation is necessary. If that API is not available or
+ * fails, the monitor uses `performance.memory` of Chrome.
  */
 export function createInstrumentedMemory(
     deps : CoreDeps & MemoryDeps & Pick<TimerDeps, "setIntervalFn" | "clearIntervalFn">,

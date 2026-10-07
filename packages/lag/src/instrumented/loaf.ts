@@ -10,12 +10,13 @@ const ATTRIBUTION_THRESHOLD_MS = 150;
 const MAX_EVENTS_PER_MINUTE = 10;
 
 /**
- * Constructs a LongAnimationFrameMonitor wired to two histograms
- * (`lag_loaf_blocking_histogram`, `lag_loaf_duration_histogram`).
+ * This factory makes a `LongAnimationFrameMonitor` that records into two
+ * histograms (`lag_loaf_blocking_histogram` and
+ * `lag_loaf_duration_histogram`).
  *
  * With `deps.events`, a frame that blocks for 150 ms or more also emits a
- * `lag.long_animation_frame` event that names the longest script. At most 10
- * events are sent each minute.
+ * `lag.long_animation_frame` event that names the longest script. The
+ * factory sends no more than 10 events each minute.
  */
 export function createInstrumentedLoaf(
     deps : CoreDeps & ObserverDeps & Partial<EventDeps>,

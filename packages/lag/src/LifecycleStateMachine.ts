@@ -1,19 +1,24 @@
 import type { Clock, Logger } from "./types.js";
 
 /**
- * Page lifecycle states per the Page Lifecycle API.
- * See: https://developer.chrome.com/docs/web-platform/page-lifecycle-api
+ * The page lifecycle states of the Page Lifecycle API. Refer to
+ * https://developer.chrome.com/docs/web-platform/page-lifecycle-api.
  *
- *   active  ⇄ passive              focus / blur
- *   active|passive → hidden        visibilitychange
- *   hidden  → active|passive       visibilitychange
- *   hidden  ⇄ frozen               freeze / resume
- *   any     → frozen               pagehide (persisted: entering the BFCache)
- *   frozen  → active|passive       pageshow (persisted: restored from the BFCache)
- *   any     → terminated           pagehide (not persisted)
+ * The transitions and the events that cause them:
  *
- * "discarded" is not modelled: a discarded page runs no script, so it can
- * only be detected after the reload, via `document.wasDiscarded`.
+ * ```text
+ * active         ⇄ passive          focus / blur
+ * active|passive → hidden           visibilitychange
+ * hidden         → active|passive   visibilitychange
+ * hidden         ⇄ frozen           freeze / resume
+ * any            → frozen           pagehide (persisted: into the back/forward cache)
+ * frozen         → active|passive   pageshow (persisted: from the back/forward cache)
+ * any            → terminated       pagehide (not persisted)
+ * ```
+ *
+ * The machine does not model the "discarded" state. No script operates in a
+ * discarded page. Thus, the page can find a discard only after the reload,
+ * through `document.wasDiscarded`.
  */
 export type LifecycleState =
     | "active"
@@ -42,7 +47,10 @@ export type LifecycleMark = {
     readonly id : symbol;
 };
 
-/** Event objects are only read for `persisted` (pagehide/pageshow). */
+/**
+ * The machine reads only two properties of an event object: `persisted` (of
+ * `pagehide` and `pageshow`) and `timeStamp`.
+ */
 export type LifecycleListener = (event : unknown) => void;
 
 export type LifecycleListenerOptions = { capture? : boolean };
@@ -59,7 +67,7 @@ export type LifecycleDocument = LifecycleEventTarget & {
 
 export type LifecycleWindow = LifecycleEventTarget;
 
-/** States in which the page is shown and timers run normally. */
+/** True for the states in which the page is visible and timers operate without throttling. */
 export function isVisibleState(state : LifecycleState) : boolean {
     return state === "active" || state === "passive";
 }
@@ -79,15 +87,16 @@ function eventTime(event : unknown, now : number) : number {
 }
 
 /**
- * Tracks page lifecycle state transitions and provides:
- * - a mark/resolve API to ask "what state changes happened between point A
- *   and now?"
- * - change subscriptions, for example to pause monitors while the page is
- *   hidden (see `createMeasurementConditions`)
+ * This class follows the transitions of the page lifecycle state. It gives:
+ * - a mark and resolve API, to ask "which state changes occurred between
+ *   point A and this time?"
+ * - change subscriptions, for example to pause the monitors while the page
+ *   is hidden (refer to `createMeasurementConditions`)
  *
- * Transitions are buffered only while a mark is outstanding, and those older
- * than the earliest unresolved mark are compacted away on each resolve() —
- * so resolve or cancel every mark. Subscriptions do not use marks.
+ * The machine keeps the transitions only while a mark is open. On each
+ * `resolve()` and `cancel()`, it removes the transitions that are older than
+ * the earliest open mark. Thus, resolve or cancel each mark. Subscriptions
+ * do not use marks.
  */
 export class LifecycleStateMachine {
     private currentState : LifecycleState;
@@ -113,12 +122,13 @@ export class LifecycleStateMachine {
     }
 
     /**
-     * Returns the current lifecycle state.
+     * This method gives the current lifecycle state.
      *
-     * `document.visibilityState` updates synchronously but `visibilitychange`
-     * is dispatched as a separate task, so a timer callback can run in
-     * between. Every read re-syncs from `visibilityState` so such a callback
-     * still sees the page as hidden.
+     * `document.visibilityState` changes synchronously, but the browser
+     * dispatches `visibilitychange` as a separate task. Thus, a timer
+     * callback can start between the two. Each read synchronizes the state
+     * from `visibilityState` again, so that such a callback also sees the
+     * page as hidden.
      */
     getState() : LifecycleState {
         this.syncFromDocument();
@@ -126,8 +136,9 @@ export class LifecycleStateMachine {
     }
 
     /**
-     * Place a mark at the current point in the transition stream.
-     * Call resolve(mark) later to get all transitions that occurred after.
+     * This method puts a mark at the current point of the transition stream.
+     * Use `resolve(mark)` later to get all transitions that occurred after
+     * the mark.
      */
     mark() : LifecycleMark {
         this.syncFromDocument();
@@ -137,8 +148,9 @@ export class LifecycleStateMachine {
     }
 
     /**
-     * Get all transitions that have occurred since the mark, then drop the mark.
-     * Returns an empty array if the mark is unknown (e.g. already resolved).
+     * This method gives all transitions that occurred after the mark, and
+     * then removes the mark. It gives an empty array if the mark is unknown,
+     * for example if it is already resolved.
      */
     resolve(mark : LifecycleMark) : StateTransition[] {
         this.syncFromDocument();
@@ -153,8 +165,9 @@ export class LifecycleStateMachine {
     }
 
     /**
-     * Drop a mark without retrieving its transitions. Use to abandon a mark
-     * (e.g. the tracking session ended without needing the data).
+     * This method removes a mark, but it does not get its transitions. Use it
+     * to abandon a mark, for example when a measurement ended and its data is
+     * not necessary.
      */
     cancel(mark : LifecycleMark) : void {
         if (this.marks.delete(mark.id)) {
@@ -162,13 +175,13 @@ export class LifecycleStateMachine {
         }
     }
 
-    /** Call `listener` on every transition. Returns an unsubscribe function. */
+    /** This method sends each transition to `listener`. It gives a function that removes the subscription. */
     subscribe(listener : (transition : StateTransition) => void) : () => void {
         this.subscribers.add(listener);
         return () => { this.subscribers.delete(listener); };
     }
 
-    /** Detach all DOM listeners and drop all marks and subscribers. */
+    /** This method removes all DOM listeners, all marks, all subscribers and the buffered transitions. */
     dispose() : void {
         for (const { target, type, listener, options } of this.attached) {
             target.removeEventListener(type, listener, options);
@@ -179,17 +192,17 @@ export class LifecycleStateMachine {
         this.transitions = [];
     }
 
-    /** Number of transitions currently buffered (for debugging/testing). */
+    /** The number of transitions in the buffer at this time, for tests and debug. */
     getBufferedCount() : number {
         return this.transitions.length;
     }
 
-    /** Number of outstanding (unresolved) marks. */
+    /** The number of open (unresolved) marks. */
     getMarkCount() : number {
         return this.marks.size;
     }
 
-    /** Total number of transitions seen since startup (lifetime counter). */
+    /** The total number of transitions since the construction of the machine (a lifetime counter). */
     getTotalTransitions() : number {
         return this.totalTransitions;
     }
@@ -295,7 +308,7 @@ export class LifecycleStateMachine {
     }
 }
 
-/** Helper: extract a summary of state changes from a list of transitions. */
+/** A summary of the state changes in a list of transitions, from `summarizeTransitions`. */
 export type LifecycleSummary = {
     wasHidden : boolean;
     wasFrozen : boolean;

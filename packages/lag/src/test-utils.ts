@@ -3,20 +3,19 @@ import type { LagMonitor, LagMonitorConstructor } from "./LagMonitor.js";
 import type { Meter } from "./meter.js";
 
 /**
- * Helper class for testing lag monitors with fake timers.
- * Simplifies the common pattern of advancing both actual time (currentTime)
- * and vitest's fake timers in sync and automatically create the monitor.
- *
+ * A helper class to test lag monitors with fake timers. It advances the
+ * mocked time (`currentTime`) and the fake timers of Vitest together. It
+ * also makes the monitor.
  */
 export class LagMonitorTestDriver<T extends LagMonitor = LagMonitor> {
     public monitor?: T;
     public mockLogger = { log : vi.fn() };
 
     /**
-     * @param getCurrentTime - Function that returns the current mocked time
-     * @param setCurrentTime - Function to update the mocked time
-     * @param interval - The base measurement interval in milliseconds
-     * @param mockReport - The mock report function to track calls
+     * @param getCurrentTime - A function that gives the current mocked time
+     * @param setCurrentTime - A function that changes the mocked time
+     * @param interval - The base measurement interval, in milliseconds
+     * @param mockReport - The mock report function. It records the calls.
      */
     constructor(
         private getCurrentTime : () => number,
@@ -26,12 +25,12 @@ export class LagMonitorTestDriver<T extends LagMonitor = LagMonitor> {
     ){}
 
     /**
-     * Creates a lag monitor instance and stores it on the driver.
-     * Passes vitest-faked globals as DI'd timer functions, and wraps
-     * getCurrentTime as the clock.
+     * This method makes a lag monitor and stores it on the driver. It gives
+     * the global timer functions, which Vitest fakes, to the monitor as
+     * injected dependencies. It uses `getCurrentTime` as the clock.
      *
-     * @param MonitorClass - The monitor class constructor
-     * @returns The created monitor instance
+     * @param MonitorClass - The constructor of the monitor class
+     * @returns The monitor that the method made
      *
      * @example
      * const monitor = driver.createMonitor(ContinuousLag);
@@ -51,10 +50,11 @@ export class LagMonitorTestDriver<T extends LagMonitor = LagMonitor> {
     }
 
     /**
-     * Advances one measurement cycle with the specified lag.
-     * Advances actual time by (interval + lagMs) and timers by interval.
+     * This method advances one measurement cycle with the specified lag. It
+     * advances the mocked time by `interval + lagMs`, and the timers by
+     * `interval`.
      *
-     * @param lagMs - The amount of lag to simulate (positive = behind, negative = ahead)
+     * @param lagMs - The lag to simulate. A positive value is late, and a negative value is early.
      *
      * @example
      * driver.tick(5); // Simulate 5ms of lag
@@ -67,10 +67,11 @@ export class LagMonitorTestDriver<T extends LagMonitor = LagMonitor> {
     }
 
     /**
-     * Advances multiple measurement cycles, each with the specified lag.
+     * This method advances `count` measurement cycles, each with the
+     * specified lag.
      *
-     * @param count - Number of cycles to advance
-     * @param lagMs - The amount of lag per cycle
+     * @param count - The number of cycles to advance
+     * @param lagMs - The lag of each cycle
      *
      * @example
      * driver.tickMany(3, 5); // Simulate 3 cycles, each with 5ms lag
@@ -82,10 +83,11 @@ export class LagMonitorTestDriver<T extends LagMonitor = LagMonitor> {
     }
 
     /**
-     * Advances multiple cycles with different lag values for each cycle.
+     * This method advances one cycle for each value in `lagValues`, with
+     * that lag.
      *
-     * @param lagValues - Array of lag values, one per cycle
-     * @returns The lag values array (for chaining with expectations)
+     * @param lagValues - The lag values, one for each cycle
+     * @returns The same `lagValues` array, to use in the expectations
      *
      * @example
      * const lags = driver.tickSequence([5, -2, 10]);
@@ -97,9 +99,10 @@ export class LagMonitorTestDriver<T extends LagMonitor = LagMonitor> {
     }
 
     /**
-     * Asserts that the mock report was called with the expected lag values in sequence.
+     * This method asserts that the mock report got the expected lag values,
+     * in sequence, and no other values.
      *
-     * @param expectedLags - Array of expected lag values
+     * @param expectedLags - The expected lag values
      *
      * @example
      * driver.tickSequence([5, -2, 10]);
@@ -114,10 +117,10 @@ export class LagMonitorTestDriver<T extends LagMonitor = LagMonitor> {
 }
 
 /**
- * Test utility for MacrotaskLag that handles the async callback coordination
- * between setInterval and setTimeout(0) calls.
- * Uses vi.fn() mocks rather than global spies since MacrotaskLag
- * receives its timer functions via DI.
+ * A test utility for `MacrotaskLag`. It controls the order of the
+ * asynchronous callbacks of `setInterval` and `setTimeout(0)`. It uses
+ * `vi.fn()` mocks, not global spies, because `MacrotaskLag` gets its timer
+ * functions through dependency injection.
  */
 export class MacrotaskLagTestDriver {
     public mockSetInterval = vi.fn().mockReturnValue(123);
@@ -135,7 +138,7 @@ export class MacrotaskLagTestDriver {
     ) {}
 
     /**
-     * Creates a MacrotaskLag monitor instance
+     * This method makes a monitor of `MonitorClass` with the mocks of the driver.
     */
    createMonitor<M extends LagMonitor>(MonitorClass : LagMonitorConstructor<M>) : M {
         return new MonitorClass(
@@ -151,16 +154,16 @@ export class MacrotaskLagTestDriver {
    }
 
    /**
-    * Mock clock.now() to return a sequence of values.
-    * Useful for simulating the passage of time in tests.
+    * This method makes `clock.now()` give a sequence of values. Use it to
+    * simulate the passage of time in tests.
     */
     mockPerformanceTimes(...times : number[]) : void {
         times.forEach((time) => this.mockClock.now.mockReturnValueOnce(time));
     }
 
     /**
-     * Executes one complete interval cycle: calls the interval callback,
-     * executes the setTimeout(0) callback, and awaits the results.
+     * This method does one full interval cycle. It starts the interval
+     * callback, then the `setTimeout(0)` callback, and waits for the results.
      */
     async executeIntervalCycle():Promise<void> {
         const intervalCallback = this.mockSetInterval.mock.calls[0]![0];
@@ -175,21 +178,22 @@ export class MacrotaskLagTestDriver {
     }
 
     /**
-     * Gets the interval callback function for manual execution.
+     * This method gives the interval callback, so that a test can start it.
      */
     getIntervalCallback() : () => Promise<void> {
         return this.mockSetInterval.mock.calls[0]![0];
     }
 
     /**
-     * Gets a specific setTimeout callback by index
+     * This method gives the `setTimeout` callback at `index`.
      */
     getTimeoutCallback(index : number = 0) : () => void {
         return this.mockSetTimeout.mock.calls[index]![0];
     }
 
     /**
-     * Asserts that setInterval was called with the correct interval.
+     * This method asserts that the monitor used `setInterval` one time, with
+     * the correct interval.
      */
     expectIntervalSetup(): void {
         expect(this.mockSetInterval).toHaveBeenCalledWith(expect.any(Function), this.intervalMs);
@@ -198,7 +202,8 @@ export class MacrotaskLagTestDriver {
     }
 
     /**
-     * Asserts that setTimeout was called with the specified delay.
+     * This method asserts that the monitor used `setTimeout` with the
+     * specified delay.
      */
     expectTimeoutScheduled(delay: number = 0): void {
         expect(this.mockSetTimeout).toHaveBeenCalledWith(expect.any(Function), delay);
@@ -214,7 +219,10 @@ export type RecordedInstrument = {
     values : RecordedValue[];
 };
 
-/** A Meter that records every histogram and counter value, with the instrument's kind and unit. */
+/**
+ * This function makes a `Meter` that records each histogram and counter
+ * value, with the `kind` and the `unit` of its instrument.
+ */
 export function createRecordingMeter() {
     const instruments = new Map<string, RecordedInstrument>();
 
@@ -233,14 +241,14 @@ export function createRecordingMeter() {
 
     return {
         meter,
-        /** Every value recorded by the named histogram or counter. */
+        /** All values that the named histogram or counter recorded. */
         values : (name : string) : number[] => (instruments.get(name)?.values ?? []).map(r => r.value),
         /** The sum of the values of the named counter. */
         sum : (name : string) : number => (instruments.get(name)?.values ?? []).reduce((n, r) => n + r.value, 0),
         /** All records, by instrument name. */
         records : () : ReadonlyMap<string, readonly RecordedValue[]> =>
             new Map([...instruments].map(([name, i]) => [name, i.values])),
-        /** All instruments that were created. */
+        /** All instruments that the meter made. */
         instruments : () : readonly RecordedInstrument[] => [...instruments.values()],
     };
 }

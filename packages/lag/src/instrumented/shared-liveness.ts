@@ -6,13 +6,14 @@ import { METRICS, createHistogram } from "../metric-catalog.js";
 import { createHandle, validatedRecorder } from "./shared.js";
 
 /**
- * Constructs a SharedLivenessMonitor wired to
- * `lag_liveness_block_histogram`. The caller creates the buffer and makes a
- * frequent main-thread callback beat it (setupAllMonitors decorates the
- * DriftLag timer).
+ * This factory makes a `SharedLivenessMonitor` that records into
+ * `lag_liveness_block_histogram`. The caller makes the buffer, and it makes
+ * a frequent main-thread callback beat the counter. (`setupAllMonitors`
+ * decorates the `DriftLag` timer.)
  *
- * With `conditions`, the monitor pauses while the page is hidden (no beats
- * happen then), and a block that overlaps a system suspend is not recorded.
+ * With `conditions`, the monitor pauses while the page is hidden, because no
+ * beats occur then. Also, it does not record a block that overlaps an
+ * unreliable interval, for example a system suspend.
  */
 export function createInstrumentedSharedLiveness(
     deps : CoreDeps & Pick<WorkerMonitorDeps, "worker"> & { livenessBuffer : SharedArrayBuffer; livenessOptions? : SharedLivenessOptions },
