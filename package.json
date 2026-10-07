@@ -6,8 +6,11 @@
     "new": "tsx packages/scripts/src/new-package.ts",
     "build": "tsc -b",
     "typecheck": "tsc -b && pnpm -r --if-present typecheck",
-    "test": "pnpm --filter @lag/core test",
-    "test:integration": "pnpm --filter @lag/integration-tests test"
+    "test": "pnpm --filter @lag/core --filter @lag/load --filter @lag/report test",
+    "test:browser": "pnpm --filter @lag/integration-tests test:browser",
+    "test:chromium": "pnpm --filter @lag/integration-tests test:chromium",
+    "test:integration": "pnpm --filter @lag/integration-tests test",
+    "test:e2e": "pnpm --filter @lag/integration-tests test:e2e"
   },
   "devDependencies": {
     "tsx": "^4.21.0",

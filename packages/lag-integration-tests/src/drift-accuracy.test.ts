@@ -1,8 +1,7 @@
 import { expect } from "vitest";
 import { DriftLag } from "@lag/core";
-import { blockMainThread, wait } from "./harness.js";
-
-const median = (values : number[]) : number => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)] ?? NaN;
+import { blockMainThread, median, wait } from "./harness.js";
+import { recordMeasurement } from "./commands.js";
 
 /**
  * DriftLag calibrates the timer granularity of the browser and the
@@ -29,12 +28,17 @@ describe("DriftLag accuracy", () => {
             blockMainThread(300);
             await wait(1_000);
             const afterBlock = lags.splice(0);
+            const baseline = monitor.getBaselineMs();
 
-            console.log(`DriftLag baseline ${monitor.getBaselineMs().toFixed(1)} ms, idle median ${median(idle).toFixed(1)} ms, block ${Math.max(...afterBlock).toFixed(1)} ms`);
+            console.log(`DriftLag baseline ${baseline.toFixed(1)} ms, idle median ${median(idle).toFixed(1)} ms, block ${Math.max(...afterBlock).toFixed(1)} ms`);
+            // The raw DriftLag value can be slightly negative (jitter around the baseline). The instrumented monitor clamps it at 0.
+            await recordMeasurement("drift-accuracy/idle/drift_lag_raw", "ms", idle, { scenario : "idle" });
+            await recordMeasurement("drift-accuracy/block-300ms/drift_lag_raw", "ms", [Math.max(...afterBlock)], { scenario : "block-300ms" });
+            await recordMeasurement("drift-accuracy/baseline/drift_step_baseline", "ms", [baseline]);
             expect(idle.length).toBeGreaterThan(5);
             expect(Math.abs(median(idle))).toBeLessThan(5);
             // The resolution is one step: up to the baseline less than the block
-            expect(Math.max(...afterBlock)).toBeGreaterThan(300 - monitor.getBaselineMs() - 10);
+            expect(Math.max(...afterBlock)).toBeGreaterThan(300 - baseline - 10);
             expect(Math.max(...afterBlock)).toBeLessThan(340);
         } finally {
             monitor.stop();

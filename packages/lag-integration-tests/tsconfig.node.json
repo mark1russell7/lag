@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../ts/config/node.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "isolatedDeclarations": false,
+    "declaration": false,
+    "declarationMap": false,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "rootDir": "."
+  },
+  "include": ["vitest.config.ts", "commands/**/*.ts", "src/command-types.ts"],
+  "exclude": ["node_modules", "dist"]
+}

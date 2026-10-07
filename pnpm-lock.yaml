@@ -42,6 +42,9 @@ importers:
       '@mark1russell7/grafana-infra':
         specifier: github:mark1russell7/grafana-infra
         version: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b67cf9728dbb9c606e07b2e8ee691eb65de92c93
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.3.0
       '@vitest/browser':
         specifier: ^4.1.2
         version: 4.1.2(vite@7.3.1(@types/node@25.3.0)(tsx@4.21.0)(yaml@2.9.1))(vitest@4.1.2)

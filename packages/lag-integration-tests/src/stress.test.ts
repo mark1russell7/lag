@@ -1,4 +1,4 @@
-import { expect } from "vitest";
+import { expect, inject } from "vitest";
 import { init } from "@mark1russell7/otel-ts";
 import {
     setupAllMonitors,
@@ -17,9 +17,11 @@ import {
     kitchenSink,
     type WorkloadResult,
 } from "@lag/load";
-import { createBrowserDeps, createConsoleLogger, createTeeMeter, type TeeMeter } from "./harness.js";
+import { createBrowserDeps, createConsoleLogger, createTeeMeter, wait, type TeeMeter } from "./harness.js";
+import { recordMeasurement } from "./commands.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
+const MIMIR_QUERY_URL = "http://localhost:9009/prometheus/api/v1/query";
 const SERVICE_NAME = "lag-stress-test";
 
 // Stress profile durations — kept short enough to fit a CI budget but long
@@ -63,12 +65,24 @@ async function teardown(ctx : StressContext) : Promise<void> {
     await ctx.otel.shutdown();
 }
 
-function logResult(profile : string, result : WorkloadResult, tee : TeeMeter) : void {
+/** The histograms of each profile that the results collector keeps. */
+const MEASURED = [
+    ["lag_drift_histogram", "ms"],
+    ["lag_worker_main_block_histogram", "ms"],
+    ["lag_frame_delta_histogram", "ms"],
+    ["lag_macrotask_histogram", "ms"],
+    ["lag_scheduling_message_channel_histogram", "ms"],
+] as const;
+
+async function logResult(profile : string, result : WorkloadResult, tee : TeeMeter) : Promise<void> {
     console.log(
         `[${profile}] seed=${result.seed} events=${result.eventCount} totalLagMs=${result.totalLagMs.toFixed(0)} ` +
         `runDurationMs=${result.durationMs.toFixed(0)} byName=${JSON.stringify(result.eventsByName)} ` +
         `driftMax=${tee.max("lag_drift_histogram").toFixed(0)} workerBlockMax=${tee.max("lag_worker_main_block_histogram").toFixed(0)}`,
     );
+    for (const [metric, unit] of MEASURED) {
+        await recordMeasurement(`stress/${profile}/${metric}`, unit, tee.values(metric), { profile });
+    }
 }
 
 describe("Lag Monitor Stress Tests", () => {
@@ -76,7 +90,7 @@ describe("Lag Monitor Stress Tests", () => {
         const ctx = makeContext(`${SERVICE_NAME}-light`);
         try {
             const result = await runWorkload(lightLoad(PROFILE_DURATION_MS, 11));
-            logResult("light", result, ctx.tee);
+            await logResult("light", result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(0);
             expect(result.totalLagMs).toBeGreaterThan(0);
             // Light load should accumulate < 25% of wall time as lag
@@ -93,7 +107,7 @@ describe("Lag Monitor Stress Tests", () => {
         const ctx = makeContext(`${SERVICE_NAME}-moderate`);
         try {
             const result = await runWorkload(moderateLoad(PROFILE_DURATION_MS, 22));
-            logResult("moderate", result, ctx.tee);
+            await logResult("moderate", result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(10);
             // Moderate covers cpu, macrotask, layout, loaf — at least 3 of 4
             expect(Object.keys(result.eventsByName).length).toBeGreaterThanOrEqual(3);
@@ -107,7 +121,7 @@ describe("Lag Monitor Stress Tests", () => {
         const ctx = makeContext(`${SERVICE_NAME}-heavy`);
         try {
             const result = await runWorkload(heavyLoad(PROFILE_DURATION_MS, 33));
-            logResult("heavy", result, ctx.tee);
+            await logResult("heavy", result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(5);
             // Heavy load should consume substantial wall-time as lag
             expect(result.totalLagMs).toBeGreaterThan(PROFILE_DURATION_MS * 0.3);
@@ -126,7 +140,7 @@ describe("Lag Monitor Stress Tests", () => {
             const opts = burstyLoad(PROFILE_DURATION_MS, 44);
             opts.onEvent = (e) => events.push(e.durationMs);
             const result = await runWorkload(opts);
-            logResult("bursty", result, ctx.tee);
+            await logResult("bursty", result, ctx.tee);
 
             const smalls = events.filter((d) => d < 30).length;
             const larges = events.filter((d) => d > 100).length;
@@ -150,7 +164,7 @@ describe("Lag Monitor Stress Tests", () => {
             const opts = evolutionaryLoad(PROFILE_DURATION_MS, 55);
             opts.onEvent = (e) => events.push({ elapsedMs : e.elapsedMs, durationMs : e.durationMs });
             const result = await runWorkload(opts);
-            logResult("evolutionary", result, ctx.tee);
+            await logResult("evolutionary", result, ctx.tee);
 
             expect(events.length).toBeGreaterThan(5);
             const half = Math.floor(events.length / 2);
@@ -171,7 +185,7 @@ describe("Lag Monitor Stress Tests", () => {
         const ctx = makeContext(`${SERVICE_NAME}-kitchen`);
         try {
             const result = await runWorkload(kitchenSink(PROFILE_DURATION_MS, 66));
-            logResult("kitchen-sink", result, ctx.tee);
+            await logResult("kitchen-sink", result, ctx.tee);
 
             // Should have hit at least 6 of the 8 spec types
             expect(Object.keys(result.eventsByName).length).toBeGreaterThanOrEqual(6);
@@ -180,5 +194,24 @@ describe("Lag Monitor Stress Tests", () => {
         } finally {
             await teardown(ctx);
         }
+    }, 60_000);
+
+    it("exports the heavy profile to Mimir", async (ctx) => {
+        ctx.skip(!inject("e2e"), "Needs the Grafana stack: run pnpm test:e2e.");
+        // Each profile shut its SDK down, which flushed the metrics. Alloy forwards them to Mimir.
+        let count = 0;
+        for (let attempt = 0; attempt < 10 && count === 0; attempt++) {
+            await wait(3_000);
+            try {
+                const query = `lag_drift_histogram_count{service_name="${SERVICE_NAME}-heavy"}`;
+                const response = await fetch(`${MIMIR_QUERY_URL}?query=${encodeURIComponent(query)}`);
+                const json = await response.json() as { data? : { result? : Array<{ value : [number, string] }> } };
+                count = Number(json.data?.result?.[0]?.value[1] ?? 0);
+            } catch {
+                // Mimir is not ready yet
+            }
+        }
+        console.log(`Mimir: lag_drift_histogram_count for the heavy profile = ${count}`);
+        expect(count).toBeGreaterThan(0);
     }, 60_000);
 });

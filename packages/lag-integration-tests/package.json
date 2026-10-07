@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "pretest": "cd node_modules/@mark1russell7/grafana-infra && docker compose up -d",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "vitest run --project browser",
+    "test:browser": "vitest run --project browser",
+    "test:chromium": "vitest run --project \"browser (chromium)\"",
+    "test:e2e": "pnpm run infra:up && vitest run --project e2e",
+    "test:watch": "vitest --project \"browser (chromium)\"",
+    "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.node.json",
     "infra:up": "cd node_modules/@mark1russell7/grafana-infra && docker compose up -d",
     "infra:down": "cd node_modules/@mark1russell7/grafana-infra && docker compose down"
   },
@@ -19,6 +21,7 @@
   },
   "devDependencies": {
     "@mark1russell7/grafana-infra": "github:mark1russell7/grafana-infra",
+    "@types/node": "^25.3.0",
     "@vitest/browser": "^4.1.2",
     "@vitest/browser-playwright": "^4.1.2",
     "playwright": "^1.56.0",

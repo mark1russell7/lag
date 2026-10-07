@@ -1,7 +1,8 @@
 import { expect, vi } from "vitest";
 import { createLagWorker, type LagWorker } from "@lag/worker";
-import { WorkerLagMonitor, type WorkerLagMeasurement } from "@lag/core";
+import { WorkerLagMonitor, createAbsoluteClock, type WorkerLagMeasurement } from "@lag/core";
 import { blockMainThread, wait } from "./harness.js";
+import { recordMeasurement } from "./commands.js";
 
 describe("Worker Lag Monitor Integration", () => {
     const workers : LagWorker[] = [];
@@ -14,7 +15,7 @@ describe("Worker Lag Monitor Integration", () => {
             worker,
             (m) => measurements.push(m),
             { log : vi.fn() },
-            window.performance,
+            createAbsoluteClock(window.performance),
             {
                 heartbeatIntervalMs : intervalMs,
                 setTimeoutFn : (fn, ms) => window.setTimeout(fn, ms),
@@ -39,8 +40,10 @@ describe("Worker Lag Monitor Integration", () => {
         expect(measurements.map(m => m.seq)).toEqual(measurements.map((_, i) => i + 1));
 
         // An idle main thread handles heartbeats promptly
-        const avgDelay = measurements.reduce((s, m) => s + m.deliveryDelayMs, 0) / measurements.length;
+        const delays = measurements.map(m => m.deliveryDelayMs);
+        const avgDelay = delays.reduce((s, d) => s + d, 0) / delays.length;
         console.log(`Average delivery delay: ${avgDelay.toFixed(2)}ms`);
+        await recordMeasurement("worker/idle/lag_worker_main_block_histogram", "ms", delays, { scenario : "idle" });
         expect(avgDelay).toBeLessThan(20);
     });
 
@@ -55,6 +58,7 @@ describe("Worker Lag Monitor Integration", () => {
 
         const afterBlock = measurements.slice(baselineCount).map(m => m.deliveryDelayMs);
         console.log(`Delivery delays after an 800ms block: ${afterBlock.map(d => d.toFixed(0)).join(", ")}`);
+        await recordMeasurement("worker/block-800ms/lag_worker_main_block_histogram", "ms", afterBlock, { scenario : "block-800ms" });
         // ~16 heartbeats queued during the block; the first waited for most of it
         expect(afterBlock.length).toBeGreaterThanOrEqual(10);
         expect(Math.max(...afterBlock)).toBeGreaterThan(600);
