@@ -26,16 +26,19 @@ importers:
       '@lag/core':
         specifier: workspace:*
         version: link:../lag
+      '@lag/load':
+        specifier: workspace:*
+        version: link:../load
       '@lag/worker':
         specifier: workspace:*
         version: link:../lag-worker
       '@mark1russell7/otel-ts':
         specifier: github:mark1russell7/otel-ts
-        version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/335f26432f867d90004644c84a10a27341161ba0(zone.js@0.16.1)
+        version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/b98c3eaf05bcf6b64533a2e2efa18a6b258eca5a(zone.js@0.16.1)
     devDependencies:
       '@mark1russell7/grafana-infra':
         specifier: github:mark1russell7/grafana-infra
-        version: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/15a16901727ddb7026086d7d8586d8bcd1cbc376
+        version: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b67cf9728dbb9c606e07b2e8ee691eb65de92c93
       '@vitest/browser':
         specifier: ^4.1.2
         version: 4.1.2(vite@7.3.1(@types/node@25.3.0)(tsx@4.21.0))(vitest@4.1.2)
@@ -62,6 +65,21 @@ importers:
         specifier: ^7.3.1
         version: 7.3.1(@types/node@25.3.0)(tsx@4.21.0)
 
+  packages/load:
+    devDependencies:
+      vite:
+        specifier: ^7.3.1
+        version: 7.3.1(@types/node@25.3.0)(tsx@4.21.0)
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@25.3.0)(@vitest/browser-playwright@4.1.2)(vite@7.3.1(@types/node@25.3.0)(tsx@4.21.0))
+
+  packages/report:
+    devDependencies:
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@25.3.0)(@vitest/browser-playwright@4.1.2)(vite@7.3.1(@types/node@25.3.0)(tsx@4.21.0))
+
   packages/scripts:
     dependencies:
       '@clack/prompts':
@@ -71,6 +89,12 @@ importers:
       '@types/node':
         specifier: ^25.2.3
         version: 25.3.0
+
+  packages/site:
+    devDependencies:
+      vite:
+        specifier: ^7.3.1
+        version: 7.3.1(@types/node@25.3.0)(tsx@4.21.0)
 
 packages:
 
@@ -251,12 +275,12 @@ packages:
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
 
-  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/15a16901727ddb7026086d7d8586d8bcd1cbc376':
-    resolution: {tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/15a16901727ddb7026086d7d8586d8bcd1cbc376}
+  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b67cf9728dbb9c606e07b2e8ee691eb65de92c93':
+    resolution: {tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b67cf9728dbb9c606e07b2e8ee691eb65de92c93}
     version: 0.0.0
 
-  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/335f26432f867d90004644c84a10a27341161ba0':
-    resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/335f26432f867d90004644c84a10a27341161ba0}
+  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/b98c3eaf05bcf6b64533a2e2efa18a6b258eca5a':
+    resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/b98c3eaf05bcf6b64533a2e2efa18a6b258eca5a}
     version: 0.0.1
 
   '@opentelemetry/api-logs@0.213.0':
@@ -1148,9 +1172,9 @@ snapshots:
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
-  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/15a16901727ddb7026086d7d8586d8bcd1cbc376': {}
+  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b67cf9728dbb9c606e07b2e8ee691eb65de92c93': {}
 
-  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/335f26432f867d90004644c84a10a27341161ba0(zone.js@0.16.1)':
+  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/b98c3eaf05bcf6b64533a2e2efa18a6b258eca5a(zone.js@0.16.1)':
     dependencies:
       '@grafana/faro-web-sdk': 2.3.1
       '@grafana/faro-web-tracing': 2.3.1
@@ -1560,7 +1584,7 @@ snapshots:
       '@vitest/spy': 4.0.18
       '@vitest/utils': 4.0.18
       chai: 6.2.2
-      tinyrainbow: 3.0.3
+      tinyrainbow: 3.1.0
 
   '@vitest/expect@4.1.2':
     dependencies:
@@ -1589,7 +1613,7 @@ snapshots:
 
   '@vitest/pretty-format@4.0.18':
     dependencies:
-      tinyrainbow: 3.0.3
+      tinyrainbow: 3.1.0
 
   '@vitest/pretty-format@4.1.2':
     dependencies:
@@ -1625,7 +1649,7 @@ snapshots:
   '@vitest/utils@4.0.18':
     dependencies:
       '@vitest/pretty-format': 4.0.18
-      tinyrainbow: 3.0.3
+      tinyrainbow: 3.1.0
 
   '@vitest/utils@4.1.2':
     dependencies:

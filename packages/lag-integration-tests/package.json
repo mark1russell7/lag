@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@lag/core": "workspace:*",
+    "@lag/load": "workspace:*",
     "@lag/worker": "workspace:*",
     "@mark1russell7/otel-ts": "github:mark1russell7/otel-ts"
   },

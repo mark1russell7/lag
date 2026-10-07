@@ -1,9 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "../../ts/config/vite.json",
-  "compilerOptions": {
-    "noEmit": true
-  },
+  "extends": "../../ts/config/react.json",
   "references": [
     {
       "path": "../lag"
@@ -13,6 +10,9 @@
     },
     {
       "path": "../load"
+    },
+    {
+      "path": "../report"
     }
   ]
 }

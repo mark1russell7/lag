@@ -7,6 +7,7 @@ export default defineConfig({
         alias: {
             "@lag/core": path.resolve(__dirname, "../lag/src"),
             "@lag/worker": path.resolve(__dirname, "../lag-worker/src"),
+            "@lag/load": path.resolve(__dirname, "../load/src"),
         },
     },
     optimizeDeps: {

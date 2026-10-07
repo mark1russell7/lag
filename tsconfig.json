@@ -6,13 +6,22 @@
       "path": "packages/lag"
     },
     {
-      "path": "packages/lag-worker"
-    },
-    {
       "path": "packages/lag-integration-tests"
     },
     {
+      "path": "packages/lag-worker"
+    },
+    {
+      "path": "packages/load"
+    },
+    {
+      "path": "packages/report"
+    },
+    {
       "path": "packages/scripts"
+    },
+    {
+      "path": "packages/site"
     }
   ]
 }

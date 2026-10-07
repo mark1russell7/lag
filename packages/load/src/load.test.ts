@@ -1,4 +1,4 @@
-import { expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
     createRng,
     constant,
@@ -10,9 +10,9 @@ import {
     evolutionary,
     burst,
     sample,
-} from "./lag-generator/index.js";
+} from "./index.js";
 
-describe("lag-generator: RNG", () => {
+describe("load: RNG", () => {
     it("is reproducible given the same seed", () => {
         const a = createRng(42);
         const b = createRng(42);
@@ -78,7 +78,7 @@ describe("lag-generator: RNG", () => {
     });
 });
 
-describe("lag-generator: Distributions", () => {
+describe("load: Distributions", () => {
     it("constant always returns the same value", () => {
         const rng = createRng(42);
         const d = constant(7);

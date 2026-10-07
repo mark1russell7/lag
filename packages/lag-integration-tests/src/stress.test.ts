@@ -16,7 +16,7 @@ import {
     evolutionaryLoad,
     kitchenSink,
     type WorkloadResult,
-} from "./lag-generator/index.js";
+} from "@lag/load";
 import { createBrowserDeps, createConsoleLogger, createTeeMeter, type TeeMeter } from "./harness.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
