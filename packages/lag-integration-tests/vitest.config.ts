@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
+import type { Plugin } from "vite";
 import { playwright } from "@vitest/browser-playwright";
 import { cdpCommands } from "./commands/cdp.js";
 import { resultCommands } from "./commands/results.js";
@@ -16,12 +17,33 @@ const COMMANDS = { ...cdpCommands, ...resultCommands };
 
 /**
  * Chromium in the new headless mode (Chrome for Testing). The default
- * headless shell does not hide a page that is behind another page. Chrome
- * stable closes the Vitest connection when a page freezes, so the CDP tests
- * use this build.
+ * headless shell has no `measureUserAgentSpecificMemory()` and does not hide
+ * a page that is behind another page. Chrome stable closes the Vitest
+ * connection when a page freezes, so the CDP tests use this build.
  */
 const newHeadlessChromium = (args : string[] = []) : Provider =>
     playwright({ launchOptions : { channel : "chromium", ...(args.length > 0 ? { args } : {}) } });
+
+/**
+ * Sends COOP and COEP with every response, so the page is cross-origin
+ * isolated. A plugin, because the browser server of a project replaces the
+ * project's `server` options (Vitest 4.1): `server.headers` works only in the
+ * root config. `enforce: "pre"` puts the middleware before the middleware of
+ * Vitest that sends the test pages.
+ */
+function crossOriginIsolation() : Plugin {
+    return {
+        name : "lag:cross-origin-isolation",
+        enforce : "pre",
+        configureServer(server) {
+            server.middlewares.use((_request, response, next) => {
+                response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+                response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+                next();
+            });
+        },
+    };
+}
 
 function instance(project : string, environment : Environment, provider? : Provider, e2e = false) : Instance {
     const chrome = environment === "chrome" ? playwright({ launchOptions : { channel : "chrome" } }) : undefined;
@@ -83,6 +105,13 @@ export default defineConfig({
             project("cdp", ["src/cdp/**/*.test.ts"], [
                 instance("cdp", "chromium", newHeadlessChromium()),
             ], { fileParallelism : false }),
+            // A cross-origin-isolated page: shared memory, the fine clock and measureUserAgentSpecificMemory()
+            project("coi", ["src/coi/**/*.test.ts"], [
+                // ForceEagerMeasureMemory: measureUserAgentSpecificMemory() resolves at once, not at the next GC
+                instance("coi", "chromium", newHeadlessChromium(["--enable-blink-features=ForceEagerMeasureMemory"])),
+                instance("coi", "firefox"),
+                instance("coi", "webkit"),
+            ], {}, { plugins : [crossOriginIsolation()] }),
             // With the Grafana stack (pnpm test:e2e): the Mimir checks are required
             project("e2e", ["src/lag-monitors.test.ts", "src/stress.test.ts"], [
                 instance("e2e", "chromium", undefined, true),

@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run --project browser --project cdp",
-    "test:browser": "vitest run --project browser --project cdp",
+    "test": "vitest run --project browser --project cdp --project coi",
+    "test:browser": "vitest run --project browser --project cdp --project coi",
     "test:cdp": "vitest run --project cdp",
+    "test:coi": "vitest run --project coi",
     "test:chromium": "vitest run --project \"browser (chromium)\"",
     "test:e2e": "pnpm run infra:up && vitest run --project e2e",
     "test:watch": "vitest --project \"browser (chromium)\"",
