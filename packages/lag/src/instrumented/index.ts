@@ -20,6 +20,11 @@ export { createInstrumentedLoaf } from "./loaf.js";
 export { createInstrumentedEventTiming } from "./event-timing.js";
 export { createInstrumentedLayoutShift } from "./layout-shift.js";
 export { createInstrumentedPageViewVitals } from "./page-view-vitals.js";
+export {
+    createInstrumentedPageViewContext,
+    type PageContextReceiver,
+    type PageViewContext,
+} from "./page-view-context.js";
 
 // Browser-API monitors
 export { createInstrumentedFrameTiming } from "./frame-timing.js";

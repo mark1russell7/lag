@@ -21,6 +21,18 @@ export type StartMessage = {
     type : "start";
     intervalMs : number;
     hang? : HangOptions;
+    /** The ID of the page instance. The worker uses it for the hang journal. */
+    pageId? : string;
+};
+
+/**
+ * Main → worker: the context of the page, for example the ID of the current
+ * page view. The worker adds it to hang reports and to the hang journal. A
+ * new context message replaces the earlier context.
+ */
+export type ContextMessage = {
+    type : "context";
+    attributes : Record<string, string>;
 };
 
 /** Main → worker: stop the heartbeat loop. */
@@ -95,5 +107,5 @@ export type LivenessBlockMessage = {
 };
 
 export type MainToWorkerMessage =
-    | StartMessage | StopMessage | AckMessage | SyncRequestMessage | LivenessStartMessage | LivenessStopMessage;
+    | StartMessage | StopMessage | AckMessage | SyncRequestMessage | ContextMessage | LivenessStartMessage | LivenessStopMessage;
 export type WorkerToMainMessage = HeartbeatMessage | SyncReplyMessage | HangEndedMessage | LivenessBlockMessage;

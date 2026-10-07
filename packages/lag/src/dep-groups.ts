@@ -42,6 +42,7 @@ import type {
 import type { FinalizationRegistryConstructor } from "./GCSignalDetector.js";
 import type { WorkerLike } from "./WorkerLagMonitor.js";
 import type { HangReportTarget } from "./worker-protocol.js";
+import type { HangJournal } from "./hang-journal.js";
 import type { ReportingObserverInit } from "./BrowserReportMonitor.js";
 import type { PageSource } from "./vitals/types.js";
 import type { AbsoluteClock } from "./absolute-clock.js";
@@ -118,6 +119,30 @@ export type WorkerMonitorDeps = {
     workerHeartbeatIntervalMs? : number;
     /** Where the worker sends hang reports while the main thread is blocked. */
     workerHangReport? : HangReportTarget;
+    /**
+     * The hang journal (`createIndexedDbHangJournal(indexedDB)`). With it, the
+     * monitor reports the hangs that earlier pages of the origin did not
+     * survive. The worker must have a journal of the same storage.
+     */
+    hangJournal? : HangJournal;
+    /** The ID of this page instance. The default is a new random ID. */
+    pageId? : string;
+};
+
+/** The crash-report context of Chromium (`window.crashReport`, Chrome 145). */
+export type CrashReportContextLike = {
+    initialize?(length : number) : unknown;
+    set(key : string, value : string) : unknown;
+    delete?(key : string) : unknown;
+};
+
+/**
+ * The context for crash reports. The browser adds the context to the crash
+ * reports that it sends to the Reporting endpoint of the page, for example
+ * after it stopped an unresponsive page.
+ */
+export type CrashReportDeps = {
+    crashReport : CrashReportContextLike;
 };
 
 /** `performance.now()` + `timeOrigin`: clock resolution and cross-thread timestamps. */

@@ -50,10 +50,15 @@ export type WorkerLagMonitorOptions = {
     /** How often to synchronize the clocks again. Default: 60 000ms. */
     clockSyncIntervalMs? : number;
     events? : WorkerLagEvents;
+    /** The ID of this page instance, for the hang journal of the worker. */
+    pageId? : string;
 };
 
 const DEFAULT_SYSTEM_STALL_THRESHOLD_MS = 5_000;
 const DEFAULT_CLOCK_SYNC_INTERVAL_MS = 60_000;
+/** The watchdog waits for the first heartbeat this many intervals, and at least `MIN_WATCHDOG_MS`. */
+const WATCHDOG_INTERVALS = 5;
+const MIN_WATCHDOG_MS = 5_000;
 
 /**
  * Ground-truth main-thread blocking, measured from outside the main thread.
@@ -72,6 +77,9 @@ const DEFAULT_CLOCK_SYNC_INTERVAL_MS = 60_000;
 export class WorkerLagMonitor {
     private running = false;
     private syncHandle : number | undefined;
+    private watchdogHandle : number | undefined;
+    private heartbeatSeen = false;
+    private context : Record<string, string> | undefined;
     private readonly clockSync : WorkerClockSync;
     private readonly onMessage = (event : { data : WorkerToMainMessage }) : void => {
         this.handleMessage(event.data);
@@ -101,8 +109,20 @@ export class WorkerLagMonitor {
             type : "start",
             intervalMs : this.options.heartbeatIntervalMs,
             ...(this.options.hang ? { hang : this.options.hang } : {}),
+            ...(this.options.pageId !== undefined ? { pageId : this.options.pageId } : {}),
         });
+        if (this.context) this.worker.postMessage({ type : "context", attributes : this.context });
         this.syncClocks();
+        this.startWatchdog(2);
+    }
+
+    /**
+     * Gives the worker the context of the page, for example the ID of the
+     * current page view. The worker adds it to its hang reports.
+     */
+    setContext(attributes : Record<string, string>) : void {
+        this.context = { ...attributes };
+        if (this.running) this.worker.postMessage({ type : "context", attributes : this.context });
     }
 
     stop() : void {
@@ -112,6 +132,10 @@ export class WorkerLagMonitor {
             this.options.clearTimeoutFn(this.syncHandle);
             this.syncHandle = undefined;
         }
+        if (this.watchdogHandle !== undefined) {
+            this.options.clearTimeoutFn(this.watchdogHandle);
+            this.watchdogHandle = undefined;
+        }
         this.worker.removeEventListener("message", this.onMessage);
         this.worker.postMessage({ type : "stop" });
     }
@@ -119,6 +143,29 @@ export class WorkerLagMonitor {
     /** The last clock synchronization result, if one finished. */
     getClockSync() : ClockSyncResult | undefined {
         return this.clockSync.getResult();
+    }
+
+    /**
+     * A worker that cannot load (an import error, a Content-Security-Policy
+     * without `worker-src`, a crash) sends nothing, and nothing else reports
+     * it. The watchdog warns when no heartbeat came in two checks: the first
+     * check can run before the queued heartbeats, after a long task at the
+     * start of the page.
+     */
+    private startWatchdog(checks : number) : void {
+        const delay = Math.max(MIN_WATCHDOG_MS, WATCHDOG_INTERVALS * this.options.heartbeatIntervalMs);
+        this.watchdogHandle = this.options.setTimeoutFn(() => {
+            this.watchdogHandle = undefined;
+            if (this.heartbeatSeen || !this.running) return;
+            if (checks > 1) {
+                this.startWatchdog(checks - 1);
+                return;
+            }
+            this.logger.log("warn", "The worker sent no heartbeat. Make sure that the worker loads and runs the @lag/worker handler.", {
+                type : "WorkerLagMonitor",
+                waitedMs : 2 * delay,
+            });
+        }, delay);
     }
 
     private syncClocks() : void {
@@ -133,6 +180,7 @@ export class WorkerLagMonitor {
         try {
             switch (message?.type) {
                 case "heartbeat": {
+                    this.heartbeatSeen = true;
                     this.worker.postMessage({ type : "ack", seq : message.seq });
                     this.handleHeartbeat(message.sentAt, message.workerSelfLagMs, message.seq);
                     break;

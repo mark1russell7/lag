@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createWorkerHandler, type HangEvent } from "./lag-worker.js";
 import type { WorkerToMainMessage } from "./worker-protocol.js";
+import { createMemoryHangJournal, type HangJournal } from "./hang-journal.js";
 
-function createHandler(startTime = 0) {
+function createHandler(startTime = 0, journal? : HangJournal) {
     let currentTime = startTime;
     const postMessage = vi.fn<(message : WorkerToMainMessage) => void>();
     const reportHang = vi.fn<(event : HangEvent) => void>();
@@ -12,6 +13,7 @@ function createHandler(startTime = 0) {
         clearTimeoutFn : clearTimeout,
         clock : { now : () => currentTime },
         reportHang,
+        ...(journal ? { journal } : {}),
     });
     return {
         handler,
@@ -110,10 +112,10 @@ describe("lag-worker handler", () => {
             w.ackAll(); // the main thread answered at t=100
             for (let i = 0; i < 10; i++) w.advance(100);
 
-            expect(w.reportHang).toHaveBeenCalledWith({ phase : "started", startedAt : 100, durationMs : 1_000 }, expect.anything());
+            expect(w.reportHang).toHaveBeenCalledWith({ phase : "started", startedAt : 100, durationMs : 1_000, attributes : {} }, expect.anything());
 
             w.handler.handleMessage({ type : "ack", seq : 11 });
-            expect(w.reportHang).toHaveBeenLastCalledWith({ phase : "ended", startedAt : 100, durationMs : 1_000 }, expect.anything());
+            expect(w.reportHang).toHaveBeenLastCalledWith({ phase : "ended", startedAt : 100, durationMs : 1_000, attributes : {} }, expect.anything());
             expect(w.messages("hang-ended")).toEqual([{ type : "hang-ended", startedAt : 100, durationMs : 1_000 }]);
         });
 
@@ -149,6 +151,80 @@ describe("lag-worker handler", () => {
             w.handler.handleMessage({ type : "start", intervalMs : 100 });
             for (let i = 0; i < 100; i++) w.advance(100);
             expect(w.reportHang).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("page context and hang journal", () => {
+        /** Lets the promise jobs of the journal finish. */
+        const settle = () => vi.advanceTimersByTimeAsync(0);
+
+        it("adds the last context to its hang reports", () => {
+            const w = createHandler();
+            w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 300 } });
+            w.handler.handleMessage({ type : "context", attributes : { "lag.page_view.id" : "view-1" } });
+            w.handler.handleMessage({ type : "context", attributes : { "lag.page_view.id" : "view-2" } });
+            for (let i = 0; i < 4; i++) w.advance(100);
+
+            expect(w.reportHang).toHaveBeenCalledWith(expect.objectContaining({ phase : "started", attributes : { "lag.page_view.id" : "view-2" } }), expect.anything());
+        });
+
+        it("writes a record when a hang starts, writes it again each second, and removes it when the hang ends", async () => {
+            const journal = createMemoryHangJournal();
+            const put = vi.spyOn(journal, "put");
+            const remove = vi.spyOn(journal, "remove");
+            const w = createHandler(0, journal);
+            w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 1_000 }, pageId : "page-a" });
+            w.handler.handleMessage({ type : "context", attributes : { "lag.page_view.id" : "view-1" } });
+
+            for (let i = 0; i < 10; i++) w.advance(100);
+            await settle();
+            expect(await journal.list()).toEqual([{ pageId : "page-a", startedAt : 0, lastSeenAt : 1_000, attributes : { "lag.page_view.id" : "view-1" } }]);
+
+            for (let i = 0; i < 10; i++) w.advance(100);
+            await settle();
+            expect(put).toHaveBeenCalledTimes(2);
+            expect((await journal.list())[0]!.lastSeenAt).toBe(2_000);
+
+            w.handler.handleMessage({ type : "ack", seq : 20 });
+            await settle();
+            expect(remove).toHaveBeenCalledWith("page-a");
+            expect(await journal.list()).toEqual([]);
+        });
+
+        it("removes the record when it stops during a hang", async () => {
+            const journal = createMemoryHangJournal();
+            const w = createHandler(0, journal);
+            w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 300 }, pageId : "page-a" });
+            for (let i = 0; i < 5; i++) w.advance(100);
+            await settle();
+            expect(await journal.list()).toHaveLength(1);
+
+            w.handler.handleMessage({ type : "stop" });
+            await settle();
+            expect(await journal.list()).toEqual([]);
+        });
+
+        it("keeps no record without a page ID", async () => {
+            const journal = createMemoryHangJournal();
+            const w = createHandler(0, journal);
+            w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 300 } });
+            for (let i = 0; i < 5; i++) w.advance(100);
+            await settle();
+            expect(await journal.list()).toEqual([]);
+        });
+
+        it("continues the heartbeats when the journal fails", async () => {
+            const journal : HangJournal = {
+                put : () => Promise.reject(new Error("quota")),
+                remove : () => Promise.reject(new Error("quota")),
+                list : () => Promise.resolve([]),
+            };
+            const w = createHandler(0, journal);
+            w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 300 }, pageId : "page-a" });
+            for (let i = 0; i < 10; i++) w.advance(100);
+            await settle();
+
+            expect(w.messages("heartbeat")).toHaveLength(10);
         });
     });
 });

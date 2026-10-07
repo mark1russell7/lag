@@ -118,6 +118,7 @@ export class PageViewVitals {
     private hadNavigationEntry = false;
     private readonly observers : EntryObserver[] = [];
     private readonly disposers : Array<() => void> = [];
+    private readonly viewListeners = new Set<(view : PageView) => void>();
     private started = false;
     private stopped = false;
     private draining = false;
@@ -161,6 +162,12 @@ export class PageViewVitals {
         return this.collector.values();
     }
 
+    /** Calls `listener` when a new page view starts. The return value removes the listener. */
+    subscribe(listener : (view : PageView) => void) : () => void {
+        this.viewListeners.add(listener);
+        return () => { this.viewListeners.delete(listener); };
+    }
+
     /**
      * Reports the current values of the current view now. Use it before an
      * exporter flushes, so that the export contains the latest values.
@@ -176,6 +183,7 @@ export class PageViewVitals {
         this.stopped = true;
         for (const observer of this.observers) observer.stop();
         for (const dispose of this.disposers) dispose();
+        this.viewListeners.clear();
     }
 
     private start() : void {
@@ -292,6 +300,13 @@ export class PageViewVitals {
         }, this.describe, this.deps.readInteractionCount);
         // A restore and a soft navigation start while the page is visible
         this.hiddenTime = Infinity;
+        for (const listener of [...this.viewListeners]) {
+            try {
+                listener(this.collector.view);
+            } catch (error) {
+                this.deps.logger.log("error", "Error in a page-view listener.", { error, type : "PageViewVitals" });
+            }
+        }
         // No network response: as web-vitals, TTFB is 0 when the load had a navigation entry
         if (this.hadNavigationEntry) this.collector.setTtfb(0);
 

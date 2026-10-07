@@ -98,6 +98,8 @@ export type {
     SharedMemoryDeps,
     PageDeps,
     AbsoluteClockDeps,
+    CrashReportDeps,
+    CrashReportContextLike,
 } from "./dep-groups.js";
 
 // --- Phase 2: Performance Observer monitors ---
@@ -256,6 +258,7 @@ export type {
     AckMessage,
     SyncRequestMessage,
     HeartbeatMessage,
+    ContextMessage,
     SyncReplyMessage,
     HangEndedMessage,
     LivenessStartMessage,
@@ -269,6 +272,16 @@ export type {
 export { setupAllMonitors, type AllMonitorDeps, type AllMonitorHandles } from "./setup-all-monitors.js";
 export { createBrowserDeps, type BrowserGlobals, type BrowserDepsOptions } from "./browser/browser-deps.js";
 export { createPageSource, type PageDocument, type PagePerformance } from "./browser/page-source.js";
+export { createIndexedDbHangJournal, type IdbFactoryLike } from "./browser/indexeddb-journal.js";
+export {
+    createMemoryHangJournal,
+    findAbandonedHangs,
+    HANG_JOURNAL_STALE_MS,
+    HANG_JOURNAL_WRITE_INTERVAL_MS,
+    type HangJournal,
+    type HangRecord,
+} from "./hang-journal.js";
+export { createRandomId } from "./random-id.js";
 
 // --- Instrumented factories (one per monitor, each returns a MonitorHandle) ---
 export * from "./instrumented/index.js";

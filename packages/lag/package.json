@@ -25,6 +25,10 @@
     "./otlp-json.js": {
       "types": "./dist/otlp-json.d.ts",
       "import": "./dist/otlp-json.js"
+    },
+    "./browser/indexeddb-journal.js": {
+      "types": "./dist/browser/indexeddb-journal.d.ts",
+      "import": "./dist/browser/indexeddb-journal.js"
     }
   },
   "scripts": {
@@ -34,6 +38,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.7.0",
     "vitest": "^4.0.18"
   }

@@ -1,6 +1,7 @@
 import { createWorkerHandler, type HangEvent } from "@lag/core/lag-worker.js";
 import type { HangOptions } from "@lag/core/worker-protocol.js";
 import { encodeOtlpLogs } from "@lag/core/otlp-json.js";
+import { createIndexedDbHangJournal } from "@lag/core/browser/indexeddb-journal.js";
 
 // Read timeOrigin one time: Safari calculates it again from the wall clock at each read
 const origin = performance.timeOrigin;
@@ -19,7 +20,7 @@ function reportHang(event : HangEvent, options : HangOptions) : void {
         severityText : "WARN",
         severityNumber : 13,
         body : `Main thread hang ${event.phase}`,
-        attributes : { phase : event.phase, duration_ms : event.durationMs },
+        attributes : { ...event.attributes, phase : event.phase, duration_ms : event.durationMs },
     }]);
     // sendBeacon does not exist in workers; keepalive lets the request finish if the page closes
     fetch(target.url, { method : "POST", headers : { "Content-Type" : "application/json" }, body, keepalive : true })
@@ -34,6 +35,8 @@ const handler = createWorkerHandler({
     clearIntervalFn : (id) => self.clearInterval(id),
     clock,
     reportHang,
+    // A record of each hang in progress, for the next page if this page does not survive the hang
+    ...(typeof indexedDB === "undefined" ? {} : { journal : createIndexedDbHangJournal(indexedDB) }),
 });
 
 self.addEventListener("message", (event : MessageEvent) => {

@@ -170,4 +170,51 @@ describe("WorkerLagMonitor", () => {
             expect.objectContaining({ type : "WorkerLagMonitor" }),
         );
     });
+
+    it("sends its page ID with start, and the page context to the worker", () => {
+        const mock = createMockWorker();
+        const monitor = new WorkerLagMonitor(mock.worker, vi.fn(), { log : vi.fn() }, createAbsoluteClock({ timeOrigin : 0, now : () => 0 }), {
+            heartbeatIntervalMs : 1000,
+            setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+            clearTimeoutFn : (id) => clearTimeout(id),
+            pageId : "page-a",
+        });
+        monitor.setContext({ "lag.page_view.id" : "view-1" });
+
+        expect(mock.sent("start")).toEqual([{ type : "start", intervalMs : 1000, pageId : "page-a" }]);
+        expect(mock.sent("context")).toEqual([{ type : "context", attributes : { "lag.page_view.id" : "view-1" } }]);
+
+        // The context goes again to the worker after a restart
+        monitor.stop();
+        monitor.start();
+        expect(mock.sent("context")).toHaveLength(2);
+        monitor.stop();
+    });
+
+    describe("watchdog", () => {
+        it("warns when the worker sends no heartbeat in two checks", () => {
+            const m = createMonitor(1000);
+            vi.advanceTimersByTime(5_000);
+            expect(m.logger.log).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(5_000);
+            expect(m.logger.log).toHaveBeenCalledWith("warn", expect.stringContaining("The worker sent no heartbeat"), expect.objectContaining({ waitedMs : 10_000 }));
+            m.monitor.stop();
+        });
+
+        it("does not warn after a heartbeat, also when the heartbeat comes after the first check", () => {
+            const m = createMonitor(1000);
+            vi.advanceTimersByTime(5_000);
+            m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000, workerSelfLagMs : 0 });
+            vi.advanceTimersByTime(10_000);
+            expect(m.logger.log).not.toHaveBeenCalledWith("warn", expect.anything(), expect.anything());
+            m.monitor.stop();
+        });
+
+        it("stops with the monitor", () => {
+            const m = createMonitor(1000);
+            m.monitor.stop();
+            vi.advanceTimersByTime(20_000);
+            expect(m.logger.log).not.toHaveBeenCalled();
+        });
+    });
 });

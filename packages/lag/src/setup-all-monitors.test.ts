@@ -287,6 +287,7 @@ describe("setupAllMonitors", () => {
             "lifecycle", "page-view-vitals", "measurement-conditions", "drift-lag", "macrotask-lag", "throttle-detector",
             "loaf", "event-timing", "layout-shift", "frame-timing", "idle-availability", "scheduling-fairness",
             "memory", "worker-lag", "compute-pressure", "gc-signal", "clock-reliability", "clock-drift", "browser-reports",
+            "page-view-context",
         ]);
         for (const handle of handles.registry.getAll()) {
             expect(handle.monitor, handle.name).toBeDefined();
@@ -339,6 +340,10 @@ describe("setupAllMonitors", () => {
             id : "HeavyAdIntervention",
             source_file : "https://ads.example/ad.js",
         }));
+    });
+
+    it("gives the ID of the current page view to the worker, for its hang reports", () => {
+        expect(handles.pageViewContext!.getAttributes()).toEqual({ "lag.page_view.id" : handles.vitals!.getView().id });
     });
 
     it("gives the ID of the current page view to the events of the other monitors", async () => {

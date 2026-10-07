@@ -14,6 +14,8 @@ import type { ReportingObserverInit } from "../BrowserReportMonitor.js";
 import type { WorkerLike } from "../WorkerLagMonitor.js";
 import type { HangReportTarget } from "../worker-protocol.js";
 import { createPageSource, type PageDocument } from "./page-source.js";
+import { createIndexedDbHangJournal, type IdbFactoryLike } from "./indexeddb-journal.js";
+import type { CrashReportContextLike } from "../dep-groups.js";
 
 /**
  * The browser globals that the adapter reads. In a page, `window` has them.
@@ -43,6 +45,8 @@ export type BrowserGlobals = LifecycleWindow & {
     readonly PressureObserver? : unknown;
     readonly SharedArrayBuffer? : unknown;
     readonly crossOriginIsolated? : unknown;
+    readonly indexedDB? : unknown;
+    readonly crashReport? : unknown;
 };
 
 export type BrowserDepsOptions = {
@@ -63,6 +67,14 @@ export type BrowserDepsOptions = {
      * for the liveness watcher. The watcher also needs `worker`.
      */
     sharedMemory? : boolean;
+    /**
+     * When true (the default), the worker monitor reads the hang journal in
+     * IndexedDB and reports the hangs that earlier pages did not survive. The
+     * bundled worker writes the journal.
+     */
+    hangJournal? : boolean;
+    /** When true (the default), the page-view ID goes into the crash-report context of the browser (Chrome 145 and later). */
+    crashReportContext? : boolean;
 };
 
 /** The method `name` of `target`, bound to `target`. Undefined if `target` has no such method. */
@@ -113,6 +125,12 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
     const SharedArrayBuffer = globals.crossOriginIsolated === true && options.sharedMemory !== false
         ? constructorOf<new (byteLength : number) => SharedArrayBuffer>(globals.SharedArrayBuffer)
         : undefined;
+    const indexedDB = globals.indexedDB as IdbFactoryLike | undefined;
+    const hangJournal = options.hangJournal !== false && options.worker && typeof indexedDB?.open === "function"
+        ? createIndexedDbHangJournal(indexedDB)
+        : undefined;
+    const crashReport = globals.crashReport as CrashReportContextLike | undefined;
+    const crashReportContext = options.crashReportContext !== false && typeof crashReport?.set === "function" ? crashReport : undefined;
 
     return {
         logger : options.logger,
@@ -142,5 +160,7 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         ...(options.worker ? { worker : options.worker } : {}),
         ...(options.workerHeartbeatIntervalMs !== undefined ? { workerHeartbeatIntervalMs : options.workerHeartbeatIntervalMs } : {}),
         ...(options.workerHangReport ? { workerHangReport : options.workerHangReport } : {}),
+        ...(hangJournal ? { hangJournal } : {}),
+        ...(crashReportContext ? { crashReport : crashReportContext } : {}),
     };
 }

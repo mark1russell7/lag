@@ -1,6 +1,7 @@
 import type { Clock, ClearIntervalFn, ClearTimeoutFn, SetIntervalFn, SetTimeoutFn } from "./types.js";
 import type { HangOptions, MainToWorkerMessage, WorkerToMainMessage } from "./worker-protocol.js";
 import { LivenessWatcher } from "./shared-liveness.js";
+import { HANG_JOURNAL_WRITE_INTERVAL_MS, type HangJournal } from "./hang-journal.js";
 
 /** A hang as the worker sees it. Times are the worker's absolute time. */
 export type HangEvent = {
@@ -8,6 +9,8 @@ export type HangEvent = {
     /** The time of the last acknowledgement before the hang. */
     startedAt : number;
     durationMs : number;
+    /** The context of the page (the last `context` message), for example `lag.page_view.id`. */
+    attributes : Readonly<Record<string, string>>;
 };
 
 export type WorkerDeps = {
@@ -24,6 +27,12 @@ export type WorkerDeps = {
     /** Required for the shared-memory liveness watcher. */
     setIntervalFn? : SetIntervalFn;
     clearIntervalFn? : ClearIntervalFn;
+    /**
+     * Persistent storage for hangs in progress. When the main thread sends a
+     * `pageId`, the worker keeps a record of each hang until it ends, so that
+     * the next page can report a hang that the page did not survive.
+     */
+    journal? : HangJournal;
 };
 
 export type WorkerHandler = {
@@ -37,12 +46,13 @@ export type WorkerHandler = {
  *   heartbeat;
  * - answers to clock synchronization requests;
  * - hang detection: when the main thread does not acknowledge heartbeats for
- *   `hang.thresholdMs`, the worker reports a hang itself.
+ *   `hang.thresholdMs`, the worker reports a hang itself;
+ * - with a journal, a persistent record of each hang in progress.
  *
  * Idle until the main thread sends `start`.
  */
 export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
-    const { postMessage, setTimeoutFn, clearTimeoutFn, clock, reportHang, setIntervalFn, clearIntervalFn } = deps;
+    const { postMessage, setTimeoutFn, clearTimeoutFn, clock, reportHang, setIntervalFn, clearIntervalFn, journal } = deps;
 
     let intervalMs = 0;
     let handle : number | undefined;
@@ -52,6 +62,21 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
     let lastAckAt = 0;
     let hangStartedAt : number | undefined;
     let liveness : LivenessWatcher | undefined;
+    let pageId : string | undefined;
+    let context : Readonly<Record<string, string>> = {};
+    let lastJournalWrite = 0;
+
+    /** Journal operations are best effort: a failure must not stop the heartbeats. */
+    function writeJournal(startedAt : number, now : number) : void {
+        if (!journal || pageId === undefined) return;
+        lastJournalWrite = now;
+        journal.put({ pageId, startedAt, lastSeenAt : now, attributes : context }).catch(() => {});
+    }
+
+    function clearJournal() : void {
+        if (!journal || pageId === undefined) return;
+        journal.remove(pageId).catch(() => {});
+    }
 
     function schedule() : void {
         expectedAt = clock.now() + intervalMs;
@@ -68,7 +93,10 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
             if (workerSelfLagMs >= hang.thresholdMs) lastAckAt = now;
             if (hangStartedAt === undefined && now - lastAckAt >= hang.thresholdMs) {
                 hangStartedAt = lastAckAt;
-                reportHang?.({ phase : "started", startedAt : lastAckAt, durationMs : now - lastAckAt }, hang);
+                reportHang?.({ phase : "started", startedAt : lastAckAt, durationMs : now - lastAckAt, attributes : context }, hang);
+                writeJournal(hangStartedAt, now);
+            } else if (hangStartedAt !== undefined && now - lastJournalWrite >= HANG_JOURNAL_WRITE_INTERVAL_MS) {
+                writeJournal(hangStartedAt, now);
             }
         }
         schedule();
@@ -81,7 +109,8 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
         const startedAt = hangStartedAt;
         hangStartedAt = undefined;
         const durationMs = now - startedAt;
-        if (hang) reportHang?.({ phase : "ended", startedAt, durationMs }, hang);
+        clearJournal();
+        if (hang) reportHang?.({ phase : "ended", startedAt, durationMs, attributes : context }, hang);
         postMessage({ type : "hang-ended", startedAt, durationMs });
     }
 
@@ -89,6 +118,7 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
         if (handle === undefined) return;
         clearTimeoutFn(handle);
         handle = undefined;
+        if (hangStartedAt !== undefined) clearJournal();
         hangStartedAt = undefined;
     }
 
@@ -98,8 +128,13 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
                 stop();
                 intervalMs = message.intervalMs;
                 hang = message.hang;
+                pageId = message.pageId;
                 lastAckAt = clock.now();
                 schedule();
+                break;
+            }
+            case "context": {
+                context = { ...message.attributes };
                 break;
             }
             case "stop": {

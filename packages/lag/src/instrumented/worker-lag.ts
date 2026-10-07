@@ -5,6 +5,8 @@ import { WorkerLagMonitor } from "../WorkerLagMonitor.js";
 import type { MeasurementConditions } from "../measurement-conditions.js";
 import { EVENTS, METRICS, createCounter, createHistogram } from "../metric-catalog.js";
 import { createHandle, validatedRecorder } from "./shared.js";
+import { findAbandonedHangs } from "../hang-journal.js";
+import { createRandomId } from "../random-id.js";
 
 /**
  * One heartbeat each second: a main-thread block of length B is seen with a
@@ -28,6 +30,10 @@ const DEFAULT_HANG_THRESHOLD_MS = 5_000;
  * reliability tracker, so the main-thread monitors discard samples that
  * overlap it. With `conditions`, the monitor also pauses while the page is
  * hidden.
+ *
+ * With `deps.hangJournal`, the factory reads the journal one time at the
+ * start. It reports each hang that an earlier page did not survive as a hang
+ * with the outcome `abandoned`, and removes its record.
  */
 export function createInstrumentedWorkerLag(
     deps : CoreDeps & WorkerMonitorDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<EventDeps>,
@@ -37,8 +43,10 @@ export function createInstrumentedWorkerLag(
         const mainBlockHist = createHistogram(deps.meter, METRICS.workerMainBlock);
         const selfLagHist = createHistogram(deps.meter, METRICS.workerSelfLag);
         const offsetHist = createHistogram(deps.meter, METRICS.workerClockOffset);
-        const hangs = createCounter(deps.meter, METRICS.hangs);
-        const hangDurationHist = createHistogram(deps.meter, METRICS.hangDuration);
+        const hangs = createCounter<{ outcome : "ended" | "abandoned" }>(deps.meter, METRICS.hangs);
+        const hangDurationHist = createHistogram<{ outcome : "ended" | "abandoned" }>(deps.meter, METRICS.hangDuration);
+        const pageId = deps.pageId ?? createRandomId();
+        const clock = deps.absoluteClock ?? createAbsoluteClock(deps.performance);
         const recorder = validatedRecorder(conditions, (delay) => mainBlockHist.record(delay));
 
         const monitor = new WorkerLagMonitor(
@@ -48,7 +56,7 @@ export function createInstrumentedWorkerLag(
                 recorder.submit(m.deliveryDelayMs, m.deliveryDelayMs);
             },
             deps.logger,
-            deps.absoluteClock ?? createAbsoluteClock(deps.performance),
+            clock,
             {
                 heartbeatIntervalMs : deps.workerHeartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS,
                 setTimeoutFn : deps.setTimeoutFn,
@@ -60,19 +68,44 @@ export function createInstrumentedWorkerLag(
                 events : {
                     onSystemStall : (stall) => conditions?.tracker.add(stall.start, stall.end, "suspend"),
                     onHangEnded : (durationMs) => {
-                        hangs.add(1);
-                        hangDurationHist.record(durationMs);
+                        hangs.add(1, { outcome : "ended" });
+                        hangDurationHist.record(durationMs, { outcome : "ended" });
                         deps.events?.emit(EVENTS.hang.name, { phase : "ended", duration_ms : durationMs });
                     },
                     onClockSync : ({ offsetMs }) => offsetHist.record(Math.abs(offsetMs)),
                 },
+                pageId,
             },
         );
+
+        // Hangs that earlier pages of the origin did not survive
+        const journal = deps.hangJournal;
+        let stopped = false;
+        if (journal) {
+            journal.list().then(async (records) => {
+                for (const record of findAbandonedHangs(records, clock.now(), pageId)) {
+                    if (stopped) return;
+                    await journal.remove(record.pageId);
+                    const durationMs = record.lastSeenAt - record.startedAt;
+                    hangs.add(1, { outcome : "abandoned" });
+                    hangDurationHist.record(durationMs, { outcome : "abandoned" });
+                    deps.events?.emit(EVENTS.hang.name, {
+                        ...record.attributes,
+                        phase : "abandoned",
+                        duration_ms : durationMs,
+                        "lag.hang.page_id" : record.pageId,
+                    });
+                }
+            }).catch((error : unknown) => {
+                deps.logger.log("warn", "Could not read the hang journal.", { error, type : "WorkerLagMonitor" });
+            });
+        }
         const unpause = conditions?.pauseWhileHidden(monitor);
 
         return {
             monitor,
             stop : () => {
+                stopped = true;
                 unpause?.();
                 monitor.stop();
                 recorder.dispose();

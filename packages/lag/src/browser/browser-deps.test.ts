@@ -115,6 +115,26 @@ describe("createBrowserDeps", () => {
         });
     });
 
+    it("uses IndexedDB for the hang journal only with a worker, and only if the option permits it", () => {
+        const worker : WorkerLike = { postMessage : vi.fn(), addEventListener : vi.fn(), removeEventListener : vi.fn() };
+        const indexedDB = { open : vi.fn() };
+        const globals = createGlobals({ indexedDB });
+
+        expect(createBrowserDeps(globals, { ...options(), worker }).hangJournal).toBeDefined();
+        expect(createBrowserDeps(globals, options()).hangJournal).toBeUndefined();
+        expect(createBrowserDeps(globals, { ...options(), worker, hangJournal : false }).hangJournal).toBeUndefined();
+        expect(createBrowserDeps(createGlobals(), { ...options(), worker }).hangJournal).toBeUndefined();
+        // The database opens only at the first operation
+        expect(indexedDB.open).not.toHaveBeenCalled();
+    });
+
+    it("uses the crash-report context of the browser where it exists", () => {
+        const crashReport = { initialize : vi.fn(), set : vi.fn(), delete : vi.fn() };
+        expect(createBrowserDeps(createGlobals({ crashReport }), options()).crashReport).toBe(crashReport);
+        expect(createBrowserDeps(createGlobals({ crashReport }), { ...options(), crashReportContext : false }).crashReport).toBeUndefined();
+        expect(createBrowserDeps(createGlobals(), options()).crashReport).toBeUndefined();
+    });
+
     it("gives setupAllMonitors the monitors that the browser can support", () => {
         vi.useFakeTimers();
         const handles = setupAllMonitors(createBrowserDeps(createGlobals(), options()));

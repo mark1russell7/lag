@@ -326,6 +326,33 @@ describe("PageViewVitals", () => {
         });
     });
 
+    describe("subscribe()", () => {
+        it("calls the listener at each new view, until the listener is removed", () => {
+            const t = setup();
+            const listener = vi.fn();
+            const remove = t.vitals.subscribe(listener);
+            t.pagehide(true);
+            t.pageshow(true, 5_000);
+            remove();
+            t.pagehide(true);
+            t.pageshow(true, 9_000);
+
+            expect(listener.mock.calls).toEqual([[expect.objectContaining({ id : "view-2", navigationType : "back-forward-cache" })]]);
+        });
+
+        it("logs an error from a listener and continues", () => {
+            const t = setup();
+            const second = vi.fn();
+            t.vitals.subscribe(() => { throw new Error("boom"); });
+            t.vitals.subscribe(second);
+            t.pagehide(true);
+            t.pageshow(true, 5_000);
+
+            expect(t.logger.log).toHaveBeenCalledWith("error", "Error in a page-view listener.", expect.anything());
+            expect(second).toHaveBeenCalled();
+        });
+    });
+
     describe("flush()", () => {
         it("reports the current values now, as a checkpoint that is not final", () => {
             const t = setup();

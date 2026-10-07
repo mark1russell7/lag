@@ -29,6 +29,7 @@ import type {
     SharedMemoryDeps,
     PageDeps,
     AbsoluteClockDeps,
+    CrashReportDeps,
 } from "./dep-groups.js";
 import { withEventContext } from "./events.js";
 import { createAbsoluteClock } from "./absolute-clock.js";
@@ -78,7 +79,9 @@ import {
     createInstrumentedBrowserReports,
     createInstrumentedSharedLiveness,
     createInstrumentedPageViewVitals,
+    createInstrumentedPageViewContext,
 } from "./instrumented/index.js";
+import type { PageViewContext } from "./instrumented/page-view-context.js";
 
 /**
  * Full dependency bag for setupAllMonitors.
@@ -104,7 +107,8 @@ export type AllMonitorDeps =
     & Partial<ReportingDeps>
     & Partial<SharedMemoryDeps>
     & Partial<PageDeps>
-    & Partial<AbsoluteClockDeps>;
+    & Partial<AbsoluteClockDeps>
+    & Partial<CrashReportDeps>;
 
 /**
  * Handles returned by setupAllMonitors.
@@ -150,6 +154,7 @@ export type AllMonitorHandles = {
     readonly clockDrift : ClockDriftMonitor | undefined;
     readonly browserReports : BrowserReportMonitor | undefined;
     readonly sharedLiveness : SharedLivenessMonitor | undefined;
+    readonly pageViewContext : PageViewContext | undefined;
 };
 
 function monitorOf<T>(registry : MonitorRegistry, name : string) : T | undefined {
@@ -319,6 +324,12 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
         }));
     }
 
+    // 17. The ID of the current page view, for the hang reports of the worker and the crash reports of the browser
+    const workerMonitor = monitorOf<WorkerLagMonitor>(registry, "worker-lag");
+    if (vitals && (workerMonitor || deps.crashReport)) {
+        registry.add(createInstrumentedPageViewContext(deps, vitals, workerMonitor ? [workerMonitor] : []));
+    }
+
     return {
         registry,
         stop : () => registry.stopAll(),
@@ -344,5 +355,6 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
         get clockDrift() { return monitorOf<ClockDriftMonitor>(registry, "clock-drift"); },
         get browserReports() { return monitorOf<BrowserReportMonitor>(registry, "browser-reports"); },
         get sharedLiveness() { return monitorOf<SharedLivenessMonitor>(registry, "shared-liveness"); },
+        get pageViewContext() { return monitorOf<PageViewContext>(registry, "page-view-context"); },
     };
 }
