@@ -54,7 +54,7 @@ export default defineConfig({
     optimizeDeps : {
         // Pre-bundle every dependency that a test imports, so that Vite does
         // not reload the page in the middle of a run
-        include : ["@mark1russell7/otel-ts"],
+        include : ["@mark1russell7/otel-ts", "web-vitals", "web-vitals/attribution"],
     },
     test : {
         testTimeout : 60_000,
