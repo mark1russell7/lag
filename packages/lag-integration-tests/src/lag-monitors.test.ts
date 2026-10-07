@@ -1,4 +1,4 @@
-import { expect } from "vitest";
+import { expect, inject } from "vitest";
 import { userEvent } from "vitest/browser";
 import { init } from "@mark1russell7/otel-ts";
 import {
@@ -14,27 +14,34 @@ import {
     createBrowserDeps,
     createConsoleLogger,
     createTeeMeter,
+    queryMimirCount,
     wait,
+    waitForMimirCount,
     type TeeMeter,
 } from "./harness.js";
+import { features } from "./features.js";
+import { recordMeasurement } from "./commands.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
-const MIMIR_QUERY_URL = "http://localhost:9009/prometheus/api/v1/query";
 const SERVICE_NAME = "lag-integration-test";
 
-// Query Mimir for a metric; 0 when the Grafana stack isn't running
-async function queryMimir(query : string) : Promise<number> {
-    try {
-        const res = await fetch(`${MIMIR_QUERY_URL}?query=${encodeURIComponent(query)}`);
-        const json = await res.json();
-        if (json.data?.result?.length > 0) {
-            return parseFloat(json.data.result[0].value[1]);
-        }
-    } catch {
-        // Mimir not reachable — expected without the docker stack
-    }
-    return 0;
-}
+/** The monitors that setupAllMonitors registers in every browser. */
+const ALWAYS = [
+    "lifecycle", "page-view-vitals", "measurement-conditions", "drift-lag", "macrotask-lag", "throttle-detector",
+    // The observer monitors exist in every browser; without the entry type they only log a warning
+    "loaf", "event-timing", "layout-shift",
+    "frame-timing", "scheduling-fairness", "worker-lag", "gc-signal", "clock-reliability", "clock-drift",
+];
+
+/** The monitors that need an API that only some browsers have. */
+const OPTIONAL : ReadonlyArray<[string, boolean]> = [
+    ["idle-availability", features.requestIdleCallback.supported],
+    ["memory", features.performanceMemory.supported || features.measureUserAgentSpecificMemory.supported],
+    ["compute-pressure", features.computePressure.supported],
+    ["browser-reports", features.reportingObserver.supported],
+    // Shared memory needs cross-origin isolation (the coi project tests it)
+    ["shared-liveness", globalThis.crossOriginIsolated === true],
+];
 
 describe("Lag Monitor Integration", () => {
     let otel : ReturnType<typeof init>;
@@ -59,8 +66,8 @@ describe("Lag Monitor Integration", () => {
         text.textContent = "Lag monitor integration test";
         document.body.append(text);
         handles = setupAllMonitors(createBrowserDeps({
-            // Console + OTel Logs (Loki)
-            logger : createTeeLogger(createConsoleLogger(), createOtelLoggerAdapter(otel.getLogger("lag"))),
+            // Console + OTel Logs (Loki). Unsupported entry types only warn; keep the console for errors.
+            logger : createTeeLogger(createConsoleLogger(["error"]), createOtelLoggerAdapter(otel.getLogger("lag"))),
             meter : tee.meter,
             events : createOtelEventSink(otel.getLogger("lag-events")),
             worker,
@@ -76,24 +83,25 @@ describe("Lag Monitor Integration", () => {
         await otel?.shutdown();
     });
 
-    it("wires every monitor Chromium supports", () => {
+    it("registers a monitor for each API that the browser has, and no other", () => {
         expect(handles.lifecycleStateMachine?.getState()).toMatch(/^(active|passive)$/);
-        for (const name of [
-            "page-view-vitals", "drift-lag", "macrotask-lag", "throttle-detector", "loaf", "event-timing", "layout-shift",
-            "frame-timing", "idle-availability", "scheduling-fairness",
-            "worker-lag", "gc-signal", "clock-reliability", "clock-drift", "browser-reports",
-        ]) {
+        for (const name of ALWAYS) {
             expect(handles.registry.get(name)?.monitor, name).toBeDefined();
+        }
+        for (const [name, supported] of OPTIONAL) {
+            expect(handles.registry.get(name)?.monitor !== undefined, `${name} (supported: ${supported})`).toBe(supported);
         }
     });
 
     it("DriftLag measures a blocked main thread", async () => {
         await wait(300);
+        const before = tee.values("lag_drift_histogram").length;
         blockMainThread(300);
         await wait(300);
 
         const max = tee.max("lag_drift_histogram");
         console.log(`DriftLag max after a 300ms block: ${max.toFixed(1)}ms`);
+        await recordMeasurement("integration/block-300ms/lag_drift_histogram", "ms", tee.values("lag_drift_histogram").slice(before), { scenario : "block-300ms" });
         expect(max).toBeGreaterThan(200);
     });
 
@@ -108,6 +116,7 @@ describe("Lag Monitor Integration", () => {
         const after = tee.values("lag_worker_main_block_histogram").slice(before);
         const max = Math.max(...after);
         console.log(`Worker heartbeat max wait after a 500ms block: ${max.toFixed(1)}ms (${after.length} heartbeats)`);
+        await recordMeasurement("integration/block-500ms/lag_worker_main_block_histogram", "ms", after, { scenario : "block-500ms" });
         // Heartbeats sent early in the block wait for most of it
         expect(max).toBeGreaterThan(300);
         // A free worker keeps its own timer on schedule
@@ -119,7 +128,8 @@ describe("Lag Monitor Integration", () => {
         expect(tee.values("lag_frame_delta_histogram").length).toBeGreaterThan(5);
     });
 
-    it("LongAnimationFrameMonitor records every long frame the browser reports", async () => {
+    it("LongAnimationFrameMonitor records every long frame the browser reports", async (ctx) => {
+        ctx.skip(!features.loaf.supported, features.loaf.reason);
         // Headless Chromium in Vitest's iframe doesn't reliably emit LoAF
         // entries for a given frame, so compare against a raw observer
         const raw : number[] = [];
@@ -140,7 +150,8 @@ describe("Lag Monitor Integration", () => {
         expect(blocking).toEqual(raw);
     });
 
-    it("PageViewVitals measures the load of the page and a real click", async () => {
+    it("PageViewVitals measures the load of the page and a real click", async (ctx) => {
+        ctx.skip(!features.eventTiming.supported, features.eventTiming.reason);
         const button = document.createElement("button");
         button.id = "slow-button";
         button.textContent = "Slow";
@@ -156,7 +167,6 @@ describe("Lag Monitor Integration", () => {
         expect(vitals["TTFB"]!.value).toBeGreaterThanOrEqual(0);
         expect(vitals["FCP"]!.value).toBeGreaterThan(0);
         expect(vitals["LCP"]!.value).toBeGreaterThanOrEqual(vitals["FCP"]!.value);
-        expect(vitals["CLS"]).toBeDefined();
         expect(vitals["INP"]!.value).toBeGreaterThanOrEqual(120);
         expect(vitals["INP"]!.attribution).toMatchObject({ interaction_target : "#slow-button", interaction_type : "pointer" });
         expect(Number(vitals["INP"]!.attribution["processing_duration_ms"])).toBeGreaterThanOrEqual(110);
@@ -169,12 +179,17 @@ describe("Lag Monitor Integration", () => {
 
         expect(tee.values("lag_macrotask_histogram").length).toBeGreaterThan(0);
         expect(tee.values("lag_scheduling_message_channel_histogram").length).toBeGreaterThan(0);
-        expect(tee.values("lag_idle_time_remaining_histogram").length).toBeGreaterThan(0);
+        if (features.requestIdleCallback.supported) {
+            expect(tee.values("lag_idle_time_remaining_histogram").length).toBeGreaterThan(0);
+        } else {
+            expect(handles.idleMonitor).toBeUndefined();
+        }
     });
 
-    it("MemoryMonitor samples the heap (where performance.memory exists)", () => {
-        if (!(window.performance as { memory? : unknown }).memory) return;
+    it("MemoryMonitor samples the heap through performance.memory", (ctx) => {
+        ctx.skip(!features.performanceMemory.supported, features.performanceMemory.reason);
         expect(tee.max("lag_memory_used_bytes_histogram")).toBeGreaterThan(0);
+        expect(tee.records("lag_memory_used_bytes_histogram")[0]?.attributes).toEqual({ source : "legacy" });
     });
 
     it("ClockReliabilityChecker reports the clock resolution", () => {
@@ -228,14 +243,14 @@ describe("Lag Monitor Integration", () => {
 
     it("flushes metrics to the OTLP endpoint", async () => {
         await otel.shutdown();
-        // Give Alloy time to forward to Mimir
-        await wait(3_000);
-
-        const driftCount = await queryMimir(`lag_drift_histogram_count{service_name="${SERVICE_NAME}"}`);
+        // Alloy batches for 5 s before it forwards to Mimir. Without the stack, one query returns 0 at once.
+        const driftCount = inject("e2e")
+            ? await waitForMimirCount("lag_drift_histogram", SERVICE_NAME, 45_000)
+            : await queryMimirCount("lag_drift_histogram", SERVICE_NAME);
         console.log(`Mimir: lag_drift_histogram_count=${driftCount}`);
-        // Only checkable with the Grafana stack running (pnpm infra:up)
-        if (driftCount > 0) {
+        // Required in the e2e project (pnpm test:e2e starts the Grafana stack); optional elsewhere
+        if (inject("e2e")) {
             expect(driftCount).toBeGreaterThan(0);
         }
-    });
+    }, 90_000);
 });

@@ -3,16 +3,18 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
   "dependencies": {
     "@clack/prompts": "^0.9.1",
-    "@lag/core": "workspace:*"
+    "@lag/core": "workspace:*",
+    "@lag/report": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.2.3",
     "tsx": "^4.21.0",
     "vitest": "^4.1.2"
-  },
-  "scripts": {
-    "test": "vitest run"
   }
 }

@@ -11,3 +11,11 @@
 # Local ste-lint dictionaries. The ASD-STE100 dictionary is copyrighted: do not commit it.
 .ste/
 *.ste-dictionary.json
+
+# Coverage reports (pnpm coverage)
+**/coverage/
+
+# Mutation testing (pnpm mutation): reports and the incremental file
+**/reports/mutation/
+**/reports/stryker-incremental.json
+**/.stryker-tmp/

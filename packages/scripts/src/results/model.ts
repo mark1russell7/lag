@@ -1,0 +1,160 @@
+/**
+ * The pure part of the results collector: it turns the files that the test
+ * runs write into the parts of a RunReport. No I/O, so the unit tests can
+ * call every function.
+ */
+import {
+    SCHEMA_VERSION,
+    summarizeRun,
+    type BudgetResult,
+    type Measurement,
+    type RunIndex,
+    type RunReport,
+    type RunSummary,
+    type SuiteKind,
+    type SuiteMeta,
+    type VitestJsonReport,
+} from "@lag/report";
+
+/** One file in a project report: the shape of Vitest's JSON reporter. */
+export type ProjectReportFile = VitestJsonReport["testResults"][number];
+
+/** The tests of one Vitest project (one browser instance), from `project-reporter.ts`. */
+export type ProjectReport = VitestJsonReport & {
+    /** The Vitest project name, for example "browser (firefox)". */
+    project : string;
+    /** "node", or the browser: "chromium", "firefox", "webkit" or "chrome". */
+    environment : string;
+};
+
+/**
+ * One line of `results.jsonl`, which the browser commands of
+ * @lag/integration-tests write (see its `src/command-types.ts`).
+ */
+export type ResultRecord =
+    | {
+        kind : "measurement";
+        project : string;
+        environment : string;
+        file : string;
+        measurement : { name : string; unit : string; values : number[]; labels : Record<string, string> };
+    }
+    | {
+        kind : "budget";
+        project : string;
+        environment : string;
+        file : string;
+        budget : BudgetResult;
+    };
+
+/** The short name of a workspace package: "@lag/core" gives "core", "@lag/integration-tests" gives "integration". */
+export function packageSlug(packageName : string) : string {
+    const name = packageName.replace(/^@lag\//, "");
+    return name === "integration-tests" ? "integration" : name;
+}
+
+/** The kind of suite of a Vitest project, from the project name. */
+export function suiteKind(project : string, environment : string) : SuiteKind {
+    const base = project.replace(/\s*\(.*\)$/, "");
+    if (base === "overhead") return "benchmark";
+    if (base === "soak") return "soak";
+    if (base === "e2e") return "e2e";
+    return environment === "node" ? "unit" : "browser";
+}
+
+/**
+ * The suite of one Vitest project of one package. The ID has the package,
+ * the project and the environment, for example "integration-coi-firefox",
+ * "core-unit-node" or "site-browser-chromium".
+ */
+export function suiteMeta(packageName : string, project : string, environment : string) : SuiteMeta {
+    const kind = suiteKind(project, environment);
+    const base = project.replace(/\s*\(.*\)$/, "").trim();
+    // Unit packages have no project name; the site has the projects "node" and "browser"
+    const middle = base === "" || base === "node" || base === environment ? (kind === "unit" ? "unit" : kind) : base;
+    return {
+        id : [packageSlug(packageName), middle, environment].join("-").toLowerCase(),
+        packageName,
+        kind,
+        environment,
+    };
+}
+
+/** The records of `results.jsonl`. Lines that are not valid records are left out. */
+export function parseResultLines(text : string) : ResultRecord[] {
+    const records : ResultRecord[] = [];
+    for (const line of text.split(/\r?\n/)) {
+        if (line.trim() === "") continue;
+        try {
+            const record = JSON.parse(line) as Partial<ResultRecord>;
+            if (record.kind === "measurement" && record.measurement && typeof record.project === "string") records.push(record as ResultRecord);
+            if (record.kind === "budget" && record.budget && typeof record.project === "string") records.push(record as ResultRecord);
+        } catch {
+            // A line that a test wrote when the run stopped
+        }
+    }
+    return records;
+}
+
+/**
+ * The measurements of a run. Each measurement belongs to the suite of the
+ * project that recorded it. Two records with the same name and unit in one
+ * suite (for example a retried test) join into one measurement.
+ */
+export function toMeasurements(records : readonly ResultRecord[], packageName : string) : Measurement[] {
+    const byKey = new Map<string, Measurement>();
+    for (const record of records) {
+        if (record.kind !== "measurement") continue;
+        const suiteId = suiteMeta(packageName, record.project, record.environment).id;
+        const { name, unit, values, labels } = record.measurement;
+        const key = `${suiteId}\u0000${name}\u0000${unit}`;
+        const existing = byKey.get(key);
+        if (existing) {
+            existing.values.push(...values);
+        } else {
+            byKey.set(key, { suiteId, name, unit, values : [...values], labels : { ...labels } });
+        }
+    }
+    return [...byKey.values()];
+}
+
+/** The budgets of a run, one for each name (the last record wins), the failed ones first. */
+export function toBudgets(records : readonly ResultRecord[]) : BudgetResult[] {
+    const byName = new Map<string, BudgetResult>();
+    for (const record of records) {
+        if (record.kind !== "budget") continue;
+        const { name, unit, value, limit } = record.budget;
+        byName.set(name, { name, unit, value, limit, pass : value <= limit });
+    }
+    return [...byName.values()].sort((a, b) => Number(a.pass) - Number(b.pass) || a.name.localeCompare(b.name));
+}
+
+/** A run ID that sorts by time and shows the commit: "2026-10-07-153012-b492a0a". */
+export function runId(createdAt : Date, commit? : string) : string {
+    const iso = createdAt.toISOString();
+    const time = `${iso.slice(0, 10)}-${iso.slice(11, 19).replace(/:/g, "")}`;
+    return commit ? `${time}-${commit.slice(0, 7)}` : time;
+}
+
+/** The file name of a run, relative to the index. */
+export function runFile(id : string) : string {
+    return `runs/${id}.json`;
+}
+
+/**
+ * Adds a run to the index. An index with another schema version, or that is
+ * not an index, starts again empty: the site cannot read its runs.
+ */
+export function mergeIndex(existing : unknown, run : RunReport, maxRuns = 50) : RunIndex {
+    const previous = isRunIndex(existing) ? existing.runs.filter(summary => summary.id !== run.id) : [];
+    const runs : RunSummary[] = [...previous, summarizeRun(run, runFile(run.id))]
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+        .slice(-maxRuns);
+    return { schemaVersion : SCHEMA_VERSION, runs };
+}
+
+function isRunIndex(value : unknown) : value is RunIndex {
+    return typeof value === "object" && value !== null
+        && (value as RunIndex).schemaVersion === SCHEMA_VERSION
+        && Array.isArray((value as RunIndex).runs);
+}
