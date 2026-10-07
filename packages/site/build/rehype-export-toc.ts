@@ -18,7 +18,7 @@ function textOf(node : Node) : string {
     return "";
 }
 
-/** Collects the `h2` and `h3` headings that have an `id`, in document order. */
+/** This function collects the `h2` and `h3` headings that have an `id`, in document order. */
 export function collectToc(tree : Root) : TocEntry[] {
     const entries : TocEntry[] = [];
     const visit = (node : Node) : void => {
@@ -57,7 +57,7 @@ function objectExpression(entry : TocEntry) : unknown {
     };
 }
 
-/** Builds an MDX ESM node for `export const <name> = [...]`. */
+/** This function makes an MDX ESM node for `export const <name> = [...]`. */
 export function createExportNode(name : string, entries : readonly TocEntry[]) : unknown {
     return {
         type : "mdxjsEsm",

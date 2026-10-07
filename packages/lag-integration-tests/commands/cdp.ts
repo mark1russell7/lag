@@ -1,11 +1,12 @@
 /**
- * Vitest browser commands that use the Chrome DevTools Protocol. They run in
- * Node, in the Vitest process, and control the page that runs the test file.
- * They work only with the Playwright provider and Chromium.
+ * This module has the Vitest browser commands that use the Chrome DevTools
+ * Protocol. The commands operate in Node, in the Vitest process, and control
+ * the page that loads the test file. They work only with the Playwright
+ * provider and Chromium.
  *
  * Playwright emulates focus on every page (`Emulation.setFocusEmulationEnabled`).
  * Chromium implements focus emulation as a page capture, and a captured page
- * stays visible: `Page.setWebLifecycleState` then has no effect, and a page
+ * stays visible. Thus, `Page.setWebLifecycleState` has no effect, and a page
  * that is behind another page stays visible. The commands that change the
  * visibility turn off focus emulation on Playwright's own CDP session first,
  * and turn it on again when they finish. Playwright does not make that
@@ -60,10 +61,10 @@ async function setFocusEmulation(ctx : BrowserCommandContext, enabled : boolean)
 }
 
 /**
- * Freezes the page for `ms` milliseconds and makes it active and visible
- * again. The page cannot run while it is frozen, thus this command does the
- * whole sequence. The page sees: `visibilitychange` (hidden), `freeze`,
- * `resume`, `visibilitychange` (visible).
+ * This command freezes the page for `ms` milliseconds and makes it active
+ * and visible again. The page cannot operate while it is frozen, so this
+ * command does the whole sequence. The page sees: `visibilitychange`
+ * (hidden), `freeze`, `resume`, `visibilitychange` (visible).
  */
 export const freezePage : BrowserCommand<[ms : number], FreezeResult> = async (ctx, ms) => {
     const session = await cdp(ctx, "freezePage");
@@ -79,7 +80,7 @@ export const freezePage : BrowserCommand<[ms : number], FreezeResult> = async (c
     return { frozenMs : Date.now() - start };
 };
 
-/** Hides the test page: another page of the same browser context comes to the front. Needs the new headless mode. */
+/** This command hides the test page: another page of the same browser context comes to the front. The command needs the new headless mode. */
 export const hidePage : BrowserCommand<[], void> = async (ctx) => {
     assertChromium(ctx, "hidePage");
     await setFocusEmulation(ctx, false);
@@ -88,7 +89,7 @@ export const hidePage : BrowserCommand<[], void> = async (ctx) => {
     await cover.bringToFront();
 };
 
-/** Shows the test page again after `hidePage`. */
+/** This command shows the test page again after `hidePage`. */
 export const showPage : BrowserCommand<[], void> = async (ctx) => {
     assertChromium(ctx, "showPage");
     await ctx.page.bringToFront();
@@ -114,7 +115,7 @@ export const getPerformanceMetrics : BrowserCommand<[], Record<string, number>> 
     return Object.fromEntries(metrics.map(metric => [metric.name, metric.value]));
 };
 
-/** Runs a full garbage collection in the page's isolate. */
+/** This command does a full garbage collection in the page's isolate. */
 export const collectGarbage : BrowserCommand<[], void> = async (ctx) => {
     const session = await cdp(ctx, "collectGarbage");
     await session.send("HeapProfiler.collectGarbage");
@@ -129,8 +130,9 @@ export const getHeapUsage : BrowserCommand<[], HeapUsage> = async (ctx) => {
 export type PressureState = "nominal" | "fair" | "serious" | "critical";
 
 /**
- * Replaces the CPU pressure source of the Compute Pressure API with a
- * virtual source in the given state. `null` gives the real source back.
+ * This command replaces the CPU pressure source of the Compute Pressure API
+ * with a virtual source in the given state. `null` gives the real source
+ * back.
  */
 export const setPressureState : BrowserCommand<[state : PressureState | null], void> = async (ctx, state) => {
     // The Emulation pressure commands are experimental: Playwright's protocol types do not have them
@@ -152,7 +154,7 @@ async function disablePressureOverride(sessionId : string, session : RawSession)
     await session.send("Emulation.setPressureSourceOverrideEnabled", { enabled : false, source : "cpu" });
 }
 
-/** Undoes every change of the commands above: no throttling, the test page in front, focus emulation on. */
+/** This command undoes every change of the commands above: no throttling, the test page in front, focus emulation on. */
 export const resetPage : BrowserCommand<[], void> = async (ctx) => {
     if (ctx.provider.name !== "playwright" || ctx.project.config.browser.name !== "chromium") return;
     const session = await cdp(ctx, "resetPage");

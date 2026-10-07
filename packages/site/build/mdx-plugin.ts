@@ -10,7 +10,7 @@ import { rehypeExportToc } from "./rehype-export-toc";
 import { remarkMermaid } from "./remark-mermaid";
 
 /**
- * Compiles `.mdx` pages. Each page module exports:
+ * This plugin compiles `.mdx` pages. Each page module exports:
  * - `default`: the page component
  * - `frontmatter`: the YAML frontmatter
  * - `toc`: the `h2` and `h3` headings

@@ -12,7 +12,7 @@ import type { BudgetPayload, MeasurementPayload, ResultRecord } from "../src/com
 export const RESULTS_DIR_ENV = "LAG_RESULTS_DIR";
 export const RESULTS_FILE = "results.jsonl";
 
-/** Appends one line at a time: parallel test files call the commands at the same time. */
+/** This queue makes the commands append one line at a time. Parallel test files use the commands at the same time. */
 let queue : Promise<void> = Promise.resolve();
 
 function environmentOf(ctx : BrowserCommandContext) : string {

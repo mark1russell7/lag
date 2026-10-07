@@ -1,6 +1,7 @@
 /**
- * Normalizes the `SITE_BASE` value (for example `lag` or `/lag`) to a path
- * that starts and ends with a slash, as Vite needs. An empty value gives `/`.
+ * This function normalizes the `SITE_BASE` value (for example `lag` or
+ * `/lag`) to a path that starts and ends with a slash, as Vite needs. An
+ * empty value gives `/`.
  * A full URL (for example a CDN address) only gets a slash at the end.
  */
 export function normalizeBase(value : string | undefined) : string {

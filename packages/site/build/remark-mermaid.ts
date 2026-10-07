@@ -40,7 +40,7 @@ function toMermaidElement(node : MdastNode) : MdastNode & { name : string; attri
     return { type : "mdxJsxFlowElement", name : "Mermaid", attributes, children : [] };
 }
 
-/** Changes the mermaid fences of the tree. The function changes the tree in place. */
+/** This function changes the mermaid fences of the tree. It changes the tree in place. */
 export function replaceMermaidFences(tree : MdastNode) : void {
     const children = tree.children;
     if (!children) return;

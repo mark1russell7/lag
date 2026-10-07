@@ -3,7 +3,7 @@ import { parse } from "yaml";
 /** The query that asks for only the frontmatter of an MDX file: `page.mdx?frontmatter`. */
 export const FRONTMATTER_QUERY = "frontmatter";
 
-/** Returns the module ID without its query. */
+/** This function gives the module ID without its query. */
 export function stripQuery(id : string) : string {
     const index = id.indexOf("?");
     return index < 0 ? id : id.slice(0, index);
@@ -23,9 +23,10 @@ function isRecord(value : unknown) : value is Record<string, unknown> {
 }
 
 /**
- * Reads the YAML frontmatter at the start of an MDX source. Returns an empty
- * object if the source has no frontmatter. The rules are the same as the rules
- * of `remark-frontmatter`: the block must be the first thing in the file.
+ * This function reads the YAML frontmatter at the start of an MDX source. It
+ * gives an empty object if the source has no frontmatter. The rules are the
+ * same as the rules of `remark-frontmatter`: the block must be the first
+ * thing in the file.
  */
 export function extractFrontmatter(source : string) : Record<string, unknown> {
     const match = FRONTMATTER_RE.exec(source);

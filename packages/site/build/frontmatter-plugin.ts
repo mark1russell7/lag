@@ -3,9 +3,9 @@ import type { Plugin } from "vite";
 import { extractFrontmatter, isFrontmatterRequest, stripQuery } from "./frontmatter";
 
 /**
- * Serves `page.mdx?frontmatter` as a small module that exports only the
- * frontmatter of the page. The content registry imports these modules
- * eagerly, so each page component can stay in its own lazy chunk.
+ * This plugin serves `page.mdx?frontmatter` as a small module that exports
+ * only the frontmatter of the page. The content registry imports these
+ * modules eagerly, so each page component can stay in its own lazy chunk.
  */
 export function mdxFrontmatterPlugin() : Plugin {
     return {

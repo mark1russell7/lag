@@ -28,11 +28,11 @@ const newHeadlessChromium = (args : string[] = []) : Provider =>
     playwright({ launchOptions : { channel : "chromium", ...(args.length > 0 ? { args } : {}) } });
 
 /**
- * Sends COOP and COEP with every response, so the page is cross-origin
- * isolated. A plugin, because the browser server of a project replaces the
- * project's `server` options (Vitest 4.1): `server.headers` works only in the
- * root config. `enforce: "pre"` puts the middleware before the middleware of
- * Vitest that sends the test pages.
+ * This plugin sends COOP and COEP with every response, so the page is
+ * cross-origin isolated. A plugin is necessary because the browser server of
+ * a project replaces the project's `server` options (Vitest 4.1). Thus,
+ * `server.headers` works only in the root config. `enforce: "pre"` puts the
+ * middleware before the middleware of Vitest that sends the test pages.
  */
 function crossOriginIsolation() : Plugin {
     return {
