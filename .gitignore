@@ -7,3 +7,6 @@
 # Vitest browser mode: failure screenshots and attachments
 **/__screenshots__/
 **/.vitest-attachments/
+
+# Coverage reports (pnpm coverage)
+**/coverage/
