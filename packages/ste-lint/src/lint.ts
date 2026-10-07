@@ -12,6 +12,7 @@ import { LineIndex } from "./source/lines.js";
 import { extractMarkdown, type Extraction } from "./source/markdown.js";
 import { isSuppressed } from "./source/suppressions.js";
 import { extractTsdoc } from "./source/tsdoc.js";
+import { extractJsxText } from "./source/jsx.js";
 import type { Finding, RuleId, Severity } from "./types.js";
 import { buildUnit, type ProseUnit } from "./units.js";
 
@@ -107,7 +108,12 @@ export class Linter {
 
 function extract(text : string, path : string) : Extraction {
     const kind = fileKind(path);
-    if (kind === "typescript") return extractTsdoc(text, path);
+    if (kind === "typescript") {
+        const comments = extractTsdoc(text, path);
+        if (!/\.[jt]sx$/i.test(path)) return comments;
+        // The text that the user interface shows
+        return { blocks : [...comments.blocks, ...extractJsxText(text, path).blocks], suppressions : comments.suppressions };
+    }
     if (kind === null) return { blocks : [], suppressions : [] };
     return extractMarkdown(text, { mdx : kind === "mdx" });
 }

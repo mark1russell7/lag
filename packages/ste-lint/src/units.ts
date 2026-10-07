@@ -14,7 +14,7 @@ export type TsdocSection = "summary" | "remarks" | "tag";
 
 /** Where a block comes from. */
 export type BlockOrigin = {
-    readonly source : "markdown" | "mdx" | "tsdoc";
+    readonly source : "markdown" | "mdx" | "tsdoc" | "jsx";
     /** For a doc comment: the summary, the `@remarks` section, or the text of another block tag. */
     readonly tsdocSection : TsdocSection | null;
     /** For a doc comment: the block tag, for example `@param`, or null for the summary. */
@@ -54,7 +54,7 @@ export type ProseUnit = {
 /** This function makes a prose unit from a block. The result is null when the block has no words. */
 export function buildUnit(extracted : ExtractedBlock, lexicon : Lexicon) : ProseUnit | null {
     const { block, origin } = extracted;
-    const inline = normalizeInline(block.lines, { mdx : origin.source === "mdx", tsdoc : origin.source === "tsdoc" });
+    const inline = normalizeInline(block.lines, { mdx : origin.source === "mdx" || origin.source === "jsx", tsdoc : origin.source === "tsdoc" });
     return unitFromTokens(tokenize(inline), block, origin, lexicon);
 }
 

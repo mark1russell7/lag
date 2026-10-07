@@ -24,6 +24,25 @@ describe("fileKind", () => {
     });
 });
 
+describe("Linter on TSX files", () => {
+    it("examines the text that the user interface shows, and the doc comments", () => {
+        const source = [
+            "/** Returns the page. */",
+            "export function Page() {",
+            "    return <p>The run may fail; <code>pnpm results</code> utilizes the data.</p>;",
+            "}",
+        ].join("\n");
+        const findings = lintText(source, "Page.tsx", config());
+        expect(ids(findings)).toEqual(expect.arrayContaining(["missing-subject", "modal-verb", "semicolon", "word-list"]));
+        const modal = findings.find((finding) => finding.ruleId === "modal-verb")!;
+        expect([modal.line, modal.column]).toEqual([3, source.split("\n")[2]!.indexOf("may") + 1]);
+    });
+
+    it("does not examine the text of JSX in a .ts file", () => {
+        expect(lintText("const a = 'You should stop.';", "a.ts", config())).toEqual([]);
+    });
+});
+
 describe("Linter", () => {
     it("gives findings with the file, the position and the rule, in order", () => {
         const findings = lintText("# Title\n\nYou should stop; it may fail.", "doc.md", config());
