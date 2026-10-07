@@ -20,6 +20,8 @@ export type PerformanceObserverOptions = {
 export type PerformanceObserverInstance = {
     observe(options : PerformanceObserverOptions & { type : string; buffered? : boolean }) : void;
     disconnect() : void;
+    /** Removes and gives the entries that the browser has not delivered yet. */
+    takeRecords?() : PerformanceEntryLike[];
 };
 
 export type PerformanceObserverInit = {
@@ -82,23 +84,4 @@ export type LayoutShiftEntry = PerformanceEntryLike & {
     hadRecentInput : boolean;
     lastInputTime : number;
     sources : LayoutShiftSource[];
-};
-
-// --- Paint Timing ---
-
-export type PaintEntry = PerformanceEntryLike & {
-    entryType : "paint";
-    name : "first-paint" | "first-contentful-paint";
-};
-
-// --- Largest Contentful Paint ---
-
-export type LcpEntry = PerformanceEntryLike & {
-    entryType : "largest-contentful-paint";
-    renderTime : number;
-    loadTime : number;
-    size : number;
-    id : string;
-    url : string;
-    element : unknown;
 };

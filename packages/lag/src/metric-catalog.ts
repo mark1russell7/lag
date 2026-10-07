@@ -11,6 +11,7 @@
  */
 
 import type { Attributes, Counter, Histogram, Meter } from "./meter.js";
+import { NAVIGATION_TYPES } from "./vitals/types.js";
 
 export type MetricKind = "histogram" | "counter";
 
@@ -46,7 +47,6 @@ export type MetricKey =
     | "livenessBlock";
 
 const LIFECYCLE_STATES = ["active", "passive", "hidden", "frozen", "terminated"] as const;
-const NAVIGATION_TYPES = ["navigate", "reload", "back_forward", "back_forward_cache", "prerender", "restore", "soft"] as const;
 const INTERACTION_TYPES = ["pointer", "keyboard", "other"] as const;
 const PRESSURE_SOURCES = ["cpu", "thermals", "power", "memory"] as const;
 
@@ -209,8 +209,18 @@ export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
     webVital : {
         name : "browser.web_vital",
         monitor : "PageViewVitals",
-        description : "The final value of one Core Web Vital for one page view, with attribution.",
-        attributes : ["name", "value", "delta", "id", "rating", "navigation_type", "attribution"],
+        description : "One value of one Core Web Vital for one page view, with attribution. The attribute names agree with the OpenTelemetry semantic conventions (v1.44).",
+        attributes : [
+            "browser.web_vital.name",
+            "browser.web_vital.value",
+            "browser.web_vital.delta",
+            "browser.web_vital.id",
+            "browser.web_vital.rating",
+            "browser.web_vital.navigation_type",
+            "lag.page_view.id",
+            "lag.page_view.url",
+            "lag.web_vital.*",
+        ],
     },
     hang : {
         name : "lag.main_thread.hang",

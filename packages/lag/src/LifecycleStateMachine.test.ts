@@ -5,6 +5,7 @@ import {
     type LifecycleDocument,
     type LifecycleWindow,
 } from "./LifecycleStateMachine.js";
+import { createFakeEventTarget } from "./vitals/test-fakes.js";
 
 type Listener = (e? : { persisted? : boolean }) => void;
 
@@ -383,6 +384,65 @@ describe("LifecycleStateMachine", () => {
 
             expect(second).toHaveBeenCalled();
             expect(logger.log).toHaveBeenCalledWith("error", "Error in lifecycle subscriber.", expect.any(Object));
+        });
+    });
+
+    describe("listener phases and event times", () => {
+        function setupTargets() {
+            const document = Object.assign(createFakeEventTarget(), { visibilityState : "visible", hasFocus : () => true });
+            const window = createFakeEventTarget();
+            let now = 1_000;
+            const sm = new LifecycleStateMachine(document, window, { now : () => now }, { log : vi.fn() });
+            return { sm, document, window, setNow : (value : number) => { now = value; } };
+        }
+
+        it("listens in the capture phase, except for focus and blur", () => {
+            const { document, window } = setupTargets();
+            const phases = Object.fromEntries([...document.listeners(), ...window.listeners()].map(l => [l.type, l.capture]));
+
+            expect(phases).toEqual({
+                visibilitychange : true,
+                freeze : true,
+                resume : true,
+                pagehide : true,
+                pageshow : true,
+                focus : false,
+                blur : false,
+            });
+        });
+
+        it("notifies its subscribers before a listener that was added earlier in the bubble phase", () => {
+            const document = Object.assign(createFakeEventTarget(), { visibilityState : "visible", hasFocus : () => true });
+            const window = createFakeEventTarget();
+            const order : string[] = [];
+            document.addEventListener("visibilitychange", () => order.push("exporter flush"));
+            const sm = new LifecycleStateMachine(document, window, { now : () => 0 }, { log : vi.fn() });
+            sm.subscribe(() => order.push("subscriber"));
+
+            document.visibilityState = "hidden";
+            document.dispatch("visibilitychange", {});
+
+            expect(order).toEqual(["subscriber", "exporter flush"]);
+        });
+
+        it("uses the time of the event when it is applicable", () => {
+            const { sm, document, window, setNow } = setupTargets();
+            const transitions : number[] = [];
+            sm.subscribe(t => transitions.push(t.timestamp));
+
+            setNow(5_000);
+            document.visibilityState = "hidden";
+            document.dispatch("visibilitychange", { timeStamp : 4_990 });
+            // A time after now (old browsers give Unix time) is not applicable
+            window.dispatch("pagehide", { persisted : true, timeStamp : 1_700_000_000_000 });
+
+            expect(transitions).toEqual([4_990, 5_000]);
+        });
+
+        it("dispose() removes the capture listeners with the same phase", () => {
+            const { sm, document, window } = setupTargets();
+            sm.dispose();
+            expect([...document.listeners(), ...window.listeners()]).toEqual([]);
         });
     });
 });

@@ -90,6 +90,11 @@ export class InpCalculator {
         return this.longest[0]?.duration ?? 0;
     }
 
+    /** True if the interaction is one of the longest interactions that the calculator keeps. */
+    has(interactionId : number) : boolean {
+        return this.longest.some(i => i.id === interactionId);
+    }
+
     /** Starts a new calculation, for example for a new page view. */
     reset() : void {
         this.longest = [];

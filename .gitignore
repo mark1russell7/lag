@@ -3,3 +3,7 @@
 **/*.tsbuildinfo
 .claude/worktrees/
 .playwright-mcp/
+
+# Vitest browser mode: failure screenshots and attachments
+**/__screenshots__/
+**/.vitest-attachments/

@@ -43,6 +43,7 @@ import type { FinalizationRegistryConstructor } from "./GCSignalDetector.js";
 import type { WorkerLike } from "./WorkerLagMonitor.js";
 import type { HangReportTarget } from "./worker-protocol.js";
 import type { ReportingObserverInit } from "./BrowserReportMonitor.js";
+import type { PageSource } from "./vitals/types.js";
 import type {
     LifecycleDocument,
     LifecycleWindow,
@@ -136,6 +137,16 @@ export type EventDeps = {
 /** The Reporting API, for browser interventions and deprecations. */
 export type ReportingDeps = {
     ReportingObserver : ReportingObserverInit;
+};
+
+/** The page-view state for the Web Vitals. */
+export type PageDeps = {
+    /** The document and navigation state. `createPageSource` gets it from the browser. */
+    page : PageSource;
+    /** Makes the short CSS selector of a DOM node for attribution events. The default is the selector of web-vitals. */
+    describeNode? : (node : unknown) => string;
+    /** When true, each soft navigation starts a new page view (Chromium 151 and later). The default is false. */
+    softNavigations? : boolean;
 };
 
 /**

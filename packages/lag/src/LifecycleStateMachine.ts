@@ -45,9 +45,11 @@ export type LifecycleMark = {
 /** Event objects are only read for `persisted` (pagehide/pageshow). */
 export type LifecycleListener = (event : unknown) => void;
 
+export type LifecycleListenerOptions = { capture? : boolean };
+
 export type LifecycleEventTarget = {
-    addEventListener(type : string, listener : LifecycleListener) : void;
-    removeEventListener(type : string, listener : LifecycleListener) : void;
+    addEventListener(type : string, listener : LifecycleListener, options? : LifecycleListenerOptions) : void;
+    removeEventListener(type : string, listener : LifecycleListener, options? : LifecycleListenerOptions) : void;
 };
 
 export type LifecycleDocument = LifecycleEventTarget & {
@@ -67,6 +69,16 @@ function isPersisted(event : unknown) : boolean {
 }
 
 /**
+ * The time of the event (`event.timeStamp`, in `performance.now()` time) if
+ * it is applicable, or `now`. A timestamp after `now` is not applicable: old
+ * browsers give `timeStamp` in Unix time.
+ */
+function eventTime(event : unknown, now : number) : number {
+    const timeStamp = (event as { timeStamp? : unknown } | undefined)?.timeStamp;
+    return typeof timeStamp === "number" && timeStamp > 0 && timeStamp <= now ? timeStamp : now;
+}
+
+/**
  * Tracks page lifecycle state transitions and provides:
  * - a mark/resolve API to ask "what state changes happened between point A
  *   and now?"
@@ -82,7 +94,12 @@ export class LifecycleStateMachine {
     private transitions : StateTransition[] = [];
     private readonly marks = new Map<symbol, number>(); // mark id -> index into transitions
     private readonly subscribers = new Set<(transition : StateTransition) => void>();
-    private readonly attached : Array<{ target : LifecycleEventTarget; type : string; listener : LifecycleListener }> = [];
+    private readonly attached : Array<{
+        target : LifecycleEventTarget;
+        type : string;
+        listener : LifecycleListener;
+        options : LifecycleListenerOptions;
+    }> = [];
     private totalTransitions = 0;
 
     constructor(
@@ -153,8 +170,8 @@ export class LifecycleStateMachine {
 
     /** Detach all DOM listeners and drop all marks and subscribers. */
     dispose() : void {
-        for (const { target, type, listener } of this.attached) {
-            target.removeEventListener(type, listener);
+        for (const { target, type, listener, options } of this.attached) {
+            target.removeEventListener(type, listener, options);
         }
         this.attached.length = 0;
         this.subscribers.clear();
@@ -196,13 +213,13 @@ export class LifecycleStateMachine {
         }
     }
 
-    private syncFromDocument() : void {
+    private syncFromDocument(event? : unknown) : void {
         if (this.document.visibilityState === "hidden") {
             if (isVisibleState(this.currentState)) {
-                this.transition("hidden", "visibilitychange");
+                this.transition("hidden", "visibilitychange", event);
             }
         } else if (this.currentState === "hidden") {
-            this.transition(this.visibleState(), "visibilitychange");
+            this.transition(this.visibleState(), "visibilitychange", event);
         }
     }
 
@@ -211,13 +228,13 @@ export class LifecycleStateMachine {
         return focused ? "active" : "passive";
     }
 
-    private transition(to : LifecycleState, trigger : LifecycleTrigger) : void {
+    private transition(to : LifecycleState, trigger : LifecycleTrigger, event? : unknown) : void {
         if (to === this.currentState) return;
         const transition : StateTransition = {
             from : this.currentState,
             to,
             trigger,
-            timestamp : this.clock.now(),
+            timestamp : eventTime(event, this.clock.now()),
         };
         this.currentState = to;
         this.totalTransitions++;
@@ -237,30 +254,42 @@ export class LifecycleStateMachine {
         }
     }
 
-    private listen(target : LifecycleEventTarget, type : string, listener : LifecycleListener) : void {
-        target.addEventListener(type, listener);
-        this.attached.push({ target, type, listener });
+    private listen(
+        target : LifecycleEventTarget,
+        type : string,
+        listener : LifecycleListener,
+        options : LifecycleListenerOptions = {},
+    ) : void {
+        target.addEventListener(type, listener, options);
+        this.attached.push({ target, type, listener, options });
     }
 
     private attachListeners() : void {
-        this.listen(this.window, "focus", () => {
-            if (this.currentState === "passive") this.transition("active", "focus");
+        // Not in the capture phase: a capture listener on the window also
+        // gets the focus and blur events of each element in the page
+        this.listen(this.window, "focus", (event) => {
+            if (this.currentState === "passive") this.transition("active", "focus", event);
         });
-        this.listen(this.window, "blur", () => {
-            if (this.currentState === "active") this.transition("passive", "blur");
+        this.listen(this.window, "blur", (event) => {
+            if (this.currentState === "active") this.transition("passive", "blur", event);
         });
 
-        this.listen(this.document, "visibilitychange", () => this.syncFromDocument());
+        // In the capture phase: at the target, capture listeners go before
+        // the other listeners. Thus the subscribers (for example the final
+        // Web Vitals of a page view) record their values before an exporter
+        // that listens to the same event flushes.
+        const capture = { capture : true };
+        this.listen(this.document, "visibilitychange", (event) => this.syncFromDocument(event), capture);
 
-        this.listen(this.document, "freeze", () => this.transition("frozen", "freeze"));
-        this.listen(this.document, "resume", () => this.transition("hidden", "resume"));
+        this.listen(this.document, "freeze", (event) => this.transition("frozen", "freeze", event), capture);
+        this.listen(this.document, "resume", (event) => this.transition("hidden", "resume", event), capture);
 
         this.listen(this.window, "pagehide", (event) => {
-            this.transition(isPersisted(event) ? "frozen" : "terminated", "pagehide");
-        });
+            this.transition(isPersisted(event) ? "frozen" : "terminated", "pagehide", event);
+        }, capture);
         this.listen(this.window, "pageshow", (event) => {
-            if (isPersisted(event)) this.transition(this.visibleState(), "pageshow");
-        });
+            if (isPersisted(event)) this.transition(this.visibleState(), "pageshow", event);
+        }, capture);
         // No beforeunload listener: it can be cancelled (leaving a live page
         // marked terminated) and it makes the page ineligible for the BFCache.
     }

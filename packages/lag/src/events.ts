@@ -15,3 +15,12 @@ export type EventSink = {
 export function createNoopEventSink() : EventSink {
     return { emit() {} };
 }
+
+/**
+ * An event sink that adds the attributes from `context` to each event, for
+ * example the ID of the current page view. The attributes of the event have
+ * priority over the context attributes.
+ */
+export function withEventContext(sink : EventSink, context : () => EventAttributes) : EventSink {
+    return { emit : (name, attributes) => sink.emit(name, { ...context(), ...attributes }) };
+}

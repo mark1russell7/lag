@@ -65,7 +65,7 @@ function createFakeBrowser() {
     type ObserverCallback = (list : PerformanceEntryList, observer : PerformanceObserverInstance) => void;
     const observers = new Map<FakePerformanceObserver, { type : string; callback : ObserverCallback }>();
     class FakePerformanceObserver implements PerformanceObserverInstance {
-        static readonly supportedEntryTypes = ["long-animation-frame", "event", "layout-shift", "paint", "largest-contentful-paint"];
+        static readonly supportedEntryTypes = ["long-animation-frame", "event", "first-input", "layout-shift", "paint", "largest-contentful-paint"];
         constructor(private readonly callback : ObserverCallback) {}
         observe({ type } : { type : string }) {
             observers.set(this, { type, callback : this.callback });
@@ -179,6 +179,13 @@ function createFakeBrowser() {
         worker,
         workerHeartbeatIntervalMs : 250,
         performance : { timeOrigin : TIME_ORIGIN, now : mainNow },
+        page : {
+            navigation : () => ({ type : "navigate", activationStart : 0, responseStart : 120, url : "https://shop.example/cart?id=7" }),
+            isPrerendering : () => false,
+            wasDiscarded : () => false,
+            hiddenTimes : () => [],
+            onActivation : () => () => {},
+        },
     };
 
     return {
@@ -235,6 +242,8 @@ async function generateActivity(browser : ReturnType<typeof createFakeBrowser>) 
     const shifts : LayoutShiftEntry[] = [
         { entryType : "layout-shift", name : "", startTime : 50, duration : 0, value : 0.013, hadRecentInput : false, lastInputTime : 0, sources : [] },
     ];
+    browser.emitEntries("paint", [{ entryType : "paint", name : "first-contentful-paint", startTime : 40, duration : 0 }]);
+    browser.emitEntries("largest-contentful-paint", [{ entryType : "largest-contentful-paint", name : "", startTime : 60, duration : 0 }]);
     browser.emitEntries("long-animation-frame", loafs);
     browser.emitEntries("event", events);
     browser.emitEntries("layout-shift", shifts);
@@ -255,11 +264,6 @@ const NOT_IN_NORMAL_ACTIVITY = new Set([
     METRICS.lifecycleTransitions.name,
     // Fake time does not advance in the checker's tight loop; ClockReliabilityChecker tests cover it
     METRICS.clockResolution.name,
-    METRICS.vitalInp.name,
-    METRICS.vitalCls.name,
-    METRICS.vitalLcp.name,
-    METRICS.vitalFcp.name,
-    METRICS.vitalTtfb.name,
     METRICS.livenessBlock.name,
 ]);
 
@@ -280,7 +284,7 @@ describe("setupAllMonitors", () => {
 
     it("registers every monitor when all capabilities are present", () => {
         expect(handles.registry.getAll().map(h => h.name)).toEqual([
-            "lifecycle", "measurement-conditions", "drift-lag", "macrotask-lag", "throttle-detector",
+            "lifecycle", "page-view-vitals", "measurement-conditions", "drift-lag", "macrotask-lag", "throttle-detector",
             "loaf", "event-timing", "layout-shift", "frame-timing", "idle-availability", "scheduling-fairness",
             "memory", "worker-lag", "compute-pressure", "gc-signal", "clock-reliability", "clock-drift", "browser-reports",
         ]);
@@ -293,6 +297,9 @@ describe("setupAllMonitors", () => {
     it("feeds every metric of the catalog that normal activity produces", async () => {
         await generateActivity(browser);
         await advance(10_000);
+        // The vitals report when the page becomes hidden
+        browser.setVisibility("hidden");
+        browser.setVisibility("visible");
 
         for (const definition of METRIC_CATALOG) {
             if (NOT_IN_NORMAL_ACTIVITY.has(definition.name)) continue;
@@ -332,6 +339,53 @@ describe("setupAllMonitors", () => {
             id : "HeavyAdIntervention",
             source_file : "https://ads.example/ad.js",
         }));
+    });
+
+    it("gives the ID of the current page view to the events of the other monitors", async () => {
+        await generateActivity(browser);
+
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.long_animation_frame", expect.objectContaining({
+            "lag.page_view.id" : handles.vitals!.getView().id,
+        }));
+    });
+
+    it("flush() records the pending Web Vitals, for the before-flush hook of an exporter", async () => {
+        await generateActivity(browser);
+        expect(browser.meter.values("lag_web_vital_fcp_histogram")).toEqual([]);
+
+        handles.flush();
+        expect(browser.meter.values("lag_web_vital_fcp_histogram")).toEqual([40]);
+    });
+
+    it("records each Web Vital once for each page view, and sends events with the semantic-convention names", async () => {
+        await generateActivity(browser);
+        browser.setVisibility("hidden");
+        browser.setVisibility("visible");
+        browser.setVisibility("hidden");
+
+        expect(browser.meter.values("lag_web_vital_ttfb_histogram")).toEqual([120]);
+        expect(browser.meter.values("lag_web_vital_fcp_histogram")).toEqual([40]);
+        expect(browser.meter.values("lag_web_vital_lcp_histogram")).toEqual([60]);
+        expect(browser.meter.values("lag_web_vital_inp_histogram")).toEqual([43]);
+        expect(browser.meter.values("lag_web_vital_cls_histogram")).toEqual([0.013]);
+        expect(browser.meter.records().get("lag_web_vital_inp_histogram")![0]!.attributes).toEqual({ navigation_type : "navigate" });
+
+        const view = handles.vitals!.getView();
+        expect(browser.events.emit).toHaveBeenCalledWith("browser.web_vital", expect.objectContaining({
+            "browser.web_vital.name" : "inp",
+            "browser.web_vital.value" : 43,
+            "browser.web_vital.delta" : 43,
+            "browser.web_vital.id" : `${view.id}-inp`,
+            "browser.web_vital.rating" : "good",
+            "browser.web_vital.navigation_type" : "navigate",
+            "lag.page_view.id" : view.id,
+            "lag.page_view.url" : "https://shop.example/cart",
+            "lag.web_vital.interaction_type" : "keyboard",
+        }));
+        // An unchanged value sends no second event
+        const inpEvents = browser.events.emit.mock.calls.filter(([name, a]) =>
+            name === "browser.web_vital" && (a as Record<string, unknown>)["browser.web_vital.name"] === "inp");
+        expect(inpEvents).toHaveLength(1);
     });
 
     // Queueing of heartbeats behind a really blocked main thread is covered

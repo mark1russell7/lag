@@ -42,7 +42,7 @@ export {
     createTeeLogger,
     type OtelLogger,
 } from "./otel-logger-adapter.js";
-export { createNoopEventSink, type EventSink, type EventAttributes } from "./events.js";
+export { createNoopEventSink, withEventContext, type EventSink, type EventAttributes } from "./events.js";
 export {
     METRICS,
     METRIC_CATALOG,
@@ -95,6 +95,7 @@ export type {
     EventDeps,
     ReportingDeps,
     SharedMemoryDeps,
+    PageDeps,
 } from "./dep-groups.js";
 
 // --- Phase 2: Performance Observer monitors ---
@@ -104,8 +105,6 @@ export { EventTimingMonitor, interactionType, type EventTimingReport } from "./E
 export { InpCalculator } from "./InpCalculator.js";
 export { LayoutShiftMonitor, type LayoutShiftReport } from "./LayoutShiftMonitor.js";
 export { ClsCalculator } from "./ClsCalculator.js";
-export { PaintTimingMonitor, type PaintReport } from "./PaintTimingMonitor.js";
-export { LcpMonitor, type LcpReport } from "./LcpMonitor.js";
 export type {
     PerformanceEntryLike,
     PerformanceObserverInit,
@@ -117,9 +116,29 @@ export type {
     EventTimingEntry,
     LayoutShiftEntry,
     LayoutShiftSource,
-    PaintEntry,
-    LcpEntry,
 } from "./perf-types.js";
+
+// --- Page-view Web Vitals ---
+export { PageViewVitals, type PageViewVitalsDeps, type VitalsReport } from "./vitals/PageViewVitals.js";
+export {
+    ViewCollector,
+    SHORT_INTERACTION_ESTIMATE_MS,
+    type PageView,
+    type EventEntryLike,
+    type LayoutShiftEntryLike,
+} from "./vitals/ViewCollector.js";
+export { describeNode } from "./vitals/selector.js";
+export {
+    NAVIGATION_TYPES,
+    VITAL_THRESHOLDS,
+    rateVital,
+    type VitalName,
+    type NavigationType,
+    type Rating,
+    type VitalValue,
+    type NavigationInfo,
+    type PageSource,
+} from "./vitals/types.js";
 
 // --- Additional monitors (scheduling, frame, idle, memory) ---
 export {
@@ -166,6 +185,7 @@ export {
     type LifecycleDocument,
     type LifecycleWindow,
     type LifecycleEventTarget,
+    type LifecycleListenerOptions,
 } from "./LifecycleStateMachine.js";
 export {
     ComputePressureMonitor,
@@ -188,7 +208,6 @@ export {
     type ReportingObserverInstance,
 } from "./BrowserReportMonitor.js";
 export { ClockReliabilityChecker } from "./ClockReliabilityChecker.js";
-export { GCSpikeDetector } from "./GCSpikeDetector.js";
 export {
     GCSignalDetector,
     type FinalizationRegistryConstructor,
@@ -245,6 +264,8 @@ export type {
 
 // --- Phase 5: Unified setup ---
 export { setupAllMonitors, type AllMonitorDeps, type AllMonitorHandles } from "./setup-all-monitors.js";
+export { createBrowserDeps, type BrowserGlobals, type BrowserDepsOptions } from "./browser/browser-deps.js";
+export { createPageSource, type PageDocument, type PagePerformance } from "./browser/page-source.js";
 
 // --- Instrumented factories (one per monitor, each returns a MonitorHandle) ---
 export * from "./instrumented/index.js";

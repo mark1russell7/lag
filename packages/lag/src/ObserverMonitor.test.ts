@@ -152,4 +152,29 @@ describe("ObserverMonitor", () => {
 
         expect(constructed).toBe(2);
     });
+
+    it("takeRecords() processes the entries that the browser has not delivered yet", () => {
+        const pending : PerformanceEntryLike[] = [{ entryType : "event", name : "click", startTime : 5, duration : 40 }];
+        class QueueingObserver {
+            observe() {}
+            disconnect() {}
+            takeRecords() { return pending.splice(0); }
+        }
+        const monitor = new TestObserverMonitor("event", { log : vi.fn() }, QueueingObserver as unknown as PerformanceObserverInit);
+
+        monitor.takeRecords();
+        monitor.takeRecords();
+
+        expect(monitor.entries).toEqual([{ entryType : "event", name : "click", startTime : 5, duration : 40 }]);
+    });
+
+    it("takeRecords() does nothing without an observer or without browser support", () => {
+        const mock = createMockPerformanceObserver();
+        const monitor = new TestObserverMonitor("event", { log : vi.fn() }, mock.MockCtor);
+        monitor.takeRecords();
+        monitor.stop();
+        monitor.takeRecords();
+
+        expect(monitor.entries).toEqual([]);
+    });
 });

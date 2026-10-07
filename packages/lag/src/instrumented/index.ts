@@ -19,6 +19,7 @@ export { createInstrumentedMacrotaskLag } from "./macrotask-lag.js";
 export { createInstrumentedLoaf } from "./loaf.js";
 export { createInstrumentedEventTiming } from "./event-timing.js";
 export { createInstrumentedLayoutShift } from "./layout-shift.js";
+export { createInstrumentedPageViewVitals } from "./page-view-vitals.js";
 
 // Browser-API monitors
 export { createInstrumentedFrameTiming } from "./frame-timing.js";

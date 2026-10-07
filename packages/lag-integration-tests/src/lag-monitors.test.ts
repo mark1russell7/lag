@@ -1,4 +1,5 @@
 import { expect } from "vitest";
+import { userEvent } from "vitest/browser";
 import { init } from "@mark1russell7/otel-ts";
 import {
     setupAllMonitors,
@@ -53,6 +54,10 @@ describe("Lag Monitor Integration", () => {
 
         tee = createTeeMeter(otel.getMeter("lag"));
         worker = createLagWorker();
+        // Contentful text, so that the page has a first contentful paint and an LCP
+        const text = document.createElement("p");
+        text.textContent = "Lag monitor integration test";
+        document.body.append(text);
         handles = setupAllMonitors(createBrowserDeps({
             // Console + OTel Logs (Loki)
             logger : createTeeLogger(createConsoleLogger(), createOtelLoggerAdapter(otel.getLogger("lag"))),
@@ -74,7 +79,7 @@ describe("Lag Monitor Integration", () => {
     it("wires every monitor Chromium supports", () => {
         expect(handles.lifecycleStateMachine?.getState()).toMatch(/^(active|passive)$/);
         for (const name of [
-            "drift-lag", "macrotask-lag", "throttle-detector", "loaf", "event-timing", "layout-shift",
+            "page-view-vitals", "drift-lag", "macrotask-lag", "throttle-detector", "loaf", "event-timing", "layout-shift",
             "frame-timing", "idle-availability", "scheduling-fairness",
             "worker-lag", "gc-signal", "clock-reliability", "clock-drift", "browser-reports",
         ]) {
@@ -133,6 +138,30 @@ describe("Lag Monitor Integration", () => {
         const blocking = tee.values("lag_loaf_blocking_histogram");
         console.log(`LoAF blocking durations — browser: [${raw.join(", ")}], monitor: [${blocking.join(", ")}]`);
         expect(blocking).toEqual(raw);
+    });
+
+    it("PageViewVitals measures the load of the page and a real click", async () => {
+        const button = document.createElement("button");
+        button.id = "slow-button";
+        button.textContent = "Slow";
+        button.addEventListener("click", () => blockMainThread(120));
+        document.body.append(button);
+
+        await userEvent.click(button);
+        await wait(500);
+
+        const vitals = Object.fromEntries(handles.vitals!.getValues().map(v => [v.name, v]));
+        console.log(`Vitals of the test page: ${JSON.stringify(Object.fromEntries(Object.entries(vitals).map(([k, v]) => [k, v.value])))}`);
+        expect(handles.vitals!.getView().navigationType).toMatch(/^(navigate|reload)$/);
+        expect(vitals["TTFB"]!.value).toBeGreaterThanOrEqual(0);
+        expect(vitals["FCP"]!.value).toBeGreaterThan(0);
+        expect(vitals["LCP"]!.value).toBeGreaterThanOrEqual(vitals["FCP"]!.value);
+        expect(vitals["CLS"]).toBeDefined();
+        expect(vitals["INP"]!.value).toBeGreaterThanOrEqual(120);
+        expect(vitals["INP"]!.attribution).toMatchObject({ interaction_target : "#slow-button", interaction_type : "pointer" });
+        expect(Number(vitals["INP"]!.attribution["processing_duration_ms"])).toBeGreaterThanOrEqual(110);
+        // The Event Timing monitor sees the same interaction
+        expect(tee.max("lag_event_duration_histogram")).toBeGreaterThanOrEqual(120);
     });
 
     it("MacrotaskLag, SchedulingFairness and idle monitors sample within one 5s cycle", async () => {

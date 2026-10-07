@@ -2,8 +2,9 @@
  * Unified setup — orchestrates the monitor registry.
  *
  *   1. Create a MonitorRegistry
- *   2. Construct the lifecycle state machine and the measurement conditions
- *      (shared by every timer-driven monitor)
+ *   2. Construct the lifecycle state machine, the page-view vitals (their
+ *      page view gives its ID to every event) and the measurement
+ *      conditions (shared by every timer-driven monitor)
  *   3. Add instrumented factories to the registry, each guarded by the
  *      presence of their respective capability deps
  *   4. Return handles + a `stop()` that tears down the whole registry
@@ -26,7 +27,9 @@ import type {
     EventDeps,
     ReportingDeps,
     SharedMemoryDeps,
+    PageDeps,
 } from "./dep-groups.js";
+import { withEventContext } from "./events.js";
 import { LIVENESS_BUFFER_BYTES, beatingSetTimeout, createLivenessBeacon } from "./shared-liveness.js";
 import { MonitorRegistry } from "./monitor-registry.js";
 import { createMeasurementConditions, type MeasurementConditions, type StallKind } from "./measurement-conditions.js";
@@ -51,6 +54,7 @@ import type { ClockReliabilityChecker } from "./ClockReliabilityChecker.js";
 import type { ClockDriftMonitor } from "./ClockDriftMonitor.js";
 import type { BrowserReportMonitor } from "./BrowserReportMonitor.js";
 import type { SharedLivenessMonitor } from "./SharedLivenessMonitor.js";
+import type { PageViewVitals } from "./vitals/PageViewVitals.js";
 
 import {
     createInstrumentedDriftLag,
@@ -71,6 +75,7 @@ import {
     createInstrumentedClockDrift,
     createInstrumentedBrowserReports,
     createInstrumentedSharedLiveness,
+    createInstrumentedPageViewVitals,
 } from "./instrumented/index.js";
 
 /**
@@ -95,7 +100,8 @@ export type AllMonitorDeps =
     & Partial<WallClockDeps>
     & Partial<EventDeps>
     & Partial<ReportingDeps>
-    & Partial<SharedMemoryDeps>;
+    & Partial<SharedMemoryDeps>
+    & Partial<PageDeps>;
 
 /**
  * Handles returned by setupAllMonitors.
@@ -112,8 +118,17 @@ export type AllMonitorHandles = {
     /** Tear down every registered monitor in LIFO order. */
     stop() : void;
 
+    /**
+     * Records the values that the monitors keep until a checkpoint (the
+     * page-view vitals). Connect it to the "before flush" hook of the
+     * exporter. Then the final export of a page contains these values, also
+     * when the exporter gets the `pagehide` event before the monitors do.
+     */
+    flush() : void;
+
     // Typed accessors — each is lazy via getter so they stay in sync with the registry
     readonly conditions : MeasurementConditions | undefined;
+    readonly vitals : PageViewVitals | undefined;
     readonly driftLag : DriftLag | undefined;
     readonly macrotaskLag : MacrotaskLag | undefined;
     readonly lifecycleStateMachine : LifecycleStateMachine | undefined;
@@ -160,15 +175,26 @@ function createConditions(deps : AllMonitorDeps, lifecycle : LifecycleStateMachi
     });
 }
 
-export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
+export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles {
     const registry = new MonitorRegistry();
 
-    // 1. Lifecycle and measurement conditions first: registered first, so the LIFO teardown stops them last
-    const lifecycle = registry.add(createInstrumentedLifecycle(deps)).monitor;
+    // 1. Lifecycle first: registered first, so the LIFO teardown stops it last
+    const lifecycle = registry.add(createInstrumentedLifecycle(rootDeps)).monitor;
+
+    // 2. Page-view vitals. Every event of the other monitors gets the ID of the current page view.
+    const vitals = rootDeps.PerformanceObserver && lifecycle
+        ? registry.add(createInstrumentedPageViewVitals({ ...rootDeps, PerformanceObserver : rootDeps.PerformanceObserver }, lifecycle)).monitor
+        : undefined;
+    const events = rootDeps.events && vitals
+        ? withEventContext(rootDeps.events, () => ({ "lag.page_view.id" : vitals.getView().id }))
+        : rootDeps.events;
+    const deps : AllMonitorDeps = events ? { ...rootDeps, events } : rootDeps;
+
+    // 3. Measurement conditions, shared by the timer-driven monitors
     const conditions = createConditions(deps, lifecycle);
     registry.add({ name : "measurement-conditions", monitor : conditions, stop : () => conditions.dispose() });
 
-    // 2. Timer-based lag. With shared memory and a worker, every DriftLag
+    // 4. Timer-based lag. With shared memory and a worker, every DriftLag
     //    timer callback also beats the liveness counter that the worker reads.
     const livenessBuffer = deps.SharedArrayBuffer && deps.worker
         ? new deps.SharedArrayBuffer(LIVENESS_BUFFER_BYTES)
@@ -179,10 +205,10 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
     registry.add(createInstrumentedDriftLag(driftDeps, conditions));
     registry.add(createInstrumentedMacrotaskLag(deps, conditions));
 
-    // 3. Throttle detector — always available (pure timer math)
+    // 5. Throttle detector — always available (pure timer math)
     registry.add(createInstrumentedThrottleDetector(deps));
 
-    // 4. PerformanceObserver monitors
+    // 6. PerformanceObserver monitors
     if (deps.PerformanceObserver) {
         const observerDeps = { ...deps, PerformanceObserver : deps.PerformanceObserver };
         registry.add(createInstrumentedLoaf(observerDeps));
@@ -190,7 +216,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         registry.add(createInstrumentedLayoutShift(observerDeps));
     }
 
-    // 5. Frame timing (requestAnimationFrame)
+    // 7. Frame timing (requestAnimationFrame)
     if (deps.requestAnimationFrame && deps.cancelAnimationFrame) {
         registry.add(createInstrumentedFrameTiming({
             ...deps,
@@ -199,7 +225,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         }, conditions));
     }
 
-    // 6. Idle availability (requestIdleCallback)
+    // 8. Idle availability (requestIdleCallback)
     if (deps.requestIdleCallback && deps.cancelIdleCallback) {
         registry.add(createInstrumentedIdleAvailability({
             ...deps,
@@ -208,7 +234,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         }, conditions));
     }
 
-    // 7. Scheduling fairness (MessageChannel + queueMicrotask)
+    // 9. Scheduling fairness (MessageChannel + queueMicrotask)
     if (deps.MessageChannel && deps.queueMicrotask) {
         registry.add(createInstrumentedSchedulingFairness({
             ...deps,
@@ -217,7 +243,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         }, conditions));
     }
 
-    // 8. Memory sampling
+    // 10. Memory sampling
     if (deps.memorySource) {
         registry.add(createInstrumentedMemory({
             ...deps,
@@ -225,7 +251,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         }));
     }
 
-    // 9. Worker ground truth (heartbeat timestamps need performance.timeOrigin)
+    // 11. Worker ground truth (heartbeat timestamps need performance.timeOrigin)
     if (deps.worker) {
         if (deps.performance) {
             registry.add(createInstrumentedWorkerLag({
@@ -240,12 +266,12 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         }
     }
 
-    // 9b. Shared-memory liveness (cross-origin-isolated pages only)
+    // 12. Shared-memory liveness (cross-origin-isolated pages only)
     if (livenessBuffer && deps.worker) {
         registry.add(createInstrumentedSharedLiveness({ ...deps, worker : deps.worker, livenessBuffer }, conditions));
     }
 
-    // 10. Compute Pressure API
+    // 13. Compute Pressure API
     if (deps.PressureObserver) {
         registry.add(createInstrumentedComputePressure({
             ...deps,
@@ -253,7 +279,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         }));
     }
 
-    // 11. Real GC signal via FinalizationRegistry
+    // 14. Real GC signal via FinalizationRegistry
     if (deps.FinalizationRegistry) {
         registry.add(createInstrumentedGCSignal({
             ...deps,
@@ -261,7 +287,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         }));
     }
 
-    // 12. Clock reliability (requires performance.now + timeOrigin) and wall-clock drift
+    // 15. Clock reliability (requires performance.now + timeOrigin) and wall-clock drift
     if (deps.performance) {
         registry.add(createInstrumentedClockReliability({
             ...deps,
@@ -276,7 +302,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         }
     }
 
-    // 13. Reporting API (interventions, deprecations)
+    // 16. Reporting API (interventions, deprecations)
     if (deps.ReportingObserver) {
         registry.add(createInstrumentedBrowserReports({
             ...deps,
@@ -287,8 +313,10 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
     return {
         registry,
         stop : () => registry.stopAll(),
+        flush : () => monitorOf<PageViewVitals>(registry, "page-view-vitals")?.flush(),
 
         get conditions() { return monitorOf<MeasurementConditions>(registry, "measurement-conditions"); },
+        get vitals() { return monitorOf<PageViewVitals>(registry, "page-view-vitals"); },
         get driftLag() { return monitorOf<DriftLag>(registry, "drift-lag"); },
         get macrotaskLag() { return monitorOf<MacrotaskLag>(registry, "macrotask-lag"); },
         get lifecycleStateMachine() { return monitorOf<LifecycleStateMachine>(registry, "lifecycle"); },
