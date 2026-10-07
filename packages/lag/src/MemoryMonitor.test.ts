@@ -151,4 +151,68 @@ describe("MemoryMonitor", () => {
         monitor.stop();
         expect(clearIntervalSpy).toHaveBeenCalledWith(99);
     });
+
+    it("drops a modern sample that resolves after stop()", async () => {
+        const reports : MemoryMeasurement[] = [];
+        let resolveModern : (r : { bytes : number; breakdown : [] }) => void = () => {};
+        const monitor = new MemoryMonitor(
+            10_000,
+            { measureModern : () => new Promise(r => { resolveModern = r; }) },
+            (m) => reports.push(m),
+            { log : vi.fn() },
+            vi.fn() as never,
+            vi.fn(),
+            { now : () => 0 },
+        );
+
+        monitor.stop();
+        resolveModern({ bytes : 1, breakdown : [] });
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+
+        expect(reports).toHaveLength(0);
+    });
+
+    it("does not start a new sample while one is still pending", () => {
+        let intervalCallback = () => {};
+        const measureModern = vi.fn(() => new Promise<never>(() => {}));
+        new MemoryMonitor(
+            1_000,
+            { measureModern },
+            vi.fn(),
+            { log : vi.fn() },
+            ((cb : () => void) => { intervalCallback = cb; return 1; }) as never,
+            vi.fn(),
+            { now : () => 0 },
+        );
+
+        intervalCallback();
+        intervalCallback();
+
+        expect(measureModern).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops calling the modern API after it fails once", async () => {
+        let intervalCallback = () => {};
+        const measureModern = vi.fn(() => Promise.reject(new Error("SecurityError")));
+        const reports : MemoryMeasurement[] = [];
+        new MemoryMonitor(
+            1_000,
+            {
+                measureModern,
+                readLegacy : () => ({ usedJSHeapSize : 1, totalJSHeapSize : 2, jsHeapSizeLimit : 100 }),
+            },
+            (m) => reports.push(m),
+            { log : vi.fn() },
+            ((cb : () => void) => { intervalCallback = cb; return 1; }) as never,
+            vi.fn(),
+            { now : () => 0 },
+        );
+        await vi.waitFor(() => expect(reports).toHaveLength(1));
+
+        intervalCallback();
+        await vi.waitFor(() => expect(reports).toHaveLength(2));
+
+        expect(measureModern).toHaveBeenCalledTimes(1);
+        expect(reports.map(r => r.source)).toEqual(["legacy", "legacy"]);
+    });
 });

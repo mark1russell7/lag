@@ -12,14 +12,26 @@ export type PerformanceEntryList = {
     getEntries() : PerformanceEntryLike[];
 };
 
+export type PerformanceObserverOptions = {
+    /** Event Timing only: minimum entry duration to report (browser default 104ms, minimum 16ms). */
+    durationThreshold? : number;
+};
+
 export type PerformanceObserverInstance = {
-    observe(options : { type : string; buffered? : boolean }) : void;
+    observe(options : PerformanceObserverOptions & { type : string; buffered? : boolean }) : void;
     disconnect() : void;
 };
 
-export type PerformanceObserverInit = new (
-    callback : (list : PerformanceEntryList, observer : PerformanceObserverInstance) => void,
-) => PerformanceObserverInstance;
+export type PerformanceObserverInit = {
+    new (
+        callback : (list : PerformanceEntryList, observer : PerformanceObserverInstance) => void,
+    ) : PerformanceObserverInstance;
+    /**
+     * Entry types this browser supports. Browsers ignore unsupported types in
+     * `observe()` with only a console warning, so this is the reliable check.
+     */
+    readonly supportedEntryTypes? : readonly string[];
+};
 
 // --- Long Animation Frame ---
 

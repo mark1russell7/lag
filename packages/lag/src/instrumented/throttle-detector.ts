@@ -1,10 +1,14 @@
-import type { Logger, Clock, SetTimeoutFn } from "../types.js";
+import type { CoreDeps, TimerDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import type { Meter } from "../meter.js";
 import {
     TimerThrottleDetector,
     type TimerThrottleConfig,
 } from "../TimerThrottleDetector.js";
+import { createHandle, observe } from "./shared.js";
+
+export type ThrottleDetectorDeps = CoreDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & {
+    throttleConfig? : TimerThrottleConfig;
+};
 
 /**
  * Constructs a TimerThrottleDetector wired to a throttle-state gauge.
@@ -12,42 +16,33 @@ import {
  * Metric:
  * - `lag_timer_throttled_gauge` — 1 if timers are being throttled, 0 otherwise
  *
- * No histogram — throttle detection is a calibration-based boolean, not a
- * per-sample measurement.
+ * Deliberately not paused while hidden: detecting background throttling is
+ * the point.
  */
-export type ThrottleDetectorDeps = {
-    logger : Logger;
-    clock : Clock;
-    meter : Meter;
-    setTimeoutFn : SetTimeoutFn;
-    config? : TimerThrottleConfig;
-};
-
 export function createInstrumentedThrottleDetector(
     deps : ThrottleDetectorDeps,
 ) : MonitorHandle<TimerThrottleDetector> {
-    try {
-        const throttledGauge = deps.meter.createObservableGauge<Record<string, never>>(
-            "lag_timer_throttled_gauge", { unit : "1" });
-
+    return createHandle("throttle-detector", deps.logger, () => {
         const monitor = new TimerThrottleDetector(
             deps.setTimeoutFn,
+            deps.clearTimeoutFn,
             deps.clock,
             deps.logger,
-            deps.config ?? {},
+            deps.throttleConfig,
         );
         monitor.start();
 
-        throttledGauge.addCallback((result) => {
-            result.observe(monitor.isThrottled() ? 1 : 0);
-        });
+        const unobserve = observe(
+            deps.meter.createObservableGauge("lag_timer_throttled_gauge", { unit : "1" }),
+            (result) => { result.observe(monitor.isThrottled() ? 1 : 0); },
+        );
 
-        return { name : "throttle-detector", monitor, stop : () => monitor.stop() };
-    } catch (error) {
-        deps.logger.log("warn", "Failed to create TimerThrottleDetector.", {
-            error,
-            type : "createInstrumentedThrottleDetector",
-        });
-        return { name : "throttle-detector", monitor : undefined, stop : () => {} };
-    }
+        return {
+            monitor,
+            stop : () => {
+                unobserve();
+                monitor.stop();
+            },
+        };
+    });
 }

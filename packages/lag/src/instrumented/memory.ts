@@ -5,26 +5,25 @@ import {
     defaultMemoryIntervalMs,
     type MemoryMeasurement,
 } from "../MemoryMonitor.js";
+import { createHandle, observe } from "./shared.js";
 
 /**
  * Constructs a MemoryMonitor wired to one histogram + one gauge.
  *
  * Metrics:
- * - `lag_memory_used_bytes_histogram` — JS heap used bytes (per sample)
+ * - `lag_memory_used_bytes_histogram` — heap bytes per sample, labeled with
+ *   `source` ("modern" or "legacy": they measure different things)
  * - `lag_memory_usage_percent_gauge` — used/limit percentage (legacy API only)
  *
- * MemoryMonitor auto-picks modern `measureUserAgentSpecificMemory()` when
- * available (requires cross-origin isolation) and falls back to legacy
- * `performance.memory` (Chrome-only).
+ * MemoryMonitor prefers `measureUserAgentSpecificMemory()` (requires
+ * cross-origin isolation) and falls back to Chrome's `performance.memory`.
  */
 export function createInstrumentedMemory(
     deps : CoreDeps & MemoryDeps & Pick<TimerDeps, "setIntervalFn" | "clearIntervalFn">,
 ) : MonitorHandle<MemoryMonitor> {
-    try {
-        const usedHist = deps.meter.createHistogram<MemoryMeasurement>(
+    return createHandle("memory", deps.logger, () => {
+        const usedHist = deps.meter.createHistogram<{ source : MemoryMeasurement["source"] }>(
             "lag_memory_used_bytes_histogram", { unit : "By" });
-        const usageGauge = deps.meter.createObservableGauge<Record<string, never>>(
-            "lag_memory_usage_percent_gauge", { unit : "%" });
 
         let lastMeasurement : MemoryMeasurement | undefined;
 
@@ -32,7 +31,7 @@ export function createInstrumentedMemory(
             deps.memoryIntervalMs ?? defaultMemoryIntervalMs,
             deps.memorySource,
             (m) => {
-                usedHist.record(m.usedBytes, m);
+                usedHist.record(m.usedBytes, { source : m.source });
                 lastMeasurement = m;
             },
             deps.logger,
@@ -41,18 +40,21 @@ export function createInstrumentedMemory(
             deps.clock,
         );
 
-        usageGauge.addCallback((result) => {
-            if (lastMeasurement?.usagePercent !== undefined) {
-                result.observe(lastMeasurement.usagePercent);
-            }
-        });
+        const unobserve = observe(
+            deps.meter.createObservableGauge("lag_memory_usage_percent_gauge", { unit : "%" }),
+            (result) => {
+                if (lastMeasurement?.usagePercent !== undefined) {
+                    result.observe(lastMeasurement.usagePercent);
+                }
+            },
+        );
 
-        return { name : "memory", monitor, stop : () => monitor.stop() };
-    } catch (error) {
-        deps.logger.log("warn", "Failed to create MemoryMonitor.", {
-            error,
-            type : "createInstrumentedMemory",
-        });
-        return { name : "memory", monitor : undefined, stop : () => {} };
-    }
+        return {
+            monitor,
+            stop : () => {
+                unobserve();
+                monitor.stop();
+            },
+        };
+    });
 }

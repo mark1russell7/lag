@@ -77,20 +77,24 @@ export class IdleAvailabilityMonitor {
 
     private scheduleNextIdle() : void {
         if (!this.started) return;
-        this.handle = this.requestIdleCallbackFn(
-            (deadline) => this.onIdle(deadline),
+        const handle : number = this.requestIdleCallbackFn(
+            (deadline) => this.onIdle(deadline, handle),
             { timeout : this.timeoutMs },
         );
+        this.handle = handle;
     }
 
-    private onIdle(deadline : IdleDeadline) : void {
-        if (!this.started) return;
+    /** `handle` identifies this callback's chain; report() may stop or restart the monitor. */
+    private onIdle(deadline : IdleDeadline, handle : number) : void {
+        if (!this.started || this.handle !== handle) return;
 
         try {
             const now = this.clock.now();
             const timeSinceLastIdleMs = this.lastIdleFireTime >= 0
                 ? now - this.lastIdleFireTime
                 : 0;
+            // Before report(), so a stop() inside it can reset the baseline
+            this.lastIdleFireTime = now;
 
             this.totalIdleFires++;
             if (deadline.didTimeout) this.timeoutFires++;
@@ -100,8 +104,6 @@ export class IdleAvailabilityMonitor {
                 timeSinceLastIdleMs,
                 didTimeout : deadline.didTimeout,
             });
-
-            this.lastIdleFireTime = now;
         } catch (error) {
             this.logger.log("error", "Error in idle measurement.", {
                 error,
@@ -109,6 +111,6 @@ export class IdleAvailabilityMonitor {
             });
         }
 
-        this.scheduleNextIdle();
+        if (this.handle === handle) this.scheduleNextIdle();
     }
 }

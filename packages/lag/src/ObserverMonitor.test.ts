@@ -119,4 +119,37 @@ describe("ObserverMonitor", () => {
 
         expect(mock.constructCount).toBe(1);
     });
+
+    it("skips observing types missing from supportedEntryTypes", () => {
+        const mock = createMockPerformanceObserver();
+        const logger = { log : vi.fn() };
+        const Ctor = Object.assign(mock.MockCtor, { supportedEntryTypes : ["paint"] });
+
+        new TestObserverMonitor("long-animation-frame", logger, Ctor);
+
+        expect(mock.constructCount).toBe(0);
+        expect(logger.log).toHaveBeenCalledWith(
+            "warn",
+            expect.stringContaining("not supported"),
+            expect.objectContaining({ entryType : "long-animation-frame" }),
+        );
+    });
+
+    it("can retry start() after observe threw", () => {
+        const logger = { log : vi.fn() };
+        let fail = true;
+        let constructed = 0;
+
+        class FlakyObserver {
+            constructor(_callback : unknown) { constructed++; }
+            observe() { if (fail) throw new Error("not yet"); }
+            disconnect() {}
+        }
+
+        const monitor = new TestObserverMonitor("longtask", logger, FlakyObserver as unknown as PerformanceObserverInit);
+        fail = false;
+        monitor.start();
+
+        expect(constructed).toBe(2);
+    });
 });

@@ -10,6 +10,7 @@ export type {
     SetIntervalFn,
     ClearIntervalFn,
     Clock,
+    PerformanceLike,
     LagMeasurement,
     EventLoopLagAttributes,
 } from "./types.js";
@@ -17,7 +18,6 @@ export {
     driftStepMs,
     shortLagThreshold,
     longLagThreshold,
-    maxLagBuffer,
     macrotaskLagIntervalMs,
     highFrequencyLagIntervalMs,
     shortLagDuration,
@@ -26,7 +26,16 @@ export {
 } from "./constants.js";
 
 // --- Phase 1: OTel integration ---
-export type { Meter, Histogram, ObservableGauge, ObservableResult } from "./meter.js";
+export type {
+    Meter,
+    Histogram,
+    Counter,
+    ObservableGauge,
+    ObservableResult,
+    ObservableCallback,
+    Attributes,
+    AttributeValue,
+} from "./meter.js";
 export { createNoopMeter } from "./noop-meter.js";
 export { createOtelLoggerAdapter, createTeeLogger, type OtelLogger } from "./otel-logger-adapter.js";
 
@@ -45,7 +54,7 @@ export type {
     PressureDeps,
     GCDeps,
     WorkerMonitorDeps,
-    ClockReliabilityDeps,
+    PerformanceDeps,
 } from "./dep-groups.js";
 
 // --- Phase 2: Performance Observer monitors ---
@@ -59,6 +68,7 @@ export type {
     PerformanceEntryLike,
     PerformanceObserverInit,
     PerformanceObserverInstance,
+    PerformanceObserverOptions,
     PerformanceEntryList,
     LoafEntry,
     LoafScriptEntry,
@@ -104,6 +114,9 @@ export {
 export {
     LifecycleStateMachine,
     summarizeTransitions,
+    isVisibleState,
+    type HiddenGate,
+    type LifecycleListener,
     type LifecycleState,
     type LifecycleTrigger,
     type StateTransition,
@@ -124,7 +137,7 @@ export {
     type PressureMeasurement,
 } from "./ComputePressureMonitor.js";
 export { TimerThrottleDetector, type TimerThrottleConfig } from "./TimerThrottleDetector.js";
-export { ClockReliabilityChecker, type PerformanceLike } from "./ClockReliabilityChecker.js";
+export { ClockReliabilityChecker } from "./ClockReliabilityChecker.js";
 export { GCSpikeDetector } from "./GCSpikeDetector.js";
 export {
     GCSignalDetector,
@@ -134,8 +147,8 @@ export {
 
 // --- Phase 4: Web Worker monitor ---
 export { WorkerLagMonitor, type WorkerLike, type WorkerLagMeasurement } from "./WorkerLagMonitor.js";
-export { createWorkerHandler, type WorkerDeps } from "./lag-worker.js";
-export type { MainToWorkerMessage, WorkerToMainMessage, PingMessage, PongMessage, ConfigMessage, StopMessage } from "./worker-protocol.js";
+export { createWorkerHandler, type WorkerDeps, type WorkerHandler } from "./lag-worker.js";
+export type { MainToWorkerMessage, WorkerToMainMessage, StartMessage, StopMessage, HeartbeatMessage } from "./worker-protocol.js";
 
 // --- Phase 5: Unified setup ---
 export { setupAllMonitors, type AllMonitorDeps, type AllMonitorHandles } from "./setup-all-monitors.js";

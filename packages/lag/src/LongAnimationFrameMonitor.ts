@@ -5,6 +5,11 @@ import type { Logger } from "./types.js";
 export type LoafReport = {
     blockingDuration : number;
     duration : number;
+    /**
+     * Time from the start of the frame's rendering phase (rAF callbacks,
+     * style, layout, paint) to the end of the frame. 0 when the frame did not
+     * render — browsers report `renderStart = 0` in that case.
+     */
     renderDuration : number;
     scriptCount : number;
     hasForceLayout : boolean;
@@ -21,7 +26,9 @@ export class LongAnimationFrameMonitor extends ObserverMonitor {
 
     protected processEntry(entry : PerformanceEntryLike) : void {
         const loaf = entry as LoafEntry;
-        const renderDuration = loaf.duration - (loaf.styleAndLayoutStart - loaf.startTime);
+        const renderDuration = loaf.renderStart > 0
+            ? loaf.startTime + loaf.duration - loaf.renderStart
+            : 0;
         const hasForceLayout = loaf.scripts?.some(
             s => s.forcedStyleAndLayoutDuration > 0,
         ) ?? false;

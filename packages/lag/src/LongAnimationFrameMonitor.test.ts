@@ -52,22 +52,40 @@ describe("LongAnimationFrameMonitor", () => {
         }));
     });
 
-    it("calculates renderDuration", () => {
+    it("calculates renderDuration from renderStart to the end of the frame", () => {
         const { MockCtor, triggerEntries } = createMockPerformanceObserver();
         const report = vi.fn();
         const logger = { log : vi.fn() };
 
         new LongAnimationFrameMonitor(report, logger, MockCtor);
 
-        // duration=200, styleAndLayoutStart=180, startTime=100
-        // renderDuration = 200 - (180 - 100) = 120
+        // Frame ends at 100 + 200 = 300; rendering started at 220
         triggerEntries([makeLoafEntry({
             startTime : 100,
             duration : 200,
-            styleAndLayoutStart : 180,
+            renderStart : 220,
+            styleAndLayoutStart : 250,
         })]);
 
-        expect(report.mock.calls[0]![0].renderDuration).toBe(120);
+        expect(report.mock.calls[0]![0].renderDuration).toBe(80);
+    });
+
+    it("reports renderDuration 0 for frames that did not render", () => {
+        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+        const report = vi.fn();
+        const logger = { log : vi.fn() };
+
+        new LongAnimationFrameMonitor(report, logger, MockCtor);
+
+        // Browsers report renderStart = styleAndLayoutStart = 0 when nothing rendered
+        triggerEntries([makeLoafEntry({
+            startTime : 5_000,
+            duration : 120,
+            renderStart : 0,
+            styleAndLayoutStart : 0,
+        })]);
+
+        expect(report.mock.calls[0]![0].renderDuration).toBe(0);
     });
 
     it("detects forced layout from scripts", () => {

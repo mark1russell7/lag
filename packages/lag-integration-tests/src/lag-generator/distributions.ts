@@ -35,8 +35,8 @@ export function constant(value : number) : Distribution {
 export function normal(
     mean : number,
     stddev : number,
-    min = 0,
-    max = Infinity,
+    min : number = 0,
+    max : number = Infinity,
 ) : Distribution {
     return (rng) => clamp(mean + rng.normal() * stddev, min, max);
 }
@@ -50,8 +50,8 @@ export function normal(
  */
 export function exponential(
     lambda : number,
-    min = 0,
-    max = Infinity,
+    min : number = 0,
+    max : number = Infinity,
 ) : Distribution {
     return (rng) => {
         const u = Math.max(rng.next(), 1e-12);
@@ -73,7 +73,7 @@ export function exponential(
 export function powerLaw(
     xMin : number,
     alpha : number,
-    max = Infinity,
+    max : number = Infinity,
 ) : Distribution {
     return (rng) => {
         const u = Math.max(rng.next(), 1e-12);
@@ -127,8 +127,8 @@ export function mixture(
 export function evolutionary(
     initial : number,
     stepStdDev : number,
-    min = 0,
-    max = Infinity,
+    min : number = 0,
+    max : number = Infinity,
 ) : Distribution {
     let value = initial;
     return (rng) => {

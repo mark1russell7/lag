@@ -17,6 +17,7 @@ describe("TimerThrottleDetector", () => {
 
         const detector = new TimerThrottleDetector(
             setTimeout,
+            clearTimeout,
             clock,
             logger,
         );
@@ -39,6 +40,7 @@ describe("TimerThrottleDetector", () => {
 
         const detector = new TimerThrottleDetector(
             setTimeout,
+            clearTimeout,
             clock,
             logger,
         );
@@ -66,9 +68,10 @@ describe("TimerThrottleDetector", () => {
 
         const detector = new TimerThrottleDetector(
             setTimeout,
+            clearTimeout,
             clock,
             logger,
-            100, // short calibration interval for test
+            { calibrationIntervalMs : 100 },
         );
 
         detector.start();
@@ -104,6 +107,7 @@ describe("TimerThrottleDetector", () => {
 
         const detector = new TimerThrottleDetector(
             setTimeout,
+            clearTimeout,
             clock,
             logger,
         );
@@ -116,6 +120,7 @@ describe("TimerThrottleDetector", () => {
         vi.advanceTimersByTime(5);
 
         expect(detector.isThrottled()).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
     });
 
     it("prevents double-start", () => {
@@ -125,6 +130,7 @@ describe("TimerThrottleDetector", () => {
 
         const detector = new TimerThrottleDetector(
             mockSetTimeout,
+            clearTimeout,
             clock,
             logger,
         );
@@ -134,5 +140,51 @@ describe("TimerThrottleDetector", () => {
 
         detector.start(); // should be no-op
         expect(mockSetTimeout.mock.calls.length).toBe(callCount);
+    });
+
+    it("restarting does not leave a second calibration chain running", () => {
+        let currentTime = 0;
+        const mockSetTimeout = vi.fn(setTimeout);
+        const detector = new TimerThrottleDetector(
+            mockSetTimeout,
+            clearTimeout,
+            { now : () => currentTime },
+            { log : vi.fn() },
+            { calibrationIntervalMs : 100 },
+        );
+
+        detector.start();
+        detector.stop();
+        detector.start();
+
+        // Run several full calibration rounds
+        for (let i = 0; i < 50; i++) {
+            currentTime += 5;
+            vi.advanceTimersByTime(5);
+        }
+
+        // A single chain only ever has one timer pending
+        expect(vi.getTimerCount()).toBe(1);
+    });
+
+    it("stop() from inside the logger (on a throttle change) sticks", () => {
+        let currentTime = 0;
+        const logger = { log : vi.fn() };
+        const detector = new TimerThrottleDetector(
+            setTimeout,
+            clearTimeout,
+            { now : () => currentTime },
+            logger,
+        );
+        logger.log.mockImplementation(() => detector.stop());
+
+        detector.start();
+        for (let i = 0; i < 5; i++) {
+            currentTime += 200;
+            vi.advanceTimersByTime(5);
+        }
+
+        expect(logger.log).toHaveBeenCalledWith("warn", "Timer throttling detected.", expect.anything());
+        expect(vi.getTimerCount()).toBe(0);
     });
 });

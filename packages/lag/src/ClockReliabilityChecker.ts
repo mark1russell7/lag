@@ -1,60 +1,56 @@
-export type PerformanceLike = {
-    now : () => number;
-    timeOrigin : number;
-};
+import type { PerformanceLike } from "./types.js";
 
 /**
- * 5μs — the High Resolution Time Level 3 spec defines this as the maximum
- * resolution for cross-origin-isolated contexts. Without COI, browsers
- * round to ~100μs to mitigate timing-based fingerprinting attacks (per the
- * Spectre mitigations rolled out in 2018). So if `performance.now()` resolves
- * finer than 5μs, the page is almost certainly cross-origin isolated.
+ * `performance.now()` resolution is a multiple of 5μs (Chrome) or 20μs
+ * (Firefox) in cross-origin-isolated contexts, and 100μs (Chrome) to 1ms
+ * (Firefox, Safari) otherwise — a Spectre mitigation. 50μs separates the two
+ * groups with margin on both sides.
  *
- * Spec reference: https://www.w3.org/TR/hr-time-3/#sec-domhighrestimestamp
+ * `globalThis.crossOriginIsolated` is the authoritative flag; this checker
+ * answers the question that matters for measurements: how fine is the clock?
  */
-const HIGH_RES_THRESHOLD_MS = 0.005;
+const HIGH_RES_THRESHOLD_MS = 0.05;
 
 /**
- * Number of consecutive `performance.now()` calls used to estimate clock
- * resolution. 100 is enough to find the minimum non-zero delta in well under
- * 1ms of CPU time, even on slow devices.
+ * Stop sampling after this many clock ticks. Any single tick already shows
+ * the resolution; a few more guard against a partial first step.
  */
-const RESOLUTION_SAMPLE_COUNT = 100;
+const RESOLUTION_TICKS = 5;
+
+/**
+ * Upper bound on `performance.now()` calls (a few ms of CPU). A 1ms clock
+ * may not tick 5 times within it, but one tick is enough.
+ */
+const MAX_SAMPLES = 100_000;
 
 export class ClockReliabilityChecker {
+    private resolutionMs : number | undefined;
+
     constructor(
         private readonly performance : PerformanceLike,
     ) {}
 
     /**
-     * Estimates the actual resolution of `performance.now()` by sampling it
-     * in a tight loop and returning the smallest non-zero delta observed.
+     * Estimates the resolution of `performance.now()`: the smallest non-zero
+     * delta between consecutive readings. Measured once, then cached — the
+     * resolution doesn't change during a page's lifetime.
      *
-     * Note: this is a lower bound. The hardware clock may be even finer,
-     * but the JS engine clamps to whatever the security policy allows.
+     * Returns 0 if the clock never advanced while sampling (a very coarse
+     * clock); the next call samples again.
      */
     getResolutionMs() : number {
-        let minDelta = Infinity;
-        let prev = this.performance.now();
-
-        for (let i = 0; i < RESOLUTION_SAMPLE_COUNT; i++) {
-            const curr = this.performance.now();
-            const delta = curr - prev;
-            if (delta > 0 && delta < minDelta) {
-                minDelta = delta;
-            }
-            prev = curr;
+        if (this.resolutionMs === undefined) {
+            const measured = this.measureResolution();
+            if (measured > 0) this.resolutionMs = measured;
+            return measured;
         }
-
-        return minDelta === Infinity ? 0 : minDelta;
+        return this.resolutionMs;
     }
 
-    /**
-     * Returns true if `performance.now()` resolves to ~5μs or finer, which
-     * is the spec-defined precision for cross-origin-isolated contexts.
-     */
-    isCrossOriginIsolated() : boolean {
-        return this.getResolutionMs() <= HIGH_RES_THRESHOLD_MS;
+    /** True if `performance.now()` has cross-origin-isolated precision (finer than 50μs). */
+    isHighResolution() : boolean {
+        const resolution = this.getResolutionMs();
+        return resolution > 0 && resolution < HIGH_RES_THRESHOLD_MS;
     }
 
     /**
@@ -64,5 +60,23 @@ export class ClockReliabilityChecker {
      */
     getTimeOrigin() : number {
         return this.performance.timeOrigin;
+    }
+
+    private measureResolution() : number {
+        let minDelta = Infinity;
+        let ticks = 0;
+        let prev = this.performance.now();
+
+        for (let i = 0; i < MAX_SAMPLES && ticks < RESOLUTION_TICKS; i++) {
+            const curr = this.performance.now();
+            const delta = curr - prev;
+            if (delta > 0) {
+                ticks++;
+                if (delta < minDelta) minDelta = delta;
+                prev = curr;
+            }
+        }
+
+        return minDelta === Infinity ? 0 : minDelta;
     }
 }

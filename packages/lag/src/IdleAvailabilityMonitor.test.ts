@@ -12,7 +12,7 @@ describe("IdleAvailabilityMonitor", () => {
         const reports : IdleMeasurement[] = [];
 
         let pendingCallback : ((d : IdleDeadline) => void) | undefined;
-        const requestIdleSpy = vi.fn((cb : (d : IdleDeadline) => void) => {
+        const requestIdleSpy = vi.fn((cb : (d : IdleDeadline) => void, _options? : { timeout? : number }) => {
             pendingCallback = cb;
             return 1;
         });

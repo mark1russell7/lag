@@ -1,14 +1,16 @@
 /**
  * Instrumented factories — each function constructs a monitor and wires it
- * to OTel instruments (histograms, gauges). Returns a MonitorHandle with
- * error boundary and stop() teardown.
+ * to OTel instruments (histograms, counters, gauges). Returns a MonitorHandle
+ * with an error boundary and a stop() that releases timers, listeners and
+ * gauge callbacks.
  *
- * Each factory takes ONLY the dep groups it actually uses, enforcing
- * Interface Segregation. Adding a new monitor = adding a new file here + one
- * line in setup-all-monitors.ts.
+ * Each factory takes ONLY the dep groups it actually uses. Timer-driven
+ * factories also take an optional LifecycleStateMachine to pause while the
+ * page is hidden. Adding a new monitor = adding a new file here + one line in
+ * setup-all-monitors.ts.
  */
 
-// Timer-based lag monitors (need shared LifecycleStateMachine param)
+// Timer-based lag monitors
 export { createInstrumentedDriftLag } from "./drift-lag.js";
 export { createInstrumentedMacrotaskLag } from "./macrotask-lag.js";
 
@@ -37,3 +39,6 @@ export {
     type ThrottleDetectorDeps,
 } from "./throttle-detector.js";
 export { createInstrumentedClockReliability } from "./clock-reliability.js";
+
+// Building blocks for custom factories
+export { pauseWhileHidden } from "./shared.js";

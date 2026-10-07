@@ -80,7 +80,7 @@ describe("SchedulingFairnessMonitor", () => {
             channel.port2.postMessage = vi.fn(() => {
                 queuedCallbacks.push({
                     kind : "messagechannel",
-                    cb : () => channel.port1.onmessage?.({ data : null }),
+                    cb : () => (channel.port1.onmessage as ((event : { data : unknown }) => void) | null)?.({ data : null }),
                 });
             });
             return channel;
@@ -169,5 +169,35 @@ describe("SchedulingFairnessMonitor", () => {
             "Error in scheduling fairness measurement.",
             expect.objectContaining({ type : "SchedulingFairnessMonitor" }),
         );
+    });
+
+    it("drops a cycle that was still in flight across stop() and start()", () => {
+        let intervalCallback = () => {};
+        const timeouts : Array<() => void> = [];
+        const report = vi.fn();
+
+        const monitor = new SchedulingFairnessMonitor(
+            1000,
+            report,
+            { log : vi.fn() },
+            ((cb : () => void) => { intervalCallback = cb; return 1; }) as never,
+            vi.fn(),
+            ((cb : () => void) => { timeouts.push(cb); return 2; }) as never,
+            (cb : () => void) => cb(),
+            function () { return createMockMessageChannel(); } as unknown as MessageChannelConstructor,
+            { now : () => 0 },
+        );
+
+        // Control: an undisturbed cycle reports
+        intervalCallback();
+        timeouts[0]!();
+        expect(report).toHaveBeenCalledTimes(1);
+
+        intervalCallback(); // microtask + channel complete; setTimeout(0) still pending
+        monitor.stop();     // page hidden...
+        monitor.start();    // ...and visible again
+        timeouts[1]!();     // the throttled setTimeout finally fires
+
+        expect(report).toHaveBeenCalledTimes(1);
     });
 });

@@ -22,7 +22,7 @@ export type Rng = {
     seed() : number;
 };
 
-export function createRng(seed = Date.now() >>> 0) : Rng {
+export function createRng(seed : number = Date.now() >>> 0) : Rng {
     let state = seed >>> 0;
 
     const next = () : number => {

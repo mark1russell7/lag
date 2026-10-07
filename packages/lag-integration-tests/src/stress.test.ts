@@ -6,7 +6,7 @@ import {
     createTeeLogger,
     type AllMonitorHandles,
 } from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+import { createLagWorker, type LagWorker } from "@lag/worker";
 import {
     runWorkload,
     lightLoad,
@@ -17,6 +17,7 @@ import {
     kitchenSink,
     type WorkloadResult,
 } from "./lag-generator/index.js";
+import { createBrowserDeps, createConsoleLogger, createTeeMeter, type TeeMeter } from "./harness.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
 const SERVICE_NAME = "lag-stress-test";
@@ -25,78 +26,48 @@ const SERVICE_NAME = "lag-stress-test";
 // enough to generate meaningful signal.
 const PROFILE_DURATION_MS = 10_000;
 
-interface StressContext {
-    otel: ReturnType<typeof init>;
-    handles: AllMonitorHandles;
-}
+type StressContext = {
+    otel : ReturnType<typeof init>;
+    handles : AllMonitorHandles;
+    tee : TeeMeter;
+    worker : LagWorker;
+};
 
-function makeContext(serviceName: string): StressContext {
+function makeContext(serviceName : string) : StressContext {
     const otel = init({
         serviceName,
-        endpoint: OTLP_ENDPOINT,
-        metricsExportIntervalMs: 5_000,
-        tracing: true,
-        logs: true,
-        faro: false,
+        endpoint : OTLP_ENDPOINT,
+        metricsExportIntervalMs : 5_000,
+        tracing : true,
+        logs : true,
+        faro : false,
     });
 
-    const consoleLogger = {
-        log: (level: string, message: string, args: unknown) => {
-            // Reduce noise — stress tests can spam
-            if (level === "error" || level === "warn") {
-                console.log(`[${level}] ${message}`, args);
-            }
-        },
-    };
-    const otelLogger = createOtelLoggerAdapter(otel.getLogger("stress"));
-    const logger = createTeeLogger(consoleLogger, otelLogger);
+    const tee = createTeeMeter(otel.getMeter("lag"));
+    const worker = createLagWorker();
+    const handles = setupAllMonitors(createBrowserDeps({
+        // Stress tests are noisy: only surface problems on the console
+        logger : createTeeLogger(createConsoleLogger(["warn", "error"]), createOtelLoggerAdapter(otel.getLogger("stress"))),
+        meter : tee.meter,
+        worker,
+        workerHeartbeatIntervalMs : 250,
+        memoryIntervalMs : 2_000,
+    }));
 
-    const perfAny = window.performance as unknown as {
-        memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number };
-    };
-
-    const handles = setupAllMonitors({
-        document,
-        logger,
-        setIntervalFn: (fn, ms) => window.setInterval(fn, ms),
-        clearIntervalFn: (id) => window.clearInterval(id),
-        setTimeoutFn: (fn, ms) => window.setTimeout(fn, ms),
-        clearTimeoutFn: (id) => window.clearTimeout(id),
-        clock: { now: () => performance.now() },
-        meter: otel.getMeter("lag"),
-        PerformanceObserver: window.PerformanceObserver,
-        performance: window.performance,
-        window: window,
-        worker: createLagWorker(),
-        workerPingIntervalMs: 250,
-
-        MessageChannel: window.MessageChannel,
-        queueMicrotask: (cb: () => void) => window.queueMicrotask(cb),
-        requestAnimationFrame: (cb: (t: number) => number) => window.requestAnimationFrame(cb),
-        cancelAnimationFrame: (h: number) => window.cancelAnimationFrame(h),
-        requestIdleCallback: window.requestIdleCallback?.bind(window),
-        cancelIdleCallback: window.cancelIdleCallback?.bind(window),
-        memorySource: perfAny.memory ? { readLegacy: () => perfAny.memory } : undefined,
-        memoryIntervalMs: 2_000,
-        lifecycleStateMachine: true,
-        // PressureObserver — Chrome 125+
-        PressureObserver: (window as unknown as { PressureObserver?: unknown }).PressureObserver as never,
-        pressureSources: ["cpu"],
-        pressureSampleIntervalMs: 1_000,
-    });
-
-    return { otel, handles };
+    return { otel, handles, tee, worker };
 }
 
-async function teardown(ctx: StressContext): Promise<void> {
+async function teardown(ctx : StressContext) : Promise<void> {
     ctx.handles.stop();
+    ctx.worker.terminate();
     await ctx.otel.shutdown();
 }
 
-function logResult(profile: string, result: WorkloadResult): void {
+function logResult(profile : string, result : WorkloadResult, tee : TeeMeter) : void {
     console.log(
         `[${profile}] seed=${result.seed} events=${result.eventCount} totalLagMs=${result.totalLagMs.toFixed(0)} ` +
-        `runDurationMs=${result.durationMs.toFixed(0)} byName=${JSON.stringify(result.eventsByName)}`,
+        `runDurationMs=${result.durationMs.toFixed(0)} byName=${JSON.stringify(result.eventsByName)} ` +
+        `driftMax=${tee.max("lag_drift_histogram").toFixed(0)} workerBlockMax=${tee.max("lag_worker_main_block_histogram").toFixed(0)}`,
     );
 }
 
@@ -105,11 +76,14 @@ describe("Lag Monitor Stress Tests", () => {
         const ctx = makeContext(`${SERVICE_NAME}-light`);
         try {
             const result = await runWorkload(lightLoad(PROFILE_DURATION_MS, 11));
-            logResult("light", result);
+            logResult("light", result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(0);
             expect(result.totalLagMs).toBeGreaterThan(0);
             // Light load should accumulate < 25% of wall time as lag
             expect(result.totalLagMs).toBeLessThan(PROFILE_DURATION_MS * 0.25);
+            // ~10 DriftLag samples per second, none dramatic (spikes are ≤30ms)
+            expect(ctx.tee.values("lag_drift_histogram").length).toBeGreaterThan(50);
+            expect(ctx.tee.max("lag_drift_histogram")).toBeLessThan(150);
         } finally {
             await teardown(ctx);
         }
@@ -119,10 +93,11 @@ describe("Lag Monitor Stress Tests", () => {
         const ctx = makeContext(`${SERVICE_NAME}-moderate`);
         try {
             const result = await runWorkload(moderateLoad(PROFILE_DURATION_MS, 22));
-            logResult("moderate", result);
+            logResult("moderate", result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(10);
             // Moderate covers cpu, macrotask, layout, loaf — at least 3 of 4
             expect(Object.keys(result.eventsByName).length).toBeGreaterThanOrEqual(3);
+            expect(ctx.tee.max("lag_drift_histogram")).toBeGreaterThan(20);
         } finally {
             await teardown(ctx);
         }
@@ -132,10 +107,13 @@ describe("Lag Monitor Stress Tests", () => {
         const ctx = makeContext(`${SERVICE_NAME}-heavy`);
         try {
             const result = await runWorkload(heavyLoad(PROFILE_DURATION_MS, 33));
-            logResult("heavy", result);
+            logResult("heavy", result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(5);
             // Heavy load should consume substantial wall-time as lag
             expect(result.totalLagMs).toBeGreaterThan(PROFILE_DURATION_MS * 0.3);
+            // Blocks of 20-300ms (and power-law spikes) must show up in both views
+            expect(ctx.tee.max("lag_drift_histogram")).toBeGreaterThan(100);
+            expect(ctx.tee.max("lag_worker_main_block_histogram")).toBeGreaterThan(50);
         } finally {
             await teardown(ctx);
         }
@@ -144,19 +122,22 @@ describe("Lag Monitor Stress Tests", () => {
     it("bursty load produces both small and huge events (bimodal)", async () => {
         const ctx = makeContext(`${SERVICE_NAME}-bursty`);
         try {
-            const events: number[] = [];
+            const events : number[] = [];
             const opts = burstyLoad(PROFILE_DURATION_MS, 44);
             opts.onEvent = (e) => events.push(e.durationMs);
             const result = await runWorkload(opts);
-            logResult("bursty", result);
+            logResult("bursty", result, ctx.tee);
 
-            // Bimodal split: should see both small (<30) and large (>200) events
             const smalls = events.filter((d) => d < 30).length;
             const larges = events.filter((d) => d > 100).length;
             console.log(`bursty smalls=${smalls} larges=${larges}`);
             expect(smalls).toBeGreaterThan(0);
             // Larges may not appear in a 10s window with 5% probability — check loosely
             expect(result.eventCount).toBeGreaterThan(20);
+            if (larges > 0) {
+                // A ≥200ms block lands in DriftLag's 100ms windows
+                expect(ctx.tee.max("lag_drift_histogram")).toBeGreaterThan(100);
+            }
         } finally {
             await teardown(ctx);
         }
@@ -165,14 +146,13 @@ describe("Lag Monitor Stress Tests", () => {
     it("evolutionary load drifts upward over time", async () => {
         const ctx = makeContext(`${SERVICE_NAME}-evolutionary`);
         try {
-            const events: Array<{ elapsedMs: number; durationMs: number }> = [];
+            const events : Array<{ elapsedMs : number; durationMs : number }> = [];
             const opts = evolutionaryLoad(PROFILE_DURATION_MS, 55);
-            opts.onEvent = (e) => events.push({ elapsedMs: e.elapsedMs, durationMs: e.durationMs });
+            opts.onEvent = (e) => events.push({ elapsedMs : e.elapsedMs, durationMs : e.durationMs });
             const result = await runWorkload(opts);
-            logResult("evolutionary", result);
+            logResult("evolutionary", result, ctx.tee);
 
             expect(events.length).toBeGreaterThan(5);
-            // First half average vs second half average — drift should produce a delta
             const half = Math.floor(events.length / 2);
             const firstHalf = events.slice(0, half);
             const secondHalf = events.slice(half);
@@ -191,11 +171,12 @@ describe("Lag Monitor Stress Tests", () => {
         const ctx = makeContext(`${SERVICE_NAME}-kitchen`);
         try {
             const result = await runWorkload(kitchenSink(PROFILE_DURATION_MS, 66));
-            logResult("kitchen-sink", result);
+            logResult("kitchen-sink", result, ctx.tee);
 
             // Should have hit at least 6 of the 8 spec types
             expect(Object.keys(result.eventsByName).length).toBeGreaterThanOrEqual(6);
             expect(result.eventCount).toBeGreaterThan(20);
+            expect(ctx.tee.max("lag_drift_histogram")).toBeGreaterThan(30);
         } finally {
             await teardown(ctx);
         }

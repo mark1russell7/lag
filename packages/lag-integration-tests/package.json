@@ -7,6 +7,7 @@
     "pretest": "cd node_modules/@mark1russell7/grafana-infra && docker compose up -d",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.test.json",
     "infra:up": "cd node_modules/@mark1russell7/grafana-infra && docker compose up -d",
     "infra:down": "cd node_modules/@mark1russell7/grafana-infra && docker compose down"
   },
@@ -17,9 +18,10 @@
   },
   "devDependencies": {
     "@mark1russell7/grafana-infra": "github:mark1russell7/grafana-infra",
-    "vitest": "^4.1.2",
     "@vitest/browser": "^4.1.2",
     "@vitest/browser-playwright": "^4.1.2",
-    "playwright": "^1.56.0"
+    "playwright": "^1.56.0",
+    "vite": "^7.3.1",
+    "vitest": "^4.1.2"
   }
 }

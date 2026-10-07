@@ -104,4 +104,7 @@ async function main(): Promise<void> {
   p.outro(`@lag/${name} is ready`);
 }
 
-main();
+main().catch((error: unknown) => {
+  p.cancel(String(error));
+  process.exit(1);
+});

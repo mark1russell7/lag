@@ -2,9 +2,7 @@
     "$schema": "https://json.schemastore.org/tsconfig",
     "extends": "./tsconfig.json",
     "compilerOptions": {
-        "lib": ["esnext", "dom"],
-        "types": ["vitest/globals"],
-        "noEmit": true,
+        "types": ["vite/client", "vitest/globals"],
         "composite": false,
         "incremental": false,
         "declaration": false,

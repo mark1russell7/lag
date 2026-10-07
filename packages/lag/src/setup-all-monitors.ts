@@ -1,14 +1,12 @@
 /**
  * Unified setup — orchestrates the monitor registry.
  *
- * This replaces the former "god function" with thin coordination:
  *   1. Create a MonitorRegistry
- *   2. Construct the lifecycle state machine (shared dependency)
+ *   2. Construct the lifecycle state machine (shared by every timer-driven
+ *      monitor to pause while the page is hidden)
  *   3. Add instrumented factories to the registry, each guarded by the
  *      presence of their respective capability deps
  *   4. Return handles + a `stop()` that tears down the whole registry
- *
- * Adding a new monitor is a one-liner — no modifications elsewhere.
  */
 
 import type {
@@ -23,11 +21,9 @@ import type {
     PressureDeps,
     GCDeps,
     WorkerMonitorDeps,
-    ClockReliabilityDeps,
+    PerformanceDeps,
 } from "./dep-groups.js";
 import { MonitorRegistry } from "./monitor-registry.js";
-
-import { GCSpikeDetector } from "./GCSpikeDetector.js";
 
 // Monitor class types (for typed accessors on AllMonitorHandles)
 import type { DriftLag } from "./DriftLag.js";
@@ -48,7 +44,6 @@ import type { LifecycleStateMachine } from "./LifecycleStateMachine.js";
 import type { TimerThrottleDetector } from "./TimerThrottleDetector.js";
 import type { ClockReliabilityChecker } from "./ClockReliabilityChecker.js";
 
-// Instrumented factories
 import {
     createInstrumentedDriftLag,
     createInstrumentedMacrotaskLag,
@@ -87,7 +82,7 @@ export type AllMonitorDeps =
     & Partial<PressureDeps>
     & Partial<GCDeps>
     & Partial<WorkerMonitorDeps>
-    & Partial<ClockReliabilityDeps>;
+    & Partial<PerformanceDeps>;
 
 /**
  * Handles returned by setupAllMonitors.
@@ -100,9 +95,6 @@ export type AllMonitorDeps =
 export type AllMonitorHandles = {
     /** Registry of all created handles. Use `registry.get(name)` for lookup. */
     readonly registry : MonitorRegistry;
-
-    /** Stateless GC-spike classifier — always available, no setup deps. */
-    readonly gcDetector : GCSpikeDetector;
 
     /** Tear down every registered monitor in LIFO order. */
     stop() : void;
@@ -134,30 +126,19 @@ function monitorOf<T>(registry : MonitorRegistry, name : string) : T | undefined
 export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
     const registry = new MonitorRegistry();
 
-    // 1. Lifecycle first — the lag monitors need it for hidden filtering
-    const lifecycleHandle = registry.add(createInstrumentedLifecycle(deps));
-    const lifecycle = lifecycleHandle.monitor;
+    // 1. Lifecycle first: registered first, so the LIFO teardown stops it last
+    const lifecycle = registry.add(createInstrumentedLifecycle(deps)).monitor;
 
-    // 2. Timer-based lag (require lifecycle)
-    if (lifecycle) {
-        registry.add(createInstrumentedDriftLag(deps, lifecycle));
-        registry.add(createInstrumentedMacrotaskLag(deps, lifecycle));
-    }
+    // 2. Timer-based lag
+    registry.add(createInstrumentedDriftLag(deps, lifecycle));
+    registry.add(createInstrumentedMacrotaskLag(deps, lifecycle));
 
     // 3. Throttle detector — always available (pure timer math)
-    registry.add(createInstrumentedThrottleDetector({
-        logger : deps.logger,
-        clock : deps.clock,
-        meter : deps.meter,
-        setTimeoutFn : deps.setTimeoutFn,
-    }));
+    registry.add(createInstrumentedThrottleDetector(deps));
 
     // 4. PerformanceObserver monitors
     if (deps.PerformanceObserver) {
-        const observerDeps = {
-            ...deps,
-            PerformanceObserver : deps.PerformanceObserver,
-        };
+        const observerDeps = { ...deps, PerformanceObserver : deps.PerformanceObserver };
         registry.add(createInstrumentedLoaf(observerDeps));
         registry.add(createInstrumentedEventTiming(observerDeps));
         registry.add(createInstrumentedLayoutShift(observerDeps));
@@ -171,7 +152,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
             ...deps,
             requestAnimationFrame : deps.requestAnimationFrame,
             cancelAnimationFrame : deps.cancelAnimationFrame,
-        }));
+        }, lifecycle));
     }
 
     // 6. Idle availability (requestIdleCallback)
@@ -180,7 +161,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
             ...deps,
             requestIdleCallback : deps.requestIdleCallback,
             cancelIdleCallback : deps.cancelIdleCallback,
-        }));
+        }, lifecycle));
     }
 
     // 7. Scheduling fairness (MessageChannel + queueMicrotask)
@@ -189,7 +170,7 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
             ...deps,
             MessageChannel : deps.MessageChannel,
             queueMicrotask : deps.queueMicrotask,
-        }));
+        }, lifecycle));
     }
 
     // 8. Memory sampling
@@ -200,12 +181,19 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
         }));
     }
 
-    // 9. Worker ground-truth
+    // 9. Worker ground-truth (heartbeat timestamps need performance.timeOrigin)
     if (deps.worker) {
-        registry.add(createInstrumentedWorkerLag({
-            ...deps,
-            worker : deps.worker,
-        }));
+        if (deps.performance) {
+            registry.add(createInstrumentedWorkerLag({
+                ...deps,
+                worker : deps.worker,
+                performance : deps.performance,
+            }, lifecycle));
+        } else {
+            deps.logger.log("warn", "Worker lag monitor skipped: it needs `performance` (for timeOrigin).", {
+                type : "setupAllMonitors",
+            });
+        }
     }
 
     // 10. Compute Pressure API
@@ -234,7 +222,6 @@ export function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles {
 
     return {
         registry,
-        gcDetector : new GCSpikeDetector(),
         stop : () => registry.stopAll(),
 
         get driftLag() { return monitorOf<DriftLag>(registry, "drift-lag"); },

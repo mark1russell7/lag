@@ -148,4 +148,43 @@ describe("FrameTimingMonitor", () => {
         // 33.33ms / 33.33ms = 1 slot, 0 dropped
         expect(reports[0]!.droppedFrames).toBe(0);
     });
+
+    it("stop() + start() inside report: one rAF chain, and no frame spanning the pause", () => {
+        let now = 0;
+        let nextId = 0;
+        const pending = new Map<number, (time : number) => void>();
+        const reports : FrameMeasurement[] = [];
+        let restartOnReport = false;
+
+        const monitor : FrameTimingMonitor = new FrameTimingMonitor(
+            (m) => {
+                reports.push(m);
+                if (restartOnReport) {
+                    restartOnReport = false;
+                    monitor.stop();
+                    monitor.start();
+                }
+            },
+            { log : vi.fn() },
+            (cb) => { const id = ++nextId; pending.set(id, cb); return id; },
+            (id) => { pending.delete(id); },
+            { now : () => now },
+        );
+        const fire = (time : number) => {
+            now = time;
+            const callbacks = [...pending.values()];
+            pending.clear();
+            for (const cb of callbacks) cb(time);
+        };
+
+        fire(0);
+        fire(16);
+        restartOnReport = true;
+        fire(32);
+        expect(pending.size).toBe(1);
+
+        fire(10_000); // first frame after the restart only sets the baseline
+        fire(10_016);
+        expect(reports.map(r => r.frameDeltaMs)).toEqual([16, 16, 16]);
+    });
 });

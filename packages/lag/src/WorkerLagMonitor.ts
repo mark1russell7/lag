@@ -1,4 +1,4 @@
-import type { Clock, ClearIntervalFn, Logger, SetIntervalFn } from "./types.js";
+import type { Logger, PerformanceLike } from "./types.js";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "./worker-protocol.js";
 
 export type WorkerLike = {
@@ -8,79 +8,72 @@ export type WorkerLike = {
 };
 
 export type WorkerLagMeasurement = {
-    roundTripMs : number;
+    /**
+     * How long the heartbeat waited before the main thread processed it.
+     * Near zero when the main thread is responsive; while it is blocked,
+     * heartbeats queue up and each reports how long it waited.
+     */
+    deliveryDelayMs : number;
+    /**
+     * How late the worker's own timer fired. High values mean the worker was
+     * itself starved (e.g. CPU contention), so heartbeats were sent late too.
+     */
     workerSelfLagMs : number;
-    estimatedMainBlockMs : number;
     seq : number;
 };
 
+/**
+ * Ground-truth main-thread blocking, measured from outside the main thread.
+ *
+ * Timer-based monitors (DriftLag, MacrotaskLag) run *on* the main thread, so
+ * they can only notice a block after it ends. Here a Web Worker sends
+ * heartbeats from its own timer (see `createWorkerHandler`); each carries an
+ * absolute send time, and the delay until the main thread handles it is the
+ * time the main thread was unable to process messages.
+ */
 export class WorkerLagMonitor {
-    private handle : number | undefined;
-    private seq = 0;
-    private messageHandler : (event : { data : WorkerToMainMessage }) => void;
+    private running = false;
+    private readonly onMessage = (event : { data : WorkerToMainMessage }) : void => {
+        this.handleHeartbeat(event.data);
+    };
 
     constructor(
         private readonly worker : WorkerLike,
         private readonly report : (measurement : WorkerLagMeasurement) => void,
         private readonly logger : Logger,
-        private readonly setIntervalFn : SetIntervalFn,
-        private readonly clearIntervalFn : ClearIntervalFn,
-        private readonly clock : Clock,
-        private readonly pingIntervalMs : number,
+        private readonly performance : PerformanceLike,
+        private readonly heartbeatIntervalMs : number,
     ) {
-        this.messageHandler = (event) => this.handlePong(event.data);
         this.start();
     }
 
     start() : void {
-        if (this.handle !== undefined) return;
-
-        this.worker.addEventListener("message", this.messageHandler);
-
-        // Configure worker timing loop
-        this.worker.postMessage({
-            type : "config",
-            intervalMs : this.pingIntervalMs,
-        });
-
-        this.handle = this.setIntervalFn(() => this.sendPing(), this.pingIntervalMs);
+        if (this.running) return;
+        this.running = true;
+        this.worker.addEventListener("message", this.onMessage);
+        this.worker.postMessage({ type : "start", intervalMs : this.heartbeatIntervalMs });
     }
 
     stop() : void {
-        if (this.handle !== undefined) {
-            this.clearIntervalFn(this.handle);
-            this.handle = undefined;
-        }
-        this.worker.removeEventListener("message", this.messageHandler);
+        if (!this.running) return;
+        this.running = false;
+        this.worker.removeEventListener("message", this.onMessage);
         this.worker.postMessage({ type : "stop" });
     }
 
-    private sendPing() : void {
-        const seq = ++this.seq;
-        this.worker.postMessage({
-            type : "ping",
-            mainSendTime : this.clock.now(),
-            seq,
-        });
-    }
-
-    private handlePong(message : WorkerToMainMessage) : void {
-        if (message.type !== "pong") return;
+    private handleHeartbeat(message : WorkerToMainMessage) : void {
+        if (message?.type !== "heartbeat") return;
 
         try {
-            const mainReceiveTime = this.clock.now();
-            const roundTripMs = mainReceiveTime - message.mainSendTime;
-            const workerSelfLagMs = message.workerSelfLag;
-            const estimatedMainBlockMs = Math.max(0, roundTripMs - workerSelfLagMs);
-
+            const receivedAt = this.performance.timeOrigin + this.performance.now();
             this.report({
-                roundTripMs,
-                workerSelfLagMs,
-                estimatedMainBlockMs,
+                // Clamp sub-millisecond negatives from clock rounding
+                deliveryDelayMs : Math.max(0, receivedAt - message.sentAt),
+                workerSelfLagMs : message.workerSelfLagMs,
                 seq : message.seq,
             });
         } catch (error) {
-            this.logger.log("error", "Error processing worker pong.", {
+            this.logger.log("error", "Error processing worker heartbeat.", {
                 error,
                 type : "WorkerLagMonitor",
             });

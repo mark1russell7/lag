@@ -31,15 +31,10 @@ const DEFAULT_TARGET_FPS = 60;
 /**
  * Measures frame delivery rate via requestAnimationFrame.
  *
- * **Drop detection is exact, not heuristic.** We compute how many frames
- * *should* have fit in the observed gap and subtract one (the frame that
- * actually fired). For target = 16.67ms:
- *
- *   round(50 / 16.67) - 1 = round(3) - 1 = 2 dropped
- *
- * `Math.round` (rather than `Math.floor`) is used so that a delta of 16.7ms
- * counts as one frame (not zero), and a delta of 25ms counts as one frame
- * (not zero). This matches how Chrome's frame timing reports work.
+ * Dropped frames are estimated from the gap between consecutive callbacks:
+ * `round(delta / targetFrameTime) - 1`. At 60fps a 50ms gap counts as 2
+ * dropped frames. The estimate assumes a fixed refresh rate (`targetFps`,
+ * default 60): on a 120Hz display a single missed frame is too short to count.
  *
  * **Different from LongAnimationFrameMonitor:**
  * - LoAF measures *blocking* during frame production (script + render time)
@@ -114,17 +109,22 @@ export class FrameTimingMonitor {
 
     private scheduleNextFrame() : void {
         if (!this.started) return;
-        this.handle = this.requestAnimationFrameFn(() => this.onFrame());
+        const handle : number = this.requestAnimationFrameFn(() => this.onFrame(handle));
+        this.handle = handle;
     }
 
-    private onFrame() : void {
-        if (!this.started) return;
+    /** `handle` identifies this callback's chain; report() may stop or restart the monitor. */
+    private onFrame(handle : number) : void {
+        if (!this.started || this.handle !== handle) return;
 
         try {
             const now = this.clock.now();
+            const lastFrameTime = this.lastFrameTime;
+            // Before report(), so a stop() inside it can reset the baseline
+            this.lastFrameTime = now;
 
-            if (this.lastFrameTime >= 0) {
-                const frameDeltaMs = now - this.lastFrameTime;
+            if (lastFrameTime >= 0) {
+                const frameDeltaMs = now - lastFrameTime;
                 // Compute how many target-frame intervals this gap covers,
                 // then subtract one for the frame that actually fired.
                 const expectedSlots = Math.max(1, Math.round(frameDeltaMs / this.targetFrameTimeMs));
@@ -141,8 +141,6 @@ export class FrameTimingMonitor {
                     targetFrameTimeMs : this.targetFrameTimeMs,
                 });
             }
-
-            this.lastFrameTime = now;
         } catch (error) {
             this.logger.log("error", "Error in frame timing measurement.", {
                 error,
@@ -150,6 +148,6 @@ export class FrameTimingMonitor {
             });
         }
 
-        this.scheduleNextFrame();
+        if (this.handle === handle) this.scheduleNextFrame();
     }
 }

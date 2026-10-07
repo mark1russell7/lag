@@ -25,7 +25,7 @@ export type WorkloadOptions = {
     specs : LagSpec[];
 
     /** RNG seed (default: time-based). */
-    seed? : number;
+    seed? : number | undefined;
 
     /** Optional callback fired before each lag event. */
     onEvent? : (event : WorkloadEvent) => void;

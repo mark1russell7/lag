@@ -39,7 +39,6 @@
     "incremental": true,
 
     "pretty": true,
-    "diagnostics": true,
 
     "noEmitOnError": true,
     "resolveJsonModule": true

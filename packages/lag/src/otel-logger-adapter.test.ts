@@ -93,3 +93,34 @@ describe("createTeeLogger", () => {
         expect(working.log).toHaveBeenCalled();
     });
 });
+
+describe("createOtelLoggerAdapter attribute encoding", () => {
+    it("turns an Error into semantic-convention exception attributes", () => {
+        const otelLogger = { emit : vi.fn() };
+        const error = new TypeError("bad thing");
+
+        createOtelLoggerAdapter(otelLogger).log("error", "failed", { error, type : "DriftLag" });
+
+        expect(otelLogger.emit.mock.calls[0]![0].attributes).toEqual({
+            "exception.type" : "TypeError",
+            "exception.message" : "bad thing",
+            "exception.stacktrace" : error.stack,
+            type : "DriftLag",
+        });
+    });
+
+    it("JSON-encodes nested objects and keeps primitive arrays", () => {
+        const otelLogger = { emit : vi.fn() };
+
+        createOtelLoggerAdapter(otelLogger).log("warn", "x", {
+            rect : { x : 1, y : 2 },
+            sources : ["cpu", "thermals"],
+            skipped : undefined,
+        });
+
+        expect(otelLogger.emit.mock.calls[0]![0].attributes).toEqual({
+            rect : '{"x":1,"y":2}',
+            sources : ["cpu", "thermals"],
+        });
+    });
+});

@@ -10,25 +10,49 @@
  * - Allow consumers to provide minimal test doubles
  */
 
-export type ObservableResult<A = Record<string, unknown>> = {
+/** Mirrors `@opentelemetry/api`'s AttributeValue: primitives or homogeneous primitive arrays. */
+export type AttributeValue =
+    | string
+    | number
+    | boolean
+    | Array<null | undefined | string>
+    | Array<null | undefined | number>
+    | Array<null | undefined | boolean>;
+
+/** Mirrors `@opentelemetry/api`'s Attributes. */
+export type Attributes = { [key : string] : AttributeValue | undefined };
+
+export type ObservableResult<A extends Attributes = Attributes> = {
     observe(value : number, attributes? : A) : void;
 };
 
-export type Histogram<A = Record<string, unknown>> = {
+export type ObservableCallback<A extends Attributes = Attributes> = (observableResult : ObservableResult<A>) => void;
+
+export type Histogram<A extends Attributes = Attributes> = {
     record(value : number, attributes? : A) : void;
 };
 
-export type ObservableGauge<A = Record<string, unknown>> = {
-    addCallback(callback : (observableResult : ObservableResult<A>) => void) : void;
+export type Counter<A extends Attributes = Attributes> = {
+    add(value : number, attributes? : A) : void;
+};
+
+export type ObservableGauge<A extends Attributes = Attributes> = {
+    addCallback(callback : ObservableCallback<A>) : void;
+    removeCallback(callback : ObservableCallback<A>) : void;
 };
 
 export type Meter = {
-    createHistogram<A = Record<string, unknown>>(
+    createHistogram<A extends Attributes = Attributes>(
         name : string,
         options : { unit : string },
     ) : Histogram<A>;
 
-    createObservableGauge<A = Record<string, unknown>>(
+    createCounter<A extends Attributes = Attributes>(
+        name : string,
+        options : { unit : string },
+    ) : Counter<A>;
+
+    createObservableGauge<A extends Attributes = Attributes>(
         name : string,
         options : { unit : string },
     ) : ObservableGauge<A>;

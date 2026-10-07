@@ -12,6 +12,7 @@
 import type {
     Clock,
     Logger,
+    PerformanceLike,
     SetTimeoutFn,
     ClearTimeoutFn,
     SetIntervalFn,
@@ -42,7 +43,6 @@ import type {
     LifecycleDocument,
     LifecycleWindow,
 } from "./LifecycleStateMachine.js";
-import type { PerformanceLike } from "./ClockReliabilityChecker.js";
 
 /** Core deps every instrumented monitor needs. */
 export type CoreDeps = {
@@ -104,16 +104,15 @@ export type PressureDeps = {
 /** GC signal detection via FinalizationRegistry. */
 export type GCDeps = {
     FinalizationRegistry : FinalizationRegistryConstructor;
-    gcCanaryIntervalMs? : number;
 };
 
-/** Worker-based ground-truth lag monitoring. */
+/** Worker-based ground-truth lag monitoring. Also needs PerformanceDeps. */
 export type WorkerMonitorDeps = {
     worker : WorkerLike;
-    workerPingIntervalMs? : number;
+    workerHeartbeatIntervalMs? : number;
 };
 
-/** Clock reliability utilities. */
-export type ClockReliabilityDeps = {
+/** `performance.now()` + `timeOrigin`: clock resolution and cross-thread timestamps. */
+export type PerformanceDeps = {
     performance : PerformanceLike;
 };

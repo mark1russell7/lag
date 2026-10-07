@@ -4,7 +4,6 @@ import {
     type PressureMeasurement,
     type PressureObserverInit,
     type PressureRecord,
-    type PressureObserverInstance,
 } from "./ComputePressureMonitor.js";
 
 function createMockPressureObserver() {

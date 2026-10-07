@@ -44,12 +44,16 @@ const DEFAULT_INTERVAL_MS = 30_000;
  * - **Modern** `performance.measureUserAgentSpecificMemory()` (standard, requires
  *   Cross-Origin-Isolation headers, async, more accurate)
  *
- * The monitor uses the modern API if available, falls back to legacy.
- * Detects memory leaks via slow upward trends in usedBytes.
+ * The monitor uses the modern API if available, and falls back to legacy for
+ * good once the modern API fails. A slow upward trend in usedBytes points at a
+ * leak.
  */
 export class MemoryMonitor {
     private handle : number | undefined;
     private started = false;
+    /** The modern API can take many seconds (it waits for a GC); never overlap samples. */
+    private sampling = false;
+    private modernFailed = false;
 
     constructor(
         private readonly intervalMs : number,
@@ -80,51 +84,61 @@ export class MemoryMonitor {
     }
 
     private async sample() : Promise<void> {
-        if (!this.started) return;
+        if (!this.started || this.sampling) return;
+        this.sampling = true;
 
         try {
-            // Prefer the modern API (more accurate, includes workers)
-            if (this.source.measureModern) {
-                try {
-                    const result = await this.source.measureModern();
-                    this.report({
-                        source : "modern",
-                        usedBytes : result.bytes,
-                        totalBytes : undefined,
-                        limitBytes : undefined,
-                        usagePercent : undefined,
-                        timestamp : this.clock.now(),
-                    });
-                    return;
-                } catch (error) {
-                    this.logger.log("debug", "measureUserAgentSpecificMemory failed; falling back to legacy.", {
-                        error,
-                        type : "MemoryMonitor",
-                    });
-                }
-            }
-
-            if (this.source.readLegacy) {
-                const legacy = this.source.readLegacy();
-                if (legacy) {
-                    this.report({
-                        source : "legacy",
-                        usedBytes : legacy.usedJSHeapSize,
-                        totalBytes : legacy.totalJSHeapSize,
-                        limitBytes : legacy.jsHeapSizeLimit,
-                        usagePercent : legacy.jsHeapSizeLimit > 0
-                            ? (legacy.usedJSHeapSize / legacy.jsHeapSizeLimit) * 100
-                            : undefined,
-                        timestamp : this.clock.now(),
-                    });
-                }
+            const measurement = (await this.measureModern()) ?? this.readLegacy();
+            // stop() may have been called while the modern API was pending
+            if (measurement && this.started) {
+                this.report(measurement);
             }
         } catch (error) {
             this.logger.log("error", "Error in memory measurement.", {
                 error,
                 type : "MemoryMonitor",
             });
+        } finally {
+            this.sampling = false;
         }
+    }
+
+    /** Prefer the modern API: more accurate, and includes workers. */
+    private async measureModern() : Promise<MemoryMeasurement | undefined> {
+        if (!this.source.measureModern || this.modernFailed) return undefined;
+        try {
+            const result = await this.source.measureModern();
+            return {
+                source : "modern",
+                usedBytes : result.bytes,
+                totalBytes : undefined,
+                limitBytes : undefined,
+                usagePercent : undefined,
+                timestamp : this.clock.now(),
+            };
+        } catch (error) {
+            this.modernFailed = true;
+            this.logger.log("debug", "measureUserAgentSpecificMemory failed; using legacy performance.memory from now on.", {
+                error,
+                type : "MemoryMonitor",
+            });
+            return undefined;
+        }
+    }
+
+    private readLegacy() : MemoryMeasurement | undefined {
+        const legacy = this.source.readLegacy?.();
+        if (!legacy) return undefined;
+        return {
+            source : "legacy",
+            usedBytes : legacy.usedJSHeapSize,
+            totalBytes : legacy.totalJSHeapSize,
+            limitBytes : legacy.jsHeapSizeLimit,
+            usagePercent : legacy.jsHeapSizeLimit > 0
+                ? (legacy.usedJSHeapSize / legacy.jsHeapSizeLimit) * 100
+                : undefined,
+            timestamp : this.clock.now(),
+        };
     }
 }
 

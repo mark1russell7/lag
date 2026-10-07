@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "new": "tsx packages/scripts/src/new-package.ts",
-    "build": "tsc -b"
+    "build": "tsc -b",
+    "typecheck": "tsc -b && pnpm -r --if-present typecheck",
+    "test": "pnpm --filter @lag/core test",
+    "test:integration": "pnpm --filter @lag/integration-tests test"
   },
   "devDependencies": {
     "tsx": "^4.21.0",

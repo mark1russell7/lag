@@ -1,54 +1,67 @@
 import { driftStepMs } from "./constants.js";
 import { LagMonitor } from "./LagMonitor.js";
 
-export class DriftLag  extends LagMonitor {
-    private lastLoopEndTime : number = this.clock.now();
-    private handle?: number;
-    private started : boolean = false;
+/**
+ * Measures event-loop lag by chaining `driftStepMs` timeouts until the
+ * expected interval has elapsed, then reporting `actual elapsed − scheduled`.
+ *
+ * Blocking anywhere in the window delays the chain, so the reported value
+ * accumulates all lag in the window — unlike a single long setTimeout, which
+ * only notices blocking that overlaps its deadline.
+ */
+export class DriftLag extends LagMonitor {
+    private handle : number | undefined;
+    private windowStart = 0;
+    /** The interval rounded down to whole steps (minimum one step). */
+    private readonly scheduledMs : number = Math.max(
+        driftStepMs,
+        Math.floor(this.expectedElapsedTimeMs / driftStepMs) * driftStepMs,
+    );
+
+    constructor(...args : ConstructorParameters<typeof LagMonitor>) {
+        super(...args);
+        this.start();
+    }
+
     public start() : void {
-        if (this.started) {
-            return;
-        }
-        this.started = true;
-        const roundedMax = Math.floor( this.expectedElapsedTimeMs / driftStepMs) * driftStepMs;
-        this.drift(0, driftStepMs, roundedMax);
-    }
-
-    private drift(i : number = 0, step : number, max : number) : void {
-        this.handle = this.setTimeoutFn(() => {
-            if(i + 1 < max / step) {
-                this.drift(i + 1, step, max);
-            }else {
-                try {
-                    this.report(this.measure());
-                }catch(error){
-                    this.logger.log(
-                        'error', 'Error measuring/reporting lag.', 
-                    {
-                        error,
-                        type : 'LagMonitor',
-                        subtype : 'DriftLag',
-                    });
-                }finally{
-                    this.drift(0, step, max);
-                }
-            }
-        }, step);
-    }
-
-    measure() : number {
-        const loopStartTime = this.lastLoopEndTime;
-        const loopEndTime = this.clock.now();
-        const actualElapsed = loopEndTime - loopStartTime;
-        const lag = actualElapsed - this.expectedElapsedTimeMs;
-        this.lastLoopEndTime = loopEndTime;
-        return lag;
+        if (this.handle !== undefined) return;
+        this.windowStart = this.clock.now();
+        this.step(this.scheduledMs / driftStepMs);
     }
 
     public stop() : void {
-        this.started = false;
-        if(this.handle == null) return;
+        if (this.handle === undefined) return;
         this.clearTimeoutFn(this.handle);
-        delete this.handle;
+        this.handle = undefined;
+    }
+
+    measure() : number {
+        const now = this.clock.now();
+        const lag = now - this.windowStart - this.scheduledMs;
+        this.windowStart = now;
+        return lag;
+    }
+
+    private step(remaining : number) : void {
+        const handle : number = this.setTimeoutFn(() => {
+            if (remaining > 1) {
+                this.step(remaining - 1);
+                return;
+            }
+            try {
+                this.report(this.measure());
+            } catch (error) {
+                this.logger.log("error", "Error measuring/reporting lag.", {
+                    error,
+                    type : "LagMonitor",
+                    subtype : "DriftLag",
+                });
+            }
+            // Continue only if report() didn't stop (or stop and restart) the monitor
+            if (this.handle === handle) {
+                this.step(this.scheduledMs / driftStepMs);
+            }
+        }, driftStepMs);
+        this.handle = handle;
     }
 }

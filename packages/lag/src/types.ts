@@ -1,24 +1,31 @@
 export type Logger = {
-    log : (level : string, message : string, args : any) => void
-}
+    log(level : string, message : string, args : unknown) : void;
+};
 
-export type SetTimeoutFn = (handler: () => void, timeout: number) => number;
+export type SetTimeoutFn = (handler : () => void, timeout : number) => number;
 
-export type ClearTimeoutFn = (handle: number) => void;
+export type ClearTimeoutFn = (handle : number) => void;
 
-export type SetIntervalFn = (handler: () => void, timeout: number) => number;
+export type SetIntervalFn = (handler : () => void, timeout : number) => number;
 
-export type ClearIntervalFn = (handle: number) => void;
+export type ClearIntervalFn = (handle : number) => void;
 
 export type Clock = {
-    now : () => number
-}
+    now : () => number;
+};
 
-export type LagMeasurement= {
+/** The subset of `window.performance` used for absolute (cross-context) timestamps. */
+export type PerformanceLike = {
+    now : () => number;
+    timeOrigin : number;
+};
+
+export type LagMeasurement = {
     value : number;
     attributes : EventLoopLagAttributes;
-}
+};
+
 export type EventLoopLagAttributes = {
     wasHidden : boolean;
-    [key: string] : any;
-}
+    [key : string] : unknown;
+};

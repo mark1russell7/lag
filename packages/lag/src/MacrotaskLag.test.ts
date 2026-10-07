@@ -90,4 +90,32 @@ describe('MacrotaskLag', () => {
             expect(mockReport).toHaveBeenCalledTimes(2);
         });
     })
-})
+
+    describe('stop()', () => {
+        it('clears the interval it created in the constructor', () => {
+            const monitor = driver.createMonitor(MacrotaskLag);
+            monitor.stop();
+            expect(driver.mockClearInterval).toHaveBeenCalledWith(123);
+        });
+
+        it('drops a sample that was in flight when stop() was called', async () => {
+            driver.mockPerformanceTimes(1000, 1010);
+            const monitor = driver.createMonitor(MacrotaskLag);
+
+            driver.getIntervalCallback()();
+            monitor.stop();
+            driver.getTimeoutCallback(0)();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(mockReport).not.toHaveBeenCalled();
+        });
+
+        it('can be restarted', () => {
+            const monitor = driver.createMonitor(MacrotaskLag);
+            monitor.stop();
+            monitor.start();
+            expect(driver.mockSetInterval).toHaveBeenCalledTimes(2);
+        });
+    });
+});

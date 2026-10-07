@@ -1,6 +1,27 @@
 import { vi, expect } from "vitest";
 import { createWorkerHandler } from "./lag-worker.js";
-import type { WorkerToMainMessage } from "./worker-protocol.js";
+import type { HeartbeatMessage } from "./worker-protocol.js";
+
+function createHandler(startTime = 0) {
+    let currentTime = startTime;
+    const postMessage = vi.fn<(message : HeartbeatMessage) => void>();
+    const handler = createWorkerHandler({
+        postMessage,
+        setTimeoutFn : setTimeout,
+        clearTimeoutFn : clearTimeout,
+        clock : { now : () => currentTime },
+    });
+    return {
+        handler,
+        postMessage,
+        /** Advance both the mocked clock and the fake timers. */
+        advance(timerMs : number, clockMs = timerMs) {
+            currentTime += clockMs;
+            vi.advanceTimersByTime(timerMs);
+        },
+        heartbeats : () => postMessage.mock.calls.map(c => c[0]),
+    };
+}
 
 describe("lag-worker handler", () => {
     beforeEach(() => {
@@ -11,134 +32,58 @@ describe("lag-worker handler", () => {
         vi.useRealTimers();
     });
 
-    it("responds to ping with pong", () => {
-        const postMessage = vi.fn();
-        let currentTime = 1000;
-        const clock = { now : () => currentTime };
-
-        const handler = createWorkerHandler({
-            postMessage,
-            setTimeoutFn : setTimeout,
-            clock,
-        });
-
-        handler.handleMessage({
-            type : "ping",
-            mainSendTime : 500,
-            seq : 1,
-        });
-
-        expect(postMessage).toHaveBeenCalledWith(
-            expect.objectContaining({
-                type : "pong",
-                mainSendTime : 500,
-                workerReceiveTime : 1000,
-                seq : 1,
-            }),
-        );
+    it("stays idle until told to start", () => {
+        const w = createHandler();
+        w.advance(10_000);
+        expect(w.handler.running).toBe(false);
+        expect(w.postMessage).not.toHaveBeenCalled();
     });
 
-    it("measures self-lag in timing loop", () => {
-        const postMessage = vi.fn();
-        let currentTime = 0;
-        const clock = { now : () => currentTime };
+    it("posts a timestamped heartbeat every interval once started", () => {
+        const w = createHandler(1000);
+        w.handler.handleMessage({ type : "start", intervalMs : 100 });
 
-        const handler = createWorkerHandler({
-            postMessage,
-            setTimeoutFn : setTimeout,
-            clock,
-        });
+        w.advance(100);
+        w.advance(100);
 
-        handler.startTimingLoop();
-
-        // Advance time by more than intervalMs (100ms default)
-        currentTime = 150; // 50ms lag
-        vi.advanceTimersByTime(100);
-
-        expect(handler.selfLag).toBe(50);
+        expect(w.heartbeats()).toEqual([
+            { type : "heartbeat", seq : 1, sentAt : 1100, workerSelfLagMs : 0 },
+            { type : "heartbeat", seq : 2, sentAt : 1200, workerSelfLagMs : 0 },
+        ]);
     });
 
-    it("updates intervalMs on config message", () => {
-        const postMessage = vi.fn();
-        let currentTime = 0;
-        const clock = { now : () => currentTime };
+    it("reports how late its own timer fired as workerSelfLagMs", () => {
+        const w = createHandler();
+        w.handler.handleMessage({ type : "start", intervalMs : 100 });
 
-        const handler = createWorkerHandler({
-            postMessage,
-            setTimeoutFn : setTimeout,
-            clock,
-        });
+        w.advance(100, 150); // timer fired 50ms late
 
-        handler.handleMessage({ type : "config", intervalMs : 200 });
-        handler.startTimingLoop();
-
-        // Advance 200ms of real time, but clock advances 250ms (50ms lag)
-        currentTime = 250;
-        vi.advanceTimersByTime(200);
-
-        expect(handler.selfLag).toBe(50);
+        expect(w.heartbeats()[0]).toEqual(expect.objectContaining({ sentAt : 150, workerSelfLagMs : 50 }));
     });
 
-    it("stops timing loop on stop message", () => {
-        const postMessage = vi.fn();
-        let currentTime = 0;
-        const clock = { now : () => currentTime };
+    it("stops the loop on stop and can be restarted", () => {
+        const w = createHandler();
+        w.handler.handleMessage({ type : "start", intervalMs : 100 });
+        w.handler.handleMessage({ type : "stop" });
+        expect(w.handler.running).toBe(false);
 
-        const handler = createWorkerHandler({
-            postMessage,
-            setTimeoutFn : setTimeout,
-            clock,
-        });
+        w.advance(1000);
+        expect(w.postMessage).not.toHaveBeenCalled();
 
-        handler.startTimingLoop();
-        expect(handler.running).toBe(true);
-
-        handler.handleMessage({ type : "stop" });
-        expect(handler.running).toBe(false);
+        w.handler.handleMessage({ type : "start", intervalMs : 100 });
+        expect(w.handler.running).toBe(true);
+        w.advance(100);
+        expect(w.postMessage).toHaveBeenCalledTimes(1);
     });
 
-    it("reports workerSelfLag from timing loop in pong", () => {
-        const postMessage = vi.fn();
-        let currentTime = 0;
-        const clock = { now : () => currentTime };
+    it("restarting with a new interval replaces the old loop instead of adding one", () => {
+        const w = createHandler();
+        w.handler.handleMessage({ type : "start", intervalMs : 100 });
+        w.handler.handleMessage({ type : "start", intervalMs : 300 });
 
-        const handler = createWorkerHandler({
-            postMessage,
-            setTimeoutFn : setTimeout,
-            clock,
-        });
+        w.advance(300);
 
-        handler.startTimingLoop();
-
-        // Create some lag
-        currentTime = 200; // 100ms lag on first tick
-        vi.advanceTimersByTime(100);
-
-        // Now ping
-        currentTime = 250;
-        handler.handleMessage({ type : "ping", mainSendTime : 200, seq : 1 });
-
-        const pong = postMessage.mock.calls[0]![0] as WorkerToMainMessage;
-        expect(pong.type).toBe("pong");
-        if (pong.type === "pong") {
-            expect(pong.workerSelfLag).toBe(100);
-        }
-    });
-
-    it("prevents double-start of timing loop", () => {
-        const mockSetTimeout = vi.fn(setTimeout);
-        const clock = { now : () => 0 };
-
-        const handler = createWorkerHandler({
-            postMessage : vi.fn(),
-            setTimeoutFn : mockSetTimeout,
-            clock,
-        });
-
-        handler.startTimingLoop();
-        const callCount = mockSetTimeout.mock.calls.length;
-
-        handler.startTimingLoop();
-        expect(mockSetTimeout.mock.calls.length).toBe(callCount);
+        expect(w.postMessage).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(1);
     });
 });

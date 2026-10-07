@@ -128,13 +128,74 @@ describe('DriftLag', () => {
     });
 
     it('uses consistent setTimeout intervals regardless of lag', () => {
-        const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
+        const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
         driver.createMonitor(DriftLag);
         driver.tickSequence([5, -5]);
-        setTimeoutSpy.mock.calls.forEach(([_callback, interval]) => {
+        setTimeoutSpy.mock.calls.forEach(([, interval]) => {
             expect(interval).toBe(driftStepMs);
         })
     });
 
 
+
+    it('stop() right after construction clears the pending timer', () => {
+        driver.createMonitor(DriftLag).stop();
+        expect(vi.getTimerCount()).toBe(0);
+        driver.tickMany(3, 0);
+        expect(mockReport).not.toHaveBeenCalled();
+    });
+
+    it('stop() from inside report stops the loop', () => {
+        const driftLag = driver.createMonitor(DriftLag);
+        mockReport.mockImplementation(() => driftLag.stop());
+
+        driver.tickMany(3, 0);
+
+        expect(mockReport).toHaveBeenCalledTimes(1);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('start() after stop() measures from the restart, not from the old window', () => {
+        const driftLag = driver.createMonitor(DriftLag);
+        driver.tick(0);
+        driftLag.stop();
+
+        currentTime += 60_000; // a long pause
+        driftLag.start();
+        driver.tick(7);
+
+        expect(mockReport).toHaveBeenLastCalledWith(7);
+    });
+
+    it('start() while running does not add a second timer chain', () => {
+        const driftLag = driver.createMonitor(DriftLag);
+        driftLag.start();
+        expect(vi.getTimerCount()).toBe(1);
+    });
+
+    it('measures against the rounded interval it actually waited', () => {
+        const testDriver = new LagMonitorTestDriver<DriftLag>(
+            () => currentTime,
+            (time) => currentTime = time,
+            103, // waits 100ms (20 x 5ms)
+            mockReport,
+        );
+        testDriver.createMonitor(DriftLag);
+
+        currentTime += 100;
+        vi.advanceTimersByTime(100);
+
+        expect(mockReport).toHaveBeenCalledWith(0);
+    });
+
+    it('stop() + start() from inside report leaves exactly one timer chain', () => {
+        const driftLag = driver.createMonitor(DriftLag);
+        mockReport.mockImplementationOnce(() => { driftLag.stop(); driftLag.start(); });
+
+        driver.tick(0);
+        expect(vi.getTimerCount()).toBe(1);
+
+        driftLag.stop();
+        expect(vi.getTimerCount()).toBe(0);
+    });
 });

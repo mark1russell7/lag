@@ -1,5 +1,6 @@
 import { vi, expect, type Mock } from 'vitest';
 import type { LagMonitor, LagMonitorConstructor } from "./LagMonitor.js";
+import type { Meter, ObservableCallback } from "./meter.js";
 
 /**
  * Helper class for testing lag monitors with fake timers.
@@ -162,9 +163,9 @@ export class MacrotaskLagTestDriver {
      * executes the setTimeout(0) callback, and awaits the results.
      */
     async executeIntervalCycle():Promise<void> {
-        const intervalCallback = this.mockSetInterval.mock.calls[0][0];
+        const intervalCallback = this.mockSetInterval.mock.calls[0]![0];
         const promise = intervalCallback();
-        const timeoutCallback = this.mockSetTimeout.mock.calls[this.timeoutCallCount][0];
+        const timeoutCallback = this.mockSetTimeout.mock.calls[this.timeoutCallCount]![0];
         this.timeoutCallCount++;
         timeoutCallback();
         await promise;
@@ -177,14 +178,14 @@ export class MacrotaskLagTestDriver {
      * Gets the interval callback function for manual execution.
      */
     getIntervalCallback() : () => Promise<void> {
-        return this.mockSetInterval.mock.calls[0][0];
+        return this.mockSetInterval.mock.calls[0]![0];
     }
 
     /**
      * Gets a specific setTimeout callback by index
      */
     getTimeoutCallback(index : number = 0) : () => void {
-        return this.mockSetTimeout.mock.calls[index][0];
+        return this.mockSetTimeout.mock.calls[index]![0];
     }
 
     /**
@@ -202,4 +203,56 @@ export class MacrotaskLagTestDriver {
     expectTimeoutScheduled(delay: number = 0): void {
         expect(this.mockSetTimeout).toHaveBeenCalledWith(expect.any(Function), delay);
     }
+}
+
+export type RecordedValue = { value : number; attributes : Record<string, unknown> | undefined };
+
+/**
+ * A Meter that records every histogram/counter value and lets tests run a
+ * collection cycle (invoke all gauge callbacks) on demand.
+ */
+export function createRecordingMeter() {
+    const records = new Map<string, RecordedValue[]>();
+    const gauges = new Map<string, Set<ObservableCallback>>();
+
+    const recorder = (name : string) => {
+        const values : RecordedValue[] = [];
+        records.set(name, values);
+        return (value : number, attributes? : unknown) => {
+            values.push({ value, attributes : attributes as Record<string, unknown> | undefined });
+        };
+    };
+
+    const meter : Meter = {
+        createHistogram : (name) => ({ record : recorder(name) }),
+        createCounter : (name) => ({ add : recorder(name) }),
+        createObservableGauge : (name) => {
+            const callbacks = new Set<ObservableCallback>();
+            gauges.set(name, callbacks);
+            return {
+                addCallback : (cb) => { callbacks.add(cb as ObservableCallback); },
+                removeCallback : (cb) => { callbacks.delete(cb as ObservableCallback); },
+            };
+        },
+    };
+
+    return {
+        meter,
+        /** Every value recorded by the named histogram or counter. */
+        values : (name : string) : number[] => (records.get(name) ?? []).map(r => r.value),
+        /** All histogram/counter records, by instrument name. */
+        records : () : ReadonlyMap<string, readonly RecordedValue[]> => records,
+        /** Run one collection: invoke every registered gauge callback. */
+        collect : () : Map<string, RecordedValue[]> => {
+            const observed = new Map<string, RecordedValue[]>();
+            for (const [name, callbacks] of gauges) {
+                const values : RecordedValue[] = [];
+                for (const cb of callbacks) cb({ observe : (value, attributes) => { values.push({ value, attributes }); } });
+                observed.set(name, values);
+            }
+            return observed;
+        },
+        /** Number of gauge callbacks still registered. */
+        gaugeCallbackCount : () : number => [...gauges.values()].reduce((n, set) => n + set.size, 0),
+    };
 }

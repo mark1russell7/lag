@@ -1,9 +1,8 @@
 import type { CoreDeps, TimerDeps, SchedulingDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import {
-    SchedulingFairnessMonitor,
-    type SchedulingMeasurement,
-} from "../SchedulingFairnessMonitor.js";
+import { SchedulingFairnessMonitor } from "../SchedulingFairnessMonitor.js";
+import type { LifecycleStateMachine } from "../LifecycleStateMachine.js";
+import { createHandle, pauseWhileHidden } from "./shared.js";
 
 const DEFAULT_INTERVAL_MS = 5_000;
 
@@ -11,31 +10,29 @@ const DEFAULT_INTERVAL_MS = 5_000;
  * Constructs a SchedulingFairnessMonitor wired to three histograms.
  *
  * Metrics (all ms):
- * - `lag_scheduling_microtask_histogram` — queueMicrotask() latency
+ * - `lag_scheduling_microtask_histogram` — queueMicrotask() latency (a ~0 baseline)
  * - `lag_scheduling_macrotask_histogram` — setTimeout(0) latency
  * - `lag_scheduling_message_channel_histogram` — MessageChannel postMessage latency
  *
- * Comparing these three reveals scheduling bias — e.g., if microtask >> macrotask,
- * the engine is starving the macrotask queue.
+ * See SchedulingFairnessMonitor for how to read them together. With a
+ * `lifecycle`, the monitor is paused while the page is hidden.
  */
 export function createInstrumentedSchedulingFairness(
     deps : CoreDeps & TimerDeps & SchedulingDeps,
+    lifecycle? : LifecycleStateMachine,
     intervalMs : number = DEFAULT_INTERVAL_MS,
 ) : MonitorHandle<SchedulingFairnessMonitor> {
-    try {
-        const microHist = deps.meter.createHistogram<SchedulingMeasurement>(
-            "lag_scheduling_microtask_histogram", { unit : "ms" });
-        const macroHist = deps.meter.createHistogram<SchedulingMeasurement>(
-            "lag_scheduling_macrotask_histogram", { unit : "ms" });
-        const channelHist = deps.meter.createHistogram<SchedulingMeasurement>(
-            "lag_scheduling_message_channel_histogram", { unit : "ms" });
+    return createHandle("scheduling-fairness", deps.logger, () => {
+        const microHist = deps.meter.createHistogram("lag_scheduling_microtask_histogram", { unit : "ms" });
+        const macroHist = deps.meter.createHistogram("lag_scheduling_macrotask_histogram", { unit : "ms" });
+        const channelHist = deps.meter.createHistogram("lag_scheduling_message_channel_histogram", { unit : "ms" });
 
         const monitor = new SchedulingFairnessMonitor(
             intervalMs,
             (m) => {
-                microHist.record(m.microtaskMs, m);
-                macroHist.record(m.macrotaskMs, m);
-                channelHist.record(m.messageChannelMs, m);
+                microHist.record(m.microtaskMs);
+                macroHist.record(m.macrotaskMs);
+                channelHist.record(m.messageChannelMs);
             },
             deps.logger,
             deps.setIntervalFn,
@@ -45,13 +42,14 @@ export function createInstrumentedSchedulingFairness(
             deps.MessageChannel,
             deps.clock,
         );
+        const unpause = lifecycle ? pauseWhileHidden(lifecycle, monitor) : undefined;
 
-        return { name : "scheduling-fairness", monitor, stop : () => monitor.stop() };
-    } catch (error) {
-        deps.logger.log("warn", "Failed to create SchedulingFairnessMonitor.", {
-            error,
-            type : "createInstrumentedSchedulingFairness",
-        });
-        return { name : "scheduling-fairness", monitor : undefined, stop : () => {} };
-    }
+        return {
+            monitor,
+            stop : () => {
+                unpause?.();
+                monitor.stop();
+            },
+        };
+    });
 }

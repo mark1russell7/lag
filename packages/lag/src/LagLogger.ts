@@ -11,29 +11,30 @@ type LagWindow = {
 export class LagLogger {
     private samples : number[] = [];
     private measurementsSinceLastReport : number = 0;
-    private measurementsPerReport : number;
-
+    private readonly measurementsPerReport : number;
     private readonly lagWindows : LagWindow[];
+    private readonly maxWindowSize : number;
 
     constructor(
-        private readonly measumentIntervalMs : number,
+        private readonly measurementIntervalMs : number,
         private logger : Logger
     ){
-        this.measurementsPerReport = Math.ceil( lagLoggingIntervalMs / this.measumentIntervalMs);
+        this.measurementsPerReport = Math.ceil( lagLoggingIntervalMs / this.measurementIntervalMs);
         this.lagWindows = [
             {
                 duration : shortLagDuration,
                 threshold : shortLagThreshold,
-                windowSize : Math.ceil(shortLagDuration / this.measumentIntervalMs),
+                windowSize : Math.ceil(shortLagDuration / this.measurementIntervalMs),
                 max : 0,
             },
             {
                 duration : longLagDuration,
                 threshold : longLagThreshold,
-                windowSize : Math.ceil(longLagDuration / this.measumentIntervalMs),
+                windowSize : Math.ceil(longLagDuration / this.measurementIntervalMs),
                 max : 0,
             }
-        ]
+        ];
+        this.maxWindowSize = Math.max(...this.lagWindows.map(w => w.windowSize));
     }
 
     public addMeasurement({value, attributes} : LagMeasurement) : void {
@@ -41,11 +42,10 @@ export class LagLogger {
             return;
         }
 
-        const utilization = (value / this.measumentIntervalMs) * 100;
+        const utilization = (value / this.measurementIntervalMs) * 100;
         this.samples.push(utilization);
 
-        const maxWindowSize = Math.max(...this.lagWindows.map(w => w.windowSize));
-        if(this.samples.length > maxWindowSize) {
+        if(this.samples.length > this.maxWindowSize) {
             this.samples.shift();
         }
 

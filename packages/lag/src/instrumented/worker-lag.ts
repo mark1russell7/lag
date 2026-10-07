@@ -1,66 +1,61 @@
-import type { CoreDeps, TimerDeps, WorkerMonitorDeps } from "../dep-groups.js";
+import type { CoreDeps, PerformanceDeps, WorkerMonitorDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import {
-    WorkerLagMonitor,
-    type WorkerLagMeasurement,
-} from "../WorkerLagMonitor.js";
-
-const DEFAULT_PING_INTERVAL_MS = 5_000;
+import { WorkerLagMonitor } from "../WorkerLagMonitor.js";
+import type { LifecycleStateMachine } from "../LifecycleStateMachine.js";
+import { createHandle, createWindowGauges, pauseWhileHidden } from "./shared.js";
 
 /**
- * Constructs a WorkerLagMonitor wired to three histograms + one max gauge.
+ * One heartbeat per second: a main-thread block of length B is caught with
+ * probability ~min(1, B / 1000ms), at the cost of one tiny message per second.
+ */
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 1_000;
+
+/**
+ * Constructs a WorkerLagMonitor wired to two histograms + one max gauge.
  *
  * Metrics (all ms):
- * - `lag_worker_roundtrip_histogram` — ping→pong round-trip
- * - `lag_worker_main_block_histogram` — estimated main-thread block
- *   (roundTrip - workerSelfLag)
- * - `lag_worker_self_lag_histogram` — worker's own timing-loop lag
- *   (should be near-zero in a healthy worker)
- * - `lag_worker_roundtrip_max_gauge` — worst round-trip since last collection
+ * - `lag_worker_main_block_histogram` — how long each heartbeat waited for the
+ *   main thread (main-thread blocking, measured from outside it)
+ * - `lag_worker_self_lag_histogram` — the worker's own timer lateness
+ *   (should be near zero; high values mean the worker itself was starved)
+ * - `lag_worker_main_block_max_gauge` — worst wait since the last collection
+ *
+ * With a `lifecycle`, the monitor is paused while the page is hidden and
+ * heartbeats that overlapped a hidden period are discarded (a frozen page
+ * freezes its workers, then delivers a backlog on resume).
  */
 export function createInstrumentedWorkerLag(
-    deps : CoreDeps & WorkerMonitorDeps & Pick<TimerDeps, "setIntervalFn" | "clearIntervalFn">,
+    deps : CoreDeps & WorkerMonitorDeps & PerformanceDeps,
+    lifecycle? : LifecycleStateMachine,
 ) : MonitorHandle<WorkerLagMonitor> {
-    try {
-        const roundtripHist = deps.meter.createHistogram<WorkerLagMeasurement>(
-            "lag_worker_roundtrip_histogram", { unit : "ms" });
-        const mainBlockHist = deps.meter.createHistogram<WorkerLagMeasurement>(
-            "lag_worker_main_block_histogram", { unit : "ms" });
-        const selfLagHist = deps.meter.createHistogram<WorkerLagMeasurement>(
-            "lag_worker_self_lag_histogram", { unit : "ms" });
-        const maxGauge = deps.meter.createObservableGauge<Record<string, never>>(
-            "lag_worker_roundtrip_max_gauge", { unit : "ms" });
-
-        let maxRoundtrip = 0;
+    return createHandle("worker-lag", deps.logger, () => {
+        const mainBlockHist = deps.meter.createHistogram("lag_worker_main_block_histogram", { unit : "ms" });
+        const selfLagHist = deps.meter.createHistogram("lag_worker_self_lag_histogram", { unit : "ms" });
+        const gauges = createWindowGauges(deps.meter, { max : "lag_worker_main_block_max_gauge" }, "ms");
+        const gate = lifecycle?.createHiddenGate();
 
         const monitor = new WorkerLagMonitor(
             deps.worker,
             (m) => {
-                roundtripHist.record(m.roundTripMs, m);
-                mainBlockHist.record(m.estimatedMainBlockMs, m);
-                selfLagHist.record(m.workerSelfLagMs, m);
-                if (m.roundTripMs > maxRoundtrip) maxRoundtrip = m.roundTripMs;
+                if (gate?.wasHiddenSinceLastCheck()) return;
+                mainBlockHist.record(m.deliveryDelayMs);
+                selfLagHist.record(m.workerSelfLagMs);
+                gauges.record(m.deliveryDelayMs);
             },
             deps.logger,
-            deps.setIntervalFn,
-            deps.clearIntervalFn,
-            deps.clock,
-            deps.workerPingIntervalMs ?? DEFAULT_PING_INTERVAL_MS,
+            deps.performance,
+            deps.workerHeartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS,
         );
+        const unpause = lifecycle ? pauseWhileHidden(lifecycle, monitor, gate) : undefined;
 
-        maxGauge.addCallback((result) => {
-            if (maxRoundtrip > 0) {
-                result.observe(maxRoundtrip);
-                maxRoundtrip = 0;
-            }
-        });
-
-        return { name : "worker-lag", monitor, stop : () => monitor.stop() };
-    } catch (error) {
-        deps.logger.log("warn", "Failed to create WorkerLagMonitor.", {
-            error,
-            type : "createInstrumentedWorkerLag",
-        });
-        return { name : "worker-lag", monitor : undefined, stop : () => {} };
-    }
+        return {
+            monitor,
+            stop : () => {
+                unpause?.();
+                monitor.stop();
+                gate?.dispose();
+                gauges.dispose();
+            },
+        };
+    });
 }

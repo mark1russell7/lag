@@ -6,9 +6,20 @@ import {
     type LifecycleWindow,
 } from "./LifecycleStateMachine.js";
 
+type Listener = (e? : { persisted? : boolean }) => void;
+
 function createMocks(initialVisibility : "visible" | "hidden" = "visible", focused = true) {
-    const docListeners = new Map<string, Array<(e? : { persisted? : boolean }) => void>>();
-    const winListeners = new Map<string, Array<(e? : { persisted? : boolean }) => void>>();
+    const docListeners = new Map<string, Listener[]>();
+    const winListeners = new Map<string, Listener[]>();
+    const add = (map : Map<string, Listener[]>, event : string, cb : Listener) => {
+        if (!map.has(event)) map.set(event, []);
+        map.get(event)!.push(cb);
+    };
+    const remove = (map : Map<string, Listener[]>, event : string, cb : Listener) => {
+        const arr = map.get(event) ?? [];
+        const idx = arr.indexOf(cb);
+        if (idx >= 0) arr.splice(idx, 1);
+    };
     let visibilityState = initialVisibility;
     let hasFocusValue = focused;
 
@@ -16,18 +27,19 @@ function createMocks(initialVisibility : "visible" | "hidden" = "visible", focus
         get visibilityState() { return visibilityState; },
         set visibilityState(v : string) { visibilityState = v as "visible" | "hidden"; },
         hasFocus : () => hasFocusValue,
-        addEventListener(event : string, cb : (e? : { persisted? : boolean }) => void) {
-            if (!docListeners.has(event)) docListeners.set(event, []);
-            docListeners.get(event)!.push(cb);
-        },
+        addEventListener : (event, cb) => add(docListeners, event, cb),
+        removeEventListener : (event, cb) => remove(docListeners, event, cb),
     };
 
     const window : LifecycleWindow = {
-        addEventListener(event : string, cb : (e? : { persisted? : boolean }) => void) {
-            if (!winListeners.has(event)) winListeners.set(event, []);
-            winListeners.get(event)!.push(cb);
-        },
+        addEventListener : (event, cb) => add(winListeners, event, cb),
+        removeEventListener : (event, cb) => remove(winListeners, event, cb),
     };
+
+    const listenerCount = () =>
+        [...docListeners.values(), ...winListeners.values()].reduce((n, arr) => n + arr.length, 0);
+    const hasListener = (event : string) =>
+        (docListeners.get(event)?.length ?? 0) + (winListeners.get(event)?.length ?? 0) > 0;
 
     let now = 0;
     const clock = { now : () => now };
@@ -49,7 +61,13 @@ function createMocks(initialVisibility : "visible" | "hidden" = "visible", focus
 
     const advanceClock = (ms : number) => { now += ms; };
 
-    return { document, window, clock, fireDoc, fireWin, setVisibility, setFocus, advanceClock };
+    /** Flip visibilityState without dispatching the (asynchronous) visibilitychange event. */
+    const setVisibilitySilently = (v : "visible" | "hidden") => { visibilityState = v; };
+
+    return {
+        document, window, clock, fireDoc, fireWin, setVisibility, setVisibilitySilently, setFocus, advanceClock,
+        listenerCount, hasListener,
+    };
 }
 
 describe("LifecycleStateMachine", () => {
@@ -186,14 +204,10 @@ describe("LifecycleStateMachine", () => {
             const m = createMocks();
             const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
 
-            // Initial transition (the "init" record) is in the buffer
-            const initialBufferSize = sm.getBufferedCount();
-            expect(initialBufferSize).toBe(1);
-
             const mark = sm.mark();
             m.setFocus(false);
             m.setVisibility("hidden");
-            expect(sm.getBufferedCount()).toBeGreaterThan(initialBufferSize);
+            expect(sm.getBufferedCount()).toBe(2);
 
             sm.resolve(mark);
             expect(sm.getBufferedCount()).toBe(0); // fully compacted
@@ -282,7 +296,7 @@ describe("LifecycleStateMachine", () => {
             expect(summary.wasRestoredFromBFCache).toBe(true);
         });
 
-        it("counts transitions excluding init", () => {
+        it("counts transitions", () => {
             const m = createMocks();
             const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
             const mark = sm.mark();
@@ -290,6 +304,181 @@ describe("LifecycleStateMachine", () => {
             m.setVisibility("hidden");
             const summary = summarizeTransitions(sm.resolve(mark));
             expect(summary.transitionCount).toBe(2);
+        });
+    });
+
+    it("does not buffer transitions while no mark is outstanding", () => {
+        const m = createMocks();
+        const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+
+        for (let i = 0; i < 100; i++) {
+            m.setFocus(false);
+            m.setFocus(true);
+        }
+
+        expect(sm.getBufferedCount()).toBe(0);
+        expect(sm.getTotalTransitions()).toBe(200);
+    });
+
+    it("sees a hidden page before the visibilitychange event arrives", () => {
+        const m = createMocks();
+        const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+
+        m.setVisibilitySilently("hidden");
+
+        expect(sm.getState()).toBe("hidden");
+    });
+
+    it("does not listen for beforeunload (it blocks the BFCache and can be cancelled)", () => {
+        const m = createMocks();
+        new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+
+        expect(m.hasListener("beforeunload")).toBe(false);
+    });
+
+    it("stays terminated when visibilitychange follows pagehide", () => {
+        const m = createMocks();
+        const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+
+        m.fireWin("pagehide", { persisted : false });
+        m.setVisibility("hidden");
+
+        expect(sm.getState()).toBe("terminated");
+    });
+
+    it("dispose() removes every DOM listener it added", () => {
+        const m = createMocks();
+        const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+        expect(m.listenerCount()).toBeGreaterThan(0);
+
+        sm.dispose();
+
+        expect(m.listenerCount()).toBe(0);
+    });
+
+    describe("subscribe", () => {
+        it("notifies on each transition until unsubscribed", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const listener = vi.fn();
+
+            const unsubscribe = sm.subscribe(listener);
+            m.setVisibility("hidden");
+            unsubscribe();
+            m.setVisibility("visible");
+
+            expect(listener).toHaveBeenCalledTimes(1);
+            expect(listener).toHaveBeenCalledWith(expect.objectContaining({ from : "active", to : "hidden" }));
+        });
+
+        it("isolates a throwing subscriber", () => {
+            const m = createMocks();
+            const logger = { log : vi.fn() };
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, logger);
+            const second = vi.fn();
+
+            sm.subscribe(() => { throw new Error("boom"); });
+            sm.subscribe(second);
+            m.setVisibility("hidden");
+
+            expect(second).toHaveBeenCalled();
+            expect(logger.log).toHaveBeenCalledWith("error", "Error in lifecycle subscriber.", expect.any(Object));
+        });
+    });
+
+    describe("createHiddenGate", () => {
+        it("reports a hidden period once, then resets", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const gate = sm.createHiddenGate();
+
+            expect(gate.wasHiddenSinceLastCheck()).toBe(false);
+            m.setVisibility("hidden");
+            m.setVisibility("visible");
+            expect(gate.wasHiddenSinceLastCheck()).toBe(true);
+            expect(gate.wasHiddenSinceLastCheck()).toBe(false);
+        });
+
+        it("reports true while the page is still hidden", () => {
+            const m = createMocks("hidden", false);
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const gate = sm.createHiddenGate();
+
+            expect(gate.wasHiddenSinceLastCheck()).toBe(true);
+            expect(gate.wasHiddenSinceLastCheck()).toBe(true);
+        });
+
+        it("gives each consumer its own view of the same hidden period", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const fast = sm.createHiddenGate();
+            const slow = sm.createHiddenGate();
+
+            m.setVisibility("hidden");
+            m.setVisibility("visible");
+
+            // The fast consumer checking first must not hide the period from the slow one
+            expect(fast.wasHiddenSinceLastCheck()).toBe(true);
+            expect(slow.wasHiddenSinceLastCheck()).toBe(true);
+        });
+
+        it("counts a BFCache round trip as hidden", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const gate = sm.createHiddenGate();
+
+            m.fireWin("pagehide", { persisted : true });
+            m.fireWin("pageshow", { persisted : true });
+
+            expect(gate.wasHiddenSinceLastCheck()).toBe(true);
+        });
+
+        it("flags a window that started hidden, even if the page is visible by the check", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const gate = sm.createHiddenGate();
+
+            m.setVisibility("hidden");
+            expect(gate.wasHiddenSinceLastCheck()).toBe(true);
+            m.setVisibility("visible");
+            expect(gate.wasHiddenSinceLastCheck()).toBe(true); // window began hidden
+            expect(gate.wasHiddenSinceLastCheck()).toBe(false);
+        });
+
+        it("flags the first window of a gate created while hidden", () => {
+            const m = createMocks("hidden", false);
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const gate = sm.createHiddenGate();
+
+            m.setVisibility("visible");
+
+            expect(gate.wasHiddenSinceLastCheck()).toBe(true);
+        });
+
+        it("holds no marks, so transitions never pile up behind an unchecked gate", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            sm.createHiddenGate();
+
+            for (let i = 0; i < 1000; i++) {
+                m.setFocus(false);
+                m.setFocus(true);
+            }
+
+            expect(sm.getMarkCount()).toBe(0);
+            expect(sm.getBufferedCount()).toBe(0);
+        });
+
+        it("dispose() stops tracking", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const gate = sm.createHiddenGate();
+
+            gate.dispose();
+            m.setVisibility("hidden");
+            m.setVisibility("visible");
+
+            expect(gate.wasHiddenSinceLastCheck()).toBe(false);
         });
     });
 });
