@@ -1,19 +1,59 @@
 ---
 title: Research
-description: Notes on the browser APIs, clocks, standards and tools that the project uses or compares itself with.
+description: The research behind the design of the library, from browser support and clocks to experiments, Web Vitals, RUM products, OpenTelemetry and the writing standard.
 order: 1
-status: draft
+status: final
 ---
 
-These pages collect notes on the browser APIs, the clocks and the tools that the project uses or compares itself with. Each note lists its sources. A note is a draft until somebody examines its facts against the sources.
+These notes collect the facts that the design of `@lag/core` depends on. The research read specifications, the source code of engines and vendors, and documentation on 2026-10-07. We also measured some facts in this repository. Each note names its sources with links, and the [sources](/research/sources) page lists all of them. A note marks each fact that the research did not verify, and each inference of the research.
 
-## Topics
+## The purpose of the research
 
-- [Browser support](/research/browser-support): which browsers have the APIs that the monitors use.
-- [Clocks and timers](/research/clocks-and-timers): the limits of the clock and of the timers.
-- [OpenTelemetry metrics in the browser](/research/otel-browser-metrics): how to export metrics from a page.
-- [Real user monitoring](/research/rum-landscape): the tools that measure real users.
-- [Web Vitals algorithms](/research/web-vitals-algorithms): how INP, CLS and LCP are calculated.
-- [Sources](/research/sources): all the sources of the site.
+A monitor of main-thread lag uses browser APIs that behave differently in each engine and each operating system. The documentation of these APIs is frequently older than the code of the engines. Thus the research has three purposes:
+
+- Give the support and the limits of each API on a known date, with the source of each fact.
+- Find the facts that make a measurement incorrect, for example the clocks, the timer policy and the page lifecycle.
+- Compare the design of the library with the design of the other tools that measure real users.
+
+## How the research changed the library
+
+| Finding | Change in the library | Note |
+|---|---|---|
+| On an idle page, a chain of 5 ms timers measures the timer granularity of the browser and the operating system. | DriftLag subtracts a calibrated baseline of the recent steps. | [Local experiments](/research/local-experiments) |
+| A `setTimeout(0)` from a timer callback gets the clamp of nested timers. | MacrotaskLag and SchedulingFairness start each measurement in a message task. | [Clocks and timers](/research/clocks-and-timers) |
+| Safari calculates `timeOrigin` again at each read, and Chromium gives a worker a constant clock offset. | `createAbsoluteClock` reads the origin one time, and `WorkerClockSync` measures the offset. | [Clocks and timers](/research/clocks-and-timers) |
+| `performance.now()` stops during sleep, except on Windows, and no web event shows a suspend. | `ClockDriftMonitor` classifies suspends and steps. A suspend of the clock-drift monitor and a late worker timer each add a suspend interval. | [Clocks and timers](/research/clocks-and-timers) |
+| Hidden and frozen pages throttle or stop timers, rAF and idle callbacks. | The probes pause, and the measurement conditions discard the samples of these intervals. | [Browser support](/research/browser-support) |
+| A monitor on the main thread sees a block only after it ends. A tab that closes during a hang does not report it. | A worker sends heartbeats, detects hangs, reports them, and keeps a hang journal in IndexedDB. | [Real user monitoring](/research/rum-landscape) |
+| Many browsers without a writer identity break Mimir, and neither delta temporality nor a collector fixes it. | otel-ts gives each SDK instance a random `service.instance.id` and cumulative temporality. The library makes only counters and histograms. | [OpenTelemetry metrics in the browser](/research/otel-browser-metrics) |
+| In Chromium, the order of the `pagehide` listeners cannot protect the final values. | `AllMonitorHandles.flush()` records the final values in the `onBeforeFlush` hook of otel-ts. | [Local experiments](/research/local-experiments) |
+| The web-vitals library gives the rules of the Core Web Vitals. | `PageViewVitals` uses the same rules for each page view. | [Web Vitals algorithms](/research/web-vitals-algorithms) |
+| A controlled language gives rules that a person and a tool can check. | The site uses ASD-STE100 as a style target, with the checker `@lag/ste-lint`. | [Writing standard](/research/writing-standard) |
+
+## The notes
+
+- [Browser support](/research/browser-support): all three engines report INP and LCP, but LoAF, layout shifts, soft navigations and the Page Lifecycle events exist only in Chromium.
+- [Clocks and timers](/research/clocks-and-timers): `performance.now()` stops during sleep except on Windows, and timer probes measure the timer policy of the system, not only the load.
+- [Local experiments](/research/local-experiments): on an idle page, the calibration decreased the lag of DriftLag from 15.8 ms to 211 ms down to less than 0.5 ms.
+- [Web Vitals algorithms](/research/web-vitals-algorithms): `PageViewVitals` uses the rules of web-vitals 6.2.3, with four main differences that the note explains.
+- [Real user monitoring](/research/rum-landscape): all surveyed RUM products record events first and watch the main thread from the main thread, without a worker.
+- [OpenTelemetry metrics in the browser](/research/otel-browser-metrics): without a random `service.instance.id` for each SDK instance, many browsers write one series and break the metrics in Mimir.
+- [Writing standard](/research/writing-standard): the site uses ASD-STE100 Issue 9 as a style target, and its automated check is only an approximation.
+- [Sources](/research/sources): one bibliography gives all sources of the notes, grouped by topic, with their dates.
 
 ## Add a note
+
+Do these steps to add a research note:
+
+1. Add an `.mdx` file in `packages/site/content/research`. The path of the file is the path of the page.
+2. Add the frontmatter: `title`, `description` (one sentence), `order` (a number) and `status`.
+3. Start with a short summary. Then use headings of level 2 for the sections.
+4. Write the text in the style of the [writing standard](/research/writing-standard).
+5. Name each source in the text, with a link.
+6. Add each source to the [sources](/research/sources) page, with its date.
+7. Write "not verified" for each fact that you did not verify, and "inference" for each inference.
+8. Set `status: draft` until each fact is verified. Then set `status: final`.
+9. Put the data of a component in a `*.data.ts` file next to the page, and import it in the page.
+10. Add the note to the list on this page, with one sentence on its main finding.
+11. In `packages/site`, start `npx tsc -p tsconfig.json` and `npx vitest run --project node`. Correct each error.
+12. At the root of the repository, start `pnpm lint:ste` with the path of the note.

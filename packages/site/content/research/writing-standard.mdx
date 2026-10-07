@@ -1,0 +1,112 @@
+---
+title: Writing standard
+description: Why the site uses ASD-STE100 Simplified Technical English as a style target, its main rules, how the project applies them to software text, and the limits of the method.
+order: 8
+status: final
+---
+
+The text of this site, the README files and the TSDoc comments of the code use ASD-STE100 Simplified Technical English (STE) as a style target. STE is a controlled language for technical documentation. The current version is Issue 9 of 2025-01-15. The project does not claim a certification. This note gives the rules in the words of the project, and it does not copy the standard. The [sources](/research/sources) page lists all sources of this note.
+
+## The standard
+
+ASD publishes ASD-STE100, and the STEMG of ASD maintains it ([STEMG](https://www.asd-ste100.org/)). The research of 2026-10-07 found these facts:
+
+- Issue 9 (2025-01-15) changed the document from a specification to a standard for technical documentation ([ASD](https://www.asd-europe.org/news-media/news-events/news/simplified-technical-english-asd-ste100-issue-9/), [tcworld](https://www.tcworld.info/e-magazine/technical-writing/asd-ste100-issue-9-setting-a-standard-for-technical-documentation)).
+- Part 1 has 53 writing rules in 9 sections, and 8 general recommendations that are not rules. Part 2 is the dictionary.
+- The STEMG gives approximately 900 approved words and approximately 1,200 words that are not approved ([About STE](https://www.asd-ste100.org/about_STE.html)).
+- Issue 10 is planned for January 2028 ([FAQ](https://www.asd-ste100.org/STE_faq.html)).
+- The standard is free, as a PDF, through a request form ([Downloads](https://www.asd-ste100.org/STE_downloads.html)). The standard prohibits redistribution without the written permission of the STEMG. Thus the repository does not contain a copy, and `.gitignore` excludes local dictionary files.
+- "ASD-STE100 Simplified Technical English" is a trademark of ASD.
+
+## The purpose of STE on this site
+
+The project wants text that a reader understands at the first reading, also with English as a second language, and also through machine translation. STE helps with this goal in three ways:
+
+- **Limits that a person or a tool can check.** The rules give numbers: words in a sentence, sentences in a paragraph, words in a noun cluster. The STEMG says that a checker can examine sentence length, long noun clusters and the passive voice ([Tools for STE](https://www.asd-ste100.org/STEsoftware.html)).
+- **One word for one meaning.** The same term for the same thing on every page makes the text consistent, for example "main thread", "page view" and "back/forward cache".
+- **A known reference.** The standard is public, free and maintained. Thus each author, and each reviewer, can use the same rules.
+
+For the project, STE is a style target. No contract or law makes it necessary. The project also has its own conventions for software text, which the section [the project rules](#the-project-rules) gives.
+
+## The main rules
+
+### Sentences and paragraphs
+
+- An instruction has 20 words or fewer. Warnings and cautions have the same limit.
+- A descriptive sentence has 25 words or fewer. A sentence in a note has the same limit.
+- A paragraph has 6 sentences or fewer, and one topic.
+- A sentence has one instruction, unless two actions occur at the same time.
+- In a vertical list, a colon has the effect of a period on the count. The lead-in and each item count as separate sentences.
+- A noun cluster has 3 words or fewer.
+- A sentence does not omit words to become shorter. It keeps its subject, its verb and its articles. It has no contractions.
+- The text has no semicolons.
+
+### Verbs
+
+- The text uses the active voice. In a description, the passive is permitted only when the agent is unknown. Issue 9 made this rule stricter than Issue 8.
+- The permitted verb forms are the infinitive, the imperative, and the past participle as an adjective. The permitted tenses are the present, the past and the future with "will", in their basic forms. Thus the text has no perfect tenses and no progressive forms.
+- An `-ing` form is permitted only as a technical noun, or as a modifier in a technical noun. Thus an `-ing` word can be a heading only when it is a technical noun.
+- The approved modal verbs are "can", "cannot", "must" and "will". "Could" is permitted only as the past of "can". Other modal verbs, for example "should" and "may", are not approved.
+- The text does not make phrasal verbs from a verb and a particle. The dictionary approves only a small number of them.
+
+### Words
+
+- Each approved word has one part of speech and one meaning. Where synonyms exist, the dictionary approves one of them.
+- One item has one technical noun. The text does not use different technical nouns for the same item.
+- A word that is not in the dictionary can be a technical noun or a technical verb. Then it must name a concept of the subject field. Issue 9 has 22 categories of technical nouns and 4 categories of technical verbs. One category of each is for computers and information technology.
+- A technical verb is permitted only when no approved verb has the same meaning.
+- The technical nouns and verbs come from the glossary of the company, not from the dictionary.
+
+The general recommendations are not rules. They advise against Latin abbreviations and against gender-specific pronouns, which Issue 9 added. They also advise care with the possessive form, which Issue 9 also added.
+
+### The word count
+
+Rules 8.6 and 8.7 of Issue 9 count each of these elements as one word:
+
+- a number, and a number with its unit of measurement (new in Issue 9)
+- an abbreviation, and an alphanumeric identifier
+- quoted text, and text in a different font
+- a title, a heading, and the text on a label or a placard
+- a proper noun of a person, a group, an organization or a geopolitical entity (new in Issue 9)
+- a hyphenated word.
+
+Text in a different font counts as quoted text. Thus a code span, for example `performance.now()`, is one word. Text in parentheses counts as one word in its sentence, and it also makes a separate sentence.
+
+## The project rules
+
+The project applies the rules to software text in these ways:
+
+- **Text types.** A guide with steps uses the rules of instructions. The concepts, the thesis, the research notes and the API reference use the rules of descriptions.
+- **Code font.** Each API name, file name, metric name, attribute name and command is in code format. Each code span counts as one word. A code element is not a verb, and it does not get an inflection, as the [Google developer style guide](https://developers.google.com/style/code-in-text) also recommends.
+- **Product names.** A product name counts as one word. The standard does not name product names, thus this is a convention of the project.
+- **The glossary.** The project glossary is in `ste.config.json` at the root of the repository. It has the technical nouns (for example "monitor", "heartbeat" and "histogram"), the technical verbs (for example "flush", "export" and "install") and the proper nouns of the project.
+- **Software verbs.** Many common software verbs are not approved words, for example "run", "call", "return", "create", "display", "provide" and "allow". The project writes approved words instead, for example "the function gives", "make", "show" and "let".
+- **Doc comments.** A TSDoc summary has a subject: "The function gives the value.", not "Returns the value.".
+- **Headings.** A heading is a noun phrase. It is not an `-ing` verb, and it is not a question.
+- **Callouts.** The site has three callout types. A warning shows a risk of incorrect measurements or lost data. A caution shows a risk to performance or to other parts of the system.
+- **Callouts and the standard.** A note gives information. In the standard, a warning is for a risk to persons and a caution is for a risk to objects. The project uses the same two levels for the risks of software.
+- **Fixed terms.** The site writes "main thread", "page view" and "back/forward cache" (`bfcache` only in code). It writes "approximately" for a quantity, "at this time" for the present, and "refer to" for a reference.
+- **Pronouns.** "We" means only the project. "They" refers to a person, and "it" to a thing.
+- **Passive voice.** The project also permits the passive in a description when the agent is not important. The standard permits it only when the agent is unknown.
+
+The page [writing style](/docs/contributing/writing-style) gives the rules for authors of the site.
+
+### The project word list and the linter
+
+The package `@lag/ste-lint` checks the text of the repository ([README](https://github.com/mark1russell7/lag/blob/main/packages/ste-lint/README.md)). The command `pnpm lint:ste` at the root of the repository starts it. It reads Markdown and MDX files, and the doc comments of TypeScript and JavaScript files. It has these rules:
+
+- sentence length, paragraph length and noun clusters
+- modal verbs, semicolons, Latin abbreviations, and "about" before a quantity
+- the project word list, gender-specific pronouns and the first person
+- the passive voice in instructions, a missing subject in doc comments, and `-ing` verbs
+- unknown words, but only with a local dictionary.
+
+The project word list (`packages/ste-lint/src/word-list.ts`) is the style guide of the project, written for it. It is not a copy of the dictionary of the standard. It has plain-language substitutions, for example "use" for "utilize" and "before" for "prior to".
+
+## Limits
+
+- **No certification.** The project does not claim that its text complies with the standard. ASD does not endorse, certify or authorize any tool ([Tools for STE](https://www.asd-ste100.org/STEsoftware.html), [FAQ](https://www.asd-ste100.org/STE_faq.html)). The project is not affiliated with ASD.
+- **An automated check is an approximation.** `ste-lint` has no part-of-speech tagger. Its heuristics miss some problems, and they report some problems that do not exist. It cannot know the meaning of a word. Thus it does not find most uses of a word with a meaning that the standard does not approve. It checks only some of the 53 rules.
+- **Rules that only a person can check.** A tool cannot decide if a paragraph has one topic, if a sentence gives information gradually, or if the terms are consistent beyond the glossary. Boeing says that no language checker can guarantee full compliance with STE ([Boeing](https://www.boeing.com/company/simplified-english-checker)).
+- **No dictionary in the repository.** The dictionary is copyrighted, thus the repository does not contain it. With a local copy, the `unknown-word` rule of `ste-lint` can use it. Without the dictionary, the tool cannot find all words that are not approved.
+- **Artificial intelligence.** In June 2026, the STEMG published a white paper on STE and artificial intelligence ([white paper](https://www.asd-ste100.org/assets/files/WhitePaper-ASD-STE100_and_AI.pdf)). It asks for human oversight of text that AI helps to write, and for a disclosure of such text. It also asks for the standard as the primary reference.

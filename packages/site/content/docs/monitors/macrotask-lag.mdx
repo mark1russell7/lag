@@ -1,22 +1,108 @@
 ---
 title: MacrotaskLag
-description: Measures how long a setTimeout(0) callback waits in the task queue.
+description: Measures each 5 s how long a zero-delay timeout waits in the task queue, from a message task, so that the clamp of nested timers does not apply.
 order: 22
-status: draft
+status: final
 ---
 
 import { macrotaskLagMetrics } from "./metrics.data";
 
-Every 5 s, `MacrotaskLag` measures how long a `setTimeout(0)` callback waits in the task queue. A long wait shows that other tasks keep the main thread busy.
+`MacrotaskLag` measures how long a `setTimeout(0)` callback waits in the task queue. It takes one sample each 5 s. A long wait shows that other tasks are in the queue before the timeout.
 
 ## What it measures
 
+The signal is the time from the start of the measurement to the start of the zero-delay timeout callback. The timeout waits behind all tasks that are in the queue before it. Thus the value shows the congestion of the task queue at that time.
+
+MacrotaskLag answers this question: when the page puts a new task in the queue, how long does that task wait? It is a sparse probe. [DriftLag](/docs/monitors/drift-lag) gives the high-frequency signal.
+
 ## How it works
+
+1. A `setInterval` callback starts each 5 s (`macrotaskLagIntervalMs`).
+2. The callback posts a message task through a `MessageChannel` (`createMessageTaskQueue`).
+3. In the message task, the monitor reads the clock and sets `setTimeout(0)`.
+4. When the timeout callback starts, the monitor reads the clock again. The difference is the sample.
+
+The message task is necessary because of the clamp of nested timers. The HTML standard clamps a timeout from a nesting level above 5 to 4 ms or more. Each repeat of `setInterval` increases the nesting level. A message task has the nesting level 0, thus a `setTimeout(0)` from it gets no clamp. Then the probe measures the queue, not the clamp.
+
+Without `MessageChannel`, the measurement starts in the `setInterval` callback. Then expect a floor of approximately 4 ms or the timer tick of the system (refer to the next section). The factory records a negative value as 0. If the monitor stops while a sample waits, it does not record that sample.
+
+## Browser support
+
+The monitor uses `setInterval` and `setTimeout`, thus it starts in all browsers. Chromium, Firefox and Safari also have `MessageChannel`: the research lists measurements of it in Chrome 139, Firefox 142 and Safari 18.4 ([clocks and timers](/research/clocks-and-timers)).
+
+The clamp and the timer tick make the floor of the sample different in each engine. We measured the median `setTimeout(0)` on an idle page on Windows 11 ([experiment E2](/research/local-experiments)):
+
+| Start of the measurement | Chromium 145 | Firefox 146 | WebKit (Safari 26.0 build) |
+|---|---|---|---|
+| A `setInterval` callback (8th repeat) | 5 ms | 16 ms | 16 ms |
+| A message task | 0 ms | 0 ms | 15 ms |
+
+From a nested timer, Chromium applies the 4 ms clamp, and Firefox and WebKit wait for the system tick. From a message task, Chromium and Firefox start the timeout immediately. The WebKit build for Windows still waited for the 15.6 ms tick of the system.
+
+In the Chromium scheduler, a zero-delay timeout at a low nesting level is an immediate timer. The scheduler can defer it, but it does not throttle it ([clocks and timers](/research/clocks-and-timers)).
+
+## Measurement validity
+
+With measurement conditions, the monitor pauses while the page is hidden or frozen. Each sample goes to a `SampleValidator` with a window of the length of the sample. The validator discards a sample that overlaps a hidden, frozen or suspend interval. A sample of 5000 ms or more waits 2000 ms for late evidence of a suspend. Refer to [measurement validity](/docs/concepts/measurement-validity).
 
 ## Metrics
 
 <MetricTable metrics={macrotaskLagMetrics} />
 
+MacrotaskLag sends no events of its own. The measurement conditions send a `lag.stall` event for each stall episode.
+
 ## Configuration
 
+```ts
+function createInstrumentedMacrotaskLag(
+    deps : CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">>,
+    conditions? : MeasurementConditions,
+) : MonitorHandle<MacrotaskLag>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `TimerDeps` (the four timer functions). `MessageChannel` from `SchedulingDeps` is optional, but use it: without it, the samples measure the clamp. `createBrowserDeps()` gives `MessageChannel` when the browser has `MessageChannel` and `queueMicrotask`. The interval is 5000 ms, and the factory has no options.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedMacrotaskLag } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+// With deps.MessageChannel, each sample starts in a message task
+const macrotaskLag = createInstrumentedMacrotaskLag(deps);
+
+macrotaskLag.stop();
+```
+
+The class `MacrotaskLag` takes a `postTask` function as its last argument. Without it, the class starts each measurement in the `setInterval` callback.
+
+## Cost
+
+- **Timers:** one interval callback, one message task and one timeout callback each 5 s.
+- **Records:** one histogram value each 5 s.
+- **Memory:** one `MessageChannel`. The factory closes it at `stop()`.
+
 ## Limits
+
+- **Sparse samples.** One sample each 5 s shows the queue at one time. A block that ends before the sample starts does not change the sample.
+- **The wait of the message is not in the sample.** The measurement starts when the message task starts. Thus the time that the message task itself waited is not part of the value.
+- **A floor in some engines.** In the WebKit build for Windows, a timeout from a message task still waited 15 ms (median) for the timer tick. Thus small values there show the tick, not the queue.
+- **The same probe as scheduling fairness.** [Scheduling fairness](/docs/monitors/scheduling-fairness) also measures a zero-delay timeout from a message task each 5 s, together with a message and a microtask.
+
+## Tests
+
+Unit tests:
+
+- `MacrotaskLag.test.ts`: the interval has the configured period. The sample is the delay of a zero-delay timeout. An error in the report function goes to the logger, and the monitor continues. The monitor does not report a sample that waits during `stop()`. The monitor can start again. With `postTask`, the measurement starts in the posted task, thus the clamp of nested timers does not apply.
+- `message-task.test.ts`: the queue starts the callbacks later, in the sequence of their posts. `close()` removes the callbacks that did not start, and closes the ports.
+- `setup-all-monitors.test.ts`: the monitor pauses while the page is hidden.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
+
+- `lag-monitors.test.ts`: after 5.5 s, `lag_macrotask_histogram` has at least one value.
+- `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no value while the page is hidden or frozen.
+
+## Source
+
+- [`MacrotaskLag.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/MacrotaskLag.ts): the monitor.
+- [`message-task.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/message-task.ts): the message task queue.
+- [`instrumented/macrotask-lag.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/macrotask-lag.ts): the factory.

@@ -1,32 +1,173 @@
 ---
 title: All monitors
-description: The monitors of @lag/core, and the signal that each monitor measures.
+description: The monitors of @lag/core with their signals, browser APIs, browser support and cost, how setupAllMonitors selects them, and which monitor answers which question.
 order: 20
-status: draft
+status: final
 ---
 
-Each monitor measures one signal of main-thread health. You can use one monitor alone, as a class or through its instrumented factory. You can also use `setupAllMonitors()` to start all the monitors that the browser supports.
+import { conditionsMetrics } from "./metrics.data";
 
-## Monitors by signal
+Each monitor measures one signal of the health of the main thread, of the page or of the device. `setupAllMonitors(createBrowserDeps(window, options))` starts each monitor whose dependencies are available in the browser. You can also start one monitor alone, through its factory (`createInstrumented...`).
 
-- [DriftLag](/docs/monitors/drift-lag): timer drift in 100 ms windows.
-- [MacrotaskLag](/docs/monitors/macrotask-lag): the wait of a `setTimeout(0)` callback.
-- [Worker lag](/docs/monitors/worker-lag): main-thread blocking, measured from a Web Worker.
-- [Long animation frames](/docs/monitors/long-animation-frames): frames longer than 50 ms.
-- [Event timing and INP](/docs/monitors/event-timing): the latency of interactions.
-- [Layout shift](/docs/monitors/layout-shift): layout shifts and CLS.
-- [Paint and LCP](/docs/monitors/paint-and-lcp): FP, FCP and LCP.
-- [Frame timing](/docs/monitors/frame-timing): the time between frames.
-- [Idle availability](/docs/monitors/idle-availability): the idle time of the main thread.
-- [Scheduling fairness](/docs/monitors/scheduling-fairness): the latency of three task queues.
-- [Memory](/docs/monitors/memory): the memory use of the page.
-- [Compute pressure](/docs/monitors/compute-pressure): the CPU pressure state.
-- [Garbage collection signal](/docs/monitors/gc-signal): garbage collection cycles.
-- [Timer throttling](/docs/monitors/timer-throttle): throttled timers.
-- [Clock reliability](/docs/monitors/clock-reliability): the resolution of `performance.now()`.
+## The monitors
 
-## Use one monitor
+| Monitor | Signal | Browser API | Browsers | Cost |
+|---|---|---|---|---|
+| [DriftLag](/docs/monitors/drift-lag) | The blocked time in each window of approximately 100 ms | A chain of `setTimeout(5)` | All | Approximately 175 timer callbacks each second (Chromium), 64 (Firefox and WebKit on Windows) |
+| [MacrotaskLag](/docs/monitors/macrotask-lag) | The wait of a `setTimeout(0)` from a message task | `setInterval`, `MessageChannel`, `setTimeout` | All | 3 callbacks each 5 s |
+| [Scheduling fairness](/docs/monitors/scheduling-fairness) | The latency of a timeout, a message and a microtask | `MessageChannel`, `queueMicrotask`, `setTimeout` | All with `MessageChannel` and `queueMicrotask` | 5 callbacks each 5 s |
+| [Worker lag](/docs/monitors/worker-lag) | The wait of each worker heartbeat, and hangs of 5 s or more | Web Worker, `performance.timeOrigin`, IndexedDB, `fetch` with `keepalive` | All (`timeOrigin`: Chromium 62, Firefox 53, Safari 15) | 1 heartbeat and 1 `ack` each second, 8 sync exchanges each 60 s |
+| [Shared liveness](/docs/monitors/shared-liveness) | The duration of each block of 50 ms or more, from shared memory | `SharedArrayBuffer`, `Atomics` | Cross-origin-isolated pages: Chromium 92, Firefox 79, Safari 15.2 | 200 reads each second in the worker |
+| [Long animation frames](/docs/monitors/long-animation-frames) | The blocking duration and the duration of each frame of 50 ms or more | `PerformanceObserver` (`long-animation-frame`) | Chromium 123 | 1 observer |
+| [Event Timing](/docs/monitors/event-timing) | The duration and the phases of each interaction event of 16 ms or more | `PerformanceObserver` (`event`) | Chromium 96, Firefox 144, Safari 26.2 | 1 observer |
+| [Layout shift](/docs/monitors/layout-shift) | The score of each layout shift | `PerformanceObserver` (`layout-shift`) | Chromium 77 | 1 observer |
+| [Page-view vitals](/docs/monitors/page-view-vitals) | INP, CLS, LCP, FCP and TTFB of each page view | `PerformanceObserver` (5 entry types, 7 with soft navigations) | Chromium: all five. Firefox and Safari: all except CLS | 5 observers |
+| [Page-view context](/docs/monitors/page-view-context) | The page-view ID for the worker and for crash reports | The worker, `window.crashReport` | Worker: all. Crash-report context: Chromium 145 | 1 message and 1 `set()` for each page view |
+| [Frame timing](/docs/monitors/frame-timing) | The time between animation frames, and the dropped frames | `requestAnimationFrame` | All | 1 callback each frame |
+| [Idle availability](/docs/monitors/idle-availability) | The idle time and the gaps between idle callbacks | `requestIdleCallback` | Chromium 47, Firefox 55 | 1 callback for each idle period |
+| [Memory](/docs/monitors/memory) | The used memory | `measureUserAgentSpecificMemory()`, `performance.memory` | Chromium only (89 with isolation) | 1 sample each 30 s |
+| [Compute pressure](/docs/monitors/compute-pressure) | The CPU pressure state of the device | `PressureObserver` | Chromium 125, desktop only | 1 observer |
+| [Garbage collection signal](/docs/monitors/gc-signal) | The count of garbage collections | `FinalizationRegistry` | Chromium 84, Firefox 79, Safari 14.1 | 1 object, 1 callback for each collection |
+| [Lifecycle](/docs/monitors/lifecycle) | The lifecycle transitions of the page | `visibilitychange`, `freeze`, `resume`, `pagehide`, `pageshow`, `focus`, `blur` | All (`freeze` and `resume`: Chromium 68) | 7 listeners |
+| [Timer throttling](/docs/monitors/timer-throttle) | The rounds in which the browser throttled the timers | `setTimeout` | All | 6 timeouts each 10 s |
+| [Clock reliability](/docs/monitors/clock-reliability) | The resolution of `performance.now()` | `performance.now()` | All | 1 short loop for each page |
+| [Clock drift](/docs/monitors/clock-drift) | The skew between the clocks, suspends and clock steps | `Date.now()`, `performance.now()`, `performance.timeOrigin` | All | 1 callback each second |
+| [Browser reports](/docs/monitors/browser-reports) | Intervention and deprecation reports | `ReportingObserver` | Chromium 69 (two types), Firefox 149 (deprecations) | 1 observer |
 
-## Use all the monitors
+"All" means that the monitor starts in Chromium, Firefox and Safari. The versions come from [browser support](/research/browser-support). The research gives no versions for the timer APIs, `MessageChannel`, `requestAnimationFrame`, IndexedDB and the lifecycle events. The costs come from the code. The timer counts of DriftLag are estimates from the measured timer steps ([experiment E3](/research/local-experiments)). Each page gives the details.
 
-## Monitors that need a browser API
+The overhead benchmark (`overhead/overhead.test.ts`) measures all monitors together on an idle page, in Chromium in the new headless mode. Its budgets are 3% of one core, 210 timer callbacks and 340 wake-ups each second. The comment of the test gives 22 ms to 25 ms of main-thread time each second for all monitors, on a desktop computer. Measured alone, three loops use most of the budget each second: DriftLag 11 ms, frame timing 14 ms and idle availability 3 ms. Refer to [the testing strategy](/docs/testing/strategy).
+
+## Which monitor answers which question
+
+"Lag" is not one quantity. Select the monitor for your question:
+
+| Question | Monitor | Why |
+|---|---|---|
+| How long does an event that arrives at a random time wait for the main thread? | [Worker lag](/docs/monitors/worker-lag): the delivery delay | The heartbeats come on the schedule of the worker. During a long block, many heartbeats wait, and each records its own wait. |
+| How much of each 100 ms was the main thread blocked? | [DriftLag](/docs/monitors/drift-lag) | Each block in a window adds its length to the lag of the window. |
+| Which script blocked a frame? | [Long animation frames](/docs/monitors/long-animation-frames), only in Chromium | The browser names the scripts of each long frame. |
+| How long does an interaction wait for the next paint? | [Event Timing](/docs/monitors/event-timing) and [page-view vitals](/docs/monitors/page-view-vitals) (INP) | The browser measures each interaction to the next paint, in three phases. |
+| Did the main thread hang, also until the page closed? | [Worker lag](/docs/monitors/worker-lag): hangs and the hang journal | The worker detects a hang while it continues. A later page reports a hang that the page did not survive. |
+| How long was each block, measured from outside without messages? | [Shared liveness](/docs/monitors/shared-liveness), only in cross-origin-isolated pages | The worker reads a counter in shared memory. |
+| Is the task queue long at this time? | [MacrotaskLag](/docs/monitors/macrotask-lag) and [scheduling fairness](/docs/monitors/scheduling-fairness) | A zero-delay timeout and a message wait behind the tasks in the queue. |
+| Are the frames late? | [Frame timing](/docs/monitors/frame-timing) | It measures the time between animation frames. |
+| Does the main thread have free time? | [Idle availability](/docs/monitors/idle-availability) | It measures the idle periods that the browser gives. |
+| Does the page move its content, and how fast does it load? | [Layout shift](/docs/monitors/layout-shift) and [page-view vitals](/docs/monitors/page-view-vitals) | CLS, LCP, FCP and TTFB for each page view, with the rules of web-vitals. |
+| Is the device busy, or does the page use much memory? | [Compute pressure](/docs/monitors/compute-pressure), [memory](/docs/monitors/memory) and the [garbage collection signal](/docs/monitors/gc-signal) | They give the context of the system for a lag. |
+| Are the samples valid? | [Lifecycle](/docs/monitors/lifecycle), [timer throttling](/docs/monitors/timer-throttle), [clock reliability](/docs/monitors/clock-reliability) and [clock drift](/docs/monitors/clock-drift) | They give the page state, the throttling, the clock resolution and the clock discontinuities. |
+| Did the browser block an action of the page? | [Browser reports](/docs/monitors/browser-reports) | Chromium sends intervention reports to the page. |
+| Which page view hung or crashed? | [Page-view context](/docs/monitors/page-view-context) | The worker and the crash reports get the page-view ID before a hang. |
+
+The [thesis](/thesis) explains why these quantities are different, and [the event loop](/docs/concepts/event-loop) explains the mechanism.
+
+## How setupAllMonitors selects the monitors
+
+`setupAllMonitors(deps)` makes a `MonitorRegistry` and adds the monitors in this sequence. It adds a monitor only when its dependencies are in `deps`:
+
+| Step | Monitor | Dependencies |
+|---|---|---|
+| 1 | Lifecycle | `document` and `window` (always necessary) |
+| 2 | Page-view vitals | `PerformanceObserver` and the lifecycle |
+| 3 | Measurement conditions | none (always) |
+| 4 | DriftLag and MacrotaskLag | the timer functions (always necessary). MacrotaskLag uses `MessageChannel` where it is available. |
+| 5 | Timer throttling | the timer functions (always necessary) |
+| 6 | Long animation frames, Event Timing and layout shift | `PerformanceObserver` |
+| 7 | Frame timing | `requestAnimationFrame` and `cancelAnimationFrame` |
+| 8 | Idle availability | `requestIdleCallback` and `cancelIdleCallback` |
+| 9 | Scheduling fairness | `MessageChannel` and `queueMicrotask` |
+| 10 | Memory | `memorySource` |
+| 11 | Worker lag | `worker` and `performance`. Without `performance`, the setup logs a warning and skips the monitor. |
+| 12 | Shared liveness | `SharedArrayBuffer` and `worker` |
+| 13 | Compute pressure | `PressureObserver` |
+| 14 | Garbage collection signal | `FinalizationRegistry` |
+| 15 | Clock reliability and clock drift | `performance`. Clock drift also uses `wallClock`. |
+| 16 | Browser reports | `ReportingObserver` |
+| 17 | Page-view context | the page-view vitals, and the worker monitor or `crashReport` |
+
+The necessary dependencies are `logger`, `clock`, `meter`, the four timer functions, `document` and `window`. All other dependency groups are optional.
+
+The setup also shares these parts between the monitors:
+
+- One absolute clock for the page, made from `performance`. It reads `timeOrigin` one time.
+- One set of measurement conditions for the timer-driven monitors.
+- An event sink that adds `lag.page_view.id` to each event, when the page-view vitals operate.
+- In a cross-origin-isolated page with a worker: a `SharedArrayBuffer`, and a DriftLag timer that beats the liveness counter.
+
+Each factory has an error boundary. If the construction of a monitor fails, its handle has no monitor, and the logger gets the warning `Failed to create the "<name>" monitor.` The other monitors start. A monitor with an observer starts also when the browser does not have its entry type: it logs a warning and gets no entries. For example, Long animation frames start in Firefox, but they get no entries there.
+
+### The browser adapter
+
+`createBrowserDeps(window, options)` gets the dependencies from the browser globals. It examines each optional API, and it binds each browser function to its object. These rules apply:
+
+- `SharedArrayBuffer` only when `crossOriginIsolated` is true and the option `sharedMemory` is not false.
+- The hang journal in IndexedDB only with a `worker`, and only when the option `hangJournal` is not false.
+- `crashReport` only when `window.crashReport` has a `set()` function and the option `crashReportContext` is not false.
+- `memorySource` only when the browser has `performance.memory` or `measureUserAgentSpecificMemory()`.
+- `pressureSources` with the default `["cpu"]`.
+
+### An example
+
+```ts
+import { init } from "@mark1russell7/otel-ts";
+import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
+import { createLagWorker } from "@lag/worker";
+
+const otel = init({ serviceName : "shop", endpoint : "http://localhost:4318" });
+const worker = createLagWorker();
+const monitors = setupAllMonitors(createBrowserDeps(window, {
+    logger : createOtelLoggerAdapter(otel.getLogger("lag")),
+    meter : otel.getMeter("lag"),
+    events : createOtelEventSink(otel.getLogger("lag-events")),
+    worker,
+}));
+// Record the values that wait for a checkpoint, before each flush
+otel.onBeforeFlush(() => monitors.flush());
+
+// The monitors that started in this browser
+const started = monitors.registry.getAll().filter(handle => handle.monitor !== undefined);
+console.log(started.map(handle => handle.name));
+```
+
+`AllMonitorHandles` gives the `registry`, `stop()`, `flush()` and one accessor for each monitor, for example `driftLag` or `workerMonitor`. An accessor gives `undefined` for a monitor that did not start. `stop()` stops the monitors in the reverse sequence of their start. `flush()` records the values that wait for a checkpoint (the page-view vitals). Connect it to the before-flush hook of the exporter: refer to [lifecycle](/docs/monitors/lifecycle#capture-listeners-and-the-flush-hook).
+
+To keep a monitor off, remove its dependency before the setup:
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, setupAllMonitors } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+// Without its dependencies, the idle monitor does not start
+const { requestIdleCallback : _idle, cancelIdleCallback : _cancelIdle, ...withoutIdle } = deps;
+const monitors = setupAllMonitors(withoutIdle);
+console.log(monitors.idleMonitor === undefined);
+```
+
+## Measurement conditions
+
+The timer-driven monitors share one `MeasurementConditions`. It has two functions:
+
+- `pauseWhileHidden(monitor)` stops a monitor while the page is hidden or frozen, and starts it again when the page is visible.
+- The `SampleValidator` discards each sample whose window overlaps a hidden, frozen or suspend interval. It holds a sample of 5000 ms or more for 2000 ms, until it knows if the sample was a hang or a suspend.
+
+| Monitor | Pauses while hidden | Sample validator |
+|---|---|---|
+| DriftLag, MacrotaskLag, scheduling fairness | yes | yes |
+| Worker lag (the delivery delay), shared liveness | yes | yes |
+| Frame timing, idle availability | yes | yes |
+| All other monitors | no | no |
+
+Two monitors give the evidence of a suspend. The worker gives a heartbeat for which the worker timer was 5 s late or more. The clock-drift monitor gives a forward jump of the wall clock of 1 s or more. [Measurement validity](/docs/concepts/measurement-validity) explains the rules. The conditions record these metrics:
+
+<MetricTable metrics={conditionsMetrics} />
+
+They also send a `lag.stall` event for each stall episode, with the attributes `kind` (`hang` or `suspend`) and `duration_ms`.
+
+## Source
+
+- [`setup-all-monitors.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/setup-all-monitors.ts): the setup and the sequence of the monitors.
+- [`browser/browser-deps.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/browser/browser-deps.ts): the browser adapter.
+- [`dep-groups.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/dep-groups.ts): the dependency groups.
+- [`measurement-conditions.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/measurement-conditions.ts) and [`reliability.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/reliability.ts): the measurement conditions.
+- [`metric-catalog.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/metric-catalog.ts): all metrics and events.

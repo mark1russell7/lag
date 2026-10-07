@@ -2,14 +2,14 @@
 title: Thesis
 description: The argument of the project, from the problem to the evidence and its limits.
 order: 1
-status: draft
+status: final
 ---
 
 ## Summary
 
 - **Problem:** The usual measurements of main-thread lag in browsers are incorrect in the field. Timer probes measure the timer granularity of the operating system. Clocks stop and jump. Hidden and frozen pages give samples that are not valid. The worst sessions report least.
 - **Claim:** A monitor can measure main-thread lag accurately in real browsers. It must calibrate each probe against its environment, validate each sample against the page lifecycle and the clocks, and measure from outside the main thread.
-- **Method:** We built `@lag/core` and tested each part with unit tests, property tests, real-browser tests in three engines, and experiments on a real machine.
+- **Method:** We built `@lag/core` and tested each part. We used unit tests, property tests, real-browser tests in three engines, a comparison with web-vitals, mutation testing and experiments on a real machine.
 - **Result:** On an idle page, the old timer probe reported 16 ms of lag for each 100 ms window in Chromium and 211 ms in Firefox and WebKit. The calibrated probe reports 0.1 ms, −0.3 ms and −0.4 ms. It measures a 300 ms block as 283 ms to 297 ms.
 
 This page gives the argument. The [concepts](/docs/concepts/event-loop) explain each mechanism, and the [research](/research) gives the sources.
@@ -62,13 +62,16 @@ This design makes each part testable with fake time and fake browser APIs. It al
 
 ### Evidence
 
-We used five types of evidence:
+We used eight types of evidence:
 
 | Evidence | What it shows | Where |
 |---|---|---|
 | Unit tests with fake time | The rules of each part, with exact values | `packages/lag/src/*.test.ts` |
 | Property tests | The INP and CLS calculators for all sequences of entries | `InpCalculator.test.ts`, `ClsCalculator.test.ts` |
-| Real-browser tests | The behavior in Chromium, Firefox and WebKit, with real timers, real workers and real input | `packages/lag-integration-tests` |
+| Real-browser tests | The behavior in Chromium, Firefox, WebKit and Chrome, with real timers, real workers and real input | `packages/lag-integration-tests` |
+| Oracle tests | The agreement of the vitals with web-vitals 6 on the same page | `web-vitals-oracle.test.ts` |
+| CDP tests | Hidden and frozen pages, CPU throttling and compute pressure | `packages/lag-integration-tests/src/cdp` |
+| Mutation testing | The changes to the code that no test finds | `pnpm mutation` |
 | Experiments | Facts about the engines that no document gives | [Local experiments](/research/local-experiments) |
 | Research | The specifications, the engine source code and the field data of others | [Research](/research) |
 
@@ -114,7 +117,7 @@ DriftLag measures each step. It calculates the idle duration of one step (the ba
 The research on the engine source code ([clocks and timers](/research/clocks-and-timers)) gave four rules. The library obeys them:
 
 - Each context reads `performance.timeOrigin` one time (`createAbsoluteClock`). With one read, the absolute time of each context moves only with its monotonic clock, also in Safari.
-- The clock-drift monitor compares the wall clock with the absolute clock each second, with paired reads. It flags a change above max(50 ms, 3% of the interval). It classifies a forward change of 1 s or more with an on-time timer as a suspend, and all other changes as a step.
+- The clock-drift monitor compares the wall clock with the absolute clock each second, with paired reads. It flags a change above max(50 ms, 3% of the interval). It classifies a forward change of 1 s or more as a suspend, and all other changes as a step. The lateness of its timer does not change the classification, because a hidden page can delay the timer by a minute.
 - The worker clock sync uses 8 exchanges. It keeps the exchange with the shortest round trip of all synchronizations, because the offset is constant when each context reads its origin one time.
 - A sample that overlaps a suspend is not valid. The worker gives the evidence: when its own timer is late by 5 s or more, the whole system stopped.
 
@@ -122,17 +125,62 @@ The research on the engine source code ([clocks and timers](/research/clocks-and
 
 The worker sends a heartbeat from its own timer. The main thread acknowledges it. The delay until the main thread handles a heartbeat is the time that the main thread could not handle messages. In the browser tests, a 500 ms block gives heartbeat delays of more than 300 ms, while the timer of the worker stays on time.
 
-When the main thread does not acknowledge heartbeats for 5 s, the worker reports a hang itself, through `fetch` with `keepalive`. It also writes the hang to a journal in IndexedDB, and writes it again each second. A browser test blocks the main thread for 6.5 s, stops the worker before the hang ends, and finds the record of the hang in IndexedDB. The next page of the origin reports such a record as a hang with the outcome `abandoned`.
+When the main thread does not acknowledge heartbeats for 5 s, the worker reports a hang itself, through `fetch` with `keepalive`. It also writes the hang to a journal in IndexedDB, and writes it again each second.
+
+A browser test blocks the main thread for 6.5 s. It stops the worker with `terminate()` before the hang ends, and it finds the record of the hang in IndexedDB. The next page of the origin reports such a record as a hang with the outcome `abandoned`. Two pages of the origin can start at the same time. Only one of them gets the record, because the journal removes it in one IndexedDB transaction.
 
 ### The Web Vitals
 
 The [page-view vitals](/docs/monitors/page-view-vitals) obey the rules of web-vitals 6.2. A browser test clicks a button. For 120 ms, the click handler blocks the main thread. The monitor gives an INP of 120 ms or more and a processing phase of 110 ms or more. It gives the target `#slow-button` and the type `pointer`.
 
-That test found an error in the first version of the attribution. In a real click, `pointerdown` is the longest entry, but the handler of `click` does the work. At this time, the attribution spans all the entries of the interaction in the same frame, as web-vitals does.
+That test found an error in the first version of the attribution. In a real click, `pointerdown` is the longest entry, but the handler of `click` does the work. At this time, the attribution uses the frame groups of web-vitals. The processing phase spans all the events that the browser presented in the frame of the longest entry.
 
-<Callout type="note">
-  The comparison with the web-vitals library itself (an oracle test), the overhead measurements, and the coverage and mutation scores are in progress. This page will give them when the results are complete.
-</Callout>
+### The oracle: agreement with web-vitals
+
+A browser test operates web-vitals 6.2.3 and the page-view vitals on the same page, in Chromium, Firefox, WebKit and Chrome. The two libraries read the same entries. Thus the values must be the same, with no tolerance. This table gives one run, on 7 October 2026:
+
+| Engine | FCP | LCP | TTFB | INP | CLS |
+|---|---|---|---|---|---|
+| Chromium | 108 = 108 ms | 108 = 108 ms | 3.5 = 3.5 ms | 184 = 184 ms | 0.018435 = 0.018435 |
+| Chrome | 148 = 148 ms | 148 = 148 ms | 4 = 4 ms | 192 = 192 ms | 0.018435 = 0.018435 |
+| Firefox | 312 = 312 ms | 312 = 312 ms | 9 = 9 ms | 184 = 184 ms | No value in the two libraries |
+| WebKit | 433 = 433 ms | 433 = 433 ms | 4 = 4 ms | 184 = 184 ms | No value in the two libraries |
+
+The three phases of the INP attribution also agree exactly in the four browsers. The first version of the oracle found two differences. The library reported a CLS of 0 where the browser has no layout-shift entries. Also, its attribution used only the entries of the interaction, not all the events of the frame. Both differences are fixed.
+
+### Defects that the tests found
+
+The tests found defects that the unit tests with fake time did not show:
+
+- **An adversarial review.** A review of the code wrote one proof test for each defect that it found, 29 tests in total. Examples are a second report of a page view after `pagehide` and a hang that two tabs reported two times. Another example is a hang that a stop lost. Each test failed first. At this time, the unit tests include all of them.
+- **CLS in Firefox and WebKit.** The oracle found false CLS values of 0 (refer to the oracle above).
+- **A change of the timer granularity.** In Chromium on Windows, the 5 ms steps changed from 5.5 ms to 15.6 ms after a page was shown again. DriftLag then reported windows of 160 ms of lag on an idle page, while the worker saw less than 2 ms. After the fix, DriftLag follows such a change. A CDP test found this defect.
+
+### The cost
+
+The overhead benchmark measures an idle page in Chromium through CDP, with all monitors and without them:
+
+| Measurement | Value |
+|---|---|
+| CPU time of all monitors | 24.4 ms to 25.9 ms each second: 2.4% to 2.6% of one core |
+| Script time | 10.4 ms to 11.3 ms each second |
+| Timer callbacks | 177 to 179 each second |
+| Wake-ups (timers, animation frames, idle callbacks, messages) | Approximately 298 each second |
+| DriftLag alone | 11.3 ms each second |
+| Frame timing alone | 13.6 ms each second. Its animation-frame loop makes an idle page render each frame. |
+
+The budgets are 3% of one core, 210 timer callbacks and 340 wake-ups each second. All runs were in the budgets. A soak test of 10 minutes kept the heap after garbage collection at 9.50 MB to 9.58 MB. The growth was 10 kB each minute, and the limit for a leak is 100 kB each minute. After `stop()`, no timer, animation frame, idle callback or worker heartbeat stayed.
+
+### The quality of the tests
+
+| Measurement | Value |
+|---|---|
+| Tests in one run of all kinds | 753 passed, 0 failed, 25 skipped with a reason |
+| Statement coverage of `@lag/core` | 96.1% |
+| Branch coverage of `@lag/core` | 89.0% |
+| Mutation score of `@lag/core` | 77.4% of 3475 mutants |
+
+A surviving mutant is a change of the code that no test finds. The surviving mutants show where the tests are weak, for example the sign of the `delta` of a web-vital event. The [test strategy](/docs/testing/strategy) describes each kind of test, and the [results](/results) give the newest run.
 
 ## Limits
 
@@ -144,7 +192,9 @@ That test found an error in the first version of the attribution. In a real clic
 - **Hidden pages.** The library discards samples from hidden pages. Thus it has no data on background work.
 - **Clock steps.** A forward step of the system clock of 1 s or more looks like a suspend.
 - **Abandoned hangs.** The journal works only for pages of the same origin, only where IndexedDB is available, and only after 30 s without updates.
-- **Cost.** The DriftLag chain wakes the thread up to 200 times each second. This cost is real, especially on battery power.
+- **Cost.** The monitors use approximately 2.5% of one core on an idle page, with approximately 300 wake-ups each second. The DriftLag chain and the animation-frame loop of the frame timing cost the most. This cost is real, especially on battery power.
+- **Granularity or load.** DriftLag accepts a row of 10 steps that agree with each other as a new timer granularity. A busy thread with tasks of the same length, shorter than 40 ms, looks the same. The worker measures that case.
+- **CDP tests.** The tests of hidden pages need Chromium in the new headless mode and an internal API of Playwright. The tests of the export to the Grafana stack have not operated green on this machine yet.
 
 ## Future work
 

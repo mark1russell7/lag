@@ -1,20 +1,109 @@
 ---
 title: Timer throttling
-description: Reports when the browser throttles the timers of the page.
-order: 34
-status: draft
+description: Finds when the browser throttles the timers of the page, with rounds of five short timeouts each 10 s, also while the page is hidden.
+order: 36
+status: final
 ---
 
 import { throttleMetrics } from "./metrics.data";
 
-`TimerThrottleDetector` reports 1 while the browser throttles timers, and 0 at other times. Throttled timers make the measurements of timer-based monitors unreliable.
+`TimerThrottleDetector` finds when the browser throttles the timers of the page. It does calibration rounds of five short timeouts, with a wait of 10 s after each round. When most of the timeouts take more than 100 ms, the detector marks the round as throttled. The detector does not pause while the page is hidden, because it must measure the throttling of hidden pages.
 
 ## What it measures
 
+The signal is the number of calibration rounds, with the attribute `throttled` (`true` or `false`). `isThrottled()` gives the result of the latest round.
+
+The detector answers this question: does the browser delay the timers of the page at this time? Throttled timers make all timer-based measurements incorrect. The other timer monitors pause while the page is hidden, but this detector shows how long and how frequently the browser throttles.
+
 ## How it works
+
+1. A round has five samples. Each sample sets a timeout of 5 ms and measures how long the timeout took.
+2. The detector counts a sample of more than 100 ms as throttled.
+3. When more than half of the samples (3 of 5) count as throttled, the detector marks the round as throttled.
+4. The detector records the round, and logs `warn` "Timer throttling detected." when throttling starts and `info` "Timer throttling ended." when it ends.
+5. After 10 000 ms, the next round starts.
+
+The defaults have these causes:
+
+- **5 ms:** 1 ms more than the 4 ms clamp of nested timers. Thus a timer without throttling takes approximately this delay.
+- **100 ms:** far above normal jitter, and far below the 1 s alignment of hidden pages.
+- **Five samples:** the smallest odd number with a stable majority.
+- **10 s:** long enough not to be a noticeable timer source, and short enough to find a change in approximately 10 s.
+
+## Browser support
+
+The detector uses only `setTimeout`, thus it starts in all browsers. The browsers throttle the timers of hidden pages ([clocks and timers](/research/clocks-and-timers)):
+
+| Browser | Throttling of the timers of a hidden page |
+|---|---|
+| Chromium | One wake-up each second. Chained timers (nesting of 5 or more) get one wake-up each minute: after 60 s for a loaded page, or 300 s for a page that became hidden before the end of its load. The page must be silent for 30 s and have no WebRTC. |
+| Firefox | At least 1 s for timers in inactive tabs, and a time budget for the timers that starts after 30 s in the background. |
+| Safari | Timers of hidden pages are aligned to 1 s. Nested timers are aligned to 4 ms on a visible page, and to 30 ms in Low Power Mode. |
+
+Chromium does not throttle the timers of dedicated workers in hidden pages. But the [worker monitor](/docs/monitors/worker-lag) pauses while the page is hidden, thus this detector is the timer signal of hidden pages.
+
+## Measurement validity
+
+The detector does not pause while the page is hidden, and it uses no `SampleValidator`, on purpose: throttling of hidden pages is the signal. Each round is one count. The detector does not give the throttled samples to the measurement conditions.
 
 ## Metrics
 
 <MetricTable metrics={throttleMetrics} />
 
+The part of the throttled rounds is the rate of `lag_timer_calibrations{throttled="true"}` divided by the rate of all `lag_timer_calibrations`. The detector sends no events. It writes the start and the end of each throttled period to the logger.
+
+## Configuration
+
+```ts
+function createInstrumentedThrottleDetector(
+    deps : CoreDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & { throttleConfig? : TimerThrottleConfig },
+) : MonitorHandle<TimerThrottleDetector>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`), `setTimeoutFn` and `clearTimeoutFn`. `setupAllMonitors()` always starts it. The options of `throttleConfig`:
+
+| Option | Default | What it does |
+|---|---|---|
+| `calibrationTargetMs` | 5 | The delay of each sample timeout. |
+| `throttleThresholdMs` | 100 | A sample above this delay is throttled. |
+| `calibrationSamples` | 5 | The samples of one round. More than half decide. |
+| `calibrationIntervalMs` | 10 000 | The wait between two rounds. |
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedThrottleDetector } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+const throttle = createInstrumentedThrottleDetector({
+    ...deps,
+    throttleConfig : { throttleThresholdMs : 100, calibrationIntervalMs : 10_000 },
+});
+console.log(throttle.monitor?.isThrottled());
+```
+
+## Cost
+
+- **Timers:** six timeouts for each round: five samples and the wait. On a visible page, a round takes approximately 10 s, thus less than one timer callback each second.
+- **Records:** one counter value for each round.
+
 ## Limits
+
+- **Slow detection.** A change shows in the next round, thus up to approximately 10 s later on a visible page. In a hidden page, each sample can take 1 s or more, thus a round takes longer.
+- **Only delays above 100 ms.** The 30 ms alignment of Safari in Low Power Mode, or the 8 ms timer tick of Windows on battery power, does not count as throttling. [DriftLag](/docs/monitors/drift-lag) calibrates for those delays.
+- **A main-thread block and throttling give the same signal.** A block of more than 100 ms during three samples makes a round throttled.
+- **The detector is a timer chain itself.** Each timeout starts from the callback of the previous timeout. In a hidden Chromium page, the rule for chained timers can thus apply to the detector, and a round can take minutes.
+
+## Tests
+
+Unit tests:
+
+- `TimerThrottleDetector.test.ts`: a round is not throttled when the timers are on time, and throttled when they are late. The state changes from throttled to not throttled. `stop()` stops the rounds, a second `start()` adds no second chain, and a `stop()` from the logger at a change stays stopped. The detector reports each round.
+
+Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
+
+- `lag-monitors.test.ts`: the monitor starts in each of the four browsers. No browser test examines its values at this time.
+
+## Source
+
+- [`TimerThrottleDetector.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/TimerThrottleDetector.ts): the detector and the defaults.
+- [`instrumented/throttle-detector.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/throttle-detector.ts): the factory.

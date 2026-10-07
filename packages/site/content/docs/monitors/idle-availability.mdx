@@ -1,22 +1,109 @@
 ---
 title: Idle availability
-description: Measures how often the main thread goes idle, and for how long.
-order: 29
-status: draft
+description: Measures how frequently the main thread is idle, and how much idle time each idle period has, with requestIdleCallback.
+order: 31
+status: final
 ---
 
 import { idleMetrics } from "./metrics.data";
 
-`IdleAvailabilityMonitor` uses `requestIdleCallback` to measure how often the main thread goes idle, and for how long. Few or short idle periods show that the main thread is busy.
+`IdleAvailabilityMonitor` uses `requestIdleCallback` to measure how frequently the main thread is idle, and for how long. Few or short idle periods show a busy main thread. Safari does not have `requestIdleCallback`, thus the monitor does not start there.
 
 ## What it measures
 
+The monitor gives three signals for each idle callback:
+
+- **The idle time that remains** (`lag_idle_time_remaining_histogram`): `deadline.timeRemaining()` at the start of the callback.
+- **The gap** (`lag_idle_gap_histogram`): the time since the previous idle callback.
+- **The timeout** (`lag_idle_callbacks`): the callback has `timed_out="true"` when the browser started it because no idle period came in 1 s.
+
+The monitor is the inverse of a lag monitor: it measures the free time, not the late time. It answers this question: does the main thread have free time, and how frequently? A healthy main thread gives frequent callbacks with much remaining time. A busy main thread gives long gaps, little remaining time, or timeouts.
+
 ## How it works
+
+1. The monitor asks for an idle callback with a timeout of 1000 ms.
+2. In the callback, it reads the clock, the remaining time and the timeout flag. Then it asks for the next idle callback.
+3. The factory records the remaining time, the gap (from the second callback) and one count in `lag_idle_callbacks`.
+
+`getTimeoutRate()` gives the part of the callbacks that timed out. The rate for a fleet is the rate of `lag_idle_callbacks{timed_out="true"}` divided by the rate of all `lag_idle_callbacks`.
+
+## Browser support
+
+| Browser | `requestIdleCallback` |
+|---|---|
+| Chromium | 47 |
+| Firefox | 55 |
+| Safari | Not available. It is only in Safari Technology Preview, behind a flag. |
+
+The specification is a W3C Working Draft of 21 May 2025. It exposes the API only in windows, and it limits a deadline to 50 ms ([browser support](/research/browser-support)). WebKit bug 285049 is still open: WebKit found a regression of the page load time on google.com when it enabled the API. We found the API in Chromium 145 and Firefox 146, and not in the WebKit build of Playwright ([experiment E2](/research/local-experiments)).
+
+In hidden pages, the browser gives few or no idle periods. In Chromium, a hidden document gets no idle periods, and an idle task that timed out is throttleable ([clocks and timers](/research/clocks-and-timers)).
+
+## Measurement validity
+
+With measurement conditions, the monitor pauses while the page is hidden or frozen. Each callback goes to a `SampleValidator` with a window of the length of the gap. The validator discards a callback whose gap overlaps a hidden, frozen or suspend interval. A gap of 5000 ms or more waits 2000 ms for late evidence of a suspend.
 
 ## Metrics
 
 <MetricTable metrics={idleMetrics} />
 
-## Browser support
+The monitor sends no events of its own. The measurement conditions send a `lag.stall` event for each stall episode.
+
+## Configuration
+
+```ts
+function createInstrumentedIdleAvailability(
+    deps : CoreDeps & IdleDeps,
+    conditions? : MeasurementConditions,
+) : MonitorHandle<IdleAvailabilityMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `IdleDeps` (`requestIdleCallback`, `cancelIdleCallback`). Give `conditions` to pause the monitor while the page is hidden. The factory uses the timeout of 1000 ms. The class takes another timeout as its last argument.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedIdleAvailability } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+// Safari has no requestIdleCallback
+if (deps.requestIdleCallback && deps.cancelIdleCallback) {
+    const idle = createInstrumentedIdleAvailability({
+        ...deps,
+        requestIdleCallback : deps.requestIdleCallback,
+        cancelIdleCallback : deps.cancelIdleCallback,
+    });
+    console.log(idle.monitor?.getTimeoutRate());
+}
+```
+
+## Cost
+
+- **Callbacks:** one idle callback for each idle period that the browser gives to it. Without an idle period, the timeout starts the callback after 1 s. The number of callbacks depends on the page and on the other monitors.
+- **Records:** two histogram values and one counter value for each callback.
+- **CPU:** the overhead benchmark measured approximately 3 ms of main-thread time each second for the monitor alone. It used Chromium in the new headless mode on a desktop computer (the comment of `overhead/overhead.test.ts`).
 
 ## Limits
+
+- **Not in Safari.** iOS and Safari on macOS give no values.
+- **The other monitors make the deadlines shorter.** The idle deadline ends at the next timer or the next frame. DriftLag sets a timer each 5 ms, and frame timing asks for each frame. Thus the remaining time stays short also on an idle page. Do not read it as the idle time of the page ([clocks and timers](/research/clocks-and-timers)).
+- **At most 50 ms.** The specification limits each deadline to 50 ms.
+- **The gap includes the previous callback.** The gap is the time between the starts of two callbacks.
+
+## Tests
+
+Unit tests:
+
+- `IdleAvailabilityMonitor.test.ts`: the monitor asks for a callback at its start. It reports the remaining time and the timeout flag. The first gap is 0, and the next gaps are the time between callbacks. The monitor counts the timeout rate, and `stop()` cancels the pending callback.
+- `setup-all-monitors.test.ts`: the monitor pauses while the page is hidden.
+- `browser/browser-deps.test.ts`: without `requestIdleCallback`, as in Safari, `setupAllMonitors()` does not start the monitor.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
+
+- `lag-monitors.test.ts`: where the browser has `requestIdleCallback`, `lag_idle_time_remaining_histogram` has at least one value after 5.5 s. Without it, as in WebKit, the setup starts no idle monitor.
+- `browser-apis.test.ts` (only with `requestIdleCallback`): on an idle page, the monitor gets idle periods in 1 s, and each deadline is 50 ms or less.
+- `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no value while the page is hidden or frozen.
+
+## Source
+
+- [`IdleAvailabilityMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/IdleAvailabilityMonitor.ts): the monitor.
+- [`instrumented/idle-availability.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/idle-availability.ts): the factory.

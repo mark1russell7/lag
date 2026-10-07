@@ -1,20 +1,99 @@
 ---
 title: Clock reliability
-description: Measures the resolution of performance.now() in the page.
-order: 35
-status: draft
+description: Measures the resolution of performance.now() one time for each page, and tells if the clock has the fine resolution of a cross-origin-isolated page.
+order: 37
+status: final
 ---
 
-import { clockMetrics } from "./metrics.data";
+import { clockResolutionMetrics } from "./metrics.data";
 
-`ClockReliabilityChecker` measures the resolution of `performance.now()`. The resolution is about 5–20 μs when the page is cross-origin isolated, and 100 μs–1 ms otherwise. A coarse clock rounds short durations.
+`ClockReliabilityChecker` measures the resolution of `performance.now()`: the smallest step of the clock. It measures one time, 5 s after the setup, and records one value for each page. A coarse clock rounds short durations, thus the resolution sets the noise floor of all monitors.
 
 ## What it measures
 
-## Cross-origin isolation
+The signal is the resolution of `performance.now()` in milliseconds (`lag_clock_resolution_histogram`). `isHighResolution()` is true when the resolution is finer than 0.05 ms (50 μs), the resolution of a cross-origin-isolated page.
+
+The checker answers this question: how fine is the clock of this page? With a resolution r, a single reading is incorrect by up to r, and a difference by up to 2r ([clocks and timers](/research/clocks-and-timers)). Thus a lag value smaller than 2r is noise.
+
+## How it works
+
+1. 5000 ms after the setup, the factory asks the checker for the resolution. The measurement reads the clock in a tight loop, thus the factory waits until the load work of the page is usually complete.
+2. The checker reads `performance.now()` many times in sequence. It keeps the smallest positive difference between two consecutive readings.
+3. It stops after 5 changes of the clock, or after 100 000 readings (a few milliseconds of CPU).
+4. If the clock did not change in the 100 000 readings, the result is 0, and the factory records nothing. Otherwise the checker keeps the result, and the factory records it.
+
+The value 0.05 ms separates two groups of browsers with a margin on the two sides. With cross-origin isolation, the resolution is 5 μs to 20 μs. Without it, the resolution is 100 μs to 1 ms. `getTimeOrigin()` gives `performance.timeOrigin`.
+
+## Browser support
+
+The checker uses only `performance.now()`. The resolution depends on the browser and on cross-origin isolation ([clocks and timers](/research/clocks-and-timers)):
+
+| Browser | Without isolation | With cross-origin isolation | Jitter |
+|---|---|---|---|
+| Chromium (from 91) | 100 μs | 5 μs | yes |
+| Firefox | 1 ms | 20 μs | yes |
+| Safari | 1 ms | 20 μs | no, the clock only rounds |
+
+The specification sets a minimum of 100 μs, or 5 μs with cross-origin isolation, and lets a browser use a coarser value. Firefox with `privacy.resistFingerprinting` uses 100 ms ([browser support](/research/browser-support)). Chromium has the `crossOriginIsolated` flag from version 87, Firefox from 72 and Safari from 15.2.
+
+## Measurement validity
+
+The checker does not pause while the page is hidden, and it uses no `SampleValidator`. The resolution does not depend on the page state.
 
 ## Metrics
 
-<MetricTable metrics={clockMetrics} />
+<MetricTable metrics={clockResolutionMetrics} />
+
+The checker sends no events.
+
+## Configuration
+
+```ts
+function createInstrumentedClockReliability(
+    deps : CoreDeps & PerformanceDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn">,
+) : MonitorHandle<ClockReliabilityChecker>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`), `PerformanceDeps` (`performance`), `setTimeoutFn` and `clearTimeoutFn`. It has no options. `setupAllMonitors()` starts it when it has `performance`.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedClockReliability } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+// The factory measures one time, 5 s after the start
+const clock = createInstrumentedClockReliability({ ...deps, performance : window.performance });
+// A direct question measures immediately, if the checker has no result
+console.log(clock.monitor?.getResolutionMs(), clock.monitor?.isHighResolution());
+```
+
+`getResolutionMs()` measures the first time that you use it, and keeps the result. If you use it before the timer, it measures immediately, in the same tight loop.
+
+## Cost
+
+- **One measurement for each page:** up to 100 000 reads of `performance.now()` in one task. This is a short block of a few milliseconds.
+- **Timers:** one timeout of 5000 ms.
+- **Records:** one histogram value for each page.
 
 ## Limits
+
+- **The smallest step, not the jitter.** Chromium and Firefox add jitter to the clock. The checker measures the smallest step, not the size of the jitter.
+- **One value for each page.** The checker does not measure again, because it assumes that the resolution does not change during the life of a page.
+- **The measurement blocks.** The tight loop takes the main thread for a short time. Thus the factory waits 5 s after the setup.
+- **A very coarse clock gives no value.** With a clock that does not change in 100 000 reads, the result is 0, and the factory records nothing.
+
+## Tests
+
+Unit tests:
+
+- `ClockReliabilityChecker.test.ts`: the resolution from fast readings, also for a coarse clock that stays flat for many readings. A 5 μs clock is high resolution, and a 1 ms clock is not. The checker measures one time and keeps the result. After a call in which the clock did not change, the next call measures again. A clock that does not advance gives 0 and is not high resolution.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
+
+- `lag-monitors.test.ts`: the resolution is more than 0 and not more than 1 ms. `isHighResolution()` is true only when the test page is cross-origin isolated.
+- `coi/isolation.test.ts` (a cross-origin-isolated page, in Chromium in the new headless mode, Firefox and WebKit): `isHighResolution()` is true, and the resolution is 20 µs or less.
+
+## Source
+
+- [`ClockReliabilityChecker.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ClockReliabilityChecker.ts): the checker.
+- [`instrumented/clock-reliability.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/clock-reliability.ts): the factory.

@@ -1,22 +1,123 @@
 ---
-title: Event timing and INP
-description: Records each interaction event of 16 ms or more, split into its phases, and the INP of the page.
-order: 25
-status: draft
+title: Event Timing
+description: Records each interaction event of 16 ms or more from the Event Timing API, divided into its three phases, and calculates the INP of the page.
+order: 27
+status: final
 ---
 
 import { eventTimingMetrics } from "./metrics.data";
 
-`EventTimingMonitor` records each interaction event of 16 ms or more from the Event Timing API. It splits each event into the input delay, the processing time and the presentation delay. It also reports the Interaction to Next Paint (INP) of the page.
+`EventTimingMonitor` records each interaction event of 16 ms or more from the Event Timing API. It divides each event into the input delay, the processing time and the presentation delay. It also calculates the Interaction to Next Paint (INP) of the page since its start.
 
 ## What it measures
 
-## How INP is calculated
+For each event entry with an interaction ID, the monitor records four values:
+
+| Value | Calculation |
+|---|---|
+| Duration | `duration`: from the input to the next paint. |
+| Input delay | `processingStart − startTime`: the wait before the event handlers start. |
+| Processing time | `processingEnd − processingStart`: the time of the event handlers. |
+| Presentation delay | `duration − (processingEnd − startTime)`: the time from the end of the handlers to the next paint. |
+
+The monitor answers this question: how long does an interaction wait for the next paint, and which phase takes the time? A long input delay shows a busy main thread before the input. A long processing time shows slow handlers. A long presentation delay shows slow style, layout or paint work after the handlers.
+
+The INP of the page view, with attribution, comes from the [page-view vitals](/docs/monitors/page-view-vitals). This monitor gives the distribution of all slow events.
+
+## How it works
+
+The monitor makes a `PerformanceObserver` for the entry type `event`, with `durationThreshold: 16` and `buffered: true`. The browser default threshold is 104 ms, and 16 ms is the smallest permitted threshold of the specification. With the default, the monitor does not get most interactions.
+
+The monitor ignores each entry without an `interactionId` (the value 0), for example hovers. The browser gives an interaction ID only to `pointerdown`, `pointerup`, `click`, `keydown` and `keyup` ([browser support](/research/browser-support)). Rounding can make the presentation delay negative, thus the monitor records it as at least 0. The factory also records the input delay and the processing time as at least 0.
+
+The factory labels each value with the attribute `interaction`:
+
+- `keyboard`: an event name that starts with `key`.
+- `pointer`: `pointer*`, `mouse*`, `touch*`, `click`, `auxclick` and `contextmenu`.
+- `other`: all other names.
+
+### The INP of the page
+
+`InpCalculator` keeps the 10 longest interactions. The events of one interaction (for example `pointerdown`, `pointerup` and `click`) share one interaction ID, and the longest event counts. INP is the longest interaction, with one outlier ignored for each 50 interactions. It is the interaction at the index min(n − 1, floor(count / 50)) of the sorted list, where n is the number of kept interactions. This is the rule of web-vitals ([Web Vitals algorithms](/research/web-vitals-algorithms)).
+
+The count of interactions comes from `performance.interactionCount`, since the start of the monitor. Without it, the calculator counts the interaction IDs that it got. `getINP()`, `getInteractionCount()` and `getWorstInteractionDuration()` give the current values. `stop()` clears the calculator, because a restart gets the buffered entries of the browser again.
+
+## Browser support
+
+| Feature | Chromium | Firefox | Safari |
+|---|---|---|---|
+| `event` entries with `durationThreshold` | 85 (interface from 76) | 89 | 26.2 |
+| `interactionId` | 96 | 144 | 26.2 |
+| `performance.interactionCount` | 144 | 144 | 26.2 |
+
+The monitor uses only entries with an `interactionId`. Thus it records values from Chromium 96, Firefox 144 and Safari 26.2 ([browser support](/research/browser-support)). These facts of the API change the values:
+
+- The browser rounds `duration` to 8 ms.
+- Before the observer starts, the browser keeps only entries of 104 ms or more, in a buffer of 150 entries.
+- Chromium measures to the presentation of the frame. Firefox and Safari measure to the end of the render update. Thus, for the same work, Firefox and Safari give slightly lower values.
+- Safari gives high values in the tail. One cause is real: WebKit does not prioritize the render after an interaction over tasks that are already in the queue (WebKit bug 319911).
+- From Chrome 148, `entry.target` is null more frequently. From Chrome 150, a nested click (a label that forwards to a control) gets the interaction ID 0.
+
+## Measurement validity
+
+The monitor does not pause while the page is hidden, and it uses no `SampleValidator`. The browser measures each event, and the monitor uses no timers.
 
 ## Metrics
 
 <MetricTable metrics={eventTimingMetrics} />
 
-## Browser support
+The monitor sends no events. The `browser.web_vital` event of the [page-view vitals](/docs/monitors/page-view-vitals) has the INP attribution.
+
+## Configuration
+
+```ts
+function createInstrumentedEventTiming(
+    deps : CoreDeps & ObserverDeps & Partial<PerformanceDeps>,
+) : MonitorHandle<EventTimingMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `ObserverDeps` (`PerformanceObserver`). With `PerformanceDeps` (`performance`), the INP calculator reads `performance.interactionCount`. The factory has no options.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedEventTiming } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+if (deps.PerformanceObserver) {
+    const eventTiming = createInstrumentedEventTiming({ ...deps, PerformanceObserver : deps.PerformanceObserver });
+    // The INP of the page since the start of the monitor
+    console.log(eventTiming.monitor?.getINP(), eventTiming.monitor?.getInteractionCount());
+}
+```
+
+## Cost
+
+- **Observers:** one `PerformanceObserver`. No timers.
+- **Records:** four histogram values for each event entry of 16 ms or more with an interaction ID.
+- **Memory:** the 10 longest interactions.
 
 ## Limits
+
+- **Events, not interactions.** One interaction gives one entry for each of its events. Thus a click can add three values (`pointerdown`, `pointerup`, `click`) to each histogram.
+- **Only slow events.** The browser gives no entry for an event of less than 16 ms. The histograms show the slow part of the distribution.
+- **Not all input.** Scroll, drag and hover are not discrete interactions, thus they have no interaction ID ([Web Vitals algorithms](/research/web-vitals-algorithms)).
+- **The count without `interactionCount`.** The count of interactions that the calculator got is too low, because fast interactions give no entry. Then INP can be slightly too high on a page with many fast interactions.
+- **The page, not the page view.** `getINP()` covers the time since the start of the monitor, also across back/forward cache restores.
+- **Engines differ.** Do not compare the values of Chromium with the values of Firefox and Safari without the engine as a dimension.
+
+## Tests
+
+Unit tests:
+
+- `EventTimingMonitor.test.ts`: the three phases of an event, the monitor ignores an entry with the interaction ID 0, and INP as the p98 of the interactions. The longest event of an interaction counts, and an interaction counts one time across its events. The observer uses a threshold of 16 ms. The monitor records a negative presentation delay as 0. The calculator uses `performance.interactionCount` when the browser has it, and counts the interactions otherwise.
+- `InpCalculator.test.ts`: a property test (fast-check) compares the calculator with a reference definition for all sequences of entries.
+
+Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
+
+- `lag-monitors.test.ts` (only where the browser has Event Timing with `interactionId`): a real click on a button whose handler blocks for 120 ms gives a `lag_event_duration_histogram` value of 120 ms or more.
+
+## Source
+
+- [`EventTimingMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/EventTimingMonitor.ts): the monitor and the interaction types.
+- [`InpCalculator.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/InpCalculator.ts): the INP calculation.
+- [`instrumented/event-timing.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/event-timing.ts): the factory.

@@ -1,22 +1,133 @@
 ---
 title: Long animation frames
-description: Records frames longer than 50 ms from the Long Animation Frames API.
-order: 24
-status: draft
+description: Records the duration and the blocking duration of each frame of 50 ms or more from the Long Animation Frames API, with script attribution in Chromium.
+order: 26
+status: final
 ---
 
 import { loafMetrics } from "./metrics.data";
 
-`LongAnimationFrameMonitor` records each frame longer than 50 ms from the Long Animation Frames API (LoAF). For each frame, it records the duration and the blocking duration.
+`LongAnimationFrameMonitor` records each long animation frame (LoAF) that the browser reports. The browser reports each frame of 50 ms or more, with the scripts of the frame. Only Chromium has this API.
 
 ## What it measures
 
+The monitor records two values for each long frame:
+
+- **The blocking duration**: the part of the frame that blocked input. For each long task in the frame, the time over 50 ms counts, and the render phase counts as part of the task ([browser support](/research/browser-support)).
+- **The duration**: the full time of the frame, also the time that did not block input.
+
+The monitor answers this question: which frames blocked the page, and which script caused it? It gives the attribution that the timer monitors cannot give. Use it in Chromium together with [DriftLag](/docs/monitors/drift-lag) and the [worker monitor](/docs/monitors/worker-lag), which work in all browsers.
+
 ## How it works
+
+The monitor makes a `PerformanceObserver` for the entry type `long-animation-frame`, with `buffered: true`. Thus it also gets the frames from before its start, as far as the buffer of the browser keeps them. For each entry, the monitor gives a report with these fields:
+
+| Field | Value |
+|---|---|
+| `blockingDuration`, `duration`, `startTime` | From the entry. |
+| `renderDuration` | From `renderStart` to the end of the frame. It is 0 for a frame that did not render (`renderStart` is 0). |
+| `scriptCount` | The number of scripts in `scripts`. |
+| `hasForceLayout` | True if a script has a `forcedStyleAndLayoutDuration` of more than 0. |
+| `topScript` | The script with the longest `duration`: `invoker`, `invokerType`, `sourceURL`, `sourceFunctionName`, `duration`. |
+
+The factory records `blockingDuration` and `duration` for each frame. For a frame that blocks for 150 ms or more, it also sends a `lag.long_animation_frame` event with the longest script. It sends at most 10 events in each period of 60 s, and it removes the query string and the fragment from the script URL.
+
+When the browser does not list `long-animation-frame` in `PerformanceObserver.supportedEntryTypes`, the monitor logs a warning and gets no entries.
+
+## Browser support
+
+| Browser | Long Animation Frames |
+|---|---|
+| Chromium | 123 (March 2024). `paintTime` and `presentationTime` from 145. |
+| Firefox | Not available. Mozilla has a positive position, and bug 1348405 is open. |
+| Safari | Not available. WebKit bug 270913 is open. |
+
+The API is not available in workers. The specification is a W3C First Public Working Draft of 28 April 2026. Chromium approved the style and layout durations (`styleDuration`, `layoutDuration` and their forced versions) to ship in Chrome 157 ([browser support](/research/browser-support)).
+
+These facts of the API limit the attribution:
+
+- The browser reports only frames of 50 ms or more. A script is in `scripts` only if it took more than 5 ms.
+- The browser keeps a buffer of 200 entries.
+- The browser gives no script attribution for cross-origin iframes, workers, service workers or extensions.
+- For a cross-origin script without CORS, the browser gives only `sourceURL`, and `sourceFunctionName` is empty.
+
+## Measurement validity
+
+The monitor does not pause while the page is hidden, and it uses no `SampleValidator`. It records each frame that the browser delivers. The monitor uses no timers, thus the timer throttling of hidden pages does not change it.
 
 ## Metrics
 
 <MetricTable metrics={loafMetrics} />
 
-## Browser support
+### The long frame event
+
+`lag.long_animation_frame` has these attributes:
+
+| Attribute | Value |
+|---|---|
+| `duration_ms` | The duration of the frame. |
+| `blocking_duration_ms` | The blocking duration of the frame. |
+| `script.invoker` | The invoker of the longest script, for example `BUTTON#buy.onclick`. |
+| `script.invoker_type` | For example `event-listener` or `user-callback`. |
+| `script.source_url` | The URL of the script, without the query string and the fragment. |
+| `script.duration_ms` | The duration of the longest script. |
+
+A frame without script attribution gives only `duration_ms` and `blocking_duration_ms`. `setupAllMonitors()` adds `lag.page_view.id` to each event.
+
+## Configuration
+
+```ts
+function createInstrumentedLoaf(
+    deps : CoreDeps & ObserverDeps & Partial<EventDeps>,
+) : MonitorHandle<LongAnimationFrameMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `ObserverDeps` (`PerformanceObserver`). `EventDeps` (`events`) is optional: without it, the factory sends no events. The attribution threshold (150 ms) and the event limit (10 each minute) are constants of the factory.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { logs } from "@opentelemetry/api-logs";
+import { createBrowserDeps, createInstrumentedLoaf, createOtelEventSink } from "@lag/core";
+
+const deps = createBrowserDeps(window, {
+    logger : console,
+    meter : metrics.getMeter("lag"),
+    events : createOtelEventSink(logs.getLogger("lag-events")),
+});
+if (deps.PerformanceObserver) {
+    const loaf = createInstrumentedLoaf({ ...deps, PerformanceObserver : deps.PerformanceObserver });
+    loaf.stop();
+}
+```
+
+## Cost
+
+- **Observers:** one `PerformanceObserver`. No timers.
+- **Records:** two histogram values for each long frame, and only for frames of 50 ms or more.
+- **Events:** at most 10 each minute.
 
 ## Limits
+
+- **Only Chromium.** Firefox and Safari have no long frame entries. There, use the timer monitors and the [worker monitor](/docs/monitors/worker-lag).
+- **The longest script only.** The event names the script with the longest duration. The other scripts of the frame are not in the event.
+- **Events are limited.** After 10 events in a period of 60 s, the factory sends no more events in that period. The histograms still record each frame.
+- **The attribution gaps of the API.** Scripts of 5 ms or less, cross-origin iframes, workers and extensions give no attribution.
+- **Duration is not blocking.** `duration` also contains time that did not block input. Use `blockingDuration` for the effect on input.
+
+## Tests
+
+Unit tests:
+
+- `LongAnimationFrameMonitor.test.ts`: the monitor reports the blocking duration and the duration of the entry. It calculates the render duration from `renderStart`, and 0 for a frame that did not render. It finds the forced layout of the scripts.
+- `ObserverMonitor.test.ts`: the observer uses `buffered: true`. The monitor skips a type that is not in `supportedEntryTypes`, and it logs a warning when `observe()` fails. An error in one entry does not stop the other entries.
+- `setup-all-monitors.test.ts`: the event has the blocking duration, the invoker, the script URL without its query string, and the page-view ID.
+
+Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
+
+- `lag-monitors.test.ts` (only where the browser has Long Animation Frames: Chromium and Chrome): a 150 ms block occurs in an animation frame. Then the blocking durations of the monitor are equal to the blocking durations of a second, raw observer.
+
+## Source
+
+- [`LongAnimationFrameMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/LongAnimationFrameMonitor.ts): the monitor.
+- [`ObserverMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ObserverMonitor.ts): the base class of the observer monitors.
+- [`instrumented/loaf.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/loaf.ts): the factory and the event.

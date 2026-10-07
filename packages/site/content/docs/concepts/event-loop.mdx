@@ -1,24 +1,128 @@
 ---
 title: The event loop
-description: How tasks, microtasks and frames share the main thread, and why one long task delays all the work after it.
+description: How tasks, microtasks and rendering share the main thread, the four meanings of lag, and the monitor that measures each one.
 order: 10
-status: draft
+status: final
 ---
 
 import { eventLoopChart } from "./diagrams.data";
 
-The browser runs JavaScript, style, layout and paint on one main thread. A task runs to its end before the next task starts. If a task is long, it delays every input, timer and frame after it. Each monitor measures this delay in a different way.
+The browser does the JavaScript, the style and layout calculations and the paint of a page on one main thread. The main thread does one task at a time, and it does each task to its end. Thus a long task delays each input, timer and frame that comes after it. This page tells you how the event loop operates, what "lag" means in this project, and which monitor measures each type of lag.
+
+## Tasks, microtasks and rendering opportunities
+
+A task is one unit of work from a task queue. For example, a timer callback, an input event, a message from a worker and a network callback are tasks. The browser selects one task from its queues and does it to its end. The browser cannot stop a task in the middle.
+
+After each task, the main thread does all the microtasks in the microtask queue. Promise callbacks and `queueMicrotask()` callbacks are microtasks. A microtask cannot wait behind another task, because it starts immediately after the current task. Thus the [scheduling-fairness monitor](/docs/monitors/scheduling-fairness) uses a microtask as a baseline that stays near 0 ms.
+
+Between two tasks, the browser can have a rendering opportunity. Then it starts the `requestAnimationFrame` callbacks, calculates the style and the layout, and paints. The rendering opportunities usually follow the refresh rate of the display, for example one each 16.7 ms at 60 Hz.
 
 <Mermaid
   chart={eventLoopChart}
   title="A simplified event loop"
-  caption="A simplified view of the event loop. The real loop has more queues and more rules."
+  caption="A simplified view of the event loop. The real loop has more queues and more rules, for example task priorities."
 />
 
-## Tasks and microtasks
+## How a long task delays input and paint
 
-## Frames and rendering
+A click that occurs during a long task waits in the task queue until the end of the task. Then the main thread does the event handlers of the click. Then the browser can paint the result at the next rendering opportunity. The [event-timing monitor](/docs/monitors/event-timing) calculates these three parts from the Event Timing entries: the input delay, the processing duration and the presentation delay.
 
-## What a long task does
+For example, a task blocks the main thread for 300 ms, and a click comes 100 ms after the start of the task. The click waits 200 ms before its handlers start. The frames also wait. At 60 Hz, a gap of 300 ms between two frames is approximately 18 frame intervals. The [frame-timing monitor](/docs/monitors/frame-timing) counts such a gap as round(300 / 16.7) − 1 = 17 dropped frames.
 
-## How each monitor sees the delay
+## Four meanings of lag
+
+"Lag" is not one quantity. This project measures four different quantities, and each quantity answers a different question.
+
+| Quantity | Question | Monitors |
+|---|---|---|
+| Blocked time in a window | How much of each window of approximately 100 ms was the main thread busy? | [DriftLag](/docs/monitors/drift-lag) |
+| Queueing delay that a random event sees | How long does a message that comes at a random time wait? | [Worker lag](/docs/monitors/worker-lag), with the worker heartbeat |
+| Frame delay | How late are the frames, and which script blocked them? | [Frame timing](/docs/monitors/frame-timing), [long animation frames](/docs/monitors/long-animation-frames) |
+| Input latency | How long does an interaction wait for the next paint? | [Event timing](/docs/monitors/event-timing), [page-view vitals](/docs/monitors/page-view-vitals) (INP) |
+
+Each quantity answers its own question, thus their values do not agree. For example, a page blocks for 1 s each minute, and nobody interacts with it. In one window, the blocked time is high. Some messages wait for a long time, and many frames drop. The page has no input latency, because no interaction occurs.
+
+### Blocked time in a window
+
+`DriftLag` chains timeouts of 5 ms in a window of approximately 100 ms. The lag of the window is its duration minus the idle duration of its steps. Each block of the main thread in the window adds its duration to the lag. Thus DriftLag measures how much of the window was blocked. It does not measure the delay of one event.
+
+The resolution is one step. A block can start immediately after a step, thus the lag of a block can be less than its duration by up to one step. The [statistics](/docs/concepts/statistics) page tells you how to read the sum of the samples as the fraction of the time that the main thread was blocked.
+
+### Queueing delay that a random event sees
+
+A Web Worker sends a heartbeat from its own timer, one each second by default. The heartbeat is a message, thus it waits in the task queue of the main thread as each message does. Its delay is the time that the main thread could not process messages. The worker sends on its own schedule, thus the heartbeats sample the queue at times that do not depend on the main thread.
+
+In Chromium, a message from a worker to its page has the task type of a posted message. The scheduler can pause this task type, but it does not throttle it ([clocks and timers](/research/clocks-and-timers)). The [statistics](/docs/concepts/statistics) page tells you why the worker heartbeat is the primary estimator of this quantity.
+
+Two more monitors measure the delay of the task queue. [MacrotaskLag](/docs/monitors/macrotask-lag) measures how long a zero-delay timeout waits, one sample each 5 s. The [scheduling-fairness monitor](/docs/monitors/scheduling-fairness) compares a timeout, a message and a microtask that start at the same time, also each 5 s. On a cross-origin-isolated page, the [shared-memory liveness monitor](/docs/monitors/shared-liveness) also operates. A worker reads a counter in shared memory, and the monitor gives the duration of each block of 50 ms or more.
+
+### Frame delay
+
+`FrameTimingMonitor` measures the time between two `requestAnimationFrame` callbacks. It finds the frame interval from the shortest gap of the last 600 frames, thus it follows a display of 120 Hz and a frame-rate limit. A gap of n frame intervals counts as n − 1 dropped frames, with n rounded to an integer.
+
+`LongAnimationFrameMonitor` reads the Long Animation Frames API. The browser reports each frame of 50 ms or more, with its blocking duration and the scripts of the frame. Only Chromium has this API, from version 123 ([browser support](/research/browser-support)).
+
+### Input latency
+
+`EventTimingMonitor` records each interaction event of 16 ms or more, with its three phases. The value of 16 ms is the smallest threshold that the Event Timing API permits. The default threshold of the API is 104 ms. Chromium has Event Timing entries from version 85, Firefox from version 89, and Safari from version 26.2 ([browser support](/research/browser-support)).
+
+`PageViewVitals` calculates the Interaction to Next Paint (INP) of each page view, with the rules of web-vitals. INP is the longest interaction of the page view, with one outlier ignored for each 50 interactions. INP needs the `interactionId` of each entry. Chromium has it from version 96, Firefox from version 144, and Safari from version 26.2. Refer to [page views](/docs/concepts/page-views).
+
+## Other signals of the main thread
+
+These monitors do not measure lag directly, but they help to explain it:
+
+- The [idle-availability monitor](/docs/monitors/idle-availability) measures how frequently the main thread is idle, and for how long. It is the inverse of lag. Safari does not have `requestIdleCallback`, thus this monitor does not operate in Safari.
+- The [timer-throttle detector](/docs/monitors/timer-throttle) finds the periods in which the browser slows the timers of the page.
+- The [garbage-collection signal](/docs/monitors/gc-signal) counts the garbage collections that a `FinalizationRegistry` finds.
+
+## Timer nesting and the 4 ms clamp
+
+The HTML standard clamps a short timeout in a nested timer: "If nesting level is greater than 5, and timeout is less than 4, then set timeout to 4." Each timer callback that schedules a timer increases the nesting level by one. Each repeat of a `setInterval` callback also increases the nesting level. The engines apply the rule in different ways ([clocks and timers](/research/clocks-and-timers)):
+
+| Engine | Rule for nested timers |
+|---|---|
+| Chromium | 4 ms when the nesting level is above 6 and the timeout is less than 4 ms. Blink counts the levels from 1. |
+| Firefox | The preference `dom.clamp.timeout.nesting.level` sets the nesting level of the clamp, which is 5. The repeats of `setInterval` count from Firefox 56. |
+| WebKit | The nesting limit is 10 for one-shot timers and 5 for repeating timers. A timer at the limit aligns to a grid: 4 ms or more on a visible page, 30 ms in Low Power Mode, and 1 s on a hidden page. |
+
+The clamp changes what a probe measures. A `setTimeout(0)` that a timer callback schedules measures the clamp, not the task queue. Thus [MacrotaskLag](/docs/monitors/macrotask-lag) and the [scheduling-fairness monitor](/docs/monitors/scheduling-fairness) start each `setTimeout(0)` from a message task (`createMessageTaskQueue`). A message task has the nesting level 0, thus the browser does not clamp the timeout. [DriftLag](/docs/monitors/drift-lag) uses steps of 5 ms, which are above the clamp of Chromium and Firefox.
+
+We measured the effect on an idle page on Windows 11, with the headless engines of Playwright ([local experiments](/research/local-experiments), experiment E2):
+
+| Median delay of `setTimeout(0)` | Chromium 145 | Firefox 146 | WebKit (Safari 26.0 build) |
+|---|---|---|---|
+| From the 8th repeat of a `setInterval` callback | 5 ms | 16 ms | 16 ms |
+| From a message task | 0 ms | 0 ms | 15 ms |
+
+## The timer granularity of each engine
+
+A timer callback does not start at the requested time. The operating system wakes the thread at its timer tick, and the browser adds its own rules. In experiment E2, we measured a chain of `setTimeout(5)` on an idle page:
+
+| Measurement | Chromium 145 | Firefox 146 | WebKit (Safari 26.0 build) |
+|---|---|---|---|
+| Median step of `setTimeout(5)` | 5.7 ms | 16 ms | 15 ms |
+| Shortest step | 5.0 ms | 9 ms | 13 ms |
+
+On Windows, Firefox and WebKit use the timer tick of the system, 15.6 ms, for a timeout of 5 ms. Chromium asks the system for a tick of 1 ms. According to the Chromium source code, Chromium uses 1 ms on AC power and 8 ms on battery power ([clocks and timers](/research/clocks-and-timers)). The WebKit build for Windows is not Safari on macOS. Safari on macOS aligns nested timers to a grid of 4 ms, or 30 ms in Low Power Mode.
+
+Other measurements show the same differences. Nolan Lawson measured these medians on an idle MacBook Pro of 2021, in August 2025 ([clocks and timers](/research/clocks-and-timers)):
+
+| Median delay | Chrome 139 | Firefox 142 | Safari 18.4 |
+|---|---|---|---|
+| A nested `setTimeout(0)` | 4.2 ms | 4.72 ms | 26.73 ms |
+| A `MessageChannel` message | 0.05 ms | 0.02 ms | 0.52 ms |
+
+A probe that thinks that each step takes 5 ms reports lag that is not real. Thus DriftLag calibrates: it calculates the idle duration of one step from the recent steps, and it subtracts this baseline. The `lag_drift_baseline_histogram` metric records the baseline at the end of each window. In experiment E3, the calibrated DriftLag gave these results:
+
+| Measurement | Chromium 145 | Firefox 146 | WebKit |
+|---|---|---|---|
+| Baseline step | 5.7 ms | 15.5 ms | 15.6 ms |
+| Median lag on an idle page | 0.1 ms | −0.3 ms | −0.4 ms |
+| Lag after a block of 300 ms | 297.4 ms | 282.7 ms | 294.6 ms |
+
+The `DriftLag` class gives a negative lag when the jitter of a window is below the baseline. The metric `lag_drift_histogram` records such a value as 0.
+
+<Callout type="warning" title="Hidden pages">
+  Browsers throttle the timers of a hidden page much more, for example to one wake-up each second in Chrome. The monitors pause and discard such samples. Refer to [measurement validity](/docs/concepts/measurement-validity).
+</Callout>

@@ -1,0 +1,167 @@
+---
+title: Clocks and time
+description: The monotonic clock and the wall clock of a browser, the effect of a sleep and of a clock step, and how the library keeps its timestamps consistent between threads.
+order: 13
+status: final
+---
+
+import { clockDriftChart, clockSyncChart } from "./diagrams.data";
+import { clockMetrics } from "../monitors/metrics.data";
+
+A browser page has two clocks: a monotonic clock for durations and a wall clock for the time of day. A third value connects them: `performance.timeOrigin`. The three behave differently in each engine and on each operating system. This page tells you which clock each part of the library uses, and why. The research note [clocks and timers](/research/clocks-and-timers) gives the sources.
+
+## The monotonic clock and the wall clock
+
+| Clock | API | Can it jump? | During a system sleep | Use in the library |
+|---|---|---|---|---|
+| Monotonic clock | `performance.now()` | No | Stops, except on Windows | All durations of the monitors |
+| Wall clock | `Date.now()` | Yes, forward or backward | Continues | The clock-drift monitor compares it with the absolute clock. The hang journal and the hang reports of the worker use it. |
+| Absolute clock | `performance.timeOrigin` plus `performance.now()` | Not with `createAbsoluteClock()`. In Safari, a new read of `timeOrigin` can jump. | The same as the monotonic clock | Timestamps that the page and its worker compare |
+
+`performance.now()` gives the time since the time origin of the context. The time origin of a window is the start of its navigation, and the time origin of a worker is the start of the worker. The High Resolution Time specification makes this clock monotonic: system clock adjustments do not change it.
+
+Browsers coarsen `performance.now()` to make timing attacks more difficult. The resolution is 100 µs in Chrome and 1 ms in Firefox and Safari. With cross-origin isolation, it is 5 µs in Chrome and 20 µs in Firefox and Safari. The [clock-reliability monitor](/docs/monitors/clock-reliability) measures the resolution one time for each page.
+
+`Date.now()` gives the wall-clock time in Unix milliseconds. NTP corrects the wall clock slowly or in one step, and a user can change it. No browser event tells the page about a change. On macOS and Windows, NTP corrects the wall clock but not the monotonic clock. Thus the two clocks move apart slowly, for example by 36 ms in one hour at 10 ppm. On Linux, NTP corrects the two clocks together, thus they move apart only at a step or a suspend.
+
+## Safari's timeOrigin and createAbsoluteClock
+
+`performance.timeOrigin + performance.now()` gives an absolute time, which the page and its worker can compare. But each engine calculates `timeOrigin` differently:
+
+| Engine | How it calculates `timeOrigin` | A window and its dedicated worker |
+|---|---|---|
+| Chromium | One anchor for each `Performance` object, taken when the browser makes the object | The same monotonic clock, but a constant offset |
+| Firefox | One anchor for each content process | Aligned |
+| WebKit | A new value at each read, from the current wall clock | The two follow the wall clock, and the value can jump |
+
+In WebKit, a read of `performance.timeOrigin` gives the time origin of the page, calculated again from the wall clock at the time of the read. WebKit bug 258572 reports values that moved backward by 1 ms to 3 ms in some minutes. Thus code that reads `timeOrigin` at each timestamp uses the wall clock in Safari, with all its jumps.
+
+`createAbsoluteClock(performance)` reads `timeOrigin` one time. With one read, the absolute time of each context moves only with its monotonic clock, in all engines:
+
+```ts
+import { createAbsoluteClock } from "@lag/core";
+
+// Read timeOrigin one time, when the context starts
+const clock = createAbsoluteClock(performance);
+
+const sentAt = clock.now();          // Unix milliseconds that move only with performance.now()
+const elapsed = clock.monotonic();   // the same value as performance.now()
+console.log(clock.origin, sentAt, elapsed);
+```
+
+`setupAllMonitors()` makes one absolute clock for the page, and it gives the clock to the worker monitor and to the clock-drift monitor. The bundled worker of `@lag/worker` also reads `timeOrigin` one time. A unit test changes `timeOrigin` after the first read, and it makes sure that the clock does not move.
+
+## Sleep by operating system
+
+`performance.now()` stops during a system sleep on each platform except Windows. The cause is the clock of the operating system that each engine uses. The Windows clock (QPC) counts the sleep, and the clocks of macOS, Linux, Android and iOS do not count it ([clocks and timers](/research/clocks-and-timers)):
+
+| Browser | Windows | macOS | Linux and ChromeOS | Android | iOS and iPadOS |
+|---|---|---|---|---|---|
+| Chrome and Edge | Continues | Stops | Stops | Stops | Not applicable |
+| Firefox | Continues | Stops | Stops | Stops | Not applicable |
+| Safari | Not applicable | Stops | Not applicable | Not applicable | Stops |
+
+On iOS, each browser uses the WebKit engine, thus the Safari row applies to it. The exception is a browser with its own engine, which the rules of the EU for alternative engines permit. The specification group agreed that the clock must continue during a sleep, but the text of the specification does not say so clearly. The bugs of the three engines are open: Chromium 1206450, Mozilla 1709767 and WebKit 225610.
+
+The effects are different:
+
+- **The clock stops (macOS, Linux, Android, iOS).** A timer continues after the wake-up with its remaining delay. A lateness that the monotonic clock measures is approximately 0. `Date.now()` jumps forward by the duration of the sleep.
+- **The clock continues (Windows).** Each timer that came due during the sleep starts late by approximately the duration of the sleep, in the page and in the worker. `Date.now()` and the absolute clock move together.
+
+No browser event tells a page about a sleep or a wake-up. The `freeze` and `resume` events of Chromium occur only when the browser freezes a page, not when the system sleeps.
+
+## The clock-drift monitor
+
+`ClockDriftMonitor` compares the wall clock with the absolute clock each second. The skew of a sample is `Date.now()` minus the absolute time. The skew is near 0 when the page loads, and it changes only when one clock moves differently from the other.
+
+<Mermaid
+  chart={clockDriftChart}
+  title="The classification of one sample of the clock-drift monitor"
+  caption="The monitor reads the monotonic clock before and after the wall clock, and ignores a sample if the thread stopped between the reads."
+/>
+
+The monitor obeys these rules:
+
+- **Paired reads.** Each sample reads the monotonic clock, then the wall clock, then the monotonic clock again. If the two monotonic reads are more than 1 ms apart, the thread stopped between them, and the monitor ignores the sample. The skew uses the middle of the two monotonic reads.
+- **A tolerance for slow corrections.** A change of the skew is a discontinuity only if it is above max(50 ms, 3% of the time since the previous sample). Operating systems correct the wall clock gradually, and the tolerance lets them do it.
+- **Suspend or step.** A forward change of 1 s or more is a `suspend`. Each other discontinuity is a `step`. A backward change is always a step.
+- **No lateness rule.** The lateness of the timer of the monitor does not change the type. In a hidden page, Chrome can start the timer only one time each minute. Also, a page is likely hidden before the device sleeps.
+- **Evidence for the conditions.** With measurement conditions, each `suspend` adds a closed `suspend` interval to the reliability tracker. The interval is the monotonic time since the previous sample. The validators discard the samples that overlap it.
+
+The thresholds come from the research. Chromium's internal suspend detector also uses paired reads of two clocks. Sentry compares `Date.now()` with `timeOrigin + now()` and acts on a difference of more than 1 s ([clocks and timers](/research/clocks-and-timers)).
+
+<MetricTable metrics={clockMetrics} />
+
+Each discontinuity also sends the event `lag.clock.jump`, with the attributes `direction`, `kind`, `magnitude_ms`, `skew_ms` and `lateness_ms`. The attribute `lateness_ms` gives information only.
+
+The monitor does not change the values of the other measurements. They use the monotonic clock, and a change of the wall clock does not affect them. But a `suspend` discards the samples that overlap its interval. Refer to [measurement validity](/docs/concepts/measurement-validity). The monitor does not pause while the page is hidden, because the device can sleep while the page is hidden. After the monitor stops and starts again, it measures from the new start.
+
+The monitor has two limits:
+
+- A sleep on Windows causes no discontinuity, because the two clocks continue. But each timer starts late. The worker monitor finds this case. Refer to [measurement validity](/docs/concepts/measurement-validity).
+- A forward step of the system clock of 1 s or more looks the same as a suspend. The monitor counts it as a `suspend`, and the validators discard the samples of its interval.
+
+## The worker clock synchronization
+
+The delay of a heartbeat is its arrival time on the main thread minus its send time in the worker. The two times come from two contexts. Thus the [worker monitor](/docs/monitors/worker-lag) must know the offset between the two clocks. `WorkerClockSync` estimates the offset with an exchange in the style of NTP:
+
+1. The main thread sends a `sync` request at the time t0 of its absolute clock.
+2. The worker answers with its own absolute time t1.
+3. The answer comes at the time t2.
+4. The offset is t1 − (t0 + t2) / 2, and the round trip is t2 − t0. If the two one-way delays are 0 or more, the error of the offset is half of the round trip or less.
+
+<Mermaid
+  chart={clockSyncChart}
+  title="One clock synchronization between the main thread and the worker"
+  caption="The main thread sends the next request when the previous answer comes. The exchange with the shortest round trip gives the result."
+/>
+
+The synchronization uses these rules:
+
+- **8 exchanges.** Each synchronization does 8 exchanges, one after the other. The exchange with the shortest round trip gives the result of the synchronization. The clock filter of NTP also keeps 8 samples and prefers the one with the shortest delay.
+- **The best result stays.** The monitor synchronizes when it starts and each 60 s. It keeps the result with the shortest round trip of all synchronizations. A synchronization while the main thread is busy has a long round trip, thus it cannot replace a better result.
+- **A correction only outside the uncertainty.** The correction is the offset only if the absolute value of the offset is more than half of the round trip plus 1 ms. If not, the two clocks agree in the limits of the uncertainty, and the correction is 0.
+
+The delay of a heartbeat is max(0, arrival time − send time + correction). The metric `lag_worker_clock_offset_histogram` records the absolute offset of each synchronization. The coarse clocks limit the accuracy: approximately ±(round trip / 2 + 0.2 ms) in Chrome, and ±1 ms to 2 ms in Firefox and Safari.
+
+## Why the offset is constant
+
+The synchronization keeps the best result of all synchronizations. This rule is correct only if the offset does not change. When each context reads `timeOrigin` one time, the offset is constant in each engine:
+
+- **Chromium.** The page and its worker use the same monotonic clock, but each one takes its own anchor when the browser makes its `Performance` object. Thus the offset is the change of the difference between the wall clock and the monotonic clock between the two anchors. The offset is usually small, but a sleep, a clock step or a long NTP correction before the worker starts makes it large.
+- **Firefox.** The page and its dedicated worker share one anchor. Thus the offset is 0.
+- **WebKit.** Each context reads `timeOrigin` one time, thus each absolute clock moves only with the monotonic clock. As in Chromium, the offset is the change of the difference between the wall clock and the monotonic clock between the two reads. It does not change after the reads.
+
+For example, a worker on macOS starts one hour after the page, while NTP corrects the clock by 20 ppm. The worker then gets a constant offset of approximately 72 ms. Without the synchronization, the monitor reports 72 ms of lag that is not real, or a negative delay.
+
+## OpenTelemetry timestamps
+
+The OpenTelemetry SDK for JavaScript uses two clocks ([clocks and timers](/research/clocks-and-timers)):
+
+- **Metrics and logs.** The SDK takes the timestamps of metric records, of each collection and of log records from `Date.now()`. Thus they are wall-clock times. They are correct after a sleep, but each step of the wall clock moves them.
+- **Spans.** A span starts at `Date.now()`, and its duration comes from `performance.now()`. Thus a span that contains a sleep does not contain the time of the sleep, except on Windows.
+- **The `hrTime()` function** gives `timeOrigin + performance.now()`. In Chrome and Firefox, it moves away from the wall clock by the time of each sleep. In Safari, it is the wall clock.
+
+The events of the library are OpenTelemetry log records, thus they have `Date.now()` timestamps. The worker makes the OTLP record of a hang report itself. It also uses `Date.now()` for the time of the record, as the OpenTelemetry SDK does.
+
+The records of the [hang journal](/docs/concepts/survivorship) also have `Date.now()` times. A later page compares them with its own time, and the wall clock is the only clock that all pages share. The monotonic clock of a page stops while the device sleeps, except on Windows. Thus the absolute clock of a page can be behind the wall clock by hours.
+
+Mimir rejects a sample that is more than 10 minutes in the future. Thus the samples of a browser whose wall clock is too far ahead are lost ([OpenTelemetry metrics in the browser](/research/otel-browser-metrics)).
+
+If you need the offset of the worker clock in your app, the worker monitor gives the best result:
+
+```ts
+import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@lag/core";
+import { createLagWorker } from "@lag/worker";
+
+const worker = createLagWorker();
+const monitors = setupAllMonitors(createBrowserDeps(window, {
+    logger : { log : (level, message) => console.log(level, message) },
+    meter : createNoopMeter(),
+    worker,
+}));
+
+// The most accurate synchronization at this time, or undefined before the first one
+const sync = monitors.workerMonitor?.getClockSync();
+if (sync) console.log(`offset ${sync.offsetMs.toFixed(2)} ms, uncertainty ${(sync.roundTripMs / 2).toFixed(2)} ms`);
+```

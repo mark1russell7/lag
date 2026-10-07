@@ -1,20 +1,117 @@
 ---
 title: Scheduling fairness
-description: Measures the latency of a timeout, a message and a microtask that start at the same time.
-order: 30
-status: draft
+description: Measures the latency of a zero-delay timeout, a message and a microtask that start at the same time, from a message task, each 5 s.
+order: 23
+status: final
 ---
 
 import { schedulingMetrics } from "./metrics.data";
 
-`SchedulingFairnessMonitor` queues a `setTimeout(0)` callback, a `postMessage` callback and a `queueMicrotask` callback at the same time. It measures the latency of each callback. The microtask latency is a baseline of about 0 ms.
+`SchedulingFairnessMonitor` puts three callbacks in their queues at the same time: a `setTimeout(0)` callback, a `MessageChannel` message and a `queueMicrotask` callback. It measures the latency of each callback. It does one cycle each 5 s.
 
 ## What it measures
 
+The monitor gives three latencies from one start time:
+
+| Callback | What its latency shows |
+|---|---|
+| `setTimeout(0)` | The wait behind all queued tasks, with the timer rules of the browser. |
+| `MessageChannel` message | The wait behind all queued tasks, without the timer rules. This is the most direct view of the delay of the task queue. |
+| `queueMicrotask` | Only the rest of the measuring task. Other tasks cannot delay a microtask. Thus this value stays near 0, and it is a baseline. |
+
+The monitor answers two questions. When the page puts a task in the queue, how long does the task wait? Do the timer rules add to the wait? The two task latencies increase together when the queue is long. A timeout latency that is much larger than the message latency shows the timer rules, not the queue.
+
 ## How it works
+
+1. A `setInterval` callback starts each 5 s.
+2. The callback posts a message task (`createMessageTaskQueue`). The cycle starts in that task, not in the interval callback.
+3. The message task reads the clock. Then it sets `setTimeout(0)`, queues a microtask and posts a second message.
+4. Each callback records the time since the start. When the three latencies are known, the monitor reports the cycle.
+
+In a message task, the timer nesting level is 0. Thus the browser does not clamp the `setTimeout(0)` to 4 ms. A cycle that is in progress when the monitor stops does not report, also when the monitor starts again before the callbacks.
+
+## Browser support
+
+The monitor uses `setInterval`, `setTimeout`, `MessageChannel` and `queueMicrotask`. `createBrowserDeps()` gives these dependencies only when the browser has `MessageChannel` and `queueMicrotask`. Chromium, Firefox and Safari have `MessageChannel` ([clocks and timers](/research/clocks-and-timers)).
+
+We measured the median `setTimeout(0)` from a message task on an idle page on Windows 11 ([experiment E2](/research/local-experiments)). It was 0 ms in Chromium 145 and Firefox 146, and 15 ms in the WebKit build for Windows. WebKit waited for the timer tick of the system.
+
+A published comparison measured chained (nested) timers against messages on an idle MacBook Pro ([clocks and timers](/research/clocks-and-timers)). It shows why the cycle starts in a message task:
+
+| Median | Nested `setTimeout(0)` | `MessageChannel` |
+|---|---|---|
+| Chrome 139 | 4.2 ms | 0.05 ms |
+| Firefox 142 | 4.72 ms | 0.02 ms |
+| Safari 18.4 | 26.73 ms | 0.52 ms |
+
+In the Chromium scheduler, a message task is pausable but not throttled. A zero-delay timeout at a low nesting level is deferrable but not throttled. The scheduler picks the oldest task of one priority, and at most 3 delayed tasks can start while an immediate task waits ([clocks and timers](/research/clocks-and-timers)).
+
+## Measurement validity
+
+With measurement conditions, the monitor pauses while the page is hidden or frozen. Each cycle goes to a `SampleValidator` with a window of the largest of the three latencies. The validator discards a cycle that overlaps a hidden, frozen or suspend interval. A cycle of 5000 ms or more waits 2000 ms for late evidence of a suspend. Refer to [measurement validity](/docs/concepts/measurement-validity).
 
 ## Metrics
 
 <MetricTable metrics={schedulingMetrics} />
 
+The monitor sends no events of its own. The measurement conditions send a `lag.stall` event for each stall episode.
+
+## Configuration
+
+```ts
+function createInstrumentedSchedulingFairness(
+    deps : CoreDeps & TimerDeps & SchedulingDeps,
+    conditions? : MeasurementConditions,
+    intervalMs? : number, // default 5000
+) : MonitorHandle<SchedulingFairnessMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`), `TimerDeps` (the four timer functions) and `SchedulingDeps` (`MessageChannel` and `queueMicrotask`). The third argument sets the time between two cycles.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedSchedulingFairness } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+if (deps.MessageChannel && deps.queueMicrotask) {
+    // One cycle each 10 s, without measurement conditions
+    const scheduling = createInstrumentedSchedulingFairness(
+        { ...deps, MessageChannel : deps.MessageChannel, queueMicrotask : deps.queueMicrotask },
+        undefined,
+        10_000,
+    );
+    scheduling.stop();
+}
+```
+
+## Cost
+
+- **Callbacks:** each 5 s, one interval callback, two message tasks, one timeout callback and one microtask.
+- **Records:** three histogram values each 5 s.
+- **Memory:** one `MessageChannel`. The monitor closes it at `stop()`.
+
 ## Limits
+
+- **Sparse samples.** One cycle each 5 s shows the queue at one time. A block that ends before the cycle starts does not change it.
+- **The microtask is not a signal.** Its latency is only the rest of the measuring task. Use it as the zero line of the other two values.
+- **A floor in some engines.** In the WebKit build for Windows, the timeout from a message task waited 15 ms (median) for the timer tick. Compare the timeout with the message in that engine.
+- **The same timeout probe as MacrotaskLag.** [MacrotaskLag](/docs/monitors/macrotask-lag) also measures a zero-delay timeout from a message task each 5 s.
+
+## Tests
+
+Unit tests:
+
+- `SchedulingFairnessMonitor.test.ts`: the loop starts at construction, and the monitor reports when the three callbacks are complete. `stop()` stops the loop and closes the channel. A cycle in progress across `stop()` and `start()` does not report. The `setTimeout(0)` starts from a message task, not from the interval callback. The monitor logs an error and does not start when it cannot make the `MessageChannel`.
+- `setup-all-monitors.test.ts`: the monitor pauses while the page is hidden.
+- `browser-deps.test.ts`: without `MessageChannel`, `setupAllMonitors()` does not start the monitor.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
+
+- `lag-monitors.test.ts`: after 5.5 s, `lag_scheduling_message_channel_histogram` has at least one value.
+- `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): `lag_scheduling_macrotask_histogram` gets no value while the page is hidden or frozen.
+
+## Source
+
+- [`SchedulingFairnessMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/SchedulingFairnessMonitor.ts): the monitor.
+- [`message-task.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/message-task.ts): the message task queue.
+- [`instrumented/scheduling-fairness.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/scheduling-fairness.ts): the factory.

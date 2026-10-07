@@ -1,0 +1,94 @@
+---
+title: Local experiments
+description: Three experiments in this repository on 2026-10-07, on the order of event listeners, the timers of an idle page and the calibrated DriftLag.
+order: 4
+status: final
+---
+
+import { idleLagChart, idleLagTable } from "./local-experiments.data";
+
+We did three experiments in this repository on 2026-10-07. They measured facts that no document gives. E1 measured the order of the event listeners at the target of an event. E2 measured the timers of an idle page in three engines. E3 measured the calibrated DriftLag on the same machine.
+
+The results changed the library in three ways. An explicit hook, not the order of the listeners, records the final values before each flush. DriftLag subtracts a calibrated baseline. The probes that use `setTimeout(0)` start in a message task.
+
+## E1: the order of listeners at the target
+
+**Question.** When two listeners are on the target of an event, does a capture listener start before a bubble listener that the page added earlier? The DOM standard says yes: at the target, the capture listeners start in the capture pass, and the other listeners start in the bubble pass.
+
+**Method.** The experiment used Vitest browser mode with the Playwright provider. In each case, it added a bubble listener first and a capture listener second. Then it dispatched one event and recorded the listener that started first.
+
+| Target | Chromium 145.0.7632.6 (headless) | Firefox 146 | WebKit (Safari 26.0) |
+|---|---|---|---|
+| `window`, custom `Event` | Bubble (the order of registration) | Capture | Capture |
+| `window`, `PageTransitionEvent("pagehide")` | Bubble (the order of registration) | Capture | Capture |
+| `document`, custom `Event` | Capture | Capture | Capture |
+| `document`, `Event` with `bubbles: true` | Capture | Capture | Capture |
+| Element (`document.body`) | Capture | Capture | Capture |
+
+**Meaning.** The target of `visibilitychange`, `freeze` and `resume` is `document`. Thus the capture listeners of the monitors start before the listeners of an exporter in all three engines. The target of `pagehide` and `pageshow` is `window`. In Chromium, the listener that the page added first starts first there. Thus an exporter that added its `pagehide` listener before the monitors can flush before the monitors record their final values.
+
+**Change in the library.** The fix does not depend on the order of the listeners. `AllMonitorHandles.flush()` records the values that the monitors keep until a checkpoint. At the start of each flush, otel-ts starts each `onBeforeFlush` listener. The setup connects the two: `otel.onBeforeFlush(() => monitors.flush())`.
+
+Refer to [`setup-all-monitors.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/setup-all-monitors.ts), [`LifecycleStateMachine.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/LifecycleStateMachine.ts) and the [quick start](/docs/getting-started). The browser test [`lifecycle.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/lifecycle.test.ts) keeps a check of the `document` case.
+
+## E2: the timers of an idle page
+
+**Question.** How long does one step of a chained `setTimeout(5)` take on an idle page? Which lag does the old DriftLag report on an idle page? The old DriftLag chained 20 steps of 5 ms and reported the elapsed time minus 100 ms.
+
+**Method.** The experiment used the headless engines of Playwright on Windows 11. It measured each value on an idle page.
+
+| Measurement | Chromium 145 | Firefox 146 | WebKit (Safari 26.0 build) |
+|---|---|---|---|
+| Median step of `setTimeout(5)` | 5.7 ms | 16 ms | 15 ms |
+| Shortest step | 5.0 ms | 9 ms | 13 ms |
+| Old DriftLag, idle median lag | 15.8 ms | 211 ms | 211 ms |
+| `setTimeout(0)` from a `setInterval` callback (8th repeat), median | 5 ms | 16 ms | 16 ms |
+| `setTimeout(0)` from a message task, median | 0 ms | 0 ms | 15 ms |
+| `requestIdleCallback` | Yes | Yes | No |
+| `performance.interactionCount` | Yes | Yes | Yes |
+
+**Meaning.**
+
+- For a 5 ms timeout, Firefox and WebKit on Windows use the 15.6 ms timer tick of the system. Chromium asks for a 1 ms tick. This agrees with the timer rules in [clocks and timers](/research/clocks-and-timers).
+- On an idle page, the old DriftLag reported more than 200 ms of lag for each 100 ms window in Firefox and WebKit, and 16 ms in Chromium. Thus the old probe measured the timer granularity, not the lag.
+- A `setTimeout(0)` from a nested timer gets the 4 ms clamp in Chromium, and the system tick in Firefox and WebKit. From a message task, Chromium and Firefox start it at once.
+- The WebKit build for Windows is not Safari on macOS. Safari on macOS aligns nested timers to a grid of 4 ms, and of 30 ms in Low Power Mode ([WebKit `DOMTimer.cpp`](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/page/DOMTimer.cpp)).
+
+**Change in the library.** MacrotaskLag and SchedulingFairness start each measurement in a message task ([`message-task.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/message-task.ts)). A message task has the timer nesting level 0, thus the `setTimeout(0)` measures the queue and not the clamp. Without `MessageChannel`, MacrotaskLag starts the measurement in its `setInterval` callback and has a floor of approximately 4 ms.
+
+## E3: the calibrated DriftLag
+
+**Change.** DriftLag subtracts the idle duration of one step. The baseline is the mean of the recent steps that are not longer than the median plus max(4 ms, half of the median). The lag of a window is its duration minus the number of steps multiplied by the baseline ([`DriftLag.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/DriftLag.ts)).
+
+**Method.** The experiment used the same machine and engines as E2. It recorded approximately 30 idle windows, then blocked the main thread for 300 ms.
+
+| Measurement | Chromium 145 | Firefox 146 | WebKit |
+|---|---|---|---|
+| Baseline step | 5.7 ms | 15.5 ms | 15.6 ms |
+| Idle median lag (approximately 30 windows) | 0.1 ms | −0.3 ms | −0.4 ms |
+| Idle p90 lag | 3.1 ms | 1.3 ms | 1.6 ms |
+| Lag after a 300 ms block | 297.4 ms | 282.7 ms | 294.6 ms |
+
+<PlotFigure
+  title="Idle lag of DriftLag before and after the calibration"
+  description="For each engine, one dot shows the median lag of an idle 100 ms window before the calibration, and one dot shows it after the calibration. Before the calibration, the values were 15.8 ms in Chromium 145, 211 ms in Firefox 146 and 211 ms in WebKit. After the calibration, the values were 0.1 ms, −0.3 ms and −0.4 ms."
+  options={idleLagChart}
+  table={idleLagTable}
+  caption="Experiments E2 and E3, 2026-10-07, Windows 11, the headless engines of Playwright. The labels give the values after the calibration."
+/>
+
+**Meaning.** The idle error went from 15.8 ms to 211 ms down to less than 0.5 ms. The resolution of the measurement is one step. A block can start immediately after a step, thus the lag of a block can be less than its duration by up to one step. That step is 16 ms in Firefox.
+
+A first version used the median as the baseline. It gave an idle median lag of 3.3 ms in Chromium, because timer jitter is skewed to the right. Thus the baseline is a mean of the steps that are not blocks.
+
+**Check in the repository.** The browser test [`drift-accuracy.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/drift-accuracy.test.ts) keeps a check of the two properties. The idle median must be less than 5 ms from 0. After a 300 ms block, the largest lag must be more than 300 ms minus the baseline minus 10 ms, and less than 340 ms.
+
+**A later finding.** The granularity can change while a page is open. The CDP tests found such a change in Chromium on Windows. After the page was hidden and shown again, the steps took 15.6 ms instead of 5.5 ms. The baseline of the last 100 steps followed the change slowly, and DriftLag reported windows of 160 ms of lag on an idle page. Thus DriftLag accepts a row of 10 steps that agree with each other as a new granularity ([DriftLag](/docs/monitors/drift-lag)).
+
+## Limits of the experiments
+
+- The experiments used one machine with Windows 11.
+- The engines were the headless builds of Playwright. The WebKit build for Windows is not Safari on macOS.
+- The experiments did not test Safari in Low Power Mode, or Chromium on battery power. On battery, Chromium uses a timer tick of 8 ms on Windows ([Bruce Dawson](https://randomascii.wordpress.com/2020/10/04/windows-timer-resolution-the-great-rule-change/)).
+- E3 used approximately 30 idle windows for each engine.
+- The browser tests of the repository operate in Chromium, Firefox, WebKit and Chrome ([testing strategy](/docs/testing/strategy)). Thus they check the `document` case of E1 and the two properties of E3 in the four browsers. No test checks the `window` case of E1.

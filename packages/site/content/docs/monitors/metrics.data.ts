@@ -41,6 +41,8 @@ export const gcMetrics : readonly MetricRow[] = rowsOf("GCSignalDetector");
 export const lifecycleMetrics : readonly MetricRow[] = rowsOf("LifecycleStateMachine");
 export const throttleMetrics : readonly MetricRow[] = rowsOf("TimerThrottleDetector");
 export const clockMetrics : readonly MetricRow[] = rowsOf("ClockReliabilityChecker", "ClockDriftMonitor");
+export const clockResolutionMetrics : readonly MetricRow[] = rowsOf("ClockReliabilityChecker");
+export const clockDriftMetrics : readonly MetricRow[] = rowsOf("ClockDriftMonitor");
 export const browserReportMetrics : readonly MetricRow[] = rowsOf("BrowserReportMonitor");
 
 /** Every metric of the catalog. */

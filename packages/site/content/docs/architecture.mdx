@@ -63,15 +63,15 @@ The worker bundle (`@lag/worker`) operates `createWorkerHandler()` of the core. 
 
 | Direction | Message | What it does |
 |---|---|---|
-| Main to worker | `start` | Starts the heartbeats, with the hang options and the page ID. |
+| Main to worker | `start` | Starts the heartbeats, with the hang options and the page ID. The page ID comes only with a hang journal. A second `start` ends a hang in progress. |
 | Main to worker | `ack` | Acknowledges one heartbeat. The worker uses the acknowledgements to detect hangs. |
 | Main to worker | `sync` | Asks for the time of the worker, for the clock sync. |
 | Main to worker | `context` | Gives the context of the page, for example the page-view ID. |
 | Main to worker | `liveness-start`, `liveness-stop` | Starts and stops the shared-memory liveness watcher. |
-| Main to worker | `stop` | Stops the heartbeats. |
+| Main to worker | `stop` | Stops the heartbeats. A hang in progress ends, because the main thread sent the message. |
 | Worker to main | `heartbeat` | The sequence number, the absolute send time and the lateness of the timer of the worker. |
 | Worker to main | `sync-reply` | The time of the worker. |
-| Worker to main | `hang-ended` | A hang ended. The main thread reads it when it can operate again. |
+| Worker to main | `hang-ended` | A hang ended. The main thread reads it when it can operate again, also while the monitor is stopped, but not after `dispose()`. |
 | Worker to main | `liveness-block` | A block that the liveness watcher saw. |
 
 ```mermaid
@@ -96,11 +96,14 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    P[Probe: a timer step, a heartbeat, an entry] --> V{Sample validator}
+    P[Probe: a timer step, a heartbeat, a frame] --> V{Sample validator}
     V -->|overlaps hidden, frozen or suspend| X[Discard: lag_samples_discarded]
     V -->|5000 ms or more| Q[Quarantine for 2000 ms]
-    Q -->|suspend evidence| X
-    Q -->|no evidence| K[Stall: lag_stalls, kind hang]
+    Q -->|overlaps an interval now| X
+    X -->|suspend, 5000 ms or more| S[Stall sample, kind suspend]
+    Q -->|no evidence| K[Stall sample, kind hang]
+    S --> N[Stall episode: lag_stalls]
+    K --> N
     V -->|valid| H[Histogram]
     K --> H
     H --> E[Export at the interval and before page hide]
@@ -124,7 +127,7 @@ More rules:
 
 - **No globals in the core.** Only `createBrowserDeps` reads `window`.
 - **Error boundaries.** A factory that fails gives a handle with no monitor, and the other monitors continue. A listener or a report function that throws does not stop the monitor.
-- **Full teardown.** `stop()` releases each timer, listener, observer and worker loop. The tests make sure that no timer or listener stays.
+- **Full teardown.** `stop()` releases each timer, listener, observer and worker loop. The tests make sure that no timer or listener stays. The soak test (`soak/soak.test.ts`, on request with `pnpm test:soak`) also operates all monitors for 3 minutes under load. Then it makes sure that no timer, animation frame or idle callback stays, and that the heap did not grow without limit.
 - **One source for names.** Metric names, units and attribute values come only from the catalog.
 
 ## How to add a monitor

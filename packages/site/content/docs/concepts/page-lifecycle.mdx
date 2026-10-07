@@ -1,27 +1,163 @@
 ---
 title: Page lifecycle
-description: The lifecycle states that the monitors track, and why some monitors pause while the page is hidden.
+description: The lifecycle states that the library monitors, how it reads them, and how the final values of a page view get to the exporter before the page goes away.
 order: 11
-status: draft
+status: final
 ---
 
-import { lifecycleChart } from "./diagrams.data";
+import { flushSequenceChart, lifecycleChart } from "./diagrams.data";
 import { lifecycleMetrics } from "../monitors/metrics.data";
 
-`LifecycleStateMachine` tracks the Page Lifecycle state of the page: active, passive, hidden, frozen or terminated. Browsers throttle timers and stop animation frames in hidden tabs. For this reason, the timer, frame and idle monitors pause while the page is hidden or frozen.
-
-<Mermaid
-  chart={lifecycleChart}
-  title="Page Lifecycle states and the events that change them"
-  caption="A simplified view of the states. A pagehide event can occur in any state."
-/>
+`LifecycleStateMachine` monitors the Page Lifecycle state of the page. The [lifecycle monitor](/docs/monitors/lifecycle) gives its configuration and its tests. Other parts of the library use the state. The [measurement conditions](/docs/concepts/measurement-validity) discard the samples of hidden and frozen periods, and the timer-driven monitors pause in these periods. The [page-view vitals](/docs/concepts/page-views) record their values at each change to a state that is not visible. `setupAllMonitors()` registers the state machine first, thus it stops last.
 
 ## The states
 
+| State | Meaning |
+|---|---|
+| `active` | The page is visible, and it has the focus. |
+| `passive` | The page is visible, but it does not have the focus. |
+| `hidden` | The value of `document.visibilityState` is `hidden`. |
+| `frozen` | The browser stopped the tasks of the page, for example in the back/forward cache. |
+| `terminated` | The page unloads: a `pagehide` event came, and its `persisted` property is `false`. |
+
+The function `isVisibleState()` gives `true` for `active` and `passive`. The monitors treat these two states in the same way.
+
+At the start, the state is `hidden` if `document.visibilityState` is `hidden`. If not, the state is `active` when `document.hasFocus()` is `true`, and `passive` when it is `false`.
+
+The state machine has no "discarded" state. A discarded page does no script, thus the library can find a discard only after the reload, through `document.wasDiscarded`. The page view of that load gets the navigation type `restore`.
+
 ## The transitions
 
+<Mermaid
+  chart={lifecycleChart}
+  title="The states of LifecycleStateMachine and the events that change them"
+  caption="In the code, freeze, resume, pagehide and pageshow change the state from each state. The diagram shows their usual source states."
+/>
+
+| Event | Target | Phase | Transition |
+|---|---|---|---|
+| `focus` | `window` | Target | From `passive` to `active` |
+| `blur` | `window` | Target | From `active` to `passive` |
+| `visibilitychange` | `document` | Capture | From a visible state to `hidden`, or from `hidden` to a visible state |
+| `freeze` | `document` | Capture | To `frozen` |
+| `resume` | `document` | Capture | To `hidden` |
+| `pagehide` | `window` | Capture | To `frozen` if `persisted` is `true`, and to `terminated` if it is `false` |
+| `pageshow` | `window` | Capture | To a visible state, only if `persisted` is `true`. It is always a transition, also from a visible state. |
+
+A `visibilitychange` event does not change the `frozen` state or the `terminated` state. Thus a page that gets `pagehide` and then `visibilitychange` stays in the `terminated` state.
+
+A `pageshow` event with `persisted` set to `true` gives a transition also when the state does not change. Then the transition has the same `from` and `to`, for example `active` to `active`. Thus the subscribers get a transition for each restore from the back/forward cache.
+
+The state machine does not listen for `beforeunload`. A script can cancel that event, and then a live page has the state `terminated`. Such a listener can also prevent the back/forward cache.
+
+Each transition has the properties `from`, `to`, `trigger` and `timestamp`. The state machine gives each transition to each subscriber. If an error occurs in one subscriber, the state machine records the error in the log and continues with the other subscribers.
+
+```ts
+import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@lag/core";
+
+const monitors = setupAllMonitors(createBrowserDeps(window, {
+    logger : { log : (level, message) => console.log(level, message) },
+    meter : createNoopMeter(),
+}));
+
+// Show each transition, with the time of its event
+const unsubscribe = monitors.lifecycleStateMachine?.subscribe(({ from, to, trigger, timestamp }) => {
+    console.log(`${from} to ${to} (${trigger}) at ${timestamp.toFixed(1)} ms`);
+});
+```
+
+## A new read of visibilityState
+
+The browser changes `document.visibilityState` immediately, but it dispatches the `visibilitychange` event in a separate task. A timer callback can start between the two. Thus `getState()`, `mark()` and `resolve()` read `document.visibilityState` again each time. If the value is different, the state machine makes the transition at that time, with the trigger `visibilitychange`.
+
+This read is important for the [sample validator](/docs/concepts/measurement-validity). The validator reads the state before it examines a sample. Thus a sample whose window stops after the change of `visibilityState` overlaps the hidden interval, also before the event comes. A unit test of `setupAllMonitors()` changes `visibilityState` without the event, and it makes sure that `lag_samples_discarded` counts a sample with the cause `hidden`.
+
+## Capture-phase listeners
+
+The state machine listens in the capture phase for `visibilitychange`, `freeze`, `resume`, `pagehide` and `pageshow`. At the target of an event, the DOM standard starts the capture listeners before the other listeners. Thus the subscribers of the state machine record their values before an exporter that listens to the same event in the bubble phase. For example, the final Web Vitals of a page view get into the export of that page view.
+
+The `focus` and `blur` listeners are not in the capture phase. A capture listener on `window` also gets the `focus` and `blur` events of each element of the page.
+
+We measured the sequence of the listeners in three engines ([local experiments](/research/local-experiments), experiment E1). In each case, a bubble listener was added first and a capture listener second. The table shows the listener that started first:
+
+| Target | Chromium 145 (headless) | Firefox 146 | WebKit (Safari 26.0 build) |
+|---|---|---|---|
+| `window`, a custom `Event` | Bubble (the sequence of registration) | Capture | Capture |
+| `window`, `PageTransitionEvent("pagehide")` | Bubble (the sequence of registration) | Capture | Capture |
+| `document`, a custom `Event` | Capture | Capture | Capture |
+| `document`, a bubbling `Event` | Capture | Capture | Capture |
+| An element (`document.body`) | Capture | Capture | Capture |
+
+The events `visibilitychange`, `freeze` and `resume` have `document` as their target. In the three engines, the capture listeners of the state machine start before the listeners of an exporter. The events `pagehide` and `pageshow` have `window` as their target. In Chromium, the listener that the page added first starts first. Thus an exporter that listens to `pagehide` before the monitors can flush before the monitors record their final values.
+
+The sequence of the listeners cannot protect the final values in all engines. The library has an explicit hook for this problem.
+
+## The flush hook
+
+`AllMonitorHandles.flush()` records the values that the monitors keep until a checkpoint. At this time, these values are the Web Vitals of the current page view. The function makes a checkpoint of the page-view vitals that is not final.
+
+The `onBeforeFlush(listener)` function of otel-ts starts each listener synchronously before each flush. The flushes include each page hide, the stop at `pagehide`, each use of `forceFlush()` and the first use of `shutdown()`. Connect the two:
+
+```ts
+import { init } from "@mark1russell7/otel-ts";
+import { createBrowserDeps, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
+
+const otel = init({ serviceName : "shop" });
+const monitors = setupAllMonitors(createBrowserDeps(window, {
+    meter : otel.getMeter("lag"),
+    logger : createOtelLoggerAdapter(otel.getLogger("lag")),
+}));
+
+// Record the values of the page view before each export
+otel.onBeforeFlush(() => monitors.flush());
+```
+
+With the hook, the export contains the values in all engines, and the sequence of the listeners is not important. A unit test of `setupAllMonitors()` makes sure that `flush()` records the pending Web Vitals. With a different exporter, use `monitors.flush()` in the same way before each flush of the exporter.
+
+<Mermaid
+  chart={flushSequenceChart}
+  title="The flush at pagehide in Chromium"
+  caption="otel-ts added its pagehide listener first, thus it starts first. The hook records the values of the page view before the export."
+/>
+
+## The time of a transition
+
+The `timestamp` of a transition is the `timeStamp` of its event, if the value is applicable. A value is applicable if it is a number above 0 and not after the current time of the clock. If not, the state machine uses the current time. The code comment gives the cause: earlier browsers gave Unix time in `timeStamp`.
+
+`createBrowserDeps()` gives `performance.now()` as the clock, and `event.timeStamp` has the same time base. Thus the transition has the time when the browser made the event, not the later time when the listener started. A transition from a read of `visibilityState` has no event, thus it has the time of the read. A browser test dispatches a `pagehide` event, and it makes sure that the timestamp of the transition is the `timeStamp` of the event.
+
+The page-view vitals use these times. The time of the first transition to a state that is not visible stops the load metrics of the first page view. The time of a `pageshow` event is the start of a page view that comes from the back/forward cache.
+
+## Back/forward cache and freeze
+
+A page that goes into the back/forward cache gets `pagehide` with `persisted` set to `true`. The state machine changes to `frozen`. When the browser restores the page, the page gets `pageshow` with `persisted` set to `true`. The state machine changes to `active` or `passive`, and the page-view vitals start a new [page view](/docs/concepts/page-views). All three engines have the `persisted` property ([browser support](/research/browser-support)).
+
+Chromium restores a page with `resume`, `visibilitychange` and then `pageshow`. Thus the state is already visible when `pageshow` comes. The state machine still gives a transition with the trigger `pageshow`, and the page-view vitals start the new page view at that time. A unit test makes sure that this event sequence of Chromium gives the transition.
+
+Only Chromium has the `freeze` and `resume` events, from version 68. Firefox and Safari do not have them. Chrome freezes a page in these conditions ([browser support](/research/browser-support)):
+
+- The page goes into the back/forward cache.
+- The tab is in a collapsed tab group.
+- Energy Saver freezes a hidden tab that uses much CPU time. This feature is for desktop computers, from Chrome 133, with a gradual rollout.
+- On Android, Chrome freezes background pages and their workers after 5 minutes, and after 1 minute from Chrome 139.
+
+A frozen page does no tasks. The Page Lifecycle specification blocks the dedicated workers of a frozen document. In desktop Chromium, this rule for workers is behind a flag at this time. Thus the timers of a worker can continue while the page is frozen.
+
+Do not use the `unload` event to send data. From Chrome 154, Chrome does not start `unload` listeners ([browser support](/research/browser-support)). otel-ts does not listen to `beforeunload` or `unload`.
+
 ## How the monitors use the state
+
+- The measurement conditions open an interval with the cause `hidden` or `frozen` for each period in a state that is not visible. They discard each sample that overlaps such an interval.
+- `pauseWhileHidden()` stops a monitor when the state changes from visible to not visible, and starts it again on the change back. DriftLag, MacrotaskLag, frame timing, idle availability, scheduling fairness, worker lag and shared-memory liveness pause in this way.
+- The [timer-throttle detector](/docs/monitors/timer-throttle) does not pause, because it must find the throttling of a hidden page. The [clock-drift monitor](/docs/concepts/clocks-and-time) does not pause, because the device can sleep while the page is hidden.
+- The page-view vitals make a checkpoint at each change to `hidden`, `frozen` or `terminated`. The checkpoint at `terminated` is final. A `pageshow` with `persisted` set to `true` starts a new page view.
 
 ## The transition metric
 
 <MetricTable metrics={lifecycleMetrics} />
+
+The counter has one series for each combination of `from`, `to` and `trigger` that occurs. This query gives the transitions of the last hour, for all pages:
+
+```promql
+sum by (from, to, trigger) (increase(lag_lifecycle_transitions[1h]))
+```

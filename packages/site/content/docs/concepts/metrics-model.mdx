@@ -1,21 +1,140 @@
 ---
 title: Metrics model
-description: The instruments that the monitors record, their units, and the rules for attributes.
-order: 13
-status: draft
+description: Why the monitors record only counters and histograms, how the metric catalog defines them, and how to aggregate the series of many browsers.
+order: 17
+status: final
 ---
 
+import { eventTable } from "./diagrams.data";
 import { allMetrics } from "../monitors/metrics.data";
+import { DataTable } from "../../../src/components/DataTable/DataTable";
 
-The monitors record OpenTelemetry histograms, counters and gauges through a `Meter` that the caller gives. All durations are in milliseconds. A gauge with a name that ends in `_max_gauge`, `_avg_gauge` or `_rate_gauge` covers the period since the previous collection. Attributes have only a small, fixed set of values, because each set of attributes is a separate time series.
+The monitors record OpenTelemetry counters and histograms through a `Meter` that the caller gives. They send the details with many different values as events. Many browsers export the same metrics at the same time, and each page load is a separate writer. This page tells you the rules that keep these metrics correct when the backend aggregates them. The research note [OpenTelemetry metrics in the browser](/research/otel-browser-metrics) gives the sources.
 
-## Instruments
+## Counters and histograms only
 
-## Units
+The library records only two types of instrument:
 
-## Window gauges
+- A **counter** adds values, for example the number of discarded samples.
+- A **histogram** records a distribution of values, for example the lag of each window.
 
-## Attributes
+The values of counters and histograms aggregate correctly across many browsers. The sum of the rates of all pages is the rate of the fleet, and the buckets of the histograms of all pages add together.
+
+The library records no gauges, for two causes:
+
+- **No meaning for a fleet.** A gauge gives the last value of one browser. The last value of one browser has no meaning for many browsers.
+- **Stale values.** With cumulative temporality, the OpenTelemetry SDK for JavaScript keeps each attribute set of an observable gauge that it observed one time. It exports the last value of the set in each later export. The issue opentelemetry-js #4096 is open since 2023-08-30. Its fix (#6884) was not merged at its last update, on 2026-09-24.
+
+## The metric catalog
+
+`METRIC_CATALOG` in `metric-catalog.ts` is the single source of truth for the metrics. Each definition has these properties:
+
+- `name`: the instrument name, for example `lag_drift_histogram`.
+- `kind`: `counter` or `histogram`.
+- `unit`: for example `ms`, `By`, `1`, or an annotation in braces, for example `{sample}`.
+- `monitor`: the monitor that records the metric.
+- `description`: the description that the instrument and the documentation show.
+- `attributes`: each attribute name with its permitted values.
+
+The factories make their instruments only with `createHistogram(meter, definition)` and `createCounter(meter, definition)`. These functions take the name, the unit and the description from the catalog. If the definition has a different `kind`, they do not make the instrument, and they give an error. The tables of metrics on this site also come from the catalog, for example on each page of the [monitors](/docs/monitors). Thus the code, the instruments and the documentation agree.
+
+Tests make sure of this agreement:
+
+- **The naming rules.** Each name starts with `lag_` and has only lowercase letters, digits and underscores. A histogram name has the suffix `_histogram`, and a counter name does not. Each metric has a description, a unit and a closed set of values for each attribute.
+- **The conformance test.** A unit test of `setupAllMonitors()` starts all monitors with fake browser APIs, and it makes activity. Then it examines each instrument that the monitors made. Each instrument must be in the catalog, with the same `kind` and `unit`, and each attribute value must be a permitted value of the catalog.
+- **The coverage test.** The same test file makes sure that the normal activity records a value for each metric of the catalog. The exceptions are the metrics that need a special condition, for example a stall or a clock jump. Other tests cover them.
+
+## Attributes with a small number of values
+
+The backend makes one series for each combination of attribute values. Thus each attribute of a metric has a small, fixed set of permitted values, for example `reason`: `hidden`, `frozen` or `suspend`. A measured value, a timestamp or an ID is not a metric attribute at any time.
+
+The details with many different values go into events: CSS selectors, URLs, script names and IDs. The library removes the query string and the fragment from each URL. They can contain tokens or personal data, and they make each value unique.
+
+## Events for the details
+
+An event is an OpenTelemetry log record with an event name. `createOtelEventSink()` sends each event in this way, with the severity `INFO`, and it removes each attribute that has no value. In Loki, the attributes of an event become structured metadata, and the event name becomes `event_name`.
+
+The body of the record is the line of the event (`formatEventLine()`): the event name, and then the attributes as sorted `key=value` pairs. A value goes into JSON quotes when it is empty or has a space, a quote or `=`. For example, `lag.stall` with the attributes `kind: "hang"` and `duration_ms: 6200` gives the line `lag.stall duration_ms=6200 kind=hang`. Loki drops an entry when the previous entry of its stream has the same timestamp and the same line. The five Web Vitals of one report can have the same millisecond, thus the attributes make each line different. The worker uses the same line for its hang reports.
+
+<DataTable spec={eventTable} label="Events" />
+
+The monitors keep the volume of events small. For example, the long-animation-frame monitor sends an event only for a frame that blocks for 150 ms or more, and at most 10 events each minute.
+
+## The page-view ID on each event
+
+`setupAllMonitors()` wraps the event sink with `withEventContext()`, when the page-view vitals operate. Then each event gets the attribute `lag.page_view.id`, with the ID of the current page view:
+
+```ts
+import { withEventContext, type EventSink } from "@lag/core";
+
+const sink : EventSink = { emit : (name, attributes) => console.log(name, attributes) };
+let viewId = "view-1";
+
+// The wrapper reads the context again for each event
+const events = withEventContext(sink, () => ({ "lag.page_view.id" : viewId }));
+events.emit("lag.stall", { kind : "hang", duration_ms : 6200 });
+viewId = "view-2";
+events.emit("lag.stall", { kind : "suspend", duration_ms : 60000 });
+```
+
+The wrapper uses the context function again for each event, thus each event gets the page view at the time of the event. An attribute of the event replaces an attribute of the context with the same name. The ID connects an event with the Web Vitals of its page view. Refer to [page views](/docs/concepts/page-views).
+
+## Writer identity
+
+Each SDK instance must write its own series. Without a writer identity, all browsers of a service write to the same series. Then Mimir rejects samples with the errors `new-value-for-timestamp` and `sample-out-of-order`. The samples that it accepts mix the running totals of different browsers. PromQL sees a counter reset at almost each sample, thus `rate()`, `increase()` and `histogram_quantile()` give incorrect values.
+
+For example, the counter of the first browser reads 100, 101 and 102. The counter of the second browser reads 5, 6 and 7, at times between those of the first browser. The mixed series is 100, 5, 101, 6, 102, 7. `increase()` sees a reset at each decrease, and it gives 210. The correct increase is 4.
+
+In the OpenTelemetry data model, more than one writer for a metric stream is an error state. Mimir makes the `instance` label from the resource attribute `service.instance.id`, and the `job` label from `service.name`. Thus each SDK instance needs its own `service.instance.id`:
+
+- otel-ts sets a new random UUID each time that `init()` starts, and it does not keep the value ([OpenTelemetry setup](/docs/operations/opentelemetry)). Each page load and each worker gets a different value.
+- The browser build of the OpenTelemetry SDK does not set `service.instance.id`. A setup without otel-ts must set it.
+- `session.id` is not a writer identity. A duplicated tab copies the session, a reload keeps it, and a worker shares it.
+
+## Cumulative temporality
+
+The exporter of otel-ts requests cumulative temporality by default. Each export contains the running totals since the start of the SDK instance. In its default configuration, Mimir rejects delta sums and delta histograms. It answers with the HTTP status 400, also when it accepted the other parts of the request. The delta ingestion of Mimir is experimental.
+
+Cumulative data tolerates a lost export: the next export contains the totals. Only the data after the last successful export is lost. A short page load has a different problem. `rate()` and `increase()` use only the increases between the samples of a series, thus they lose the first export of each page load. The Mimir limit `otel_created_timestamp_zero_ingestion_enabled` adds a sample of 0 at the start time of each series. This limit is experimental, and the Grafana stack of this project sets it.
+
+## Native histograms
+
+With `histogramAggregation: "exponential"`, otel-ts records each histogram as a base-2 exponential histogram. Mimir keeps it as a native histogram: one series for each attribute set. An explicit-bucket histogram needs one series for each bucket, one for `+Inf`, and one each for `_sum` and `_count`. Mimir must accept native histograms (`native_histograms_ingestion_enabled`). The default of otel-ts is `"explicit"`.
+
+With the default settings of Mimir, the series of a native histogram has the name of the instrument, without a suffix. The PromQL functions `histogram_quantile()`, `histogram_sum()`, `histogram_count()` and `histogram_fraction()` read it.
+
+## Aggregation in PromQL
+
+Sum the rates of all writers first. Then calculate the quantile. A quantile of each page and then a mean of those quantiles gives a value that no sample has.
+
+For example, page A has 100 samples of 10 ms. Page B has 85 samples of 10 ms and 15 samples of 500 ms. The 95th percentile of A is 10 ms, and the 95th percentile of B is 500 ms. The mean of the two is 255 ms, but no sample has this value. The 95th percentile of the 200 samples together is 500 ms.
+
+With native histograms:
+
+```promql
+histogram_quantile(0.95, sum by (service_name) (rate(lag_drift_histogram[5m])))
+```
+
+With explicit-bucket histograms:
+
+```promql
+histogram_quantile(0.95, sum by (service_name, le) (rate(lag_drift_histogram_bucket[5m])))
+```
+
+For a counter:
+
+```promql
+sum by (reason) (rate(lag_samples_discarded[5m]))
+```
+
+These rules also help:
+
+- Do not sum `_bucket` series without `rate()`.
+- Set the range of a rate to at least 4 times the export interval. otel-ts exports each 15 s by default.
+- Use recording rules for long ranges. The Grafana stack of this project has recording rules for the most expensive queries of its dashboard.
+- Do not use a metric attribute to find one page. The `instance` label and the events in Loki connect a series with its page load.
+
+The label `service_name` in these examples comes from the resource attribute `service.name`, which the Mimir configuration of the Grafana stack promotes to each series. Refer to the [Grafana stack](/docs/operations/grafana-stack).
 
 ## All metrics
 
