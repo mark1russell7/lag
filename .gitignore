@@ -3,3 +3,6 @@
 **/*.tsbuildinfo
 .claude/worktrees/
 .playwright-mcp/
+# Local ste-lint dictionaries. The ASD-STE100 dictionary is copyrighted: never commit it.
+.ste/
+*.ste-dictionary.json
