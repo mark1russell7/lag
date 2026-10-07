@@ -16,6 +16,23 @@ const DEFAULT_BASELINE_STEPS = 100;
  */
 const MIN_JITTER_MS = 4;
 
+/**
+ * The monitor accepts a new timer granularity after this number of steps in
+ * a row that agree with each other, but not with the baseline.
+ */
+const GRANULARITY_CHANGE_STEPS = 10;
+
+/** The steps of one granularity agree within the larger of these two values. */
+const GRANULARITY_SPREAD_MS = 2;
+const GRANULARITY_SPREAD_RATIO = 0.2;
+
+/**
+ * The longest step that a timer granularity gives, with a margin. Examples
+ * are two ticks of the Windows timer (31.25 ms) and the 30 ms grid of WebKit
+ * in Low Power Mode. A row of longer steps is lag, not a granularity.
+ */
+const MAX_GRANULARITY_MS = 40;
+
 function median(sorted : readonly number[]) : number {
     const middle = Math.floor(sorted.length / 2);
     return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
@@ -65,6 +82,19 @@ function idleStepMs(steps : readonly number[]) : number {
  * baseline. If the thread is busy during more than half of the steps, the
  * baseline increases and the monitor reports less lag. The worker monitor
  * measures that case correctly.
+ *
+ * The timer granularity can change while the monitor operates. For example,
+ * Windows can change the timer resolution of the browser process on battery
+ * power, or when a window is hidden and shown again. Then all steps change
+ * by the same quantity, also on an idle thread. A block makes one step long,
+ * and the next steps are normal again. Thus, a row of 10 steps that agree
+ * with each other, but not with the baseline, starts a new baseline.
+ *
+ * A window that ends during such a row continues until the row ends, or
+ * until the monitor accepts the new granularity. Thus, the change gives no
+ * lag. Steps of more than 40 ms are not a granularity. A row of consistent
+ * shorter steps looks like a granularity, for example on a busy thread with
+ * tasks of the same length. The worker monitor measures that case too.
  */
 export class DriftLag extends LagMonitor {
     private handle : number | undefined;
@@ -73,6 +103,12 @@ export class DriftLag extends LagMonitor {
     private stepsInWindow = 0;
     private stepsPerWindow : number;
     private lastWindowMs = 0;
+    /** The baseline at the end of the last window. The monitor compares each new step with it. */
+    private windowBaseline : number;
+    /** The steps in a row that agree with each other, but not with `windowBaseline`. */
+    private rowCount = 0;
+    private rowMin = Infinity;
+    private rowMax = -Infinity;
     private readonly stepMs : number;
     private readonly maxSteps : number;
     private readonly baselineSize : number;
@@ -86,6 +122,7 @@ export class DriftLag extends LagMonitor {
         this.baselineSize = options?.baselineSteps ?? DEFAULT_BASELINE_STEPS;
         this.maxSteps = Math.max(1, Math.floor(expectedElapsedTimeMs / this.stepMs));
         this.stepsPerWindow = this.maxSteps;
+        this.windowBaseline = this.stepMs;
         this.start();
     }
 
@@ -95,6 +132,7 @@ export class DriftLag extends LagMonitor {
         this.windowStart = now;
         this.lastStepAt = now;
         this.stepsInWindow = 0;
+        this.endRow();
         this.step();
     }
 
@@ -125,10 +163,12 @@ export class DriftLag extends LagMonitor {
     /** This method gives the lag of the window that ends at this time, and starts the next window. */
     measure() : number {
         const now = this.clock.now();
+        const baseline = this.getBaselineMs();
         this.lastWindowMs = now - this.windowStart;
-        const lag = this.lastWindowMs - this.stepsInWindow * this.getBaselineMs();
+        const lag = this.lastWindowMs - this.stepsInWindow * baseline;
         this.windowStart = now;
         this.stepsInWindow = 0;
+        this.windowBaseline = baseline;
         return lag;
     }
 
@@ -136,6 +176,40 @@ export class DriftLag extends LagMonitor {
         this.recentSteps.push(durationMs);
         if (this.recentSteps.length > this.baselineSize) this.recentSteps.shift();
         this.stepsInWindow++;
+        this.followGranularity(durationMs);
+    }
+
+    /** This method finds a change of the timer granularity (refer to the class description). */
+    private followGranularity(durationMs : number) : void {
+        const baseline = this.windowBaseline;
+        const outside = Math.abs(durationMs - baseline) > Math.max(MIN_JITTER_MS, baseline / 2);
+        if (!outside || durationMs > MAX_GRANULARITY_MS) {
+            this.endRow();
+            return;
+        }
+        const min = Math.min(this.rowMin, durationMs);
+        const max = Math.max(this.rowMax, durationMs);
+        if (max - min <= Math.max(GRANULARITY_SPREAD_MS, GRANULARITY_SPREAD_RATIO * (min + max) / 2)) {
+            this.rowCount++;
+            this.rowMin = min;
+            this.rowMax = max;
+        } else {
+            // The step does not agree with the row: a new row starts with it
+            this.rowCount = 1;
+            this.rowMin = durationMs;
+            this.rowMax = durationMs;
+        }
+        if (this.rowCount < GRANULARITY_CHANGE_STEPS) return;
+        // A new granularity: the baseline comes only from the steps of the row
+        this.recentSteps.splice(0, this.recentSteps.length - this.rowCount);
+        this.windowBaseline = idleStepMs(this.recentSteps);
+        this.endRow();
+    }
+
+    private endRow() : void {
+        this.rowCount = 0;
+        this.rowMin = Infinity;
+        this.rowMax = -Infinity;
     }
 
     private step() : void {
@@ -143,7 +217,10 @@ export class DriftLag extends LagMonitor {
             const now = this.clock.now();
             this.addStep(now - this.lastStepAt);
             this.lastStepAt = now;
-            if (this.stepsInWindow < this.stepsPerWindow) {
+            // During a row that can be a new granularity, the window continues (for not more than
+            // the length of a row), so that its lag uses the correct baseline
+            const waitForRow = this.rowCount > 0 && this.stepsInWindow < this.stepsPerWindow + GRANULARITY_CHANGE_STEPS;
+            if (this.stepsInWindow < this.stepsPerWindow || waitForRow) {
                 this.step();
                 return;
             }
@@ -157,7 +234,7 @@ export class DriftLag extends LagMonitor {
                 });
             }
             // A window of approximately the expected length, with the current baseline
-            this.stepsPerWindow = Math.min(this.maxSteps, Math.max(1, Math.round(this.expectedElapsedTimeMs / this.getBaselineMs())));
+            this.stepsPerWindow = Math.min(this.maxSteps, Math.max(1, Math.round(this.expectedElapsedTimeMs / this.windowBaseline)));
             // Continue only if report() didn't stop (or stop and restart) the monitor
             if (this.handle === handle) {
                 this.step();
