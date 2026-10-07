@@ -10,7 +10,7 @@ A set of independent monitors, each watching one signal of main-thread health: t
 | --- | --- |
 | `@lag/core` (`packages/lag`) | The monitors, their OTel wiring, `setupAllMonitors`. No DOM or OTel dependency: every browser API is injected through duck-typed deps, so it is fully unit-testable with fake timers. |
 | `@lag/worker` (`packages/lag-worker`) | `createLagWorker()` — the Web Worker behind the worker-lag monitor. Bundler-friendly (`new Worker(new URL(...))`). |
-| `@lag/integration-tests` | Real-Chromium tests (Vitest browser mode + Playwright), stress profiles, and a seedable lag generator. Exports to the Grafana stack when it's running. |
+| `@lag/integration-tests` | Browser tests in Chromium, Firefox, WebKit and Chrome (Vitest browser mode + Playwright): stress profiles, CDP tests, a cross-origin-isolated project, the web-vitals oracle, the overhead benchmark and the soak test. Exports to the Grafana stack when it's running. |
 | `@lag/scripts` | `pnpm new` scaffolds a workspace package. |
 
 ## Usage
@@ -89,8 +89,56 @@ All durations are in ms. Gauges named `*_max_gauge`, `*_avg_gauge` or `*_rate_ga
 pnpm install
 pnpm build              # tsc -b
 pnpm typecheck          # build + type-check all tests
-pnpm test               # unit tests (@lag/core, fake timers)
-pnpm test:integration   # real Chromium; starts the Grafana stack via docker compose first
+pnpm test               # unit tests (fake timers)
+pnpm test:browser       # every browser engine, no Docker
 ```
 
-To run the browser tests without Docker, run `npx vitest run` in `packages/lag-integration-tests`. OTLP export fails quietly, and the assertions don't depend on it.
+[Tests](#tests) lists every test kind and its script.
+
+## Tests
+
+Vitest runs all tests. The browser tests use Playwright. Install the Playwright browsers before the first browser run:
+
+```sh
+pnpm --filter @lag/integration-tests exec playwright install chromium firefox webkit
+```
+
+| Test kind | Script | What the tests examine |
+| --- | --- | --- |
+| Unit tests | `pnpm test` | The logic of each monitor in Node, with fake timers. These tests also cover `@lag/load`, `@lag/report` and `@lag/scripts`. |
+| Coverage | `pnpm coverage` | The unit-test coverage of `@lag/core`. The script writes `packages/lag/coverage/coverage-summary.json`. It fails below the thresholds. |
+| Mutation tests | `pnpm mutation` | Stryker changes the code of `@lag/core` and runs the unit tests again. A change that no test finds is a surviving mutant. |
+| Browser tests | `pnpm test:browser` | The monitors in Chromium, Firefox, WebKit and Chrome. The script also runs the CDP tests and the cross-origin-isolated tests. |
+| Chromium tests | `pnpm test:chromium` | The browser tests in Chromium only. This script is the fast check. |
+| CDP tests | `pnpm --filter @lag/integration-tests test:cdp` | Frozen pages, hidden pages, CPU throttling and compute pressure, through the Chrome DevTools Protocol. |
+| Cross-origin-isolated tests | `pnpm --filter @lag/integration-tests test:coi` | Shared memory, the fine clock and `measureUserAgentSpecificMemory()` on a cross-origin-isolated page. |
+| Overhead benchmark | `pnpm test:overhead` | The main-thread CPU time and the callbacks of all monitors on an idle page, against their budgets. |
+| Soak test | `pnpm test:soak` | All monitors for 3 minutes under a mixed workload. The heap must not grow without limit. `stop()` must release every timer. |
+| E2E tests | `pnpm test:e2e` | The export to the Grafana stack. The script starts the stack with Docker Compose. |
+| Test results | `pnpm results` | All test kinds, without the soak test and the E2E tests. The results go to the site. |
+
+A test that needs an API of one engine skips itself in the other engines. The test report shows the reason.
+
+To change the duration of the soak test, set `LAG_SOAK_MS` to a value in milliseconds. This example runs the soak test for 10 minutes in PowerShell:
+
+```powershell
+$env:LAG_SOAK_MS = 600000; pnpm test:soak
+```
+
+In Bash, put the variable before the command:
+
+```sh
+LAG_SOAK_MS=600000 pnpm test:soak
+```
+
+To see the test results on the site, do these steps:
+
+1. Run `pnpm results`.
+2. Run `pnpm --filter @lag/site dev`.
+3. Open the Results page.
+
+`pnpm results` writes the results to `packages/site/public/data/results/`. Git ignores this folder. The script includes the latest Stryker report if it exists.
+
+To include the soak test or the E2E tests, add `--soak` or `--e2e` to `pnpm results`.
+
+GitHub Actions runs the build, the unit tests, the coverage, the browser tests and the site checks for each push and pull request (`ci.yml`). `e2e.yml` and `mutation.yml` run each week. You can also start them manually.
