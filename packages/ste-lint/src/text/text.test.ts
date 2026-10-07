@@ -71,6 +71,14 @@ describe("splitSentences", () => {
         expect(sentences("A short ending etc. then more.")).toHaveLength(1);
     });
 
+    it("divides after a unit at the end of a sentence, for example milliseconds", () => {
+        expect(sentences("The handler blocks for 120 ms. The monitor gives 5 s. Ms. Lee wrote it.")).toEqual([
+            "The handler blocks for 120 ms .",
+            "The monitor gives 5 s .",
+            "Ms . Lee wrote it .",
+        ]);
+    });
+
     it("keeps closing brackets and quotes in the sentence", () => {
         expect(sentences("(See the guide.) Next. He said \"Go.\" Then")).toEqual(["( See the guide . )", "Next .", "He said Go. .", "Then"]);
     });

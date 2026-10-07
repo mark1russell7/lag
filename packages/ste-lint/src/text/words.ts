@@ -176,7 +176,7 @@ export const COMMON_NOUNS : ReadonlySet<string> = set(`
 
 /** Abbreviations after which a period does not end a sentence. */
 export const NO_BREAK_ABBREVIATIONS : ReadonlySet<string> = set(`
-    e.g i.e vs viz cf al approx mr mrs ms dr st jr sr inc ltd corp u.s a.m p.m
+    e.g i.e vs viz cf al approx mr mrs dr st jr sr inc ltd corp u.s a.m p.m
 `);
 
 /** Abbreviations that do not end a sentence when a number comes after them, for example "Fig. 3". */

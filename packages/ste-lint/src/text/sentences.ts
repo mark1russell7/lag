@@ -28,6 +28,8 @@ function isAbbreviationPeriod(tokens : readonly Token[], index : number) : boole
     const token = tokens[index]!;
     if (token.text !== "." || !isWord(previous) || token.spaceBefore) return false;
     if (NO_BREAK_ABBREVIATIONS.has(previous.lower)) return true;
+    // "Ms." is a title. In technical text, "ms" is the unit millisecond, and it can end a sentence.
+    if (previous.text === "Ms") return true;
     if (NUMBER_ABBREVIATIONS.has(previous.lower) && isNumber(tokens[index + 1])) return true;
     // An initial, for example "J. Smith".
     return /^\p{Lu}$/u.test(previous.text) && isCapitalized(tokens[index + 1]);
