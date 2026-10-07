@@ -41,7 +41,7 @@ class Instrument {
 export type LiveMeterOptions = {
     /** The clock for sample times, in ms. */
     now : () => number;
-    /** Samples to keep for each instrument. */
+    /** The number of samples to keep for each instrument. */
     capacity? : number;
 };
 
@@ -80,7 +80,7 @@ export class LiveMeter implements Meter {
         };
     }
 
-    /** The samples of an instrument from time `since` (ms) to now. */
+    /** The samples of an instrument from the time `since` (ms) to this time. */
     samplesSince(name : string, since : number) : MeterSample[] {
         return this.instruments.get(name)?.buffer.newest(sample => sample.t >= since) ?? [];
     }

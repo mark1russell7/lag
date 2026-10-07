@@ -13,7 +13,7 @@ function isRecord(value : unknown) : value is Record<string, unknown> {
 const STATUSES : readonly PageStatus[] = ["draft", "final"];
 
 /**
- * Checks the frontmatter of a page. For an invalid field, the result uses a
+ * This function examines the frontmatter of a page. For an invalid field, the result uses a
  * safe value (the file name as the title, the end of the section as the
  * order) and marks the page as a draft, so the page still shows.
  */

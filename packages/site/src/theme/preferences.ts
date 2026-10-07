@@ -1,4 +1,4 @@
-/** A small key-value store for reader preferences, such as the color theme. */
+/** A small key-value store for reader preferences, for example the color theme. */
 export type PreferenceStore = {
     get(key : string) : string | null;
     /** `null` removes the key. */

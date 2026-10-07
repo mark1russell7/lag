@@ -50,7 +50,7 @@ export type MonitorLogEntry = {
 export type StartedMonitors = {
     /** What `setupAllMonitors` gives. `stop()` releases every timer, listener and observer. */
     readonly handles : { stop() : void };
-    /** The worker of the worker-lag monitor, if the browser can start one. The caller must terminate it. */
+    /** The worker of the worker-lag monitor, if the browser can start one. The caller must stop it (`terminate()`). */
     readonly worker : { terminate() : void } | undefined;
     /** The Page Lifecycle state at this time, for example "active". */
     lifecycleState() : string | undefined;
@@ -97,7 +97,7 @@ function timerDeps(meter : Meter, onLog : StartMonitorsOptions["onLog"]) : AllMo
     };
 }
 
-/** Starts the monitors in this page. They record into `options.meter`. */
+/** This function starts the monitors in this page. They record into `options.meter`. */
 export function startMonitors(options : StartMonitorsOptions) : StartedMonitors {
     const worker = options.scope === "all" ? tryCreateWorker() : undefined;
     const deps = options.scope === "all"

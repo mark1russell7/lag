@@ -1,6 +1,6 @@
 /**
- * Returns a function that calls `load` once and then returns the same promise.
- * If the promise rejects, the next call tries again.
+ * This function gives a function that starts `load` one time and then
+ * gives the same promise. If the promise rejects, the next use tries again.
  */
 export function memoizePromise<T>(load : () => Promise<T>) : () => Promise<T> {
     let pending : Promise<T> | undefined;

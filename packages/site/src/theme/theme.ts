@@ -11,7 +11,7 @@ const LABELS : Readonly<Record<ThemePreference, string>> = {
     dark : "Dark",
 };
 
-/** Reads a stored value. Any value that is not "light" or "dark" means "system". */
+/** This function reads a stored value. A value that is not "light" or "dark" means "system". */
 export function parseThemePreference(value : string | null | undefined) : ThemePreference {
     return value === "light" || value === "dark" ? value : "system";
 }

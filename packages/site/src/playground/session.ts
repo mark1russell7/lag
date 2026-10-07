@@ -6,13 +6,13 @@ import { LiveMeter } from "./live-meter";
 /** `full`: every monitor and a worker (the playground). `timers`: only the timer monitors (the home page). */
 export type SessionKind = "full" | "timers";
 
-/** Starts the monitors. The browser runtime calls `setupAllMonitors`; a test gives a fake. */
+/** The monitors to start. The browser runtime uses `setupAllMonitors`, and a test gives a fake. */
 export type MonitorRuntime = {
     readonly metrics : MetricNames;
     start(meter : Meter, onLog : (entry : MonitorLogEntry) => void) : StartedMonitors;
 };
 
-/** Runs synthetic load. The browser runtime calls `@lag/load`; a test gives a fake. */
+/** The synthetic load. The browser runtime uses `@lag/load`, and a test gives a fake. */
 export type LoadRunner = {
     run(id : LoadActionId) : Promise<void>;
     runProfile(id : ProfileId, durationMs : number, signal : AbortSignal) : Promise<ProfileRun>;
@@ -142,7 +142,7 @@ export class PlaygroundSession {
         this.snapshot = this.buildSnapshot();
     }
 
-    /** For `useSyncExternalStore`. Returns the unsubscribe function. */
+    /** This function is for `useSyncExternalStore`. It gives the function that removes the listener. */
     readonly subscribe = (listener : () => void) : (() => void) => {
         this.listeners.add(listener);
         return () => { this.listeners.delete(listener); };
@@ -182,7 +182,7 @@ export class PlaygroundSession {
         this.publish();
     }
 
-    /** Stops the monitors (`stop()` on the handles) and terminates the worker. */
+    /** This method stops the monitors (`stop()` on the handles) and the worker. */
     stop() : void {
         if (this.status !== "running") return;
         this.options.scheduler.clearInterval(this.timer);
@@ -199,13 +199,13 @@ export class PlaygroundSession {
         this.publish();
     }
 
-    /** Stops the session and removes every listener. */
+    /** This method stops the session and removes all listeners. */
     dispose() : void {
         this.stop();
         this.listeners.clear();
     }
 
-    /** Runs one load action. The session ignores the call if it is not running or a load is active. */
+    /** This method starts one load action. The session ignores it when the session is stopped or a load is active. */
     async runLoad(id : LoadActionId) : Promise<void> {
         const loads = this.options.loads;
         if (!loads || !this.canRunLoad) return;
@@ -219,7 +219,7 @@ export class PlaygroundSession {
         }
     }
 
-    /** Runs a workload profile. `stopProfile()` stops it early. */
+    /** This method starts a workload profile. `stopProfile()` stops it before its end. */
     async runProfile(id : ProfileId, durationMs = 10_000) : Promise<ProfileRun | undefined> {
         const loads = this.options.loads;
         if (!loads || !this.canRunLoad) return undefined;

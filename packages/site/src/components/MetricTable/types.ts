@@ -7,7 +7,7 @@ export type MetricRow = {
     kind : MetricKind;
     /** The unit, as the instrument declares it, for example `ms` or `{transition}`. */
     unit : string;
-    /** The attribute keys. Values are fixed enums, never measured values. */
+    /** The attribute keys. The values are fixed enums, not measured values. */
     attributes? : readonly string[];
     description : string;
 };

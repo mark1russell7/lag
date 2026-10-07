@@ -6,7 +6,7 @@ export type PageStatus = "draft" | "final";
 /** The frontmatter fields of a content page. */
 export type PageMeta = {
     title : string;
-    /** One sentence. The sidebar does not show it; the page header and search results do. */
+    /** One sentence. The page header and the search results show it, but the sidebar does not. */
     description : string;
     /**
      * The position of the page in its section. Lower numbers come first. The
@@ -50,10 +50,10 @@ export type ContentPage = {
     path : string;
     /** The file to edit, from the repository root. */
     sourcePath : string;
-    /** The first folder in the section, for example "concepts". Undefined for a page at the top of the section. */
+    /** The first folder in the section, for example "concepts". A page at the top of the section has no group (`undefined`). */
     group : string | undefined;
     meta : PageMeta;
-    /** Loads the page module. It returns the same promise each time, so `use()` can read it. */
+    /** This function loads the page module. It gives the same promise each time, so that `use()` can read it. */
     load : () => Promise<ContentModule>;
 };
 

@@ -60,7 +60,7 @@ const LIGHT : ThemeColors = {
     },
 };
 
-/** Reads the color tokens (see styles/tokens.css) from the document. */
+/** This function reads the color tokens (refer to styles/tokens.css) from the document. */
 export function readThemeColors(root? : Element) : ThemeColors {
     const element = root ?? (typeof document === "undefined" ? undefined : document.documentElement);
     if (!element || typeof getComputedStyle === "undefined") return LIGHT;
@@ -94,7 +94,7 @@ export function readThemeColors(root? : Element) : ThemeColors {
     };
 }
 
-/** The categorical color in slot `index` (0 is slot 1). Slots never cycle: a chart folds extra series into "Other". */
+/** The categorical color in slot `index` (0 is slot 1). The slots do not cycle: a chart puts extra series into "Other". */
 export function seriesColor(colors : ThemeColors, index : number) : string {
     return colors.series[Math.min(index, colors.series.length - 1)] ?? colors.accent;
 }

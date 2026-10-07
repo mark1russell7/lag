@@ -10,7 +10,7 @@ export function formatNumber(value : number, maximumFractionDigits : 0 | 1 | 2 =
     return format.format(value);
 }
 
-/** Formats a duration: "0.42 ms", "3.5 ms", "120 ms", "1.25 s", "2 min 5 s". */
+/** This function formats a duration: "0.42 ms", "3.5 ms", "120 ms", "1.25 s", "2 min 5 s". */
 export function formatMs(ms : number) : string {
     if (!Number.isFinite(ms)) return "–";
     const abs = Math.abs(ms);
@@ -23,7 +23,7 @@ export function formatMs(ms : number) : string {
     return `${ms < 0 ? "-" : ""}${minutes} min ${seconds} s`;
 }
 
-/** Formats a percentage from 0 to 100. Undefined means that there is no data. */
+/** This function formats a percentage from 0 to 100. The value `undefined` means that there is no data. */
 export function formatPercent(value : number | undefined) : string {
     if (value === undefined || !Number.isFinite(value)) return "No data";
     if (value === 100 || value === 0) return `${value}%`;
@@ -42,7 +42,7 @@ export function formatBytes(bytes : number) : string {
     return `${number1.format(value)} ${units[unit]}`;
 }
 
-/** Formats a value in an OpenTelemetry-style unit ("ms", "%", "By", "ratio", "{gc}"). */
+/** This function formats a value in an OpenTelemetry unit ("ms", "%", "By", "ratio", "{gc}"). */
 export function formatValue(value : number, unit : string) : string {
     switch (unit) {
         case "ms": return formatMs(value);

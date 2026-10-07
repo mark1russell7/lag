@@ -108,8 +108,8 @@ export type TimePoint = {
 };
 
 /**
- * Reduces a series to at most `maxPoints` points. Each bucket keeps its
- * highest value, so short spikes stay visible.
+ * This function decreases a series to `maxPoints` points or fewer. Each
+ * bucket keeps its highest value, so that short spikes stay visible.
  */
 export function downsampleMax<P extends TimePoint>(points : readonly P[], maxPoints : number) : P[] {
     if (points.length <= maxPoints || maxPoints < 1) return [...points];

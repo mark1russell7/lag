@@ -10,8 +10,9 @@ function toError(reason : unknown) : Error {
 }
 
 /**
- * Runs `load` when the dependencies change and returns its state. A result
- * that arrives after the dependencies changed (or after unmount) is ignored.
+ * This hook starts `load` when the dependencies change, and it gives its
+ * state. The hook ignores a result that arrives after the dependencies
+ * changed (or after the unmount).
  */
 export function useAsync<T>(load : () => Promise<T>, deps : DependencyList) : AsyncState<T> {
     const [state, setState] = useState<AsyncState<T>>({ status : "loading" });

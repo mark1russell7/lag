@@ -55,7 +55,7 @@ const PROFILES : Readonly<Record<ProfileId, (durationMs : number, seed? : number
 export const LOAD_ACTION_IDS = Object.keys(ACTIONS) as LoadActionId[];
 export const PROFILE_IDS = Object.keys(PROFILES) as ProfileId[];
 
-/** Runs one load action. The blocking actions block the main thread before the promise returns. */
+/** This function starts one load action. A blocking action blocks the main thread before the promise is complete. */
 export function runLoadAction(id : LoadActionId) : Promise<void> {
     return ACTIONS[id]();
 }
@@ -75,8 +75,8 @@ class ProfileAborted extends Error {
 }
 
 /**
- * Runs a workload profile for `durationMs`. `runWorkload` has no stop
- * control, so the abort signal stops it at the next lag event.
+ * This function operates a workload profile for `durationMs`. `runWorkload`
+ * has no stop control. Thus, the abort signal stops it at the next lag event.
  */
 export async function runProfile(id : ProfileId, durationMs : number, signal? : AbortSignal) : Promise<ProfileRun> {
     const startedAt = performance.now();
@@ -105,8 +105,8 @@ export type SpecSample = {
 };
 
 /**
- * Samples the duration distribution of each lag spec in a profile, with a
- * fixed seed. It runs no load: it only draws numbers.
+ * This function takes samples of the duration distribution of each lag spec
+ * in a profile, with a fixed seed. It makes no load: it only draws numbers.
  */
 export function sampleProfileDurations(id : ProfileId, samplesPerSpec : number, seed : number) : SpecSample[] {
     const rng = createRng(seed);

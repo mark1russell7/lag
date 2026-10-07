@@ -4,7 +4,7 @@ import { useSessionFactory } from "./SessionFactoryContext";
 
 export type SessionState = {
     session : PlaygroundSession | undefined;
-    /** Undefined until the session exists. */
+    /** The value is `undefined` until the session exists. */
     snapshot : PlaygroundSnapshot | undefined;
     error : Error | undefined;
 };
@@ -13,9 +13,9 @@ const noSubscription = () : (() => void) => () => {};
 const noSnapshot = () : undefined => undefined;
 
 /**
- * Makes a session for the life of the component. The component starts and
- * stops it. On unmount, the hook disposes the session: the monitors stop and
- * the worker terminates.
+ * This hook makes a session for the life of the component. The component
+ * starts and stops it. At the unmount, the hook disposes the session: the
+ * monitors and the worker stop.
  */
 export function useSession(kind : SessionKind) : SessionState {
     const factory = useSessionFactory();

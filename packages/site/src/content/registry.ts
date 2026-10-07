@@ -23,7 +23,12 @@ export function parseContentKey(key : string) : { section : string; file : strin
     return { section : match[1]!, file : match[2]! };
 }
 
-/** "concepts/event-loop" → "concepts/event-loop"; "index" → ""; "monitors/index" → "monitors". */
+/**
+ * This function gives the slug of a content file:
+ * - "concepts/event-loop" → "concepts/event-loop"
+ * - "index" → ""
+ * - "monitors/index" → "monitors"
+ */
 export function slugOf(file : string) : string {
     if (file === "index") return "";
     return file.endsWith("/index") ? file.slice(0, -"/index".length) : file;
@@ -85,7 +90,7 @@ type SectionIndex = {
     bySlug : Map<string, ContentPage>;
 };
 
-/** Builds the registry from content entries. It does no I/O, so tests can give it any entries. */
+/** This function makes the registry from content entries. It does no I/O. Thus, tests can give it any entries. */
 export function createContentRegistry(entries : readonly ContentEntry[], options : RegistryOptions) : ContentRegistry {
     const problems : ContentProblem[] = [];
     const bySection = new Map<string, ContentPage[]>();
