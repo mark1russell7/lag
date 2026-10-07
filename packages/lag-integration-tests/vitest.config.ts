@@ -112,6 +112,10 @@ export default defineConfig({
                 instance("coi", "firefox"),
                 instance("coi", "webkit"),
             ], {}, { plugins : [crossOriginIsolation()] }),
+            // The overhead benchmark: alone, so that no other test uses the CPU
+            project("overhead", ["src/overhead/**/*.test.ts"], [
+                instance("overhead", "chromium", newHeadlessChromium()),
+            ], { fileParallelism : false, testTimeout : 300_000 }),
             // With the Grafana stack (pnpm test:e2e): the Mimir checks are required
             project("e2e", ["src/lag-monitors.test.ts", "src/stress.test.ts"], [
                 instance("e2e", "chromium", undefined, true),
