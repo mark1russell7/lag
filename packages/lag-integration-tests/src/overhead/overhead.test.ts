@@ -123,14 +123,21 @@ describe("The overhead of all monitors on an idle page", () => {
         await recordMeasurement("overhead/monitors/main_thread_task_ms_per_s", "ms/s", monitored.map(w => w.taskMsPerS), labels("monitors"));
         await recordMeasurement("overhead/baseline/main_thread_script_ms_per_s", "ms/s", baseline.map(w => w.scriptMsPerS), labels("baseline"));
         await recordMeasurement("overhead/monitors/main_thread_script_ms_per_s", "ms/s", monitored.map(w => w.scriptMsPerS), labels("monitors"));
-        for (const name of ["timers", "animationFrames", "idleCallbacks", "messages", "workerMessages"]) {
-            await recordMeasurement(`overhead/monitors/${name}_per_s`, "1/s", callbacks.map(c => c[name]!), labels("monitors"));
+        const metricNames : Record<string, string> = {
+            timers : "timer_callbacks_per_s",
+            animationFrames : "animation_frames_per_s",
+            idleCallbacks : "idle_callbacks_per_s",
+            messages : "message_tasks_per_s",
+            workerMessages : "worker_messages_per_s",
+        };
+        for (const [name, metric] of Object.entries(metricNames)) {
+            await recordMeasurement(`overhead/monitors/${metric}`, "callbacks/s", callbacks.map(c => c[name]!), labels("monitors"));
         }
         await recordBudget({ name : "Main-thread CPU of all monitors, idle page, % of one core", unit : "%", value : taskOverheadPercent, limit : CPU_BUDGET_PERCENT });
         await recordBudget({ name : "Main-thread CPU of all monitors, idle page, ms each second", unit : "ms/s", value : taskOverheadMsPerS, limit : CPU_BUDGET_PERCENT * 10 });
-        await recordBudget({ name : "Timer callbacks of all monitors each second, idle page", unit : "1/s", value : timersPerS, limit : TIMER_BUDGET_PER_SECOND });
+        await recordBudget({ name : "Timer callbacks of all monitors each second, idle page", unit : "callbacks/s", value : timersPerS, limit : TIMER_BUDGET_PER_SECOND });
         const wakeUpsPerS = median(callbacks.map(c => c["timers"]! + c["animationFrames"]! + c["idleCallbacks"]! + c["messages"]! + c["workerMessages"]!));
-        await recordBudget({ name : "Main-thread wake-ups of all monitors each second, idle page", unit : "1/s", value : wakeUpsPerS, limit : WAKE_UP_BUDGET_PER_SECOND });
+        await recordBudget({ name : "Main-thread wake-ups of all monitors each second, idle page", unit : "wake-ups/s", value : wakeUpsPerS, limit : WAKE_UP_BUDGET_PER_SECOND });
 
         expect(taskOverheadPercent).toBeLessThanOrEqual(CPU_BUDGET_PERCENT);
         expect(timersPerS).toBeLessThanOrEqual(TIMER_BUDGET_PER_SECOND);
