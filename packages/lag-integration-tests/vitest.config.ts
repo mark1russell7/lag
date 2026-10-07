@@ -13,6 +13,9 @@ type Environment = "chromium" | "firefox" | "webkit" | "chrome";
 type Provider = ReturnType<typeof playwright>;
 type Instance = NonNullable<NonNullable<NonNullable<TestProjectInlineConfiguration["test"]>["browser"]>["instances"]>[number];
 
+/** The duration of the soak test. Set LAG_SOAK_MS to change it. */
+const SOAK_MS = Number(process.env["LAG_SOAK_MS"] ?? 180_000);
+
 const COMMANDS = { ...cdpCommands, ...resultCommands };
 
 /**
@@ -51,7 +54,7 @@ function instance(project : string, environment : Environment, provider? : Provi
     return {
         browser : environment === "chrome" ? "chromium" : environment,
         name : `${project} (${environment})`,
-        provide : { environment, e2e },
+        provide : { environment, e2e, soakMs : SOAK_MS },
         ...(chosen ? { provider : chosen } : {}),
     };
 }
@@ -116,6 +119,10 @@ export default defineConfig({
             project("overhead", ["src/overhead/**/*.test.ts"], [
                 instance("overhead", "chromium", newHeadlessChromium()),
             ], { fileParallelism : false, testTimeout : 300_000 }),
+            // Opt-in: all monitors for LAG_SOAK_MS (default 3 minutes)
+            project("soak", ["src/soak/**/*.test.ts"], [
+                instance("soak", "chromium", newHeadlessChromium()),
+            ], { fileParallelism : false, testTimeout : SOAK_MS + 120_000 }),
             // With the Grafana stack (pnpm test:e2e): the Mimir checks are required
             project("e2e", ["src/lag-monitors.test.ts", "src/stress.test.ts"], [
                 instance("e2e", "chromium", undefined, true),
