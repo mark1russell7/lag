@@ -417,12 +417,12 @@ describe("setupAllMonitors", () => {
 
         // The system sleeps for 60 s: both clocks jump, and every timer fires late
         vi.setSystemTime(Date.now() + 60_000);
-        await advance(3_000);
+        await advance(5_000);
 
         expect(browser.meter.values("lag_drift_histogram").filter(v => v > 1_000)).toEqual([]);
         expect(browser.meter.values("lag_drift_histogram").length).toBeGreaterThan(before);
-        expect(browser.meter.sum("lag_stalls")).toBeGreaterThan(0);
-        expect(browser.meter.records().get("lag_stalls")!.every(r => r.attributes?.["kind"] === "suspend")).toBe(true);
+        // The stall samples of all monitors are one episode
+        expect(browser.meter.records().get("lag_stalls")).toEqual([{ value : 1, attributes : { kind : "suspend" } }]);
         expect(browser.reportHang).not.toHaveBeenCalled();
     });
 
@@ -434,9 +434,11 @@ describe("setupAllMonitors", () => {
         expect(browser.reportHang).toHaveBeenCalledWith(expect.objectContaining({ phase : "started" }), expect.anything());
 
         browser.unblockMain();
-        await advance(3_000);
+        await advance(5_000);
 
         expect(browser.reportHang).toHaveBeenCalledWith(expect.objectContaining({ phase : "ended" }), expect.anything());
+        // The stall samples of all monitors are one episode
+        expect(browser.meter.sum("lag_stalls")).toBe(1);
         expect(browser.meter.sum("lag_main_thread_hangs")).toBe(1);
         expect(Math.max(...browser.meter.values("lag_main_thread_hang_duration_histogram"))).toBeGreaterThanOrEqual(5_000);
         expect(Math.max(...browser.meter.values("lag_worker_main_block_histogram"))).toBeGreaterThanOrEqual(7_000);

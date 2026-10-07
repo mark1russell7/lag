@@ -84,6 +84,7 @@ const MIN_WATCHDOG_MS = 5_000;
  */
 export class WorkerLagMonitor {
     private running = false;
+    private listening = false;
     private syncHandle : number | undefined;
     private watchdogHandle : number | undefined;
     private heartbeatSeen = false;
@@ -113,7 +114,10 @@ export class WorkerLagMonitor {
         if (this.running) return;
         this.running = true;
         this.heartbeatSeen = false;
-        this.worker.addEventListener("message", this.onMessage);
+        if (!this.listening) {
+            this.worker.addEventListener("message", this.onMessage);
+            this.listening = true;
+        }
         this.worker.postMessage({
             type : "start",
             intervalMs : this.options.heartbeatIntervalMs,
@@ -134,6 +138,12 @@ export class WorkerLagMonitor {
         if (this.running) this.worker.postMessage({ type : "context", attributes : this.context });
     }
 
+    /**
+     * This method stops the heartbeats, for example while the page is
+     * hidden. The listener stays: a hang that was in progress ends at the
+     * stop, and the worker then sends `hang-ended`. Use `dispose()` to remove
+     * the listener.
+     */
     stop() : void {
         if (!this.running) return;
         this.running = false;
@@ -145,8 +155,15 @@ export class WorkerLagMonitor {
             this.options.clearTimeoutFn(this.watchdogHandle);
             this.watchdogHandle = undefined;
         }
-        this.worker.removeEventListener("message", this.onMessage);
         this.worker.postMessage({ type : "stop" });
+    }
+
+    /** This method stops the monitor and removes its listener from the worker. */
+    dispose() : void {
+        this.stop();
+        if (!this.listening) return;
+        this.worker.removeEventListener("message", this.onMessage);
+        this.listening = false;
     }
 
     /** The last clock synchronization result, if one finished. */
@@ -187,6 +204,8 @@ export class WorkerLagMonitor {
 
     private handleMessage(message : WorkerToMainMessage) : void {
         try {
+            // While stopped, only the end of a hang is applicable
+            if (!this.running && message?.type !== "hang-ended") return;
             switch (message?.type) {
                 case "heartbeat": {
                     this.heartbeatSeen = true;
@@ -219,7 +238,9 @@ export class WorkerLagMonitor {
 
         const stallThreshold = this.options.systemStallThresholdMs ?? DEFAULT_SYSTEM_STALL_THRESHOLD_MS;
         if (workerSelfLagMs >= stallThreshold) {
-            const end = this.clock.monotonic();
+            // The worker did not run before it sent the heartbeat. After the send, the heartbeat
+            // waited `deliveryDelayMs` for the main thread: that time is not part of the stall.
+            const end = this.clock.monotonic() - deliveryDelayMs;
             this.options.events?.onSystemStall?.({ start : end - workerSelfLagMs, end, durationMs : workerSelfLagMs });
         }
     }

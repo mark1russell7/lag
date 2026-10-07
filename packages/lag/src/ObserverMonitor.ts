@@ -39,7 +39,7 @@ export abstract class ObserverMonitor {
         }
         try {
             const observer = new this.PerformanceObserverCtor(
-                (list : PerformanceEntryList) => this.processEntries(list.getEntries()),
+                (list : PerformanceEntryList) => this.receive(list.getEntries()),
             );
             observer.observe({ ...this.observeOptions, type : this.entryType, buffered : true });
             this.observer = observer;
@@ -73,6 +73,11 @@ export abstract class ObserverMonitor {
      */
     protected takePendingEntries() : PerformanceEntryLike[] {
         return this.observer?.takeRecords?.() ?? [];
+    }
+
+    /** The browser gives each delivery of entries to this method. By default, the method processes the entries. */
+    protected receive(entries : readonly PerformanceEntryLike[]) : void {
+        this.processEntries(entries);
     }
 
     /** This method processes each entry. An error in one entry does not stop the other entries. */

@@ -1,6 +1,6 @@
 import { expect, vi } from "vitest";
 import { createLagWorker, type LagWorker } from "@lag/worker";
-import { WorkerLagMonitor, type WorkerLagMeasurement } from "@lag/core";
+import { WorkerLagMonitor, createAbsoluteClock, type WorkerLagMeasurement } from "@lag/core";
 import { blockMainThread, wait } from "./harness.js";
 
 describe("Worker Lag Monitor Integration", () => {
@@ -14,7 +14,7 @@ describe("Worker Lag Monitor Integration", () => {
             worker,
             (m) => measurements.push(m),
             { log : vi.fn() },
-            window.performance,
+            createAbsoluteClock(window.performance),
             {
                 heartbeatIntervalMs : intervalMs,
                 setTimeoutFn : (fn, ms) => window.setTimeout(fn, ms),

@@ -17,10 +17,12 @@ export type ClockDriftSample = {
 
 /**
  * A discontinuity of the skew. The monitor classifies it:
- * - `suspend`: the wall clock moved forward by 1 s or more, and the timer of
- *   the monitor was not late. The monotonic clock stopped while the device
- *   slept, as on macOS, Linux, Android and iOS. A forward step of the system
- *   clock of 1 s or more looks the same.
+ * - `suspend`: the wall clock moved forward by 1 s or more. The monotonic
+ *   clock stopped while the device slept, as on macOS, Linux, Android and
+ *   iOS. A forward step of the system clock of 1 s or more looks the same.
+ *   The lateness of the timer has no effect on the classification. In a
+ *   hidden page, the browser can delay the timer by a minute. Also, the
+ *   device usually sleeps while the page is hidden.
  * - `step`: all other discontinuities, for example a change of the system
  *   clock by NTP or by the user. A backward change is always a step.
  *
@@ -35,6 +37,8 @@ export type ClockJump = {
     skewMs : number;
     /** How late the timer of the monitor was at this sample. */
     latenessMs : number;
+    /** The monotonic time since the previous sample. The discontinuity occurred in this interval. */
+    intervalMs : number;
 };
 
 export type ClockDriftOptions = {
@@ -139,14 +143,13 @@ export class ClockDriftMonitor {
             this.report({ skewMs : reading.skew, driftMs, intervalMs });
 
             if (Math.abs(driftMs) <= Math.max(this.minJumpMs, this.jumpRate * intervalMs)) return;
-            const latenessMs = Math.max(0, intervalMs - this.intervalMs);
-            const onTime = latenessMs <= Math.max(this.minJumpMs, this.jumpRate * intervalMs);
             this.onJump({
                 direction : driftMs > 0 ? "forward" : "backward",
-                kind : driftMs >= this.suspendMinMs && onTime ? "suspend" : "step",
+                kind : driftMs >= this.suspendMinMs ? "suspend" : "step",
                 magnitudeMs : Math.abs(driftMs),
                 skewMs : reading.skew,
-                latenessMs,
+                latenessMs : Math.max(0, intervalMs - this.intervalMs),
+                intervalMs,
             });
         } catch (error) {
             this.logger.log("error", "Error in clock drift measurement.", {

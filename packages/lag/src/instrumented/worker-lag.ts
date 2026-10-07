@@ -1,11 +1,11 @@
-import type { AbsoluteClockDeps, CoreDeps, EventDeps, PerformanceDeps, TimerDeps, WorkerMonitorDeps } from "../dep-groups.js";
+import type { AbsoluteClockDeps, CoreDeps, EventDeps, PerformanceDeps, TimerDeps, WallClockDeps, WorkerMonitorDeps } from "../dep-groups.js";
 import { createAbsoluteClock } from "../absolute-clock.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { WorkerLagMonitor } from "../WorkerLagMonitor.js";
 import type { MeasurementConditions } from "../measurement-conditions.js";
 import { EVENTS, METRICS, createCounter, createHistogram } from "../metric-catalog.js";
 import { createHandle, validatedRecorder } from "./shared.js";
-import { findAbandonedHangs } from "../hang-journal.js";
+import { findAbandonedHangs, HANG_JOURNAL_STALE_MS } from "../hang-journal.js";
 import { createRandomId } from "../random-id.js";
 
 /**
@@ -34,10 +34,12 @@ const DEFAULT_HANG_THRESHOLD_MS = 5_000;
  *
  * With `deps.hangJournal`, the factory reads the journal one time at the
  * start. It reports each hang that an earlier page did not survive as a hang
- * with the outcome `abandoned`, and removes its record.
+ * with the outcome `abandoned`, and removes its record. Other pages of the
+ * origin can read the journal at the same time: the record goes to only one
+ * page (`HangJournal.take`).
  */
 export function createInstrumentedWorkerLag(
-    deps : CoreDeps & WorkerMonitorDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<EventDeps>,
+    deps : CoreDeps & WorkerMonitorDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & Partial<WallClockDeps> & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<EventDeps>,
     conditions? : MeasurementConditions,
 ) : MonitorHandle<WorkerLagMonitor> {
     return createHandle("worker-lag", deps.logger, () => {
@@ -75,7 +77,8 @@ export function createInstrumentedWorkerLag(
                     },
                     onClockSync : ({ offsetMs }) => offsetHist.record(Math.abs(offsetMs)),
                 },
-                pageId,
+                // Without a journal on this side, the worker writes none either
+                ...(deps.hangJournal ? { pageId } : {}),
             },
         );
 
@@ -84,9 +87,16 @@ export function createInstrumentedWorkerLag(
         let stopped = false;
         if (journal) {
             journal.list().then(async (records) => {
-                for (const record of findAbandonedHangs(records, clock.now(), pageId)) {
+                const wallNow = deps.wallClock?.now() ?? Date.now();
+                for (const candidate of findAbandonedHangs(records, wallNow, pageId)) {
                     if (stopped) return;
-                    await journal.remove(record.pageId);
+                    const record = await journal.take(candidate.pageId, wallNow - HANG_JOURNAL_STALE_MS);
+                    if (!record) continue;
+                    if (stopped) {
+                        // Keep the record for the next page
+                        await journal.put(record);
+                        return;
+                    }
                     const durationMs = record.lastSeenAt - record.startedAt;
                     hangs.add(1, { outcome : "abandoned" });
                     hangDurationHist.record(durationMs, { outcome : "abandoned" });
@@ -108,7 +118,7 @@ export function createInstrumentedWorkerLag(
             stop : () => {
                 stopped = true;
                 unpause?.();
-                monitor.stop();
+                monitor.dispose();
                 recorder.dispose();
             },
         };

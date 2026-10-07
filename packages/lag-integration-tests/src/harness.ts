@@ -30,8 +30,8 @@ export type TeeMeter = {
 };
 
 /**
- * Wraps a real OTel meter so tests can also inspect what was recorded:
- * values still flow to the exporter.
+ * This function wraps a real OTel meter, so that the tests can examine the
+ * recorded values. The values also go to the exporter.
  */
 export function createTeeMeter(inner : Meter) : TeeMeter {
     const recorded = new Map<string, number[]>();

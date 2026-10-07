@@ -16,7 +16,8 @@ function reportHang(event : HangEvent, options : HangOptions) : void {
     const target = options.report;
     if (!target) return;
     const body = encodeOtlpLogs(target.resource ?? {}, "@lag/worker", [{
-        timeMs : clock.now(),
+        // OTLP log times are wall-clock times, as the OpenTelemetry SDK writes them
+        timeMs : Date.now(),
         eventName : "lag.main_thread.hang",
         severityText : "WARN",
         severityNumber : 13,

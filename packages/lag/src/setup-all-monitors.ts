@@ -318,7 +318,7 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
                 ...deps,
                 performance : deps.performance,
                 wallClock : deps.wallClock,
-            }));
+            }, conditions));
         }
     }
 

@@ -59,12 +59,34 @@ export type MeasurementConditionsOptions = {
     outlierThresholdMs? : number;
     /** The time that an outlier waits for evidence. The default is 2000 ms. */
     confirmDelayMs? : number;
+    /**
+     * The function gets one call for each stall episode: the stall samples of
+     * all validators whose windows overlap. `valueMs` is the longest sample of
+     * the episode. The kind is `suspend` if a sample of the episode had
+     * evidence of a suspend.
+     */
     onStall? : (kind : StallKind, valueMs : number) => void;
     onDiscard? : (reason : DiscardReason) => void;
 };
 
 const DEFAULT_OUTLIER_THRESHOLD_MS = 5_000;
 const DEFAULT_CONFIRM_DELAY_MS = 2_000;
+
+/**
+ * One block of the main thread gives a stall sample in each validated
+ * monitor, and in each worker heartbeat that waited. The samples of one
+ * episode arrive soon after the block ends. Thus an episode waits this long
+ * for more samples before the conditions report it.
+ */
+const EPISODE_SETTLE_MS = 2_000;
+
+type StallEpisode = {
+    start : number;
+    end : number;
+    kind : StallKind;
+    valueMs : number;
+    handle : number;
+};
 
 function unreliableReason(state : LifecycleState) : UnreliableReason | undefined {
     if (isVisibleState(state)) return undefined;
@@ -82,6 +104,28 @@ export function createMeasurementConditions(options : MeasurementConditionsOptio
     const outlierThresholdMs = options.outlierThresholdMs ?? DEFAULT_OUTLIER_THRESHOLD_MS;
     const confirmDelayMs = options.confirmDelayMs ?? DEFAULT_CONFIRM_DELAY_MS;
     const disposers : Array<() => void> = [];
+    const episodes : StallEpisode[] = [];
+
+    const reportEpisode = (episode : StallEpisode) : void => {
+        const index = episodes.indexOf(episode);
+        if (index >= 0) episodes.splice(index, 1);
+        options.onStall?.(episode.kind, episode.valueMs);
+    };
+
+    /** This function adds a stall sample to the episode that its window overlaps, or it starts a new episode. */
+    const addStall = (kind : StallKind, valueMs : number, start : number, end : number) : void => {
+        const episode = episodes.find(candidate => start <= candidate.end && end >= candidate.start);
+        if (episode) {
+            episode.start = Math.min(episode.start, start);
+            episode.end = Math.max(episode.end, end);
+            episode.valueMs = Math.max(episode.valueMs, valueMs);
+            if (kind === "suspend") episode.kind = "suspend";
+            return;
+        }
+        const created : StallEpisode = { start, end, kind, valueMs, handle : 0 };
+        created.handle = setTimeoutFn(() => reportEpisode(created), EPISODE_SETTLE_MS);
+        episodes.push(created);
+    };
 
     if (lifecycle) {
         let closeInterval : (() => void) | undefined;
@@ -95,6 +139,20 @@ export function createMeasurementConditions(options : MeasurementConditionsOptio
         disposers.push(() => closeInterval?.());
     }
 
+    /** The interval that overlaps a window. A suspend comes first, because it decides the kind of a stall. */
+    const findOverlap = (start : number, end : number) =>
+        tracker.findOverlap(start, end, "suspend") ?? tracker.findOverlap(start, end);
+
+    /**
+     * This function discards a sample whose window overlaps an unreliable
+     * interval. A very long sample during a suspend is also a stall. The
+     * evidence can come before the sample or after it: the result is the same.
+     */
+    const discard = (overlap : { reason : DiscardReason }, value : number, start : number, end : number) : void => {
+        options.onDiscard?.(overlap.reason);
+        if (overlap.reason === "suspend" && value >= outlierThresholdMs) addStall("suspend", value, start, end);
+    };
+
     const createValidator = () : SampleValidator => {
         const pending = new Set<number>();
         return {
@@ -103,9 +161,9 @@ export function createMeasurementConditions(options : MeasurementConditionsOptio
                 lifecycle?.getState();
                 const end = clock.now();
                 const start = end - windowMs;
-                const overlap = tracker.findOverlap(start, end);
+                const overlap = findOverlap(start, end);
                 if (overlap) {
-                    options.onDiscard?.(overlap.reason);
+                    discard(overlap, value, start, end);
                     return;
                 }
                 if (value < outlierThresholdMs) {
@@ -115,13 +173,12 @@ export function createMeasurementConditions(options : MeasurementConditionsOptio
                 // Evidence of a suspend (from the worker) can arrive after the sample
                 const handle : number = setTimeoutFn(() => {
                     pending.delete(handle);
-                    const late = tracker.findOverlap(start, end);
+                    const late = findOverlap(start, end);
                     if (late) {
-                        options.onDiscard?.(late.reason);
-                        if (late.reason === "suspend") options.onStall?.("suspend", value);
+                        discard(late, value, start, end);
                         return;
                     }
-                    options.onStall?.("hang", value);
+                    addStall("hang", value, start, end);
                     record(value);
                 }, confirmDelayMs);
                 pending.add(handle);
@@ -149,6 +206,11 @@ export function createMeasurementConditions(options : MeasurementConditionsOptio
         dispose() {
             for (const dispose of disposers) dispose();
             disposers.length = 0;
+            // Report the episodes that wait, because no later report can come
+            for (const episode of [...episodes]) {
+                clearTimeoutFn(episode.handle);
+                reportEpisode(episode);
+            }
         },
     };
 }

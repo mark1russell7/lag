@@ -3,6 +3,9 @@ import { createWorkerHandler, type HangEvent } from "./lag-worker.js";
 import type { WorkerToMainMessage } from "./worker-protocol.js";
 import { createMemoryHangJournal, type HangJournal } from "./hang-journal.js";
 
+/** The wall clock of the tests is 1 000 000 ms ahead of the monotonic clock. */
+const WALL_OFFSET = 1_000_000;
+
 function createHandler(startTime = 0, journal? : HangJournal) {
     let currentTime = startTime;
     const postMessage = vi.fn<(message : WorkerToMainMessage) => void>();
@@ -12,6 +15,7 @@ function createHandler(startTime = 0, journal? : HangJournal) {
         setTimeoutFn : setTimeout,
         clearTimeoutFn : clearTimeout,
         clock : { now : () => currentTime },
+        wallClock : { now : () => WALL_OFFSET + currentTime },
         reportHang,
         ...(journal ? { journal } : {}),
     });
@@ -146,6 +150,33 @@ describe("lag-worker handler", () => {
             expect(w.reportHang).not.toHaveBeenCalled();
         });
 
+        it("does not add the time in which the worker itself did not run to a hang in progress", () => {
+            const w = createHandler();
+            w.handler.handleMessage({ type : "start", intervalMs : 1_000, hang : { thresholdMs : 5_000 } });
+            for (let i = 0; i < 6; i++) w.advance(1_000);
+            expect(w.reportHang).toHaveBeenCalledWith(expect.objectContaining({ phase : "started", startedAt : 0 }), expect.anything());
+
+            // A sleep of 1 h on Windows (performance.now() continues): the next timer is 1 h late
+            w.advance(1_000, 3_601_000);
+            w.advance(0, 500);
+            w.handler.handleMessage({ type : "ack", seq : 7 });
+
+            expect(w.reportHang).toHaveBeenLastCalledWith(expect.objectContaining({ phase : "ended", durationMs : 7_500 }), expect.anything());
+            expect(w.messages("hang-ended")).toEqual([expect.objectContaining({ durationMs : 7_500 })]);
+        });
+
+        it("ends a hang in progress at a stop, because the main thread sent the stop", () => {
+            const w = createHandler();
+            w.handler.handleMessage({ type : "start", intervalMs : 1_000, hang : { thresholdMs : 5_000 } });
+            for (let i = 0; i < 7; i++) w.advance(1_000);
+            // The main thread stops the monitor (the page became hidden) before it handles the heartbeats that waited
+            w.advance(0, 200);
+            w.handler.handleMessage({ type : "stop" });
+
+            expect(w.reportHang.mock.calls.map(([event]) => event.phase)).toEqual(["started", "ended"]);
+            expect(w.messages("hang-ended")).toEqual([{ type : "hang-ended", startedAt : 0, durationMs : 7_200 }]);
+        });
+
         it("does not detect hangs without hang options", () => {
             const w = createHandler();
             w.handler.handleMessage({ type : "start", intervalMs : 100 });
@@ -178,12 +209,17 @@ describe("lag-worker handler", () => {
 
             for (let i = 0; i < 10; i++) w.advance(100);
             await settle();
-            expect(await journal.list()).toEqual([{ pageId : "page-a", startedAt : 0, lastSeenAt : 1_000, attributes : { "lag.page_view.id" : "view-1" } }]);
+            expect(await journal.list()).toEqual([{
+                pageId : "page-a",
+                startedAt : WALL_OFFSET,
+                lastSeenAt : WALL_OFFSET + 1_000,
+                attributes : { "lag.page_view.id" : "view-1" },
+            }]);
 
             for (let i = 0; i < 10; i++) w.advance(100);
             await settle();
             expect(put).toHaveBeenCalledTimes(2);
-            expect((await journal.list())[0]!.lastSeenAt).toBe(2_000);
+            expect((await journal.list())[0]!.lastSeenAt).toBe(WALL_OFFSET + 2_000);
 
             w.handler.handleMessage({ type : "ack", seq : 20 });
             await settle();
@@ -218,6 +254,7 @@ describe("lag-worker handler", () => {
                 put : () => Promise.reject(new Error("quota")),
                 remove : () => Promise.reject(new Error("quota")),
                 list : () => Promise.resolve([]),
+                take : () => Promise.reject(new Error("quota")),
             };
             const w = createHandler(0, journal);
             w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 300 }, pageId : "page-a" });

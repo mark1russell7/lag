@@ -30,8 +30,10 @@ export class InpCalculator {
 
     constructor(
         private readonly readInteractionCount? : () => number | undefined,
+        /** The interaction count at the start. The default is the count at this time. */
+        baseline? : number,
     ) {
-        this.interactionCountAtStart = readInteractionCount?.() ?? 0;
+        this.interactionCountAtStart = baseline ?? readInteractionCount?.() ?? 0;
     }
 
     /** This method adds one Event Timing entry. It ignores an entry without an `interactionId`. */

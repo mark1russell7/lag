@@ -114,7 +114,117 @@ describe("createMeasurementConditions", () => {
 
             vi.advanceTimersByTime(2_000);
             expect(record).toHaveBeenCalledWith(8_000);
+            // The episode waits for the stall samples of the other monitors
+            expect(onStall).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(2_000);
             expect(onStall).toHaveBeenCalledWith("hang", 8_000);
+        });
+
+        it("reports the stall samples of one block as one episode, with the longest sample", () => {
+            const { conditions, onStall } = createConditions();
+            const record = vi.fn();
+            // One 30 s block: a DriftLag window and three worker heartbeats that waited
+            const drift = conditions.createValidator();
+            const worker = conditions.createValidator();
+            drift.submit(30_000, 30_100, record);
+            worker.submit(29_000, 29_000, record);
+            worker.submit(12_000, 12_000, record);
+            vi.advanceTimersByTime(500);
+            worker.submit(6_000, 6_500, record);
+            vi.advanceTimersByTime(10_000);
+
+            expect(record).toHaveBeenCalledTimes(4);
+            expect(onStall.mock.calls).toEqual([["hang", 30_000]]);
+        });
+
+        it("reports separate blocks as separate episodes", () => {
+            const { conditions, onStall } = createConditions();
+            const validator = conditions.createValidator();
+            validator.submit(6_000, 6_000, vi.fn());
+            vi.advanceTimersByTime(20_000);
+            validator.submit(7_000, 7_000, vi.fn());
+            vi.advanceTimersByTime(20_000);
+
+            expect(onStall.mock.calls).toEqual([["hang", 6_000], ["hang", 7_000]]);
+        });
+
+        it("gives an episode the kind suspend when one of its samples gets suspend evidence during the wait", () => {
+            const { conditions, onStall } = createConditions();
+            const now = Date.now();
+            const validator = conditions.createValidator();
+            validator.submit(9_000, 9_000, vi.fn());
+            // This window is only the last 3 s
+            validator.submit(5_000, 3_000, vi.fn());
+            // The evidence covers the first window, not the second one
+            vi.advanceTimersByTime(300);
+            conditions.tracker.add(now - 9_000, now - 4_000, "suspend");
+            vi.advanceTimersByTime(10_000);
+
+            expect(onStall.mock.calls).toEqual([["suspend", 9_000]]);
+        });
+
+        it("discards a sample at once when the evidence exists before the sample, and counts a suspend stall", () => {
+            const { conditions, onStall, onDiscard } = createConditions();
+            const record = vi.fn();
+            const now = Date.now();
+            conditions.tracker.add(now - 9_000, now, "suspend");
+            conditions.createValidator().submit(9_000, 9_000, record);
+            vi.advanceTimersByTime(10_000);
+
+            expect(record).not.toHaveBeenCalled();
+            expect(onDiscard).toHaveBeenCalledWith("suspend");
+            expect(onStall.mock.calls).toEqual([["suspend", 9_000]]);
+        });
+
+        it("gives the same result when the sample comes before the suspend evidence or after it", () => {
+            const order = (evidenceFirst : boolean) => {
+                const { conditions, onStall } = createConditions();
+                const now = Date.now();
+                const validator = conditions.createValidator();
+                // A Windows sleep of 60 s: DriftLag measures it, and a heartbeat with a self lag of 60 s is the evidence
+                if (evidenceFirst) conditions.tracker.add(now - 60_050, now - 10, "suspend");
+                validator.submit(60_000, 60_100, vi.fn());
+                if (!evidenceFirst) conditions.tracker.add(now - 60_050, now + 20, "suspend");
+                vi.advanceTimersByTime(10_000);
+                conditions.dispose();
+                return onStall.mock.calls;
+            };
+            expect(order(true)).toEqual([["suspend", 60_000]]);
+            expect(order(false)).toEqual([["suspend", 60_000]]);
+        });
+
+        it("uses the suspend evidence when a window overlaps a hidden interval and a suspend", () => {
+            const { conditions, onStall, onDiscard } = createConditions();
+            const now = Date.now();
+            conditions.tracker.add(now - 9_000, now - 8_000, "hidden");
+            conditions.tracker.add(now - 7_000, now - 1_000, "suspend");
+            conditions.createValidator().submit(9_000, 9_000, vi.fn());
+            vi.advanceTimersByTime(10_000);
+
+            expect(onDiscard).toHaveBeenCalledWith("suspend");
+            expect(onStall.mock.calls).toEqual([["suspend", 9_000]]);
+        });
+
+        it("counts no stall for a long sample in a hidden interval", () => {
+            const { conditions, onStall, onDiscard } = createConditions();
+            const now = Date.now();
+            conditions.tracker.add(now - 9_000, now, "hidden");
+            conditions.createValidator().submit(9_000, 9_000, vi.fn());
+            vi.advanceTimersByTime(10_000);
+
+            expect(onDiscard).toHaveBeenCalledWith("hidden");
+            expect(onStall).not.toHaveBeenCalled();
+        });
+
+        it("dispose() reports the episodes that wait", () => {
+            const { conditions, onStall } = createConditions();
+            conditions.createValidator().submit(8_000, 8_000, vi.fn());
+            vi.advanceTimersByTime(2_000);
+            expect(onStall).not.toHaveBeenCalled();
+
+            conditions.dispose();
+            expect(onStall).toHaveBeenCalledWith("hang", 8_000);
+            expect(vi.getTimerCount()).toBe(0);
         });
 
         it("discards an outlier when suspend evidence arrives during the wait", () => {
@@ -126,7 +236,7 @@ describe("createMeasurementConditions", () => {
             // The worker reports that it did not run for 60 s, a moment after the sample
             vi.advanceTimersByTime(300);
             conditions.tracker.add(now - 60_000, now, "suspend");
-            vi.advanceTimersByTime(2_000);
+            vi.advanceTimersByTime(4_000);
 
             expect(record).not.toHaveBeenCalled();
             expect(onStall).toHaveBeenCalledWith("suspend", 60_000);

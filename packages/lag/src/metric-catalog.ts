@@ -66,7 +66,7 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
     drift : metric("lag_drift_histogram", "histogram", "ms", "DriftLag",
         "The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag."),
     driftBaseline : metric("lag_drift_baseline_histogram", "histogram", "ms", "DriftLag",
-        "The idle duration of one timer step, from the recent steps that are not blocks: the timer granularity of the browser and the operating system. DriftLag subtracts it."),
+        "The idle duration of one timer step: the mean of the recent steps that are not blocks. It is the timer granularity of the browser and the operating system. DriftLag subtracts it."),
     macrotask : metric("lag_macrotask_histogram", "histogram", "ms", "MacrotaskLag",
         "The time that a zero-delay timeout waits in the task queue. The monitor measures one sample every 5 seconds."),
 
@@ -74,10 +74,10 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
         "The number of samples that a monitor did not record because the measurement window was not valid.",
         { reason : ["hidden", "frozen", "suspend"] }),
     stalls : metric("lag_stalls", "counter", "{stall}", "MeasurementConditions",
-        "The number of very long samples. A hang has no evidence of a suspend. A suspend overlaps evidence that the system stopped.",
+        "The number of stall episodes: very long samples (5000 ms or more) of all monitors whose windows overlap count as one episode. A hang has no evidence of a suspend. A suspend has evidence that the system stopped.",
         { kind : ["hang", "suspend"] }),
     stallDuration : metric("lag_stall_duration_histogram", "histogram", "ms", "MeasurementConditions",
-        "The duration of each very long sample.",
+        "The duration of each stall episode: its longest sample.",
         { kind : ["hang", "suspend"] }),
 
     workerMainBlock : metric("lag_worker_main_block_histogram", "histogram", "ms", "WorkerLagMonitor",
@@ -118,7 +118,7 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
         "Interaction to Next Paint (INP) for each page view.",
         { navigation_type : NAVIGATION_TYPES }),
     vitalCls : metric("lag_web_vital_cls_histogram", "histogram", "1", "PageViewVitals",
-        "Cumulative Layout Shift (CLS) for each page view.",
+        "Cumulative Layout Shift (CLS) for each page view, in browsers that have layout-shift entries.",
         { navigation_type : NAVIGATION_TYPES }),
     vitalLcp : metric("lag_web_vital_lcp_histogram", "histogram", "ms", "PageViewVitals",
         "Largest Contentful Paint (LCP) for each page view.",
@@ -127,7 +127,7 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
         "First Contentful Paint (FCP) for each page view.",
         { navigation_type : NAVIGATION_TYPES }),
     vitalTtfb : metric("lag_web_vital_ttfb_histogram", "histogram", "ms", "PageViewVitals",
-        "Time to First Byte (TTFB) for each page view that has a network response.",
+        "Time to First Byte (TTFB) for each page view. A restore from the back/forward cache and a soft navigation have no network response and get 0, as in web-vitals. A page without a navigation entry gets no value.",
         { navigation_type : NAVIGATION_TYPES }),
 
     frameDelta : metric("lag_frame_delta_histogram", "histogram", "ms", "FrameTimingMonitor",
@@ -254,7 +254,7 @@ export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
     stall : {
         name : "lag.stall",
         monitor : "MeasurementConditions",
-        description : "A very long sample and its classification as a hang or a suspend.",
+        description : "One stall episode, with its classification as a hang or a suspend and its longest sample.",
         attributes : ["kind", "duration_ms"],
     },
 };

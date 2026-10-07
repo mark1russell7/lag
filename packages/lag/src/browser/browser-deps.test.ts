@@ -50,7 +50,8 @@ describe("createBrowserDeps", () => {
     });
 
     it("leaves out the deps of an API that the browser does not have", () => {
-        // As in Safari: no requestIdleCallback, no ReportingObserver, no PressureObserver
+        // A browser without requestIdleCallback, ReportingObserver and PressureObserver (Safari has a
+        // ReportingObserver from 16.4, but without the intervention and deprecation reports)
         const deps = createBrowserDeps(createGlobals(), options());
 
         expect(deps.requestIdleCallback).toBeUndefined();

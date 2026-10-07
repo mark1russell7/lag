@@ -60,8 +60,8 @@ All durations are in milliseconds. All metrics are counters or histograms. The a
 | DriftLag | `lag_drift_baseline_histogram` | histogram | `ms` |  | The idle duration of one timer step, from the recent steps that are not blocks: the timer granularity of the browser and the operating system. DriftLag subtracts it. |
 | MacrotaskLag | `lag_macrotask_histogram` | histogram | `ms` |  | The time that a zero-delay timeout waits in the task queue. The monitor measures one sample every 5 seconds. |
 | MeasurementConditions | `lag_samples_discarded` | counter | `{sample}` | `reason` | The number of samples that a monitor did not record because the measurement window was not valid. |
-| MeasurementConditions | `lag_stalls` | counter | `{stall}` | `kind` | The number of very long samples. A hang has no evidence of a suspend. A suspend overlaps evidence that the system stopped. |
-| MeasurementConditions | `lag_stall_duration_histogram` | histogram | `ms` | `kind` | The duration of each very long sample. |
+| MeasurementConditions | `lag_stalls` | counter | `{stall}` | `kind` | The number of stall episodes: very long samples (5000 ms or more) of all monitors whose windows overlap count as one episode. A hang has no evidence of a suspend. A suspend has evidence that the system stopped. |
+| MeasurementConditions | `lag_stall_duration_histogram` | histogram | `ms` | `kind` | The duration of each stall episode: its longest sample. |
 | WorkerLagMonitor | `lag_worker_main_block_histogram` | histogram | `ms` |  | The time that a worker heartbeat waited for the main thread. This is main-thread blocking, measured from outside the main thread. |
 | WorkerLagMonitor | `lag_worker_self_lag_histogram` | histogram | `ms` |  | The lateness of the heartbeat timer of the worker. A high value shows that the worker itself did not operate. |
 | WorkerLagMonitor | `lag_worker_clock_offset_histogram` | histogram | `ms` |  | The absolute offset between the worker clock and the main-thread clock, from the clock synchronization exchange. |

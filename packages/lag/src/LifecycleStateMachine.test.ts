@@ -151,6 +151,24 @@ describe("LifecycleStateMachine", () => {
         expect(sm.getState()).toBe("active");
     });
 
+    it("notifies a restore at pageshow also when the page is visible already, as in the event sequence of Chromium", () => {
+        const m = createMocks();
+        const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+        m.fireWin("pagehide", { persisted : true });
+        m.setVisibility("hidden");
+        m.fireDoc("freeze");
+
+        const transitions : string[] = [];
+        sm.subscribe((t) => transitions.push(`${t.from}>${t.to}:${t.trigger}`));
+        // Chromium restores with resume, visibilitychange and pageshow
+        m.fireDoc("resume");
+        m.setVisibility("visible");
+        m.fireWin("pageshow", { persisted : true });
+
+        expect(transitions.at(-1)).toBe("active>active:pageshow");
+        expect(sm.getState()).toBe("active");
+    });
+
     describe("mark/resolve API", () => {
         it("returns transitions that occurred between mark and resolve", () => {
             const m = createMocks();

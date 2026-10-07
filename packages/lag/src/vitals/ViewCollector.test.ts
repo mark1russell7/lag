@@ -22,6 +22,27 @@ const byName = (values : VitalValue[]) => Object.fromEntries(values.map(v => [v.
 
 describe("ViewCollector", () => {
     describe("INP", () => {
+        it("is 0 for a first input with the duration 0, as in web-vitals", () => {
+            const c = collector("navigate", 0, () => 1);
+            c.addEvent(event({ interactionId : 3, startTime : 500, duration : 0 }));
+            expect(byName(c.values())["INP"]?.value).toBe(0);
+        });
+
+        it("counts the interactions of a view that starts at 0 (the load) from 0, and of a later view from its start", () => {
+            let count = 100;
+            const load = collector("navigate", 0, () => count);
+            const restored = collector("back-forward-cache", 5_000, () => count);
+            for (const c of [load, restored]) {
+                c.addEvent(event({ interactionId : 7, startTime : 6_000, duration : 600 }));
+                c.addEvent(event({ interactionId : 14, startTime : 7_000, duration : 500 }));
+                c.addEvent(event({ interactionId : 21, startTime : 8_000, duration : 400 }));
+            }
+            count = 110;
+            // The load: min(2, floor(110 / 50)) = 2. The restored view: floor(10 / 50) = 0.
+            expect(byName(load.values())["INP"]!.value).toBe(400);
+            expect(byName(restored.values())["INP"]!.value).toBe(600);
+        });
+
         it("is the longest interaction when there are fewer than 50", () => {
             const c = collector();
             c.addEvent(event({ interactionId : 1, startTime : 10, duration : 40 }));
@@ -96,6 +117,28 @@ describe("ViewCollector", () => {
                 processing_duration_ms : 179,
                 presentation_delay_ms : 28,
             });
+        });
+
+        it("counts the processing of other events in the frame, as web-vitals does", () => {
+            const c = collector();
+            // A pointerover handler (no interaction) runs in the frame of the click, after the click handler
+            c.addEvent(event({ interactionId : 5, startTime : 100, duration : 200, name : "click", processingStart : 110, processingEnd : 150 }));
+            c.addEvent(event({ interactionId : 0, startTime : 120, duration : 182, name : "pointerover", processingStart : 150, processingEnd : 240 }));
+            // An entry of another frame does not count
+            c.addEvent(event({ interactionId : 0, startTime : 400, duration : 40, name : "pointermove", processingStart : 401, processingEnd : 430 }));
+
+            const a = byName(c.values())["INP"]!.attribution;
+            expect(a).toMatchObject({ input_delay_ms : 10, processing_duration_ms : 130, presentation_delay_ms : 60 });
+        });
+
+        it("starts the processing at the interaction at the earliest", () => {
+            const c = collector();
+            // A long handler of an earlier event in the same frame started before the key press
+            c.addEvent(event({ interactionId : 0, startTime : 40, duration : 168, name : "pointerover", processingStart : 50, processingEnd : 150 }));
+            c.addEvent(event({ interactionId : 5, startTime : 100, duration : 104, name : "keydown", processingStart : 150, processingEnd : 180 }));
+
+            const a = byName(c.values())["INP"]!.attribution;
+            expect(a).toMatchObject({ input_delay_ms : 0, processing_duration_ms : 80, presentation_delay_ms : 24 });
         });
 
         it("leaves out the entries of the interaction that end in a different frame", () => {

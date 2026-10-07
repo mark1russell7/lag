@@ -64,16 +64,18 @@ export class ReliabilityTracker {
 
     /**
      * The first interval that overlaps the window from `start` to `end`, or
-     * `undefined`. A closed interval that touches the window at only one
-     * point does not overlap it. The reason is that a monitor that starts
-     * again when the page becomes visible starts its window when the hidden
-     * interval ends. An open interval overlaps each window that ends at or
-     * after the start of the interval.
+     * `undefined`. With `reason`, only the intervals of that reason count. A
+     * closed interval that touches the window at only one point does not
+     * overlap it. The reason is that a monitor that starts again when the
+     * page becomes visible starts its window when the hidden interval ends.
+     * An open interval overlaps each window that ends at or after the start
+     * of the interval.
      */
-    findOverlap(start : number, end : number) : UnreliableInterval | undefined {
+    findOverlap(start : number, end : number, reason? : UnreliableReason) : UnreliableInterval | undefined {
         this.prune();
         return this.intervals.find(i =>
-            i.end === Infinity ? i.start <= end : i.start < end && i.end > start);
+            (reason === undefined || i.reason === reason) &&
+            (i.end === Infinity ? i.start <= end : i.start < end && i.end > start));
     }
 
     /** True if an interval is open at this time. */

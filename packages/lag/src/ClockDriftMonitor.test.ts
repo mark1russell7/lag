@@ -80,7 +80,7 @@ describe("ClockDriftMonitor", () => {
         expect(m.onJump).toHaveBeenCalledWith(expect.objectContaining({ direction : "forward", magnitudeMs : 2_000, kind : "suspend" }));
     });
 
-    it("classifies a forward jump of 1 s or more with an on-time timer as a suspend", () => {
+    it("classifies a forward jump of 1 s or more as a suspend", () => {
         const m = createMonitor();
         m.advance(1_000, 3_600_000);
         expect(m.onJump).toHaveBeenCalledWith({
@@ -89,6 +89,7 @@ describe("ClockDriftMonitor", () => {
             magnitudeMs : 3_600_000,
             skewMs : 3_600_000,
             latenessMs : 0,
+            intervalMs : 1_000,
         });
     });
 
@@ -101,14 +102,28 @@ describe("ClockDriftMonitor", () => {
     it("classifies a backward jump as a step", () => {
         const m = createMonitor();
         m.advance(1_000, -2_000);
-        expect(m.onJump).toHaveBeenCalledWith({ direction : "backward", kind : "step", magnitudeMs : 2_000, skewMs : -2_000, latenessMs : 0 });
+        expect(m.onJump).toHaveBeenCalledWith({ direction : "backward", kind : "step", magnitudeMs : 2_000, skewMs : -2_000, latenessMs : 0, intervalMs : 1_000 });
     });
 
-    it("classifies a forward jump during a late timer as a step, not a suspend", () => {
+    it("classifies a forward jump during a late timer as a suspend too, because timers are late in a hidden page", () => {
         const m = createMonitor();
         m.late(10_000);
         m.advance(1_000, 5_000);
-        expect(m.onJump).toHaveBeenCalledWith(expect.objectContaining({ kind : "step", latenessMs : 10_000 }));
+        expect(m.onJump).toHaveBeenCalledWith(expect.objectContaining({ kind : "suspend", latenessMs : 10_000 }));
+    });
+
+    it("finds a sleep in a hidden page in which the browser runs the timer one time each minute", () => {
+        const m = createMonitor();
+        // Chrome runs the 1 s interval one time each minute in a page that is hidden for more than 5 minutes
+        m.late(59_000);
+        m.advance(1_000);
+        // 30 s later, the device sleeps for 1 h (performance.now() stops on macOS).
+        // The next timer comes 30 s after the wake.
+        m.late(59_000);
+        m.advance(1_000, 3_600_000);
+
+        expect(m.onJump).toHaveBeenCalledTimes(1);
+        expect(m.onJump).toHaveBeenCalledWith(expect.objectContaining({ direction : "forward", kind : "suspend", magnitudeMs : 3_600_000 }));
     });
 
     it("finds no discontinuity when both clocks continue, as in a Windows sleep or a blocked thread", () => {

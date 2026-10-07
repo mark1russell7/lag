@@ -1,4 +1,4 @@
-import type { Clock, ClearIntervalFn, ClearTimeoutFn, SetIntervalFn, SetTimeoutFn } from "./types.js";
+import type { Clock, ClearIntervalFn, ClearTimeoutFn, SetIntervalFn, SetTimeoutFn, WallClock } from "./types.js";
 import type { HangOptions, MainToWorkerMessage, WorkerToMainMessage } from "./worker-protocol.js";
 import { LivenessWatcher } from "./shared-liveness.js";
 import { HANG_JOURNAL_WRITE_INTERVAL_MS, type HangJournal } from "./hang-journal.js";
@@ -6,7 +6,12 @@ import { HANG_JOURNAL_WRITE_INTERVAL_MS, type HangJournal } from "./hang-journal
 /** A hang as the worker sees it. Times are the worker's absolute time. */
 export type HangEvent = {
     phase : "started" | "ended";
-    /** The time of the last acknowledgement before the hang. */
+    /**
+     * The time of the last acknowledgement before the hang. When the worker
+     * itself did not operate during the hang (for example, the system
+     * slept), this time moves forward by that period: the hang does not
+     * include it.
+     */
     startedAt : number;
     durationMs : number;
     /** The context of the page (the last `context` message), for example `lag.page_view.id`. */
@@ -34,6 +39,8 @@ export type WorkerDeps = {
      * Thus, the next page can report a hang that the page did not survive.
      */
     journal? : HangJournal;
+    /** The wall clock for the times of the journal. The default is `Date.now()`. */
+    wallClock? : WallClock;
 };
 
 export type WorkerHandler = {
@@ -54,6 +61,7 @@ export type WorkerHandler = {
  */
 export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
     const { postMessage, setTimeoutFn, clearTimeoutFn, clock, reportHang, setIntervalFn, clearIntervalFn, journal } = deps;
+    const wallClock = deps.wallClock ?? { now : () => Date.now() };
 
     let intervalMs = 0;
     let handle : number | undefined;
@@ -71,7 +79,9 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
     function writeJournal(startedAt : number, now : number) : void {
         if (!journal || pageId === undefined) return;
         lastJournalWrite = now;
-        journal.put({ pageId, startedAt, lastSeenAt : now, attributes : context }).catch(() => {});
+        // The journal uses the wall clock: the start is the same time before the wall-clock time now
+        const wallNow = wallClock.now();
+        journal.put({ pageId, startedAt : wallNow - (now - startedAt), lastSeenAt : wallNow, attributes : context }).catch(() => {});
     }
 
     function clearJournal() : void {
@@ -91,7 +101,10 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
 
         if (hang) {
             // The worker itself did not run (for example, the system slept): do not blame the main thread
-            if (workerSelfLagMs >= hang.thresholdMs) lastAckAt = now;
+            if (workerSelfLagMs >= hang.thresholdMs) {
+                lastAckAt = now;
+                if (hangStartedAt !== undefined) hangStartedAt += workerSelfLagMs;
+            }
             if (hangStartedAt === undefined && now - lastAckAt >= hang.thresholdMs) {
                 hangStartedAt = lastAckAt;
                 reportHang?.({ phase : "started", startedAt : lastAckAt, durationMs : now - lastAckAt, attributes : context }, hang);
@@ -103,9 +116,8 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
         schedule();
     }
 
-    function onAck() : void {
-        const now = clock.now();
-        lastAckAt = now;
+    /** A message from the main thread is evidence that the main thread runs: the hang ended. */
+    function endHang(now : number) : void {
         if (hangStartedAt === undefined) return;
         const startedAt = hangStartedAt;
         hangStartedAt = undefined;
@@ -115,12 +127,19 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
         postMessage({ type : "hang-ended", startedAt, durationMs });
     }
 
+    function onAck() : void {
+        const now = clock.now();
+        lastAckAt = now;
+        endHang(now);
+    }
+
     function stop() : void {
         if (handle === undefined) return;
         clearTimeoutFn(handle);
         handle = undefined;
-        if (hangStartedAt !== undefined) clearJournal();
-        hangStartedAt = undefined;
+        // The main thread sent the stop, thus it runs. The main thread can stop the monitor
+        // before it handles the heartbeats that waited, for example when the page became hidden.
+        endHang(clock.now());
     }
 
     function handleMessage(message : MainToWorkerMessage) : void {

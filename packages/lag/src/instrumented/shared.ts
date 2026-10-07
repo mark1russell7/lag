@@ -33,18 +33,18 @@ export function createHandle<T>(
  * This function gives the recorder through which a timer-driven monitor
  * reports. With `conditions`, `submit` sends each sample to a validator.
  * Without `conditions`, `submit` records the sample directly. `windowMs`
- * gives the length of the measurement window that ends at this time.
- * `dispose` cancels the samples that wait for evidence.
+ * gives the length of the measurement window that ends at this time, and
+ * `record` gets it too. `dispose` cancels the samples that wait for evidence.
  */
 export function validatedRecorder(
     conditions : MeasurementConditions | undefined,
-    record : (value : number) => void,
+    record : (value : number, windowMs : number) => void,
 ) : { submit : (value : number, windowMs : number) => void; dispose : () => void } {
     const validator : SampleValidator | undefined = conditions?.createValidator();
     return {
         submit : validator
-            ? (value, windowMs) => validator.submit(value, windowMs, record)
-            : (value) => record(value),
+            ? (value, windowMs) => validator.submit(value, windowMs, (valid) => record(valid, windowMs))
+            : (value, windowMs) => record(value, windowMs),
         dispose : () => validator?.dispose(),
     };
 }

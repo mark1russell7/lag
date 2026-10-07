@@ -30,6 +30,18 @@ function describeJournal(name : string, create : () => HangJournal) {
             expect(await journal.list()).toEqual([]);
         });
 
+        it("takes a stale record one time, and does not take a record that somebody updated after the limit", async () => {
+            const journal = create();
+            await journal.put(record("stale", 1_000));
+            await journal.put(record("live", 9_000));
+
+            expect(await journal.take("stale", 5_000)).toEqual(record("stale", 1_000));
+            expect(await journal.take("stale", 5_000)).toBeUndefined();
+            expect(await journal.take("live", 5_000)).toBeUndefined();
+            expect(await journal.take("unknown", 5_000)).toBeUndefined();
+            expect((await journal.list()).map(r => r.pageId)).toEqual(["live"]);
+        });
+
         it("keeps a copy of the attributes, not the object of the caller", async () => {
             const journal = create();
             const attributes : Record<string, string> = { "lag.page_view.id" : "first" };
@@ -48,6 +60,16 @@ describe("createIndexedDbHangJournal", () => {
         const factory = new IDBFactory();
         await createIndexedDbHangJournal(factory).put(record("worker-page", 5_000));
         expect(await createIndexedDbHangJournal(factory).list()).toEqual([record("worker-page", 5_000)]);
+    });
+
+    it("gives a record to only one of two journals that take it at the same time, as two pages do", async () => {
+        const factory = new IDBFactory();
+        await createIndexedDbHangJournal(factory).put(record("closed-page", 1_000));
+        const results = await Promise.all([
+            createIndexedDbHangJournal(factory).take("closed-page", 5_000),
+            createIndexedDbHangJournal(factory).take("closed-page", 5_000),
+        ]);
+        expect(results.filter(r => r !== undefined)).toEqual([record("closed-page", 1_000)]);
     });
 
     it("ignores records that are not hang records", async () => {

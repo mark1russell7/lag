@@ -30,6 +30,12 @@ export type WallClock = {
 export type LagMeasurement = {
     value : number;
     attributes : EventLoopLagAttributes;
+    /**
+     * The length of the measurement window without the lag, for example the
+     * idle duration of the timer steps of a `DriftLag` window. The default is
+     * the measurement interval of the logger.
+     */
+    intervalMs? : number;
 };
 
 export type EventLoopLagAttributes = {

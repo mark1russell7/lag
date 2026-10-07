@@ -2,14 +2,18 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { ClsCalculator } from "./ClsCalculator.js";
 
-/** The CLS definition: the largest sum of a session window (gap ≤ 1 s, length ≤ 5 s). */
+/**
+ * The CLS definition of web-vitals (`LayoutShiftManager`): a shift joins the
+ * session window if it is less than 1000 ms after the previous shift and
+ * less than 5000 ms after the first shift. CLS is the largest window sum.
+ */
 function referenceCls(shifts : ReadonlyArray<{ t : number; v : number }>) : number {
     let worst = 0;
     let session = 0;
     let start = -1;
     let last = -1;
     for (const { t, v } of shifts) {
-        if (start < 0 || t - last > 1_000 || t - start > 5_000) {
+        if (start < 0 || t - last >= 1_000 || t - start >= 5_000) {
             session = 0;
             start = t;
         }
@@ -19,6 +23,19 @@ function referenceCls(shifts : ReadonlyArray<{ t : number; v : number }>) : numb
     }
     return worst;
 }
+
+describe("ClsCalculator boundaries", () => {
+    it("starts a new window at a gap of exactly 1000 ms and at a length of exactly 5000 ms, as web-vitals does", () => {
+        const gap = new ClsCalculator();
+        gap.add(0, 0.1);
+        gap.add(1_000, 0.1);
+        expect(gap.getCLS()).toBeCloseTo(0.1);
+
+        const length = new ClsCalculator();
+        for (const t of [0, 900, 1_800, 2_700, 3_600, 4_500, 5_000]) length.add(t, 0.1);
+        expect(length.getCLS()).toBeCloseTo(0.6);
+    });
+});
 
 describe("ClsCalculator", () => {
     it("sums shifts in one session window", () => {

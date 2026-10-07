@@ -6,7 +6,7 @@ import type { Clock, Logger } from "../types.js";
 import { stripUrlParameters } from "../rate-limiter.js";
 import { describeNode as defaultDescribeNode } from "./selector.js";
 import { ViewCollector, type EventEntryLike, type LayoutShiftEntryLike, type PageView } from "./ViewCollector.js";
-import type { NavigationType, PageSource, VitalValue } from "./types.js";
+import type { NavigationType, PageSource, VitalName, VitalValue } from "./types.js";
 
 /** The values of one page view at one checkpoint. */
 export type VitalsReport = {
@@ -53,19 +53,42 @@ type SoftNavigationEntryLike = PerformanceEntryLike & {
     getLargestInteractionContentfulPaint?() : InteractionContentfulPaintLike | null | undefined;
 };
 
+/** An entry that the browser did not deliver yet, with its observer. */
+type PendingEntry = { observer : EntryObserver; entry : PerformanceEntryLike };
+
 /** The smallest Event Timing threshold that browsers permit. */
 const DURATION_THRESHOLD_MS = 16;
 
-/** An observer of one entry type that gives its entries to a function. */
+/**
+ * The entry type that each vital needs. As in web-vitals, a vital whose type
+ * the browser does not have gets no value, also not after a restore from the
+ * back/forward cache. TTFB needs the navigation entry instead.
+ */
+const VITAL_ENTRY_TYPES : Readonly<Record<Exclude<VitalName, "TTFB">, string>> = {
+    INP : "event",
+    CLS : "layout-shift",
+    LCP : "largest-contentful-paint",
+    FCP : "paint",
+};
+
+/**
+ * An observer of one entry type. It gives each delivery of the browser to
+ * `onDelivery`, and each entry that it dispatches to `onEntry`.
+ */
 class EntryObserver extends ObserverMonitor {
     constructor(
         type : string,
         private readonly onEntry : (entry : PerformanceEntryLike) => void,
+        private readonly onDelivery : (observer : EntryObserver, entries : readonly PerformanceEntryLike[]) => void,
         logger : Logger,
         Ctor : PerformanceObserverInit,
         options : PerformanceObserverOptions,
     ) {
         super(type, logger, Ctor, options);
+    }
+
+    protected override receive(entries : readonly PerformanceEntryLike[]) : void {
+        this.onDelivery(this, entries);
     }
 
     /** This method removes and gives the entries that the browser did not deliver yet. */
@@ -102,13 +125,20 @@ function defaultCreateId() : string {
  * - `flush()`.
  * - `stop()`.
  *
- * Before each checkpoint, the instance processes the entries that the
- * browser did not deliver yet. The caller decides what to do with repeated
- * reports.
+ * The instance processes the entries of all observers in one sequence, by
+ * time. At each delivery of the browser and before each checkpoint, it also
+ * takes the entries that the browser did not deliver yet. Thus, each entry
+ * goes to the correct view. This is also true when the browser gives the
+ * entries to the observers in a different sequence. The caller decides what
+ * to do with repeated reports.
  *
  * The load metrics (FCP, LCP) of the first view count only before the page
  * was hidden for the first time. A page that loads in a background tab has
  * no applicable paint metrics.
+ *
+ * Some browsers do not have the entry type of a vital, for example
+ * `layout-shift` (CLS) in Firefox and Safari. As in web-vitals, such a vital
+ * has no value.
  */
 export class PageViewVitals {
     private collector : ViewCollector;
@@ -124,8 +154,12 @@ export class PageViewVitals {
     private started = false;
     private stopped = false;
     private draining = false;
+    /** True after the final report of the current view: no report for it comes after that. */
+    private ended = false;
     private readonly describe : (node : unknown) => string;
     private readonly createId : () => string;
+    /** The vitals that this browser can measure. */
+    private readonly measured : ReadonlySet<VitalName>;
 
     constructor(
         private readonly report : (report : VitalsReport) => void,
@@ -133,6 +167,13 @@ export class PageViewVitals {
     ) {
         this.describe = deps.describeNode ?? defaultDescribeNode;
         this.createId = deps.createId ?? defaultCreateId;
+        const supported = deps.PerformanceObserver.supportedEntryTypes;
+        this.measured = new Set<VitalName>([
+            "TTFB",
+            ...(Object.keys(VITAL_ENTRY_TYPES) as Array<keyof typeof VITAL_ENTRY_TYPES>)
+                // Without the list of supported types, the instance tries all types
+                .filter(name => !supported || supported.includes(VITAL_ENTRY_TYPES[name])),
+        ]);
 
         const page = deps.page;
         const prerendering = page?.isPrerendering() === true;
@@ -161,7 +202,7 @@ export class PageViewVitals {
 
     /** The current values of the current page view. */
     getValues() : VitalValue[] {
-        return this.collector.values();
+        return this.collector.values().filter(value => this.measured.has(value.name));
     }
 
     /** This method sends each new page view to `listener` when the view starts. It gives a function that removes the listener. */
@@ -176,13 +217,13 @@ export class PageViewVitals {
      * contains the latest values.
      */
     flush() : void {
-        if (this.started && !this.stopped) this.checkpoint(false);
+        if (this.started && !this.stopped && !this.ended) this.checkpoint(false);
     }
 
     /** This method reports the current view as final and stops the observers. A stopped instance cannot start again. */
     stop() : void {
         if (this.stopped) return;
-        this.checkpoint(true);
+        if (!this.ended) this.checkpoint(true);
         this.stopped = true;
         for (const observer of this.observers) observer.stop();
         for (const dispose of this.disposers) dispose();
@@ -201,9 +242,9 @@ export class PageViewVitals {
             this.collector.setTtfb(navigation.responseStart - this.activationStart);
         }
 
-        this.observe("event", (e) => this.collector.addEvent(e as unknown as EventEntryLike), { durationThreshold : DURATION_THRESHOLD_MS });
+        this.observe("event", (e) => this.onEvent(e as unknown as EventEntryLike), { durationThreshold : DURATION_THRESHOLD_MS });
         // The browser delivers the first input for all durations
-        this.observe("first-input", (e) => this.collector.addEvent(e as unknown as EventEntryLike));
+        this.observe("first-input", (e) => this.onEvent(e as unknown as EventEntryLike));
         this.observe("layout-shift", (e) => this.collector.addLayoutShift(e as unknown as LayoutShiftEntryLike));
         this.observe("paint", (e) => this.onPaint(e));
         this.observe("largest-contentful-paint", (e) => this.onLcp(e as LcpEntryLike));
@@ -229,13 +270,40 @@ export class PageViewVitals {
         // Make no observer (and no warning) for a type that the browser does not have
         const supported = this.deps.PerformanceObserver.supportedEntryTypes;
         if (supported && !supported.includes(type)) return;
-        this.observers.push(new EntryObserver(type, (entry) => {
-            if (!this.stopped) onEntry(entry);
-        }, this.deps.logger, this.deps.PerformanceObserver, options));
+        this.observers.push(new EntryObserver(
+            type,
+            (entry) => { if (!this.stopped) onEntry(entry); },
+            (observer, entries) => this.onDelivery(observer, entries),
+            this.deps.logger,
+            this.deps.PerformanceObserver,
+            options,
+        ));
+    }
+
+    /**
+     * Each delivery of the browser goes through this method. The method
+     * merges the delivered entries with the entries that the other observers
+     * did not get yet, and processes all of them in time order.
+     */
+    private onDelivery(observer : EntryObserver, entries : readonly PerformanceEntryLike[]) : void {
+        if (this.draining) {
+            observer.dispatch(entries);
+            return;
+        }
+        this.dispatch(this.takePending({ observer, entries }));
     }
 
     private isInitialView() : boolean {
         return this.collector.view.id === this.initialViewId;
+    }
+
+    private onEvent(entry : EventEntryLike) : void {
+        this.collector.addEvent(entry);
+        // As web-vitals: a keydown or a click after the start of the view makes the LCP final.
+        // The interaction that started a soft navigation has the start time of the view.
+        if ((entry.name === "keydown" || entry.name === "click") && entry.startTime > this.collector.view.startTime) {
+            this.collector.finalizeLcpAt(entry.startTime);
+        }
     }
 
     private onPaint(entry : PerformanceEntryLike) : void {
@@ -247,18 +315,26 @@ export class PageViewVitals {
     private onLcp(entry : LcpEntryLike) : void {
         // `startTime` is the render time, or the load time when the render time is 0
         if (!this.isInitialView() || entry.startTime >= this.hiddenTime) return;
-        this.collector.setLcp(entry.startTime - this.activationStart, this.paintAttribution(entry));
+        this.collector.setLcp(entry.startTime - this.activationStart, this.paintAttribution(entry), entry.startTime);
     }
 
+    /**
+     * A soft navigation starts a new view. As in web-vitals, the interaction
+     * that caused it stays in the view that ends. The entries of the
+     * interaction start at the start of the soft navigation or before it.
+     * Thus, the time order of the drain puts them first.
+     */
     private onSoftNavigation(entry : SoftNavigationEntryLike) : void {
         this.startView("soft-navigation", entry.startTime, {
             ...(entry.interactionId ? { interactionId : entry.interactionId } : {}),
             url : stripUrlParameters(entry.name),
+        }, () => {
+            this.collector.setFcp((entry.presentationTime || entry.paintTime || 0) - entry.startTime);
+            // The entry has the largest paint before it. Process that paint as if it occurred now,
+            // before the later paints that the browser did not deliver yet.
+            const largest = entry.getLargestInteractionContentfulPaint?.();
+            if (largest) this.onInteractionContentfulPaint(largest);
         });
-        this.collector.setFcp((entry.presentationTime || entry.paintTime || 0) - entry.startTime);
-        // The entry has the largest paint before it. Process that paint as if it occurred now.
-        const largest = entry.getLargestInteractionContentfulPaint?.();
-        if (largest) this.onInteractionContentfulPaint(largest);
     }
 
     private onInteractionContentfulPaint(entry : InteractionContentfulPaintLike) : void {
@@ -269,7 +345,7 @@ export class PageViewVitals {
         const paint = entry.largestContentfulPaint;
         const renderTime = paint?.renderTime || 0;
         if (renderTime >= this.hiddenTime) return;
-        this.collector.setLcp(renderTime - entry.startTime, paint ? this.paintAttribution(paint) : {});
+        this.collector.setLcp(renderTime - entry.startTime, paint ? this.paintAttribution(paint) : {}, renderTime);
     }
 
     private paintAttribution(paint : { element? : unknown; url? : string }) : Record<string, string> {
@@ -290,9 +366,18 @@ export class PageViewVitals {
         this.checkpoint(transition.to === "terminated");
     }
 
-    private startView(navigationType : NavigationType, startTime : number, extra : Partial<PageView> = {}) : void {
+    /**
+     * This method ends the current view and starts a new one. `initialize`
+     * gives the first values of the new view.
+     */
+    private startView(navigationType : NavigationType, startTime : number, extra : Partial<PageView> = {}, initialize? : () => void) : void {
         if (this.stopped) return;
+        // The entries that the browser did not deliver yet: the entries before the start of the new
+        // view go to the view that ends, the others go to the new view. In a drain, the drain does this.
+        const pending = this.draining ? [] : this.takePending();
+        this.dispatch(pending.filter(item => item.entry.startTime < startTime));
         this.checkpoint(true);
+        this.ended = false;
         const url = extra.url ?? this.collector.view.url;
         this.collector = new ViewCollector({
             ...extra,
@@ -312,6 +397,9 @@ export class PageViewVitals {
         }
         // No network response: as web-vitals, TTFB is 0 when the load had a navigation entry
         if (this.hadNavigationEntry) this.collector.setTtfb(0);
+        initialize?.();
+
+        this.dispatch(pending.filter(item => item.entry.startTime >= startTime));
 
         const raf = this.deps.requestAnimationFrame;
         if (navigationType === "back-forward-cache" && raf) {
@@ -326,26 +414,50 @@ export class PageViewVitals {
     }
 
     /**
-     * This method processes the entries that the browser did not deliver
-     * yet, in the sequence of their start times. A soft-navigation entry
-     * among them starts a new view, and the entries after it go to the new
-     * view.
+     * This method takes the entries that the browser did not deliver yet,
+     * from all observers, and puts `delivered` before the entries of its
+     * observer. It merges the lists by start time. But it keeps the sequence
+     * of the browser in each list. For example, the last LCP candidate stays
+     * last, also when its start time (the load time) is earlier. At equal
+     * start times, the observer that started first comes first.
      */
-    private drain() : void {
-        if (this.draining) return;
+    private takePending(delivered? : { observer : EntryObserver; entries : readonly PerformanceEntryLike[] }) : PendingEntry[] {
+        const lists = this.observers.map(observer => [
+            ...(observer === delivered?.observer ? delivered.entries : []),
+            ...observer.takePending(),
+        ].map(entry => ({ observer, entry })));
+        const merged : PendingEntry[] = [];
+        for (;;) {
+            let next : PendingEntry[] | undefined;
+            for (const list of lists) {
+                if (list.length > 0 && (!next || list[0]!.entry.startTime < next[0]!.entry.startTime)) next = list;
+            }
+            if (!next) return merged;
+            merged.push(next.shift()!);
+        }
+    }
+
+    /**
+     * This method gives the entries to their observers, in sequence. A
+     * soft-navigation entry among them starts a new view, and the entries
+     * after it go to the new view.
+     */
+    private dispatch(pending : readonly PendingEntry[]) : void {
+        if (pending.length === 0) return;
+        const wasDraining = this.draining;
         this.draining = true;
         try {
-            const pending = this.observers.flatMap(observer => observer.takePending().map(entry => ({ observer, entry })));
-            pending.sort((a, b) => a.entry.startTime - b.entry.startTime);
             for (const { observer, entry } of pending) observer.dispatch([entry]);
         } finally {
-            this.draining = false;
+            this.draining = wasDraining;
         }
     }
 
     private checkpoint(final : boolean) : void {
-        this.drain();
-        const values = this.collector.values();
+        if (this.ended) return;
+        if (!this.draining) this.dispatch(this.takePending());
+        if (final) this.ended = true;
+        const values = this.getValues();
         if (values.length === 0 && !final) return;
         try {
             this.report({ view : this.collector.view, values, final });

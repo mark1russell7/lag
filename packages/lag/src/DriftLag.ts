@@ -72,6 +72,7 @@ export class DriftLag extends LagMonitor {
     private lastStepAt = 0;
     private stepsInWindow = 0;
     private stepsPerWindow : number;
+    private lastWindowMs = 0;
     private readonly stepMs : number;
     private readonly maxSteps : number;
     private readonly baselineSize : number;
@@ -111,10 +112,21 @@ export class DriftLag extends LagMonitor {
         return this.recentSteps.length > 0 ? idleStepMs(this.recentSteps) : this.stepMs;
     }
 
+    /**
+     * The length of the last window that `measure()` ended, with its lag.
+     * The window is near `expectedElapsedTimeMs` only when the baseline
+     * divides it. In Firefox and WebKit on Windows, a window has 6 steps of
+     * 15.6 ms (93 ms). The first window has 20 steps.
+     */
+    getLastWindowMs() : number {
+        return this.lastWindowMs;
+    }
+
     /** This method gives the lag of the window that ends at this time, and starts the next window. */
     measure() : number {
         const now = this.clock.now();
-        const lag = now - this.windowStart - this.stepsInWindow * this.getBaselineMs();
+        this.lastWindowMs = now - this.windowStart;
+        const lag = this.lastWindowMs - this.stepsInWindow * this.getBaselineMs();
         this.windowStart = now;
         this.stepsInWindow = 0;
         return lag;

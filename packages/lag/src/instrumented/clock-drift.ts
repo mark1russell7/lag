@@ -4,6 +4,7 @@ import { ClockDriftMonitor, type ClockJump } from "../ClockDriftMonitor.js";
 import { createAbsoluteClock } from "../absolute-clock.js";
 import { EVENTS, METRICS, createCounter, createHistogram } from "../metric-catalog.js";
 import { createHandle } from "./shared.js";
+import type { MeasurementConditions } from "../measurement-conditions.js";
 
 /**
  * This factory makes a `ClockDriftMonitor` that records into
@@ -13,9 +14,14 @@ import { createHandle } from "./shared.js";
  *
  * The monitor does not pause while the page is hidden, because the device
  * can sleep while the page is hidden.
+ *
+ * With `conditions`, a suspend is evidence for the measurement conditions:
+ * the validators discard the samples that overlap the interval in which the
+ * suspend occurred.
  */
 export function createInstrumentedClockDrift(
     deps : CoreDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & WallClockDeps & Pick<TimerDeps, "setIntervalFn" | "clearIntervalFn"> & Partial<EventDeps>,
+    conditions? : MeasurementConditions,
 ) : MonitorHandle<ClockDriftMonitor> {
     return createHandle("clock-drift", deps.logger, () => {
         const skewHist = createHistogram(deps.meter, METRICS.clockSkew);
@@ -25,6 +31,10 @@ export function createInstrumentedClockDrift(
             ({ skewMs }) => skewHist.record(Math.abs(skewMs)),
             (jump) => {
                 jumps.add(1, { direction : jump.direction, kind : jump.kind });
+                if (jump.kind === "suspend" && conditions) {
+                    const end = deps.clock.now();
+                    conditions.tracker.add(end - jump.intervalMs, end, "suspend");
+                }
                 deps.events?.emit(EVENTS.clockJump.name, {
                     direction : jump.direction,
                     kind : jump.kind,

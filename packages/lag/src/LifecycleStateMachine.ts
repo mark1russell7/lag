@@ -241,8 +241,8 @@ export class LifecycleStateMachine {
         return focused ? "active" : "passive";
     }
 
-    private transition(to : LifecycleState, trigger : LifecycleTrigger, event? : unknown) : void {
-        if (to === this.currentState) return;
+    private transition(to : LifecycleState, trigger : LifecycleTrigger, event? : unknown, always : boolean = false) : void {
+        if (to === this.currentState && !always) return;
         const transition : StateTransition = {
             from : this.currentState,
             to,
@@ -301,7 +301,9 @@ export class LifecycleStateMachine {
             this.transition(isPersisted(event) ? "frozen" : "terminated", "pagehide", event);
         }, capture);
         this.listen(this.window, "pageshow", (event) => {
-            if (isPersisted(event)) this.transition(this.visibleState(), "pageshow", event);
+            // Chromium fires resume and visibilitychange before pageshow, thus the state can be
+            // visible already. A restore is always a transition, so that subscribers know about it.
+            if (isPersisted(event)) this.transition(this.visibleState(), "pageshow", event, true);
         }, capture);
         // No beforeunload listener: it can be cancelled (leaving a live page
         // marked terminated) and it makes the page ineligible for the BFCache.

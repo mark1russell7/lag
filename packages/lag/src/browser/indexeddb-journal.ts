@@ -14,12 +14,16 @@ type IdbRequestLike<T> = {
 
 type IdbObjectStoreLike = {
     put(value : unknown) : IdbRequestLike<unknown>;
+    get(key : string) : IdbRequestLike<unknown>;
     delete(key : string) : IdbRequestLike<unknown>;
     getAll() : IdbRequestLike<unknown[]>;
 };
 
 type IdbTransactionLike = {
+    readonly error? : unknown;
     objectStore(name : string) : IdbObjectStoreLike;
+    oncomplete : ((event : never) => unknown) | null;
+    onabort : ((event : never) => unknown) | null;
 };
 
 type IdbDatabaseLike = {
@@ -92,6 +96,24 @@ export function createIndexedDbHangJournal(factory : IdbFactoryLike, name : stri
         async list() {
             const values = await promised((await store("readonly")).getAll());
             return values.filter(isHangRecord);
+        },
+        async take(pageId, latestSeenAt) {
+            const transaction = (await open()).transaction(STORE, "readwrite");
+            return new Promise<HangRecord | undefined>((resolve, reject) => {
+                // The get and the delete are in one read-write transaction. The browser runs such
+                // transactions of one store one after the other, also across pages.
+                const objectStore = transaction.objectStore(STORE);
+                let taken : HangRecord | undefined;
+                const request = objectStore.get(pageId);
+                request.onsuccess = () => {
+                    const value = request.result;
+                    if (!isHangRecord(value) || value.lastSeenAt > latestSeenAt) return;
+                    taken = value;
+                    objectStore.delete(pageId);
+                };
+                transaction.oncomplete = () => resolve(taken);
+                transaction.onabort = () => reject(transaction.error);
+            });
         },
     };
 }

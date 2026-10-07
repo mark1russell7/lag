@@ -10,13 +10,14 @@ import { createHandle, validatedRecorder } from "./shared.js";
 /**
  * This factory makes a `DriftLag` monitor that records into
  * `lag_drift_histogram`, into `lag_drift_baseline_histogram` (the calibrated
- * idle step) and into `LagLogger`. `LagLogger` logs sustained lag in windows
+ * idle step) and into `LagLogger`. `LagLogger` logs sustained lag in periods
  * of 2 s and 5 s.
  *
  * This monitor gives the primary high-frequency lag signal (one sample for
- * each 100 ms). With `conditions`, the monitor pauses while the page is
- * hidden. Also, it does not record a sample whose window overlaps an
- * unreliable interval.
+ * each window of approximately 100 ms). With `conditions`, the monitor
+ * pauses while the page is hidden. Also, it does not record a sample whose
+ * window overlaps an unreliable interval, and it records the baseline only
+ * with a valid sample.
  */
 export function createInstrumentedDriftLag(
     deps : CoreDeps & TimerDeps,
@@ -26,18 +27,17 @@ export function createInstrumentedDriftLag(
         const histogram = createHistogram(deps.meter, METRICS.drift);
         const baselineHistogram = createHistogram(deps.meter, METRICS.driftBaseline);
         const lagLogger = new LagLogger(highFrequencyLagIntervalMs, deps.logger);
-        const recorder = validatedRecorder(conditions, (lag) => {
+        const recorder = validatedRecorder(conditions, (lag, windowMs) => {
             histogram.record(lag);
-            lagLogger.addMeasurement({ value : lag, attributes : { wasHidden : false } });
+            baselineHistogram.record(monitor.getBaselineMs());
+            lagLogger.addMeasurement({ value : lag, attributes : { wasHidden : false }, intervalMs : windowMs - lag });
         });
 
         const monitor : DriftLag = new DriftLag(
             highFrequencyLagIntervalMs,
             (value : number) => {
                 // A negative value is jitter around the baseline
-                const lag = Math.max(0, value);
-                recorder.submit(lag, highFrequencyLagIntervalMs + lag);
-                baselineHistogram.record(monitor.getBaselineMs());
+                recorder.submit(Math.max(0, value), monitor.getLastWindowMs());
             },
             deps.logger,
             deps.setIntervalFn,

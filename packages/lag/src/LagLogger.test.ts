@@ -104,6 +104,26 @@ describe('LagLogger', () => {
         expect(mockLogger.log).not.toHaveBeenCalled();
     });
 
+    it('uses the interval of each measurement, for example windows of 93 ms', () => {
+        // Firefox and WebKit on Windows: 6 steps of 15.6 ms
+        const add = (utilizationPercent : number, count : number) => {
+            for (let i = 0; i < count; i++) {
+                driver.monitor.addMeasurement({ value : (utilizationPercent / 100) * 93, attributes : driver.visibileAttributes, intervalMs : 93 });
+            }
+        };
+        // 2 s are 22 windows of 93 ms
+        add(120, 22);
+        // 30 s are 323 windows of 93 ms: 322 windows give no report
+        add(0, 300);
+        expect(mockLogger.log).not.toHaveBeenCalled();
+        add(0, 1);
+        expect(mockLogger.log).toHaveBeenCalledTimes(1);
+        expect(mockLogger.log).toHaveBeenCalledWith('warn', 'Average event loop lag exceeded threshold', expect.objectContaining({
+            lag : '120.0',
+            duration : shortLagDuration,
+        }));
+    });
+
     it('should handle buffer size correctly without unbounded growth', () => {
         const excessiveMeasurements = driver.reportSamples  * 3;
         driver.add(150, excessiveMeasurements); // Add enough measurements to exceed buffer size multiple times

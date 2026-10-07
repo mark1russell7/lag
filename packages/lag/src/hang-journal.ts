@@ -1,6 +1,9 @@
 /**
- * A hang that was in progress, as the worker last saw it. Times are absolute
- * (Unix milliseconds).
+ * A hang that was in progress, as the worker last saw it. The times are
+ * wall-clock times (`Date.now()`, Unix milliseconds). Other pages compare
+ * them with their own time, and the wall clock is the only clock that all
+ * pages share. The monotonic clock of a page stops while the device sleeps
+ * (except on Windows), thus it can be behind the wall clock by hours.
  */
 export type HangRecord = {
     /** The ID of the page instance whose main thread hung. */
@@ -30,6 +33,13 @@ export type HangJournal = {
     put(record : HangRecord) : Promise<void>;
     remove(pageId : string) : Promise<void>;
     list() : Promise<HangRecord[]>;
+    /**
+     * This method removes the record of `pageId` and gives it. It does this
+     * only for a stale record: a record whose `lastSeenAt` is not after
+     * `latestSeenAt`. The operation is atomic. When two pages try to take the
+     * same record at the same time, only one page gets it.
+     */
+    take(pageId : string, latestSeenAt : number) : Promise<HangRecord | undefined>;
 };
 
 /** The worker writes a record of a continuing hang again at this interval. */
@@ -55,6 +65,12 @@ export function createMemoryHangJournal() : HangJournal {
             return Promise.resolve();
         },
         list : () => Promise.resolve([...records.values()]),
+        take : (pageId, latestSeenAt) => {
+            const record = records.get(pageId);
+            if (!record || record.lastSeenAt > latestSeenAt) return Promise.resolve(undefined);
+            records.delete(pageId);
+            return Promise.resolve(record);
+        },
     };
 }
 

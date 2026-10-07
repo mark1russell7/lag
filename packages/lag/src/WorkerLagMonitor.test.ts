@@ -126,6 +126,18 @@ describe("WorkerLagMonitor", () => {
         expect(onSystemStall).toHaveBeenCalledWith({ start : 10_000, end : 70_000, durationMs : 60_000 });
     });
 
+    it("ends the system stall when the worker sent the heartbeat, not when the main thread got it", () => {
+        const onSystemStall = vi.fn();
+        const m = createMonitor(1000, { onSystemStall });
+
+        // A Windows sleep from 10 s to 70 s. The worker sends at 70 s, and the main thread gets the heartbeat
+        // 3 s later, after the work that waited during the sleep.
+        m.performance.now.mockReturnValue(73_000);
+        m.deliver({ type : "heartbeat", seq : 11, sentAt : 10_000 + 70_000, workerSelfLagMs : 60_000 });
+
+        expect(onSystemStall).toHaveBeenCalledWith({ start : 10_000, end : 70_000, durationMs : 60_000 });
+    });
+
     it("passes hang-ended messages on", () => {
         const onHangEnded = vi.fn();
         const m = createMonitor(1000, { onHangEnded });
@@ -133,11 +145,11 @@ describe("WorkerLagMonitor", () => {
         expect(onHangEnded).toHaveBeenCalledWith(7_500);
     });
 
-    it("stops the worker loop, the sync timer and the listener on stop, and can restart", () => {
+    it("stops the worker loop and the sync timer on stop, keeps one listener, and can restart", () => {
         const m = createMonitor(250);
 
         m.monitor.stop();
-        expect(m.listenerCount).toBe(0);
+        expect(m.listenerCount).toBe(1);
         expect(m.postMessage).toHaveBeenLastCalledWith({ type : "stop" });
         expect(vi.getTimerCount()).toBe(0);
 
@@ -148,6 +160,30 @@ describe("WorkerLagMonitor", () => {
         m.monitor.start();
         expect(m.listenerCount).toBe(1);
         expect(m.sent("start").at(-1)).toEqual({ type : "start", intervalMs : 250, hang : { thresholdMs : 5_000 } });
+    });
+
+    it("passes on the end of a hang while it is stopped, but ignores heartbeats", () => {
+        const onHangEnded = vi.fn();
+        const m = createMonitor(1000, { onHangEnded });
+        m.monitor.stop();
+        const acks = m.sent("ack").length;
+
+        // The worker ends the hang that was in progress at the stop
+        m.deliver({ type : "hang-ended", startedAt : 1, durationMs : 8_000 });
+        m.deliver({ type : "heartbeat", seq : 9, sentAt : 10_000, workerSelfLagMs : 0 });
+
+        expect(onHangEnded).toHaveBeenCalledWith(8_000);
+        expect(m.report).not.toHaveBeenCalled();
+        expect(m.sent("ack").length).toBe(acks);
+    });
+
+    it("removes its listener on dispose()", () => {
+        const m = createMonitor();
+        m.monitor.dispose();
+        expect(m.listenerCount).toBe(0);
+        expect(m.sent("stop")).toHaveLength(1);
+        m.monitor.dispose();
+        expect(m.sent("stop")).toHaveLength(1);
     });
 
     it("ignores unknown messages", () => {

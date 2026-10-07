@@ -27,9 +27,9 @@ export type PressureObserverInstance = {
     takeRecords() : PressureRecord[];
 };
 
+/** The constructor takes only the callback. `sampleInterval` is an option of `observe()`, as in the current specification. */
 export type PressureObserverInit = new (
     callback : (records : PressureRecord[], observer : PressureObserverInstance) => void,
-    options? : { sampleInterval? : number },
 ) => PressureObserverInstance;
 
 export type PressureMeasurement = {
@@ -79,10 +79,7 @@ export class ComputePressureMonitor {
         this.started = true;
 
         try {
-            this.observer = new this.PressureObserverCtor(
-                (records) => this.handleRecords(records),
-                { sampleInterval : this.sampleIntervalMs },
-            );
+            this.observer = new this.PressureObserverCtor((records) => this.handleRecords(records));
 
             for (const source of this.sources) {
                 this.observer.observe(source, { sampleInterval : this.sampleIntervalMs })
