@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
 import { playwright } from "@vitest/browser-playwright";
+import { cdpCommands } from "./commands/cdp.js";
 import { resultCommands } from "./commands/results.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -11,7 +12,16 @@ type Environment = "chromium" | "firefox" | "webkit" | "chrome";
 type Provider = ReturnType<typeof playwright>;
 type Instance = NonNullable<NonNullable<NonNullable<TestProjectInlineConfiguration["test"]>["browser"]>["instances"]>[number];
 
-const COMMANDS = { ...resultCommands };
+const COMMANDS = { ...cdpCommands, ...resultCommands };
+
+/**
+ * Chromium in the new headless mode (Chrome for Testing). The default
+ * headless shell does not hide a page that is behind another page. Chrome
+ * stable closes the Vitest connection when a page freezes, so the CDP tests
+ * use this build.
+ */
+const newHeadlessChromium = (args : string[] = []) : Provider =>
+    playwright({ launchOptions : { channel : "chromium", ...(args.length > 0 ? { args } : {}) } });
 
 function instance(project : string, environment : Environment, provider? : Provider, e2e = false) : Instance {
     const chrome = environment === "chrome" ? playwright({ launchOptions : { channel : "chrome" } }) : undefined;
@@ -68,6 +78,10 @@ export default defineConfig({
                 instance("browser", "firefox"),
                 instance("browser", "webkit"),
                 instance("browser", "chrome"),
+            ], { fileParallelism : false }),
+            // Chromium only: page freezing, hidden pages, CPU throttling and virtual compute pressure through CDP
+            project("cdp", ["src/cdp/**/*.test.ts"], [
+                instance("cdp", "chromium", newHeadlessChromium()),
             ], { fileParallelism : false }),
             // With the Grafana stack (pnpm test:e2e): the Mimir checks are required
             project("e2e", ["src/lag-monitors.test.ts", "src/stress.test.ts"], [
