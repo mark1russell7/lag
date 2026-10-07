@@ -71,7 +71,7 @@ export function LoadPanel({ session, snapshot } : LoadPanelProps) {
                         disabled={!canRun}
                         onClick={() => { void session.runProfile(profile, PROFILE_SECONDS * 1000); }}
                     >
-                        Run the profile for {PROFILE_SECONDS} s
+                        Start the profile for {PROFILE_SECONDS} s
                     </button>
                 )}
                 {selectedProfile ? <p className={styles.profileText}>{selectedProfile.description}</p> : null}

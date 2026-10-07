@@ -5,12 +5,164 @@ order: 41
 status: draft
 ---
 
-This page will list the exported functions, classes and types of each package. The core API changes often, so this page is a placeholder until the API is stable.
+This page lists the public API of each package. The TSDoc comment of each export gives the details. The links go to the source on GitHub.
 
-## @lag/core
+## Setup
+
+### `setupAllMonitors(deps)`
+
+```ts
+function setupAllMonitors(deps : AllMonitorDeps) : AllMonitorHandles;
+```
+
+The function starts each monitor whose dependencies are in `deps`, and gives the handles. The necessary dependencies are `logger`, `clock`, `meter`, the four timer functions, `document` and `window`. All other dependency groups are optional. Refer to [the quick start](/docs/getting-started#what-the-monitors-need).
+
+`AllMonitorHandles` has these members:
+
+| Member | What it does |
+|---|---|
+| `registry` | The `MonitorRegistry` with the handle of each monitor. `registry.get(name)` gives one handle. |
+| `stop()` | Stops all monitors in the reverse sequence of their start. |
+| `flush()` | Records the values that the monitors keep until a checkpoint (the page-view vitals). Connect it to the before-flush hook of the exporter. |
+| `conditions`, `vitals`, `driftLag`, `workerMonitor`, `pageViewContext` and the other accessors | The monitor of one handle, or `undefined` if the monitor did not start. |
+
+### `createBrowserDeps(window, options)`
+
+```ts
+function createBrowserDeps(globals : BrowserGlobals, options : BrowserDepsOptions) : AllMonitorDeps;
+```
+
+The function gets the dependencies from the browser globals. It examines each optional API and binds each browser function to its object.
+
+| Option | Default | What it does |
+|---|---|---|
+| `logger`, `meter` | necessary | The diagnostic logger and the OpenTelemetry meter. |
+| `events` | none | The event sink (`createOtelEventSink`). Without it, the monitors send no events. |
+| `worker` | none | The worker from `createLagWorker()`. Without it, the worker monitors do not start. |
+| `workerHeartbeatIntervalMs` | 1000 | The time between two heartbeats of the worker. |
+| `workerHangReport` | none | The OTLP logs URL and the resource for the hang reports of the worker. |
+| `memoryIntervalMs` | the monitor default | The time between two memory samples. |
+| `pressureSources` | `["cpu"]` | The Compute Pressure sources. |
+| `softNavigations` | `false` | When true, each soft navigation starts a new page view (Chromium 151 and later). |
+| `sharedMemory` | `true` | Uses shared memory for the liveness watcher in a cross-origin-isolated page. |
+| `hangJournal` | `true` | Reads the hang journal in IndexedDB, when there is a worker. |
+| `crashReportContext` | `true` | Puts the page-view ID into `window.crashReport` (Chrome 145 and later). |
+
+## Factories
+
+Each factory makes one monitor, connects it to its instruments, and gives a `MonitorHandle` (`name`, `monitor`, `stop()`). Use a factory when you want only some monitors.
+
+| Factory | Monitor | Page |
+|---|---|---|
+| `createInstrumentedLifecycle` | `LifecycleStateMachine` | [Lifecycle](/docs/monitors/lifecycle) |
+| `createInstrumentedPageViewVitals` | `PageViewVitals` | [Page-view vitals](/docs/monitors/page-view-vitals) |
+| `createInstrumentedPageViewContext` | the page-view context | [Page-view context](/docs/monitors/page-view-context) |
+| `createInstrumentedDriftLag` | `DriftLag` | [DriftLag](/docs/monitors/drift-lag) |
+| `createInstrumentedMacrotaskLag` | `MacrotaskLag` | [MacrotaskLag](/docs/monitors/macrotask-lag) |
+| `createInstrumentedThrottleDetector` | `TimerThrottleDetector` | [Timer throttle](/docs/monitors/timer-throttle) |
+| `createInstrumentedLoaf` | `LongAnimationFrameMonitor` | [Long animation frames](/docs/monitors/long-animation-frames) |
+| `createInstrumentedEventTiming` | `EventTimingMonitor` | [Event Timing](/docs/monitors/event-timing) |
+| `createInstrumentedLayoutShift` | `LayoutShiftMonitor` | [Layout shift](/docs/monitors/layout-shift) |
+| `createInstrumentedFrameTiming` | `FrameTimingMonitor` | [Frame timing](/docs/monitors/frame-timing) |
+| `createInstrumentedIdleAvailability` | `IdleAvailabilityMonitor` | [Idle availability](/docs/monitors/idle-availability) |
+| `createInstrumentedSchedulingFairness` | `SchedulingFairnessMonitor` | [Scheduling fairness](/docs/monitors/scheduling-fairness) |
+| `createInstrumentedMemory` | `MemoryMonitor` | [Memory](/docs/monitors/memory) |
+| `createInstrumentedWorkerLag` | `WorkerLagMonitor` | [Worker lag](/docs/monitors/worker-lag) |
+| `createInstrumentedSharedLiveness` | `SharedLivenessMonitor` | [Shared liveness](/docs/monitors/shared-liveness) |
+| `createInstrumentedComputePressure` | `ComputePressureMonitor` | [Compute pressure](/docs/monitors/compute-pressure) |
+| `createInstrumentedGCSignal` | `GCSignalDetector` | [GC signal](/docs/monitors/gc-signal) |
+| `createInstrumentedClockReliability` | `ClockReliabilityChecker` | [Clock reliability](/docs/monitors/clock-reliability) |
+| `createInstrumentedClockDrift` | `ClockDriftMonitor` | [Clock drift](/docs/monitors/clock-drift) |
+| `createInstrumentedBrowserReports` | `BrowserReportMonitor` | [Browser reports](/docs/monitors/browser-reports) |
+
+The building blocks of a factory are `createHandle` (an error boundary) and `validatedRecorder` (a sample validator for a record function).
+
+## Measurement conditions
+
+| Export | What it does |
+|---|---|
+| `createMeasurementConditions(options)` | Makes the shared conditions: a `ReliabilityTracker`, `createValidator()`, `pauseWhileHidden(monitor)` and `dispose()`. |
+| `ReliabilityTracker` | Keeps the intervals in which samples are not valid (`hidden`, `frozen`, `suspend`). |
+| `SampleValidator` | Discards a sample that overlaps such an interval, and holds a very long sample until it knows if it was a hang or a suspend. |
+
+Refer to [measurement validity](/docs/concepts/measurement-validity).
+
+## Metrics and events
+
+| Export | What it does |
+|---|---|
+| `METRICS`, `METRIC_CATALOG` | Every metric: name, type, unit, monitor, description and permitted attribute values. |
+| `EVENTS`, `EVENT_CATALOG` | Every event: name, monitor, description and attributes. |
+| `createHistogram(meter, definition)`, `createCounter(meter, definition)` | Make an instrument from a catalog definition. They fail if the type does not agree. |
+| `Meter`, `Histogram`, `Counter`, `Attributes` | The meter port. An OpenTelemetry `Meter` fits it. |
+| `createNoopMeter()` | A meter that records nothing. |
+| `EventSink`, `createNoopEventSink()`, `withEventContext(sink, context)` | The event port, a sink that sends nothing, and a sink that adds context attributes to each event. |
+| `createOtelEventSink(logger)` | Sends each event as an OpenTelemetry log record with an event name. |
+| `createOtelLoggerAdapter(logger)`, `createTeeLogger(...loggers)` | Send the diagnostic messages to OpenTelemetry logs, or to more than one logger. |
+| `encodeOtlpLogs(...)` | Makes the OTLP/HTTP JSON body of log records. The worker uses it for its hang reports. |
+
+## Page views and Web Vitals
+
+| Export | What it does |
+|---|---|
+| `PageViewVitals` | The Web Vitals of each page view. `getView()`, `getValues()`, `subscribe(listener)`, `flush()`, `stop()`. |
+| `ViewCollector` | The vitals of one page view, with the rules of web-vitals. |
+| `describeNode(node)` | The short CSS selector of a DOM node, as web-vitals makes it. |
+| `rateVital(name, value)`, `VITAL_THRESHOLDS` | The rating `good`, `needs-improvement` or `poor`. |
+| `PageSource`, `createPageSource(document, performance)` | The navigation entry, the prerender state and the hidden times of the document. |
+
+## Clocks
+
+| Export | What it does |
+|---|---|
+| `createAbsoluteClock(performance)` | The absolute time of the context. It reads `timeOrigin` one time. |
+| `ClockDriftMonitor` | Finds suspends and clock steps from the wall clock and the absolute clock. |
+| `WorkerClockSync` | The NTP-style clock sync with the worker. |
+| `ClockReliabilityChecker` | The resolution of `performance.now()`. |
+
+## Worker
+
+| Export | What it does |
+|---|---|
+| `WorkerLagMonitor` | The main-thread half of the worker monitor: acknowledgements, the clock sync, the context, the watchdog. |
+| `createWorkerHandler(deps)` | The worker half: the heartbeats, the hang detection and the hang journal. `@lag/worker` operates it. |
+| `MainToWorkerMessage`, `WorkerToMainMessage` and the message types | The worker protocol. Refer to [architecture](/docs/architecture#the-worker). |
+| `HangJournal`, `createIndexedDbHangJournal(indexedDB)`, `createMemoryHangJournal()` | The storage of hangs in progress. |
+| `findAbandonedHangs(records, now, ownPageId)` | The records of pages that did not survive their hang. |
+| `SharedLivenessMonitor`, `LivenessWatcher`, `createLivenessBeacon`, `beatingSetTimeout` | The shared-memory liveness watcher. |
+| `createForwardingMeter`, `createMeterReceiver` | Send the records of a meter from one context to another context, in batches. |
+
+## Utilities
+
+| Export | What it does |
+|---|---|
+| `createMessageTaskQueue(MessageChannel)` | Starts each callback in a new message task. |
+| `RateLimiter`, `stripUrlParameters(url)` | Limit the number of events, and remove the query and the fragment of a URL. |
+| `createRandomId()` | A random ID of 32 hexadecimal digits. |
+| `MonitorRegistry`, `MonitorHandle` | The registry of handles. |
+| `LagMonitor`, `LagLogger` | The base class of the timer monitors, and the logger of sustained lag. |
 
 ## @lag/worker
 
+| Export | What it does |
+|---|---|
+| `createLagWorker()` | Starts the module worker and gives a `LagWorker`. |
+| `LagWorker` | A `WorkerLike` with `terminate()`. The caller owns the worker. |
+
 ## @lag/load
 
+| Export | What it does |
+|---|---|
+| `createRng(seed)` | A seeded random number generator, so that a workload is the same at each run. |
+| `uniform`, `constant`, `normal`, `exponential`, `powerLaw`, `bimodal`, `mixture`, `evolutionary`, `burst`, `sample` | Distributions of durations. |
+| `syncBusyWait`, `syncCompute`, `gcPressure`, `microtaskFlood`, `macrotaskFlood`, `promiseChain`, `layoutThrash`, `longAnimationFrame`, `sleep` | Generators of main-thread load. |
+| `runWorkload(options)` | Operates a workload and gives a `WorkloadResult`. |
+| `lightLoad`, `moderateLoad`, `heavyLoad`, `burstyLoad`, `evolutionaryLoad`, `kitchenSink` | Ready workload profiles. |
+
 ## @lag/report
+
+| Export | What it does |
+|---|---|
+| `RunReport`, `SuiteResult`, `TestCaseResult`, `CoverageReport`, `MutationReport`, `Measurement`, `BudgetResult`, `RunIndex`, `RunSummary` | The data format of a test run. `SCHEMA_VERSION` gives its version. |
+| `fromVitestJson`, `fromIstanbulSummary`, `fromStrykerReport` | Convert the reports of Vitest, Istanbul and Stryker. |
+| `countStatuses`, `summarizeRun` | Summaries for the results viewer. |

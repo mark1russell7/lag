@@ -8,7 +8,7 @@ export type LegendItem = {
     shape? : "square" | "line";
     /** The dash pattern of a line, as SVG `stroke-dasharray`. */
     dash? : string;
-    /** Shows the status icon and its label instead of `label`. */
+    /** When set, the legend shows the status icon and its label instead of `label`. */
     kind? : StatusKind;
 };
 

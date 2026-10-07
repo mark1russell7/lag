@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import styles from "./Figure.module.css";
 
 export type FigureProps = {
-    /** Says what the figure shows. Screen readers use it as the name of the figure. */
+    /** The text that tells what the figure shows. Screen readers use it as the name of the figure. */
     caption : ReactNode;
     children : ReactNode;
 };

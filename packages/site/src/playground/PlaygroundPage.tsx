@@ -14,7 +14,7 @@ function SessionBar({ session, snapshot } : { session : PlaygroundSession; snaps
         <div className={styles.sessionBar}>
             <p className={styles.sessionStatus}>
                 <span className={styles.dot} data-running={running ? "true" : undefined} aria-hidden="true" />
-                {running ? `The monitors are running (${Math.floor(snapshot.elapsedSeconds)} s).` : "The monitors are stopped."}
+                {running ? `The monitors operate (${Math.floor(snapshot.elapsedSeconds)} s).` : "The monitors are stopped."}
             </p>
             {running ? (
                 <button type="button" className="button" onClick={() => session.stop()}>Stop the monitors</button>
@@ -65,7 +65,7 @@ function Charts({ snapshot } : { snapshot : PlaygroundSnapshot }) {
                     description="The duration of each interaction event of 16 ms or more, from the Event Timing API."
                     series={snapshot.series.eventDuration}
                     mark="dot"
-                    emptyText="No events yet. Select a load button: a blocked click makes a long event."
+                    emptyText="No events at this time. Select a load button: a blocked click makes a long event."
                 />
             </div>
         </section>
@@ -86,7 +86,7 @@ export function PlaygroundPage() {
             <header className={styles.header}>
                 <h1>Playground</h1>
                 <p className={styles.intro}>
-                    This page runs the monitors of <code>@lag/core</code> in your browser, with a Web Worker from{" "}
+                    This page starts the monitors of <code>@lag/core</code> in your browser, with a Web Worker from{" "}
                     <code>@lag/worker</code>. Use the buttons to make main-thread load. Then look at what the monitors record.
                 </p>
                 {session && snapshot ? <SessionBar session={session} snapshot={snapshot} /> : null}
@@ -98,7 +98,7 @@ export function PlaygroundPage() {
             {snapshot?.status === "failed" ? (
                 <Callout type="warning" title="The monitors did not start">{snapshot.error}</Callout>
             ) : null}
-            {!session && !error ? <p aria-busy="true">Loading the monitors.</p> : null}
+            {!session && !error ? <p aria-busy="true">The monitors load.</p> : null}
 
             {session && snapshot ? (
                 <>

@@ -153,10 +153,10 @@ export function RunOverview() {
 
             <section className={styles.block} aria-labelledby="durations-heading">
                 <h2 id="durations-heading">Test durations</h2>
-                {bins.length === 0 ? <p className={styles.muted}>No test ran.</p> : (
+                {bins.length === 0 ? <p className={styles.muted}>The run has no tests.</p> : (
                     <PlotFigure
                         title="Number of tests in each duration range"
-                        description="A histogram of the durations of the tests that ran. Each bar is one duration range; the ranges grow in steps of 1, 2 and 5."
+                        description="A histogram of the durations of the tests in the run. Each bar is one duration range. The ranges grow in steps of 1, 2 and 5."
                         hideTitle
                         options={durationChart(bins)}
                         table={{

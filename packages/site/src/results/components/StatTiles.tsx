@@ -5,7 +5,7 @@ import styles from "./StatTiles.module.css";
 export type Stat = {
     label : string;
     value : string;
-    /** Shows the status icon and its label instead of `label`. */
+    /** When set, the tile shows the status icon and its label instead of `label`. */
     kind? : StatusKind;
     detail? : ReactNode;
 };

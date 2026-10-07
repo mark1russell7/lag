@@ -120,7 +120,7 @@ export function Mermaid({ chart, title, caption } : MermaidProps) {
             {state.status === "ready" ? (
                 <div className={styles.diagram} role="img" aria-label={label} dangerouslySetInnerHTML={{ __html : state.svg }} />
             ) : null}
-            {state.status === "loading" ? <p className={styles.status}>Loading the diagram.</p> : null}
+            {state.status === "loading" ? <p className={styles.status}>The diagram loads.</p> : null}
             {state.status === "error" ? (
                 <p className={styles.status}>The diagram did not render: {state.message}</p>
             ) : null}

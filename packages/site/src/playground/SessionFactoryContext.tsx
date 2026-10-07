@@ -1,7 +1,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { PlaygroundSession, SessionKind } from "./session";
 
-/** Makes a session. It is async, so the monitor code loads only when a page needs it. */
+/** This function makes a session. It is async, so that the monitor code loads only when a page needs it. */
 export type SessionFactory = (kind : SessionKind) => Promise<PlaygroundSession>;
 
 const SessionFactoryContext = createContext<SessionFactory | undefined>(undefined);

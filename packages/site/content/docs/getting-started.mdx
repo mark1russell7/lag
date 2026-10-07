@@ -1,18 +1,112 @@
 ---
-title: Getting started
+title: Quick start
 description: Add the monitors to a browser app, send the metrics to a backend, and stop the monitors.
 order: 2
 status: draft
 ---
 
-This page tells you how to add the monitors to a browser app. You need an OpenTelemetry `Meter` and the browser APIs that the monitors use. For a complete example with type checks, read `createBrowserDeps` in `packages/lag-integration-tests/src/harness.ts`.
+This page tells you how to add the monitors to a browser app. You need an OpenTelemetry setup for the page. The examples use [otel-ts](/docs/operations/opentelemetry), but each OpenTelemetry `Meter` and `Logger` works.
 
 ## Before you start
 
+You need:
+
+- an app that a bundler builds, for example Vite. The bundler must support `new Worker(new URL(...), { type: "module" })`.
+- an OTLP/HTTP endpoint, for example the [Grafana stack](/docs/operations/grafana-stack) on your computer.
+
+The packages of this project are private workspace packages at this time. They are not on a package registry. In a package of this repository, add them as workspace dependencies, and add otel-ts from GitHub:
+
+```json
+{
+    "dependencies": {
+        "@lag/core": "workspace:*",
+        "@lag/worker": "workspace:*",
+        "@mark1russell7/otel-ts": "github:mark1russell7/otel-ts"
+    }
+}
+```
+
+Then install them with `pnpm install`.
+
 ## Start the monitors
+
+```ts
+import { init } from "@mark1russell7/otel-ts";
+import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
+import { createLagWorker } from "@lag/worker";
+
+const endpoint = "http://localhost:4318";
+
+const otel = init({
+    serviceName : "shop",
+    endpoint,
+    histogramAggregation : "exponential",
+});
+
+const worker = createLagWorker();
+const monitors = setupAllMonitors(createBrowserDeps(window, {
+    meter : otel.getMeter("lag"),
+    logger : createOtelLoggerAdapter(otel.getLogger("lag")),
+    events : createOtelEventSink(otel.getLogger("lag-events")),
+    worker,
+    workerHangReport : { url : `${endpoint}/v1/logs`, resource : { "service.name" : "shop" } },
+}));
+
+// Record the pending values of the monitors before each export
+otel.onBeforeFlush(() => monitors.flush());
+```
+
+The code does these steps:
+
+1. `init()` starts the OpenTelemetry SDK. Each call gets a new `service.instance.id`, and histograms use the exponential aggregation (native histograms in Mimir).
+2. `createLagWorker()` starts the Web Worker of the worker-lag monitor.
+3. `createBrowserDeps(window, options)` gets the browser APIs. It examines each API, thus each browser gets the monitors that it can support.
+4. `setupAllMonitors()` starts the monitors and gives their handles.
+5. `onBeforeFlush` makes sure that the export at page hide contains the final values of the page view.
+
+<Callout type="warning">
+  Connect `monitors.flush()` to the exporter. In Chromium, an exporter that listens to `pagehide` before the monitors can flush before the monitors record their final values. Refer to [page lifecycle](/docs/concepts/page-lifecycle).
+</Callout>
+
+## What the monitors need
+
+`setupAllMonitors()` starts a monitor only when its dependencies exist:
+
+| Dependency | Monitors |
+|---|---|
+| Timers, `document`, `window` (always necessary) | Lifecycle, DriftLag, MacrotaskLag, timer throttle |
+| `PerformanceObserver` | Long animation frames, Event Timing, layout shift, page-view vitals |
+| `requestAnimationFrame` | Frame timing |
+| `requestIdleCallback` (not in Safari) | Idle availability |
+| `MessageChannel` and `queueMicrotask` | Scheduling fairness |
+| `worker` and `performance` | Worker lag |
+| `worker` and a cross-origin-isolated page | Shared-memory liveness |
+| `performance` and the wall clock | Clock reliability, clock drift |
+
+`createBrowserDeps` finds each of these in the browser. To change a dependency, give your own object of type `AllMonitorDeps` to `setupAllMonitors()`.
 
 ## Send the metrics to a backend
 
+Start the Grafana stack on your computer:
+
+```bash
+cd node_modules/@mark1russell7/grafana-infra
+docker compose up -d
+```
+
+Then open Grafana at `http://localhost:3000`. The [dashboards](/docs/operations/dashboards) page tells you what each panel shows.
+
 ## Stop the monitors
 
+```ts
+monitors.stop();
+worker.terminate();
+```
+
+`stop()` stops each monitor in the reverse sequence of their start. It releases each timer, listener and observer. The worker is yours: stop it with `worker.terminate()`.
+
 ## Next steps
+
+- Read [measurement validity](/docs/concepts/measurement-validity) to know which samples the monitors discard, and why.
+- Read the [monitor overview](/docs/monitors) to select the metrics for your dashboards.
+- Open the [playground](/playground) to see the monitors with synthetic load.

@@ -28,13 +28,13 @@ export type PlotFigureProps = LayoutProps & {
     /** A longer text alternative: what the chart shows and what it means. */
     description? : string;
     caption? : ReactNode;
-    /** The full Plot options, or a function of the context that returns them. */
+    /** The full Plot options, or a function of the context that gives them. */
     options? : PlotOptionsInput;
     /** Marks, if the page gives the layout as props instead of `options`. */
     marks? : MarksInput;
     /** The same data as a table, behind a disclosure under the chart. */
     table? : DataTableSpec;
-    /** Hides the visible title (it stays the accessible name). */
+    /** When true, the title is not visible. It stays the accessible name. */
     hideTitle? : boolean;
 };
 
@@ -74,10 +74,11 @@ function withDefaults(options : PlotOptions, context : PlotContext, title : stri
 }
 
 /**
- * The one wrapper for Observable Plot charts. It loads Plot on demand, fits
- * the chart to the width of its container, gives the theme colors to the
- * chart, and makes the chart again when the props, the width or the theme
- * change.
+ * The one wrapper for Observable Plot charts. It does these steps:
+ * - It loads Plot when a page needs it.
+ * - It fits the chart to the width of its container.
+ * - It gives the theme colors to the chart.
+ * - It makes the chart again when the props, the width or the theme change.
  */
 export function PlotFigure(props : PlotFigureProps) {
     const { title, description, caption, options, marks, table, hideTitle, ...layout } = props;
@@ -130,7 +131,7 @@ export function PlotFigure(props : PlotFigureProps) {
     return (
         <figure className={styles.figure} aria-labelledby={titleId} aria-busy={loading ? true : undefined}>
             <p id={titleId} className={hideTitle ? "visually-hidden" : styles.title}>{title}</p>
-            {loading ? <p className={styles.status}>Loading the chart.</p> : null}
+            {loading ? <p className={styles.status}>The chart loads.</p> : null}
             {loadError ? <p className={styles.status}>The chart did not load: {loadError}</p> : null}
             {renderError ? <p className={styles.status}>The chart did not render: {renderError}</p> : null}
             <div ref={hostRef} className={styles.plot} />

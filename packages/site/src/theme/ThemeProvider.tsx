@@ -19,7 +19,7 @@ import {
 
 export type ThemeContextValue = {
     preference : ThemePreference;
-    /** The theme that shows now: the preference, or the system theme for "system". */
+    /** The theme that shows at this time: the preference, or the system theme for "system". */
     resolved : ResolvedTheme;
     setPreference(preference : ThemePreference) : void;
 };

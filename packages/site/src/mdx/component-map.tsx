@@ -10,7 +10,7 @@ import { MarkdownTable } from "../components/ScrollTable/ScrollTable";
 import { SupportMatrix } from "../components/SupportMatrix/SupportMatrix";
 import { Tab, Tabs } from "../components/Tabs/Tabs";
 
-/** Wraps a large component so its code loads only when a page uses it. */
+/** This function wraps a large component, so that its code loads only when a page uses it. */
 function lazyComponent<P extends object>(
     load : () => Promise<{ default : ComponentType<P> }>,
     loadingText : string,

@@ -53,8 +53,9 @@ export function MutationView() {
             <section className={styles.block} aria-labelledby="mutation-packages">
                 <h2 id="mutation-packages">Mutation score by package</h2>
                 <p className={styles.lead}>
-                    The score is the killed and timed-out mutants divided by all valid mutants. A survived mutant is a
-                    change to the code that no test found.
+                    The score is the number of mutants with the status <code>Killed</code> or <code>Timeout</code>, divided by the
+                    number of valid mutants. A mutant with the status <code>Survived</code> is a change to the code that no
+                    test found.
                 </p>
                 <SortableTable
                     label="Mutation score by package"

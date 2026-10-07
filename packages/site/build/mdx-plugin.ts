@@ -7,6 +7,7 @@ import remarkMdxFrontmatter from "remark-mdx-frontmatter";
 import type { Plugin } from "vite";
 import { isFrontmatterRequest } from "./frontmatter";
 import { rehypeExportToc } from "./rehype-export-toc";
+import { remarkMermaid } from "./remark-mermaid";
 
 /**
  * Compiles `.mdx` pages. Each page module exports:
@@ -23,6 +24,7 @@ export function mdxPlugin() : Plugin {
             remarkFrontmatter,
             [remarkMdxFrontmatter, { name : "frontmatter" }],
             remarkGfm,
+            remarkMermaid,
         ],
         rehypePlugins : [
             rehypeSlug,

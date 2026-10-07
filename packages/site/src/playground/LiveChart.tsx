@@ -11,7 +11,7 @@ export type LiveChartProps = {
     series : LiveSeries;
     windowSeconds : number;
     elapsedSeconds : number;
-    /** "line" for regular samples; "dot" for separate events. */
+    /** "line" for regular samples, and "dot" for separate events. */
     mark : "line" | "dot";
     /** A horizontal reference line, for example one frame at 60 Hz. */
     reference? : { value : number; label : string };

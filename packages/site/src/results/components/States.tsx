@@ -17,9 +17,9 @@ export function ErrorState({ title, error } : { title : string; error : Error })
 export function NoResults() {
     return (
         <div className={styles.empty}>
-            <h2 className={styles.emptyTitle}>There are no test results yet</h2>
+            <h2 className={styles.emptyTitle}>There are no test results at this time</h2>
             <p>
-                To make the results, run <code>pnpm results</code> in the root of the repository. The command writes the
+                To make the results, use <code>pnpm results</code> in the root of the repository. The command writes the
                 files to <code>packages/site/public/data/results/</code>. Then load this page again.
             </p>
             {import.meta.env.DEV ? (

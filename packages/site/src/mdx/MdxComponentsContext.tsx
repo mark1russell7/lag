@@ -4,7 +4,7 @@ import { mdxComponents } from "./component-map";
 
 const MdxComponentsContext = createContext<MDXComponents>(mdxComponents);
 
-/** Replaces the MDX components for part of the tree (for example in a test). */
+/** This provider replaces the MDX components for one part of the tree, for example in a test. */
 export function MdxComponentsProvider({ components, children } : { components : MDXComponents; children : ReactNode }) {
     return <MdxComponentsContext value={components}>{children}</MdxComponentsContext>;
 }

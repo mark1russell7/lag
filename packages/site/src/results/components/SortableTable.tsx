@@ -6,12 +6,12 @@ import styles from "./SortableTable.module.css";
 export type Column<T, K extends string> = {
     key : K;
     label : string;
-    /** Numbers align right, and their first sort is descending. */
+    /** Numbers align right. Their first sort puts the largest number first. */
     align? : "left" | "right";
     render : (row : T) => ReactNode;
-    /** Makes the column sortable. */
+    /** The value for the sort. With it, the reader can sort the column. */
     sortValue? : (row : T) => SortValue;
-    /** Renders the cell as the header of its row. */
+    /** When true, the cell is the header of its row. */
     rowHeader? : boolean;
 };
 

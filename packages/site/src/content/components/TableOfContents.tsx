@@ -8,7 +8,7 @@ export type TableOfContentsProps = {
     className? : string | undefined;
 };
 
-/** Links to the h2 and h3 headings of the page. */
+/** The links to the h2 and h3 headings of the page. */
 export function TableOfContents({ entries, className } : TableOfContentsProps) {
     const headingId = useId();
     return (

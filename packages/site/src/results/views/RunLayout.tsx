@@ -36,7 +36,7 @@ export const RUN_VIEWS : readonly RunView[] = [
 
 type LoadResult = { kind : "missing" } | ({ kind : "ready" } & RunContext);
 
-/** Loads one run and shows its header, the view navigation and the selected view. */
+/** This component loads one run, and shows its header, the view navigation and the selected view. */
 export function RunLayout() {
     const { runId = "" } = useParams();
     const source = useReportSource();
@@ -72,7 +72,7 @@ export function RunLayout() {
             <title>{`Run ${run.id} – ${SITE_NAME}`}</title>
             <p className={styles.back}><Link to="/results">All runs</Link></p>
             <header className={styles.header}>
-                <h1 className={styles.runTitle}>Run <code>{run.id}</code></h1>
+                <h1 className={styles.runTitle}>Test run <code>{run.id}</code></h1>
                 <dl className={styles.runMeta}>
                     <div><dt>Date</dt><dd>{formatDateTime(run.createdAt)}</dd></div>
                     {run.git ? <div><dt>Commit</dt><dd><code>{shortCommit(run.git.commit)}</code></dd></div> : null}

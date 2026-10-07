@@ -46,7 +46,7 @@ function LoadingPage({ page } : { page : ContentPage }) {
     return (
         <article className={styles.article} aria-busy="true">
             <PageHeader meta={page.meta} />
-            <p className={styles.loading}>Loading the page.</p>
+            <p className={styles.loading}>The page loads.</p>
         </article>
     );
 }

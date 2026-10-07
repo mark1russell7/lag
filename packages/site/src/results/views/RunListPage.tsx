@@ -31,7 +31,7 @@ function RunList({ index } : { index : RunIndex }) {
                 />
                 <PlotFigure
                     title="Test counts by run, stacked by status"
-                    description="One bar for each run, the oldest run on the left. Each bar has a part for each status; failed tests are at the bottom."
+                    description="One bar for each run, the oldest run on the left. Each bar has a part for each status. The failed tests are at the bottom."
                     hideTitle
                     options={runTrendChart(trend)}
                 />

@@ -15,7 +15,7 @@ export type TabProps = {
     children : ReactNode;
 };
 
-/** One panel of a `Tabs` set. `Tabs` shows it; it shows nothing alone. */
+/** One panel of a `Tabs` set. `Tabs` shows it. Alone, it shows nothing. */
 export function Tab({ children } : TabProps) {
     return <>{children}</>;
 }
@@ -31,8 +31,8 @@ export type TabsProps = {
 };
 
 /**
- * Tabs that follow the WAI-ARIA tabs pattern: the arrow keys move between the
- * tabs, and Home and End go to the first and the last tab.
+ * Tabs that obey the WAI-ARIA tabs pattern. The arrow keys move between the
+ * tabs. Home and End go to the first and the last tab.
  */
 export function Tabs({ label, children } : TabsProps) {
     const tabs = Children.toArray(children).filter(isTab);

@@ -11,8 +11,8 @@ const LONG_MS = 50;
 
 /**
  * A small live reading of this tab: the timer drift that `DriftLag` measures
- * now. It runs only the timer monitors, so its cost is small. With "reduce
- * motion", it waits until the reader starts it.
+ * at this time. It starts only the timer monitors, so its cost is small. With
+ * "reduce motion", it waits until the reader starts it.
  */
 export default function MainThreadIndicator() {
     const reducedMotion = usePrefersReducedMotion();
@@ -32,7 +32,7 @@ export default function MainThreadIndicator() {
 
     return (
         <aside className={`${styles.indicator} graph-paper`} aria-labelledby="now-title">
-            <p id="now-title" className={styles.indicatorTitle}>This tab, now</p>
+            <p id="now-title" className={styles.indicatorTitle}>This tab</p>
             {error ? <p className={styles.indicatorText}>The monitor did not start: {error.message}</p> : null}
             <p className={styles.reading}>
                 <span className={styles.readingValue}>{value === undefined ? "–" : formatMs(value)}</span>
@@ -61,7 +61,7 @@ export default function MainThreadIndicator() {
                 }}
             />
             <p className={styles.indicatorText}>
-                <code>DriftLag</code> measures this value in this page now. A red line is a window that ended {LONG_MS} ms
+                <code>DriftLag</code> measures this value in this page. A red line is a window that ended {LONG_MS} ms
                 or more late. <Link to="/playground">Open the playground</Link> to see all the monitors.
             </p>
             <button type="button" className="button" onClick={() => setRunning(value => !value)}>

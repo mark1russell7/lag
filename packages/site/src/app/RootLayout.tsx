@@ -4,7 +4,7 @@ import { SiteFooter } from "./SiteFooter";
 import { SiteHeader } from "./SiteHeader";
 import styles from "./RootLayout.module.css";
 
-/** Tells screen reader users the title of the new page after a route change. */
+/** This component tells screen reader users the title of the new page after a route change. */
 function RouteAnnouncer() {
     const { pathname } = useLocation();
     const [message, setMessage] = useState("");

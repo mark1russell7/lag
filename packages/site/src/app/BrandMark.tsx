@@ -1,6 +1,6 @@
 /**
- * The site mark: a strip of frames. Each tick is one frame at 60 Hz; the red
- * one is a frame that the main thread was too busy to deliver.
+ * The site mark: a strip of frames. Each tick is one frame at 60 Hz. The red
+ * tick is a frame that the main thread was too busy to deliver.
  */
 export function BrandMark() {
     return (

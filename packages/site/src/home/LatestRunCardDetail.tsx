@@ -11,12 +11,12 @@ export function LatestRunCardDetail() {
     const source = useReportSource();
     const state = useAsync(() => source.listRuns(), [source]);
 
-    if (state.status === "loading") return <p className={styles.cardMeta} aria-busy="true">Loading the newest run.</p>;
+    if (state.status === "loading") return <p className={styles.cardMeta} aria-busy="true">The newest run loads.</p>;
     if (state.status === "error") return <p className={styles.cardMeta}>The list of runs did not load.</p>;
 
     const latest = sortRunsNewestFirst(state.value.runs)[0];
     if (!latest) {
-        return <p className={styles.cardMeta}>There are no results yet. Run <code>pnpm results</code> to make them.</p>;
+        return <p className={styles.cardMeta}>There are no results at this time. Use <code>pnpm results</code> to make them.</p>;
     }
     const total = latest.counts.passed + latest.counts.failed + latest.counts.skipped + latest.counts.todo;
     return (
@@ -28,7 +28,7 @@ export function LatestRunCardDetail() {
                     detail={latest.counts.failed > 0 ? `: ${latest.counts.failed} of ${total} tests` : `: ${total} tests`}
                 />
             </p>
-            <p className={styles.cardMeta}><Link to={`/results/${encodeURIComponent(latest.id)}`}>See the newest run</Link></p>
+            <p className={styles.cardMeta}><Link to={`/results/${encodeURIComponent(latest.id)}`}>Open the newest run</Link></p>
         </div>
     );
 }

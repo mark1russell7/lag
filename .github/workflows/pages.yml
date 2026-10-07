@@ -1,0 +1,65 @@
+# Builds the website (packages/site) with the newest test results and
+# publishes it to GitHub Pages. To use this workflow, set the Pages source of
+# the repository to "GitHub Actions" (Settings > Pages).
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time. A newer push cancels a deployment that waits.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm build
+
+      - name: Install the Playwright browsers
+        run: pnpm --filter @lag/integration-tests exec playwright install --with-deps chromium firefox webkit
+
+      # The results viewer of the site reads packages/site/public/data/results
+      - name: Make the test results
+        run: pnpm results
+        continue-on-error: true
+
+      - name: Build the site
+        run: pnpm --filter @lag/site build
+        env:
+          SITE_BASE: ${{ github.event.repository.name }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: packages/site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

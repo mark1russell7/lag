@@ -5,12 +5,49 @@ order: 1
 status: draft
 ---
 
-`@lag/core` is a set of monitors for browser apps. Each monitor measures one signal of main-thread responsiveness and records it as an OpenTelemetry metric. `setupAllMonitors()` connects all the monitors that the browser supports to one `Meter`. The `@lag/worker` package adds a Web Worker that measures main-thread blocking from outside the main thread.
+`@lag/core` measures the lag of the main thread in browser apps. Each monitor measures one signal, for example blocked time, queueing delay, frame delays or input latency. The monitors record OpenTelemetry metrics (counters and histograms) and send events with the details. `setupAllMonitors()` starts each monitor that the browser can support.
+
+The library measures in the field, on the devices of real users. Thus it calibrates each probe against its environment, and it discards each sample that the page lifecycle or the clocks make incorrect. The [thesis](/thesis) gives the argument and the evidence.
 
 ## What the monitors measure
 
+| Question | Monitor |
+|---|---|
+| How much of each 100 ms was the main thread busy? | [DriftLag](/docs/monitors/drift-lag) |
+| How long does a task that arrives at a random time wait? | [Worker lag](/docs/monitors/worker-lag) |
+| Did the main thread hang, and for how long? | [Worker lag](/docs/monitors/worker-lag) and the [hang journal](/docs/concepts/survivorship) |
+| How long does an interaction wait for the next paint? | [Event Timing](/docs/monitors/event-timing) and [page-view vitals](/docs/monitors/page-view-vitals) |
+| Which script blocked a frame? | [Long animation frames](/docs/monitors/long-animation-frames) (Chromium) |
+| Are the frames late? | [Frame timing](/docs/monitors/frame-timing) |
+| Does the page shift its layout? | [Layout shift](/docs/monitors/layout-shift) and [page-view vitals](/docs/monitors/page-view-vitals) |
+| Is the device busy, hot or out of memory? | [Compute pressure](/docs/monitors/compute-pressure), [memory](/docs/monitors/memory), [GC signal](/docs/monitors/gc-signal) |
+| Are the timers and the clocks correct? | [Timer throttle](/docs/monitors/timer-throttle), [clock reliability](/docs/monitors/clock-reliability), [clock drift](/docs/monitors/clock-drift) |
+
+The [monitor overview](/docs/monitors) lists all monitors with their browser support and their cost.
+
 ## The packages
+
+| Package | What it does |
+|---|---|
+| `@lag/core` | The monitors, the measurement conditions, the metric catalog, the browser adapter and `setupAllMonitors()`. It has no DOM or OpenTelemetry dependency: the caller gives each browser API. |
+| `@lag/worker` | The Web Worker of the worker-lag monitor. It sends heartbeats, detects hangs and keeps the hang journal. |
+| `@lag/load` | Synthetic main-thread load for tests and for the playground. |
+| `@lag/report` | The data format of the test reports, and the converters from Vitest, Istanbul and Stryker. |
+| `@lag/ste-lint` | A linter for the writing rules of ASD-STE100. It examines this site, the READMEs and the TSDoc comments. |
+| `@lag/site` | This website. |
+
+The metrics go through [otel-ts](/docs/operations/opentelemetry), the OpenTelemetry setup of the project, to the [Grafana stack](/docs/operations/grafana-stack).
 
 ## How to read this documentation
 
+- [Quick start](/docs/getting-started): add the monitors to an app.
+- [Concepts](/docs/concepts/event-loop): the ideas that the monitors use. Read them before you read the numbers on a dashboard.
+- [Monitors](/docs/monitors): one reference page for each monitor.
+- [Architecture](/docs/architecture) and [API](/docs/api): the parts of the code.
+- [Operations](/docs/operations/opentelemetry): the OpenTelemetry setup, the Grafana stack and the dashboards.
+- [Testing](/docs/testing/strategy): how we test the library, and the [results](/results) of the latest run.
+- [Research](/research): the facts about browsers, clocks and tools that the design uses.
+
 ## Next steps
+
+Start with the [quick start](/docs/getting-started). Then open the [playground](/playground) to see the monitors in this page.

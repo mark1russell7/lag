@@ -106,7 +106,7 @@ describe("site routes", () => {
 
     it("shows the empty state without results", async () => {
         await renderPath("/results", MemoryReportSource.empty());
-        expect(container.textContent).toContain("There are no test results yet");
+        expect(container.textContent).toContain("There are no test results at this time");
         expect(container.textContent).toContain("pnpm results");
         expect(problems).toEqual([]);
     });
@@ -123,7 +123,7 @@ describe("site routes", () => {
     it("starts the monitors in the playground and stops them on unmount", async () => {
         await renderPath("/playground");
         await vi.waitFor(() => {
-            if (!container.textContent?.includes("The monitors are running")) throw new Error("Not running yet");
+            if (!container.textContent?.includes("The monitors operate")) throw new Error("Not running yet");
         }, { timeout : 15_000 });
         expect(problems).toEqual([]);
     });

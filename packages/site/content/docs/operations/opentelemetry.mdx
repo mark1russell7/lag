@@ -1,0 +1,84 @@
+---
+title: OpenTelemetry setup
+description: How to configure the OpenTelemetry SDK in the page, so that the metrics of many browsers aggregate correctly.
+order: 49
+status: draft
+---
+
+The monitors record into an OpenTelemetry `Meter` and send events to an OpenTelemetry `Logger`. The SDK settings decide if the metrics of many browsers are correct after aggregation. The research note [OpenTelemetry metrics in the browser](/research/otel-browser-metrics) gives the evidence for each setting.
+
+## The settings
+
+| Setting | Value | Why |
+|---|---|---|
+| `service.instance.id` | A new random ID for each SDK instance (each page load and each worker) | Without a writer identity, many browsers write the same series. Then Mimir rejects samples or mixes the totals of different browsers. |
+| Temporality | Cumulative | Mimir drops delta sums and delta histograms. No collector merges many writers correctly. |
+| Histograms | Exponential (base 2) | Mimir stores each one as one native-histogram series. Explicit buckets need one series for each bucket. |
+| Export interval | 15 s | A shorter interval adds requests and series samples. The flush at page hide sends the last values. |
+| Flush | At each page hide, after `monitors.flush()` | The final values of a page view must be in the last export. |
+| `session.id` | On log records only, not on the resource | A resource with `session.id` adds one `target_info` series for each session, and it keeps an old ID after the session changes. |
+
+## otel-ts
+
+[otel-ts](https://github.com/mark1russell7/otel-ts) has these settings as defaults or options:
+
+```ts
+import { init } from "@mark1russell7/otel-ts";
+
+const otel = init({
+    serviceName : "shop",
+    endpoint : "https://collector.example.com",
+    // Native histograms in Mimir. The Mimir tenant must accept native histograms.
+    histogramAggregation : "exponential",
+});
+
+// After setupAllMonitors()
+otel.onBeforeFlush(() => monitors.flush());
+```
+
+otel-ts has these defaults:
+
+- a new `service.instance.id` for each `init()` call
+- an export every 15 s, with cumulative temporality
+- `session.id` on each log record and span
+- a flush each time the page becomes hidden
+
+`onBeforeFlush` starts its listeners at the start of each flush.
+
+<Callout type="warning">
+  With `histogramAggregation: "exponential"`, a backend without native histograms can drop the histograms. In Mimir, set `native_histograms_ingestion_enabled: true` for the tenant.
+</Callout>
+
+## Another OpenTelemetry SDK
+
+The monitors work with each OpenTelemetry SDK for JavaScript. Make sure that your setup obeys these rules:
+
+1. Set `service.instance.id` to a new random value for each `MeterProvider`. Do not store the value. Do not make it from the session ID.
+2. Use cumulative temporality.
+3. Use the exponential histogram aggregation, if the backend has native histograms.
+4. Flush at `visibilitychange` to hidden and at `pagehide`.
+5. Before each flush, use `monitors.flush()`.
+6. Put the session ID on log records, not on the resource.
+
+## The hang reports of the worker
+
+During a hang, the main thread cannot send anything. Thus the worker sends its hang reports itself, as OTLP/HTTP JSON log records, to `workerHangReport.url`:
+
+```ts
+createBrowserDeps(window, {
+    // ...
+    worker,
+    workerHangReport : {
+        url : "https://collector.example.com/v1/logs",
+        resource : { "service.name" : "shop" },
+    },
+});
+```
+
+The worker uses `fetch` with `keepalive`, because workers do not have `sendBeacon`. The collector must accept cross-origin requests from the page (CORS) for `POST` with the `Content-Type: application/json` header.
+
+## The number of series
+
+Each SDK instance writes its own series. Thus the number of active series depends on the number of page loads. The catalog has 42 metrics. With native histograms, one page load can write at most 271 series. Usually it writes much fewer, because a page uses only some of the attribute values.
+
+R1 gives a rough rule for the Mimir limit. Multiply the page loads in one hour by 2.5, and multiply the result by the series of one page load. If the number is too high, increase the limits, then sample the sessions.

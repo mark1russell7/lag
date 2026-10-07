@@ -1,28 +1,80 @@
 ---
 title: Writing style
-description: The rules for the text of this site, and how to add a page.
+description: The writing rules of this site, the linter that examines them, and how to add a page.
 order: 70
 status: draft
 ---
 
-Write every page in ASD-STE100 Simplified Technical English. Use one MDX file for each page. The site makes the sidebar, the table of contents and the links to the previous and next pages from the files.
+The text of this site, the READMEs and the TSDoc comments follow the writing rules of ASD-STE100 Simplified Technical English as a style target. The rules make the text short, clear and the same for all readers, also for readers whose first language is not English. The project is not certified by ASD. The linter is an automated approximation of the rules. Refer to [the writing standard](/research/writing-standard) for the background.
 
-## Simplified Technical English
+## The main rules
 
-- Use the active voice.
-- Use the simple present tense for descriptions.
-- Use the imperative for instructions. Write one instruction in each sentence.
-- Write at most 20 words in an instruction, and at most 25 words in a description.
-- Write at most 6 sentences in a paragraph.
+- Write an instruction in 20 words or fewer, and a description in 25 words or fewer. A code span, a number with its unit, and a product name each count as one word.
+- Write 6 sentences or fewer in a paragraph.
+- Write one instruction in each sentence.
+- Use the active voice. Use only the present tense, the past tense and the future tense with "will".
+- Do not use semicolons. Write two sentences.
 - Do not use contractions.
-- Use one word for one meaning: "use", not "utilize"; "start", not "initiate"; "show", not "display"; "make sure", not "ensure"; "about", not "approximately".
-- Write API names, file names and commands in code format, for example `setupAllMonitors()`.
+- Use only these modal verbs: "can", "cannot", "must" and "will". Do not use "should", "may", "would", "might" or "shall".
+- Use one word for one meaning. For example, write "use", not "utilize". Write "make sure", not "ensure". Write "approximately", not "about", for a quantity. "About" means "concerned with".
+- Do not omit the subject. For example, the TSDoc sentence "Returns the value." is not complete. Write "The function gives the value."
+- Do not use "e.g.", "i.e." or "etc.". Write "for example", or rewrite the sentence.
+- Write API names, file names, metric names and commands in code format.
+
+## The linter
+
+`@lag/ste-lint` examines the Markdown and MDX pages and the TSDoc comments. It finds these problems:
+
+- long sentences and long paragraphs
+- modal verbs that are not approved
+- semicolons and Latin abbreviations
+- words with a better alternative
+- gender pronouns
+- passive instructions
+- sentences without a subject
+
+Examine all files:
+
+```bash
+pnpm lint:ste
+```
+
+Examine some files, with the output in JSON:
+
+```bash
+pnpm lint:ste "packages/site/content/docs/**/*.mdx" --format json
+```
+
+The configuration is in `ste.config.json`. It has the glossary of the project: the technical nouns and verbs that the rules permit, for example "heartbeat", "histogram" and "flush". Add a word to the glossary only if it is a real technical term of the project.
+
+<Callout type="note">
+  To suppress the linter for one block, write a `ste-disable-next` comment before it, and give the cause. Use this only for text that the rules cannot handle, for example a diagram in a comment.
+</Callout>
+
+The full dictionary of ASD-STE100 is copyrighted. The project does not contain it. You can use a licensed copy:
+
+1. Convert the copy to the format in `packages/ste-lint/README.md`.
+2. Keep the file outside the repository.
+3. Set `STE_DICTIONARY` to the path of the file.
+
+Then the linter also reports words that are not in the dictionary.
+
+## The same word for the same thing
+
+| Use | Do not use |
+|---|---|
+| main thread | UI thread |
+| page view | pageview |
+| back/forward cache | bfcache (except in code) |
+| monitor | tracker, probe (except for a probe of a monitor) |
+| worker heartbeat | ping |
 
 ## Add a page
 
 1. Add an `.mdx` file in `packages/site/content/docs`, `packages/site/content/thesis` or `packages/site/content/research`. The path of the file is the path of the page.
-2. Add the frontmatter: `title`, `description`, `order` and, for a page that is not complete, `status: draft`.
+2. Add the frontmatter: `title`, `description` and `order`. For a page that is not complete, add `status: draft`.
 3. Start the text at heading level 2 (`##`). The page shows the title as the heading of level 1.
+4. Use `pnpm lint:ste` to examine the page, and correct each finding.
 
 The table of contents shows the headings of level 2 and 3.
 
@@ -35,23 +87,19 @@ The table of contents shows the headings of level 2 and 3.
 | `order` | Number | The position in the section. Lower numbers come first. |
 | `status` | `draft` or `final` | Optional. A draft page shows a note that it is a draft. |
 
-## Order and groups
-
-The pages in a folder show as one group in the sidebar. The group has the position of the lowest `order` in the folder. Give each section one range of numbers, for example 10 to 19 for the pages in `concepts/`.
-
 ## Components
 
 Each MDX page can use these components without an import. Put the data for a component in a TypeScript file next to the page, for example `browser-support.data.ts`. Then import the data in the page.
 
 | Component | Use it for |
 | --- | --- |
-| `Callout` | A note, a warning or a caution. |
+| `Callout` | A note, a caution or a warning. |
 | `Figure` | Content with a caption. |
 | `Tabs` and `Tab` | Content in tabs, for example one command for each tool. |
-| `Mermaid` | A state, sequence or flow diagram. The `chart` prop gives the diagram text. |
+| `Mermaid` | A state, sequence or flow diagram. A fenced code block with the language `mermaid` also shows as a diagram. |
 | `ArchitectureMap` | The map of the system. |
 | `PlotFigure` | A chart. The page gives the Plot options and a text alternative. |
-| `MetricTable` | The metrics of a monitor. |
+| `MetricTable` | The metrics of a monitor, from the metric catalog. |
 | `SupportMatrix` | The browser support of features. |
 
 To add a component, add it to `packages/site/src/mdx/component-map.tsx`.
@@ -67,9 +115,9 @@ To add a component, add it to `packages/site/src/mdx/component-map.tsx`.
 </Callout>
 
 <Callout type="warning">
-  A warning tells the reader about a risk of wrong measurements or lost data.
+  A warning tells the reader about a risk of incorrect measurements or lost data.
 </Callout>
 
-## Drafts
+## Facts
 
-Set `status: draft` on a page that is not complete, or on a page with facts that nobody examined. Then the page shows a note that it is a draft. Do not write facts about the library that the code or the tests do not show.
+Do not write facts about the library that the code or the tests do not show. Write facts about browsers only with a source, for example from the [research](/research). Set `status: draft` on a page with facts that nobody examined.

@@ -15,7 +15,7 @@ function describe(error : unknown) : { title : string; text : string } {
     return { title : "The page did not load", text : message };
 }
 
-/** Shows an error of a route. The site header stays, so the reader can go to another page. */
+/** This component shows an error of a route. The site header stays, so the reader can go to another page. */
 export function RouteError() {
     const { title, text } = describe(useRouteError());
     return (
