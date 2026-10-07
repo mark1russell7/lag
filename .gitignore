@@ -7,3 +7,7 @@
 # Vitest browser mode: failure screenshots and attachments
 **/__screenshots__/
 **/.vitest-attachments/
+
+# Local ste-lint dictionaries. The ASD-STE100 dictionary is copyrighted: do not commit it.
+.ste/
+*.ste-dictionary.json
