@@ -1,12 +1,14 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
     test: {
         globals: true,
+        // Stryker copies the package into .stryker-tmp; a stopped run can leave the copy there
+        exclude: [...configDefaults.exclude, "**/.stryker-tmp/**"],
         coverage: {
             provider: "v8",
             include: ["src/**/*.ts"],
-            exclude: ["src/**/*.test.ts", "src/test-utils.ts", "src/vitals/test-fakes.ts"],
+            exclude: ["src/**/*.test.ts", "src/test-utils.ts", "src/vitals/test-fakes.ts", "**/.stryker-tmp/**"],
             // json-summary writes coverage/coverage-summary.json for the results collector (pnpm results)
             reporter: [["text", { skipFull: true }], "text-summary", "json-summary", "html"],
             reportsDirectory: "coverage",
