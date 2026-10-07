@@ -1,10 +1,37 @@
-import { createWorkerHandler } from "@lag/core/lag-worker.js";
+import { createWorkerHandler, type HangEvent } from "@lag/core/lag-worker.js";
+import type { HangOptions } from "@lag/core/worker-protocol.js";
+import { encodeOtlpLogs } from "@lag/core/otlp-json.js";
+
+const clock = { now : () => performance.timeOrigin + performance.now() };
+
+/**
+ * Sends a hang report as an OTLP/HTTP JSON log record. The main thread is
+ * blocked while a hang starts, so only the worker can send this report.
+ */
+function reportHang(event : HangEvent, options : HangOptions) : void {
+    const target = options.report;
+    if (!target) return;
+    const body = encodeOtlpLogs(target.resource ?? {}, "@lag/worker", [{
+        timeMs : clock.now(),
+        eventName : "lag.main_thread.hang",
+        severityText : "WARN",
+        severityNumber : 13,
+        body : `Main thread hang ${event.phase}`,
+        attributes : { phase : event.phase, duration_ms : event.durationMs },
+    }]);
+    // sendBeacon does not exist in workers; keepalive lets the request finish if the page closes
+    fetch(target.url, { method : "POST", headers : { "Content-Type" : "application/json" }, body, keepalive : true })
+        .catch(() => { /* the report is best effort */ });
+}
 
 const handler = createWorkerHandler({
     postMessage : (message) => self.postMessage(message),
     setTimeoutFn : (fn, ms) => self.setTimeout(fn, ms),
     clearTimeoutFn : (id) => self.clearTimeout(id),
-    clock : { now : () => performance.timeOrigin + performance.now() },
+    setIntervalFn : (fn, ms) => self.setInterval(fn, ms),
+    clearIntervalFn : (id) => self.clearInterval(id),
+    clock,
+    reportHang,
 });
 
 self.addEventListener("message", (event : MessageEvent) => {

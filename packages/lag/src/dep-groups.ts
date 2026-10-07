@@ -13,12 +13,14 @@ import type {
     Clock,
     Logger,
     PerformanceLike,
+    WallClock,
     SetTimeoutFn,
     ClearTimeoutFn,
     SetIntervalFn,
     ClearIntervalFn,
 } from "./types.js";
 import type { Meter } from "./meter.js";
+import type { EventSink } from "./events.js";
 import type { PerformanceObserverInit } from "./perf-types.js";
 import type {
     RequestAnimationFrameFn,
@@ -39,6 +41,8 @@ import type {
 } from "./ComputePressureMonitor.js";
 import type { FinalizationRegistryConstructor } from "./GCSignalDetector.js";
 import type { WorkerLike } from "./WorkerLagMonitor.js";
+import type { HangReportTarget } from "./worker-protocol.js";
+import type { ReportingObserverInit } from "./BrowserReportMonitor.js";
 import type {
     LifecycleDocument,
     LifecycleWindow,
@@ -110,9 +114,34 @@ export type GCDeps = {
 export type WorkerMonitorDeps = {
     worker : WorkerLike;
     workerHeartbeatIntervalMs? : number;
+    /** Where the worker sends hang reports while the main thread is blocked. */
+    workerHangReport? : HangReportTarget;
 };
 
 /** `performance.now()` + `timeOrigin`: clock resolution and cross-thread timestamps. */
 export type PerformanceDeps = {
     performance : PerformanceLike;
+};
+
+/** The wall clock, to compare with the monotonic clock. */
+export type WallClockDeps = {
+    wallClock : WallClock;
+};
+
+/** The structured-event port for attribution and diagnostics. */
+export type EventDeps = {
+    events : EventSink;
+};
+
+/** The Reporting API, for browser interventions and deprecations. */
+export type ReportingDeps = {
+    ReportingObserver : ReportingObserverInit;
+};
+
+/**
+ * Shared memory for the liveness watcher. Supply it only in a
+ * cross-origin-isolated page (`globalThis.crossOriginIsolated`).
+ */
+export type SharedMemoryDeps = {
+    SharedArrayBuffer : new (byteLength : number) => SharedArrayBuffer;
 };

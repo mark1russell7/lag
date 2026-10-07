@@ -1,10 +1,12 @@
 import type { Logger } from "./types.js";
 import type { AttributeValue } from "./meter.js";
+import type { EventSink } from "./events.js";
 
 // Duck-typed OTel Logger interface — matches @opentelemetry/api-logs Logger
 // without taking a hard dependency on the OTel package.
 export type OtelLogger = {
     emit(logRecord : {
+        eventName? : string;
         severityText? : string;
         severityNumber? : number;
         body? : string;
@@ -75,6 +77,28 @@ export function createOtelLoggerAdapter(otelLogger : OtelLogger) : Logger {
                 severityNumber : SEVERITY_MAP[level.toLowerCase()] ?? 9, // unknown levels → INFO
                 body : message,
                 attributes : toAttributes(args),
+            });
+        },
+    };
+}
+
+/**
+ * Sends each event as an OTel log record with `eventName` set, as the
+ * OpenTelemetry event conventions require. Attributes without a value are
+ * left out.
+ */
+export function createOtelEventSink(otelLogger : OtelLogger) : EventSink {
+    return {
+        emit(name, attributes) {
+            const clean : Record<string, AttributeValue> = {};
+            for (const [key, value] of Object.entries(attributes)) {
+                if (value !== undefined && value !== null) clean[key] = value;
+            }
+            otelLogger.emit({
+                eventName : name,
+                severityText : "INFO",
+                severityNumber : 9,
+                attributes : clean,
             });
         },
     };

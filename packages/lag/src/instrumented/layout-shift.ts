@@ -1,21 +1,21 @@
 import type { CoreDeps, ObserverDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { LayoutShiftMonitor } from "../LayoutShiftMonitor.js";
-import { createHandle, observe } from "./shared.js";
+import { METRICS, createHistogram } from "../metric-catalog.js";
+import { createHandle } from "./shared.js";
 
 /**
- * Constructs a LayoutShiftMonitor wired to a shift histogram and a
- * session-worst CLS gauge.
+ * Constructs a LayoutShiftMonitor wired to `lag_layout_shift_histogram`
+ * (the score of each shift that did not follow user input).
  *
- * Metrics:
- * - `lag_cls_shift_histogram` — per-shift value (unitless score)
- * - `lag_cls_worst_session_gauge` — CLS: the worst session window so far
+ * CLS for each page view comes from the page-view vitals
+ * (`createInstrumentedPageViewVitals`), not from this factory.
  */
 export function createInstrumentedLayoutShift(
     deps : CoreDeps & ObserverDeps,
 ) : MonitorHandle<LayoutShiftMonitor> {
     return createHandle("layout-shift", deps.logger, () => {
-        const shiftHist = deps.meter.createHistogram("lag_cls_shift_histogram", { unit : "score" });
+        const shiftHist = createHistogram(deps.meter, METRICS.layoutShift);
 
         const monitor = new LayoutShiftMonitor(
             (entry) => { shiftHist.record(entry.value); },
@@ -23,17 +23,6 @@ export function createInstrumentedLayoutShift(
             deps.PerformanceObserver,
         );
 
-        const unobserve = observe(
-            deps.meter.createObservableGauge("lag_cls_worst_session_gauge", { unit : "score" }),
-            (result) => { result.observe(monitor.getCLS()); },
-        );
-
-        return {
-            monitor,
-            stop : () => {
-                unobserve();
-                monitor.stop();
-            },
-        };
+        return { monitor, stop : () => monitor.stop() };
     });
 }

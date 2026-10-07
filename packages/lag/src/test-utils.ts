@@ -1,6 +1,6 @@
 import { vi, expect, type Mock } from 'vitest';
 import type { LagMonitor, LagMonitorConstructor } from "./LagMonitor.js";
-import type { Meter, ObservableCallback } from "./meter.js";
+import type { Meter } from "./meter.js";
 
 /**
  * Helper class for testing lag monitors with fake timers.
@@ -207,52 +207,40 @@ export class MacrotaskLagTestDriver {
 
 export type RecordedValue = { value : number; attributes : Record<string, unknown> | undefined };
 
-/**
- * A Meter that records every histogram/counter value and lets tests run a
- * collection cycle (invoke all gauge callbacks) on demand.
- */
-export function createRecordingMeter() {
-    const records = new Map<string, RecordedValue[]>();
-    const gauges = new Map<string, Set<ObservableCallback>>();
+export type RecordedInstrument = {
+    name : string;
+    kind : "histogram" | "counter";
+    unit : string;
+    values : RecordedValue[];
+};
 
-    const recorder = (name : string) => {
-        const values : RecordedValue[] = [];
-        records.set(name, values);
+/** A Meter that records every histogram and counter value, with the instrument's kind and unit. */
+export function createRecordingMeter() {
+    const instruments = new Map<string, RecordedInstrument>();
+
+    const recorder = (name : string, kind : RecordedInstrument["kind"], unit : string) => {
+        const instrument : RecordedInstrument = { name, kind, unit, values : [] };
+        instruments.set(name, instrument);
         return (value : number, attributes? : unknown) => {
-            values.push({ value, attributes : attributes as Record<string, unknown> | undefined });
+            instrument.values.push({ value, attributes : attributes as Record<string, unknown> | undefined });
         };
     };
 
     const meter : Meter = {
-        createHistogram : (name) => ({ record : recorder(name) }),
-        createCounter : (name) => ({ add : recorder(name) }),
-        createObservableGauge : (name) => {
-            const callbacks = new Set<ObservableCallback>();
-            gauges.set(name, callbacks);
-            return {
-                addCallback : (cb) => { callbacks.add(cb as ObservableCallback); },
-                removeCallback : (cb) => { callbacks.delete(cb as ObservableCallback); },
-            };
-        },
+        createHistogram : (name, options) => ({ record : recorder(name, "histogram", options.unit) }),
+        createCounter : (name, options) => ({ add : recorder(name, "counter", options.unit) }),
     };
 
     return {
         meter,
         /** Every value recorded by the named histogram or counter. */
-        values : (name : string) : number[] => (records.get(name) ?? []).map(r => r.value),
-        /** All histogram/counter records, by instrument name. */
-        records : () : ReadonlyMap<string, readonly RecordedValue[]> => records,
-        /** Run one collection: invoke every registered gauge callback. */
-        collect : () : Map<string, RecordedValue[]> => {
-            const observed = new Map<string, RecordedValue[]>();
-            for (const [name, callbacks] of gauges) {
-                const values : RecordedValue[] = [];
-                for (const cb of callbacks) cb({ observe : (value, attributes) => { values.push({ value, attributes }); } });
-                observed.set(name, values);
-            }
-            return observed;
-        },
-        /** Number of gauge callbacks still registered. */
-        gaugeCallbackCount : () : number => [...gauges.values()].reduce((n, set) => n + set.size, 0),
+        values : (name : string) : number[] => (instruments.get(name)?.values ?? []).map(r => r.value),
+        /** The sum of the values of the named counter. */
+        sum : (name : string) : number => (instruments.get(name)?.values ?? []).reduce((n, r) => n + r.value, 0),
+        /** All records, by instrument name. */
+        records : () : ReadonlyMap<string, readonly RecordedValue[]> =>
+            new Map([...instruments].map(([name, i]) => [name, i.values])),
+        /** All instruments that were created. */
+        instruments : () : readonly RecordedInstrument[] => [...instruments.values()],
     };
 }

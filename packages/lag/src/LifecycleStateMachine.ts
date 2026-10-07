@@ -57,21 +57,6 @@ export type LifecycleDocument = LifecycleEventTarget & {
 
 export type LifecycleWindow = LifecycleEventTarget;
 
-/**
- * A per-consumer "was the page hidden?" flag. Each gate tracks its own
- * window, so several monitors can share one state machine without consuming
- * each other's signal.
- */
-export type HiddenGate = {
-    /**
-     * True if the page is, or at any point since the previous call (or since
-     * the gate was created) was, hidden, frozen or terminated. Measurements
-     * covering that span are unreliable: timers are throttled or suspended.
-     */
-    wasHiddenSinceLastCheck() : boolean;
-    dispose() : void;
-};
-
 /** States in which the page is shown and timers run normally. */
 export function isVisibleState(state : LifecycleState) : boolean {
     return state === "active" || state === "passive";
@@ -85,13 +70,12 @@ function isPersisted(event : unknown) : boolean {
  * Tracks page lifecycle state transitions and provides:
  * - a mark/resolve API to ask "what state changes happened between point A
  *   and now?"
- * - per-consumer hidden gates for discarding unreliable measurements
- * - change subscriptions, e.g. to pause monitors while the page is hidden
+ * - change subscriptions, for example to pause monitors while the page is
+ *   hidden (see `createMeasurementConditions`)
  *
  * Transitions are buffered only while a mark is outstanding, and those older
  * than the earliest unresolved mark are compacted away on each resolve() —
- * so resolve or cancel every mark. Hidden gates and subscriptions don't use
- * marks and keep O(1) state.
+ * so resolve or cancel every mark. Subscriptions do not use marks.
  */
 export class LifecycleStateMachine {
     private currentState : LifecycleState;
@@ -159,28 +143,6 @@ export class LifecycleStateMachine {
         if (this.marks.delete(mark.id)) {
             this.compact();
         }
-    }
-
-    createHiddenGate() : HiddenGate {
-        // True if the current window started hidden or has seen a hidden state since
-        let hidden = !isVisibleState(this.getState());
-        let disposed = false;
-        const unsubscribe = this.subscribe(({ to }) => {
-            if (!isVisibleState(to)) hidden = true;
-        });
-        return {
-            wasHiddenSinceLastCheck : () => {
-                if (disposed) return false;
-                const visibleNow = isVisibleState(this.getState());
-                const result = hidden || !visibleNow;
-                hidden = !visibleNow; // the next window starts in the current state
-                return result;
-            },
-            dispose : () => {
-                disposed = true;
-                unsubscribe();
-            },
-        };
     }
 
     /** Call `listener` on every transition. Returns an unsubscribe function. */

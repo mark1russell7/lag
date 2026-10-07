@@ -18,6 +18,13 @@ export type Clock = {
 export type PerformanceLike = {
     now : () => number;
     timeOrigin : number;
+    /** The number of user interactions on the page (Chromium 144 and later). */
+    readonly interactionCount? : number;
+};
+
+/** The wall clock (`Date.now()`). It can jump when the system clock changes. */
+export type WallClock = {
+    now : () => number;
 };
 
 export type LagMeasurement = {

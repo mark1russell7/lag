@@ -16,6 +16,7 @@ describe("TimerThrottleDetector", () => {
         const logger = { log : vi.fn() };
 
         const detector = new TimerThrottleDetector(
+            vi.fn(),
             setTimeout,
             clearTimeout,
             clock,
@@ -39,6 +40,7 @@ describe("TimerThrottleDetector", () => {
         const logger = { log : vi.fn() };
 
         const detector = new TimerThrottleDetector(
+            vi.fn(),
             setTimeout,
             clearTimeout,
             clock,
@@ -67,6 +69,7 @@ describe("TimerThrottleDetector", () => {
         const logger = { log : vi.fn() };
 
         const detector = new TimerThrottleDetector(
+            vi.fn(),
             setTimeout,
             clearTimeout,
             clock,
@@ -106,6 +109,7 @@ describe("TimerThrottleDetector", () => {
         const logger = { log : vi.fn() };
 
         const detector = new TimerThrottleDetector(
+            vi.fn(),
             setTimeout,
             clearTimeout,
             clock,
@@ -129,6 +133,7 @@ describe("TimerThrottleDetector", () => {
         const logger = { log : vi.fn() };
 
         const detector = new TimerThrottleDetector(
+            vi.fn(),
             mockSetTimeout,
             clearTimeout,
             clock,
@@ -146,6 +151,7 @@ describe("TimerThrottleDetector", () => {
         let currentTime = 0;
         const mockSetTimeout = vi.fn(setTimeout);
         const detector = new TimerThrottleDetector(
+            vi.fn(),
             mockSetTimeout,
             clearTimeout,
             { now : () => currentTime },
@@ -171,6 +177,7 @@ describe("TimerThrottleDetector", () => {
         let currentTime = 0;
         const logger = { log : vi.fn() };
         const detector = new TimerThrottleDetector(
+            vi.fn(),
             setTimeout,
             clearTimeout,
             { now : () => currentTime },
@@ -186,5 +193,35 @@ describe("TimerThrottleDetector", () => {
 
         expect(logger.log).toHaveBeenCalledWith("warn", "Timer throttling detected.", expect.anything());
         expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("reports every calibration round", () => {
+        let currentTime = 0;
+        const report = vi.fn();
+        const detector = new TimerThrottleDetector(
+            report,
+            setTimeout,
+            clearTimeout,
+            { now : () => currentTime },
+            { log : vi.fn() },
+            { calibrationIntervalMs : 100 },
+        );
+
+        detector.start();
+        for (let i = 0; i < 5; i++) {
+            currentTime += 200;
+            vi.advanceTimersByTime(5);
+        }
+        currentTime += 100;
+        vi.advanceTimersByTime(100);
+        for (let i = 0; i < 5; i++) {
+            currentTime += 5;
+            vi.advanceTimersByTime(5);
+        }
+
+        expect(report.mock.calls.map(c => c[0])).toEqual([
+            { throttled : true, throttledSamples : 5, totalSamples : 5 },
+            { throttled : false, throttledSamples : 0, totalSamples : 5 },
+        ]);
     });
 });

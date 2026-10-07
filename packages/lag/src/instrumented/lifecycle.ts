@@ -1,6 +1,7 @@
 import type { CoreDeps, LifecycleDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { LifecycleStateMachine } from "../LifecycleStateMachine.js";
+import { METRICS, createCounter } from "../metric-catalog.js";
 import { createHandle } from "./shared.js";
 
 type TransitionAttributes = {
@@ -10,22 +11,17 @@ type TransitionAttributes = {
 };
 
 /**
- * Constructs a LifecycleStateMachine wired to a transition counter.
+ * Constructs a LifecycleStateMachine wired to the `lag_lifecycle_transitions`
+ * counter, labeled with `from`, `to` and `trigger`.
  *
- * Metric:
- * - `lag_lifecycle_transitions` — +1 per transition, labeled with `from`,
- *   `to` and `trigger` so dashboards can count specific state changes
- *   (e.g. how often the page went hidden).
- *
- * The other timer-driven factories take this machine to pause while hidden;
- * stop it last (the registry's LIFO order does).
+ * The measurement conditions of the other monitors use this machine. Stop it
+ * last (the registry's LIFO order does).
  */
 export function createInstrumentedLifecycle(
     deps : CoreDeps & LifecycleDeps,
 ) : MonitorHandle<LifecycleStateMachine> {
     return createHandle("lifecycle", deps.logger, () => {
-        const transitions = deps.meter.createCounter<TransitionAttributes>(
-            "lag_lifecycle_transitions", { unit : "{transition}" });
+        const transitions = createCounter<TransitionAttributes>(deps.meter, METRICS.lifecycleTransitions);
 
         const machine = new LifecycleStateMachine(deps.document, deps.window, deps.clock, deps.logger);
         machine.subscribe(({ from, to, trigger }) => {

@@ -11,6 +11,7 @@ export type {
     ClearIntervalFn,
     Clock,
     PerformanceLike,
+    WallClock,
     LagMeasurement,
     EventLoopLagAttributes,
 } from "./types.js";
@@ -30,14 +31,49 @@ export type {
     Meter,
     Histogram,
     Counter,
-    ObservableGauge,
-    ObservableResult,
-    ObservableCallback,
+    InstrumentOptions,
     Attributes,
     AttributeValue,
 } from "./meter.js";
 export { createNoopMeter } from "./noop-meter.js";
-export { createOtelLoggerAdapter, createTeeLogger, type OtelLogger } from "./otel-logger-adapter.js";
+export {
+    createOtelLoggerAdapter,
+    createOtelEventSink,
+    createTeeLogger,
+    type OtelLogger,
+} from "./otel-logger-adapter.js";
+export { createNoopEventSink, type EventSink, type EventAttributes } from "./events.js";
+export {
+    METRICS,
+    METRIC_CATALOG,
+    EVENTS,
+    EVENT_CATALOG,
+    createCounter,
+    createHistogram,
+    type MetricDefinition,
+    type MetricKind,
+    type MetricKey,
+    type EventDefinition,
+    type EventKey,
+} from "./metric-catalog.js";
+export { encodeOtlpLogs, millisToUnixNanoString, type OtlpLogRecordInput, type OtlpAttributeValue } from "./otlp-json.js";
+export { RateLimiter, stripUrlParameters } from "./rate-limiter.js";
+
+// --- Measurement validity ---
+export {
+    ReliabilityTracker,
+    type UnreliableInterval,
+    type UnreliableReason,
+} from "./reliability.js";
+export {
+    createMeasurementConditions,
+    type MeasurementConditions,
+    type MeasurementConditionsOptions,
+    type SampleValidator,
+    type Pausable,
+    type StallKind,
+    type DiscardReason,
+} from "./measurement-conditions.js";
 
 // --- Architecture: handles, registry, dep groups ---
 export type { MonitorHandle } from "./monitor-handle.js";
@@ -55,13 +91,19 @@ export type {
     GCDeps,
     WorkerMonitorDeps,
     PerformanceDeps,
+    WallClockDeps,
+    EventDeps,
+    ReportingDeps,
+    SharedMemoryDeps,
 } from "./dep-groups.js";
 
 // --- Phase 2: Performance Observer monitors ---
 export { ObserverMonitor } from "./ObserverMonitor.js";
-export { LongAnimationFrameMonitor, type LoafReport } from "./LongAnimationFrameMonitor.js";
-export { EventTimingMonitor, type EventTimingReport } from "./EventTimingMonitor.js";
+export { LongAnimationFrameMonitor, type LoafReport, type LoafScriptSummary } from "./LongAnimationFrameMonitor.js";
+export { EventTimingMonitor, interactionType, type EventTimingReport } from "./EventTimingMonitor.js";
+export { InpCalculator } from "./InpCalculator.js";
 export { LayoutShiftMonitor, type LayoutShiftReport } from "./LayoutShiftMonitor.js";
+export { ClsCalculator } from "./ClsCalculator.js";
 export { PaintTimingMonitor, type PaintReport } from "./PaintTimingMonitor.js";
 export { LcpMonitor, type LcpReport } from "./LcpMonitor.js";
 export type {
@@ -115,7 +157,6 @@ export {
     LifecycleStateMachine,
     summarizeTransitions,
     isVisibleState,
-    type HiddenGate,
     type LifecycleListener,
     type LifecycleState,
     type LifecycleTrigger,
@@ -136,7 +177,16 @@ export {
     type PressureObserverInit,
     type PressureMeasurement,
 } from "./ComputePressureMonitor.js";
-export { TimerThrottleDetector, type TimerThrottleConfig } from "./TimerThrottleDetector.js";
+export { TimerThrottleDetector, type TimerThrottleConfig, type ThrottleCalibration } from "./TimerThrottleDetector.js";
+export { ClockDriftMonitor, type ClockDriftSample, type ClockJump } from "./ClockDriftMonitor.js";
+export {
+    BrowserReportMonitor,
+    type BrowserReport,
+    type BrowserReportType,
+    type ReportLike,
+    type ReportingObserverInit,
+    type ReportingObserverInstance,
+} from "./BrowserReportMonitor.js";
 export { ClockReliabilityChecker } from "./ClockReliabilityChecker.js";
 export { GCSpikeDetector } from "./GCSpikeDetector.js";
 export {
@@ -146,9 +196,52 @@ export {
 } from "./GCSignalDetector.js";
 
 // --- Phase 4: Web Worker monitor ---
-export { WorkerLagMonitor, type WorkerLike, type WorkerLagMeasurement } from "./WorkerLagMonitor.js";
-export { createWorkerHandler, type WorkerDeps, type WorkerHandler } from "./lag-worker.js";
-export type { MainToWorkerMessage, WorkerToMainMessage, StartMessage, StopMessage, HeartbeatMessage } from "./worker-protocol.js";
+export {
+    WorkerLagMonitor,
+    type WorkerLike,
+    type WorkerLagMeasurement,
+    type WorkerLagMonitorOptions,
+    type WorkerLagEvents,
+    type SystemStall,
+} from "./WorkerLagMonitor.js";
+export { WorkerClockSync, type ClockSyncResult } from "./WorkerClockSync.js";
+export { SharedLivenessMonitor, type SharedLivenessOptions } from "./SharedLivenessMonitor.js";
+export {
+    LivenessWatcher,
+    LIVENESS_BUFFER_BYTES,
+    beatingSetTimeout,
+    createLivenessBeacon,
+    type LivenessBeacon,
+    type LivenessBlock,
+    type LivenessWatcherOptions,
+} from "./shared-liveness.js";
+export {
+    createForwardingMeter,
+    createMeterReceiver,
+    type ForwardingMeter,
+    type ForwardingMeterOptions,
+    type ForwardedMetricMessage,
+    type ForwardedInstrument,
+    type ForwardedRecords,
+    type MessageTarget,
+} from "./forwarding-meter.js";
+export { createWorkerHandler, type WorkerDeps, type WorkerHandler, type HangEvent } from "./lag-worker.js";
+export type {
+    MainToWorkerMessage,
+    WorkerToMainMessage,
+    StartMessage,
+    StopMessage,
+    AckMessage,
+    SyncRequestMessage,
+    HeartbeatMessage,
+    SyncReplyMessage,
+    HangEndedMessage,
+    LivenessStartMessage,
+    LivenessStopMessage,
+    LivenessBlockMessage,
+    HangOptions,
+    HangReportTarget,
+} from "./worker-protocol.js";
 
 // --- Phase 5: Unified setup ---
 export { setupAllMonitors, type AllMonitorDeps, type AllMonitorHandles } from "./setup-all-monitors.js";

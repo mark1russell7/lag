@@ -33,6 +33,13 @@ export type TimerThrottleConfig = {
     calibrationIntervalMs? : number;
 };
 
+/** The result of one calibration round. */
+export type ThrottleCalibration = {
+    throttled : boolean;
+    throttledSamples : number;
+    totalSamples : number;
+};
+
 export class TimerThrottleDetector {
     private throttled = false;
     /** The one pending timer (a sample or the wait before the next round); undefined when stopped. */
@@ -43,6 +50,7 @@ export class TimerThrottleDetector {
     private readonly calibrationIntervalMs : number;
 
     constructor(
+        private readonly report : (calibration : ThrottleCalibration) => void,
         private readonly setTimeoutFn : SetTimeoutFn,
         private readonly clearTimeoutFn : ClearTimeoutFn,
         private readonly clock : Clock,
@@ -84,6 +92,11 @@ export class TimerThrottleDetector {
 
             const wasThrottled = this.throttled;
             this.throttled = throttledSamples > this.calibrationSamples / 2;
+            try {
+                this.report({ throttled : this.throttled, throttledSamples, totalSamples : samples });
+            } catch (error) {
+                this.logger.log("error", "Error reporting timer calibration.", { error, type : "TimerThrottleDetector" });
+            }
 
             if (this.throttled && !wasThrottled) {
                 this.logger.log("warn", "Timer throttling detected.", {
@@ -97,7 +110,7 @@ export class TimerThrottleDetector {
                 });
             }
 
-            // The logger may have stopped (or stopped and restarted) the detector
+            // report() or the logger may have stopped (or stopped and restarted) the detector
             if (this.handle === handle) {
                 this.handle = this.setTimeoutFn(() => this.takeSample(0, 0), this.calibrationIntervalMs);
             }

@@ -181,20 +181,27 @@ describe("EventTimingMonitor", () => {
         expect(report.mock.calls[0]![0].presentationDelay).toBe(0);
     });
 
-    it("counts interactions too fast to produce an entry, via the interactionId span", () => {
+    it("uses performance.interactionCount when the browser supplies it", () => {
         const { MockCtor, triggerEntries } = createMockPerformanceObserver();
-        const monitor = new EventTimingMonitor(vi.fn(), { log : vi.fn() }, MockCtor);
+        let browserCount = 0;
+        const monitor = new EventTimingMonitor(vi.fn(), { log : vi.fn() }, MockCtor, () => browserCount);
 
-        // 200 interactions with Chromium's ID step of 7; only the 10 slowest are
-        // above the 16ms threshold and produce entries
-        const slow = Array.from({ length : 10 }, (_, i) => makeEventEntry({
-            interactionId : (i * 20 + 1) * 7,
-            duration : 300 - i,
-        }));
-        triggerEntries([makeEventEntry({ interactionId : 7, duration : 16 }), ...slow, makeEventEntry({ interactionId : 1400, duration : 16 })]);
+        // 200 interactions happened; only the 10 slowest produced entries
+        browserCount = 200;
+        triggerEntries(Array.from({ length : 10 }, (_, i) => makeEventEntry({ interactionId : (i + 1) * 7, duration : 300 - i })));
 
         expect(monitor.getInteractionCount()).toBe(200);
-        // 200 interactions → skip 4 outliers → 5th longest
+        // 200 interactions: skip 4 outliers, so the 5th longest
         expect(monitor.getINP()).toBe(296);
+    });
+
+    it("counts the interactions it saw when the browser count is missing", () => {
+        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+        const monitor = new EventTimingMonitor(vi.fn(), { log : vi.fn() }, MockCtor, () => undefined);
+
+        triggerEntries(Array.from({ length : 10 }, (_, i) => makeEventEntry({ interactionId : (i + 1) * 7, duration : 300 - i })));
+
+        expect(monitor.getInteractionCount()).toBe(10);
+        expect(monitor.getINP()).toBe(300);
     });
 });

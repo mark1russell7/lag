@@ -1,52 +1,42 @@
-import type { CoreDeps, ObserverDeps } from "../dep-groups.js";
+import type { CoreDeps, ObserverDeps, PerformanceDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import { EventTimingMonitor } from "../EventTimingMonitor.js";
-import { createHandle, observe } from "./shared.js";
+import { EventTimingMonitor, interactionType } from "../EventTimingMonitor.js";
+import { METRICS, createHistogram } from "../metric-catalog.js";
+import { createHandle } from "./shared.js";
+
+type InteractionAttributes = { interaction : ReturnType<typeof interactionType> };
 
 /**
- * Constructs an EventTimingMonitor wired to four histograms + one INP gauge.
+ * Constructs an EventTimingMonitor wired to four histograms. Each interaction
+ * event of 16 ms or more adds one sample to each, labeled with the
+ * interaction type (`pointer`, `keyboard` or `other`).
  *
- * Metrics (all ms, one sample per interaction event ≥16ms):
- * - `lag_inp_histogram` — event duration
- * - `lag_inp_input_delay_histogram` — delay before handlers run
- * - `lag_inp_processing_histogram` — handler execution time
- * - `lag_inp_presentation_delay_histogram` — handlers done → next paint
- * - `lag_inp_worst_gauge` — current INP for the page
+ * INP for each page view comes from the page-view vitals
+ * (`createInstrumentedPageViewVitals`), not from this factory.
  */
 export function createInstrumentedEventTiming(
-    deps : CoreDeps & ObserverDeps,
+    deps : CoreDeps & ObserverDeps & Partial<PerformanceDeps>,
 ) : MonitorHandle<EventTimingMonitor> {
     return createHandle("event-timing", deps.logger, () => {
-        const inpHist = deps.meter.createHistogram("lag_inp_histogram", { unit : "ms" });
-        const inputDelayHist = deps.meter.createHistogram("lag_inp_input_delay_histogram", { unit : "ms" });
-        const processingHist = deps.meter.createHistogram("lag_inp_processing_histogram", { unit : "ms" });
-        const presentationHist = deps.meter.createHistogram("lag_inp_presentation_delay_histogram", { unit : "ms" });
+        const durationHist = createHistogram<InteractionAttributes>(deps.meter, METRICS.eventDuration);
+        const inputDelayHist = createHistogram<InteractionAttributes>(deps.meter, METRICS.eventInputDelay);
+        const processingHist = createHistogram<InteractionAttributes>(deps.meter, METRICS.eventProcessing);
+        const presentationHist = createHistogram<InteractionAttributes>(deps.meter, METRICS.eventPresentationDelay);
+        const performance = deps.performance;
 
         const monitor = new EventTimingMonitor(
             (entry) => {
-                inpHist.record(entry.duration);
-                inputDelayHist.record(entry.inputDelay);
-                processingHist.record(entry.processingDuration);
-                presentationHist.record(entry.presentationDelay);
+                const attributes = { interaction : interactionType(entry.name) };
+                durationHist.record(entry.duration, attributes);
+                inputDelayHist.record(Math.max(0, entry.inputDelay), attributes);
+                processingHist.record(Math.max(0, entry.processingDuration), attributes);
+                presentationHist.record(entry.presentationDelay, attributes);
             },
             deps.logger,
             deps.PerformanceObserver,
+            performance ? () => performance.interactionCount : undefined,
         );
 
-        const unobserve = observe(
-            deps.meter.createObservableGauge("lag_inp_worst_gauge", { unit : "ms" }),
-            (result) => {
-                const inp = monitor.getINP();
-                if (inp > 0) result.observe(inp);
-            },
-        );
-
-        return {
-            monitor,
-            stop : () => {
-                unobserve();
-                monitor.stop();
-            },
-        };
+        return { monitor, stop : () => monitor.stop() };
     });
 }

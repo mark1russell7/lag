@@ -1,13 +1,14 @@
 /**
  * Instrumented factories — each function constructs a monitor and wires it
- * to OTel instruments (histograms, counters, gauges). Returns a MonitorHandle
- * with an error boundary and a stop() that releases timers, listeners and
- * gauge callbacks.
+ * to OTel instruments from the metric catalog. Returns a MonitorHandle with
+ * an error boundary and a stop() that releases timers, listeners and
+ * observers.
  *
  * Each factory takes ONLY the dep groups it actually uses. Timer-driven
- * factories also take an optional LifecycleStateMachine to pause while the
- * page is hidden. Adding a new monitor = adding a new file here + one line in
- * setup-all-monitors.ts.
+ * factories also take optional MeasurementConditions to pause while the page
+ * is hidden and to discard invalid samples. Adding a new monitor = adding a
+ * new file here + one line in setup-all-monitors.ts + its metrics in the
+ * catalog.
  */
 
 // Timer-based lag monitors
@@ -18,17 +19,17 @@ export { createInstrumentedMacrotaskLag } from "./macrotask-lag.js";
 export { createInstrumentedLoaf } from "./loaf.js";
 export { createInstrumentedEventTiming } from "./event-timing.js";
 export { createInstrumentedLayoutShift } from "./layout-shift.js";
-export { createInstrumentedPaintTiming } from "./paint-timing.js";
-export { createInstrumentedLcp } from "./lcp.js";
 
 // Browser-API monitors
 export { createInstrumentedFrameTiming } from "./frame-timing.js";
 export { createInstrumentedIdleAvailability } from "./idle-availability.js";
 export { createInstrumentedSchedulingFairness } from "./scheduling-fairness.js";
 export { createInstrumentedMemory } from "./memory.js";
+export { createInstrumentedBrowserReports } from "./browser-reports.js";
 
 // Ground truth + system signal
 export { createInstrumentedWorkerLag } from "./worker-lag.js";
+export { createInstrumentedSharedLiveness } from "./shared-liveness.js";
 export { createInstrumentedComputePressure } from "./compute-pressure.js";
 export { createInstrumentedGCSignal } from "./gc-signal.js";
 
@@ -39,6 +40,7 @@ export {
     type ThrottleDetectorDeps,
 } from "./throttle-detector.js";
 export { createInstrumentedClockReliability } from "./clock-reliability.js";
+export { createInstrumentedClockDrift } from "./clock-drift.js";
 
 // Building blocks for custom factories
-export { pauseWhileHidden } from "./shared.js";
+export { createHandle, validatedRecorder } from "./shared.js";

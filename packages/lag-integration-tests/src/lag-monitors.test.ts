@@ -2,6 +2,7 @@ import { expect } from "vitest";
 import { init } from "@mark1russell7/otel-ts";
 import {
     setupAllMonitors,
+    createOtelEventSink,
     createOtelLoggerAdapter,
     createTeeLogger,
     type AllMonitorHandles,
@@ -56,8 +57,10 @@ describe("Lag Monitor Integration", () => {
             // Console + OTel Logs (Loki)
             logger : createTeeLogger(createConsoleLogger(), createOtelLoggerAdapter(otel.getLogger("lag"))),
             meter : tee.meter,
+            events : createOtelEventSink(otel.getLogger("lag-events")),
             worker,
             workerHeartbeatIntervalMs : 100,
+            workerHangReport : { url : `${OTLP_ENDPOINT}/v1/logs`, resource : { "service.name" : SERVICE_NAME } },
             memoryIntervalMs : 5_000,
         }));
     });
@@ -72,8 +75,8 @@ describe("Lag Monitor Integration", () => {
         expect(handles.lifecycleStateMachine?.getState()).toMatch(/^(active|passive)$/);
         for (const name of [
             "drift-lag", "macrotask-lag", "throttle-detector", "loaf", "event-timing", "layout-shift",
-            "paint-timing", "lcp", "frame-timing", "idle-availability", "scheduling-fairness",
-            "worker-lag", "gc-signal", "clock-reliability",
+            "frame-timing", "idle-availability", "scheduling-fairness",
+            "worker-lag", "gc-signal", "clock-reliability", "clock-drift", "browser-reports",
         ]) {
             expect(handles.registry.get(name)?.monitor, name).toBeDefined();
         }

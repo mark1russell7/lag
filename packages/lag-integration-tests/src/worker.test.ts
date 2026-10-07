@@ -15,7 +15,12 @@ describe("Worker Lag Monitor Integration", () => {
             (m) => measurements.push(m),
             { log : vi.fn() },
             window.performance,
-            intervalMs,
+            {
+                heartbeatIntervalMs : intervalMs,
+                setTimeoutFn : (fn, ms) => window.setTimeout(fn, ms),
+                clearTimeoutFn : (id) => window.clearTimeout(id),
+                hang : { thresholdMs : 5_000 },
+            },
         );
         return { monitor, measurements };
     }

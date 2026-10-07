@@ -1,11 +1,11 @@
 import { vi, expect } from "vitest";
 import { setupAllMonitors, type AllMonitorDeps, type AllMonitorHandles } from "./setup-all-monitors.js";
-import { createWorkerHandler } from "./lag-worker.js";
+import { createWorkerHandler, type HangEvent } from "./lag-worker.js";
 import { createRecordingMeter } from "./test-utils.js";
+import { METRIC_CATALOG, METRICS } from "./metric-catalog.js";
 import type {
     EventTimingEntry,
     LayoutShiftEntry,
-    LcpEntry,
     LoafEntry,
     PerformanceEntryLike,
     PerformanceEntryList,
@@ -16,6 +16,7 @@ import type { WorkerToMainMessage } from "./worker-protocol.js";
 import type { FinalizationRegistryConstructor } from "./GCSignalDetector.js";
 import type { PressureObserverInit, PressureRecord } from "./ComputePressureMonitor.js";
 import type { MessageChannelConstructor, MessagePortLike } from "./SchedulingFairnessMonitor.js";
+import type { ReportingObserverInit, ReportLike } from "./BrowserReportMonitor.js";
 
 type Listener = (event : unknown) => void;
 
@@ -40,12 +41,14 @@ function createEventTarget() {
 
 /**
  * Every browser capability setupAllMonitors can use, faked on top of
- * vitest's fake timers. `lagMs` shifts the main-thread clock forward to
- * simulate the main thread falling behind.
+ * vitest's fake timers. `addLag` shifts the main-thread clock forward to
+ * simulate the main thread falling behind. Both threads read `Date.now()`, so
+ * `vi.setSystemTime` moves both clocks, as a system suspend on Windows does.
  */
 function createFakeBrowser() {
     const TIME_ORIGIN = 1_700_000_000_000;
     let lagMs = 0;
+    let wallShiftMs = 0;
     const mainNow = () => Date.now() + lagMs;
 
     const document = Object.assign(createEventTarget(), {
@@ -112,15 +115,33 @@ function createFakeBrowser() {
         takeRecords() { return []; }
     }
 
-    // Worker: the real worker-side handler, with messages delivered as macrotasks
+    // ReportingObserver
+    let reportingCallback : ((reports : ReportLike[]) => void) | undefined;
+    class FakeReportingObserver {
+        constructor(callback : (reports : ReportLike[]) => void) { reportingCallback = callback; }
+        observe() {}
+        disconnect() { reportingCallback = undefined; }
+    }
+
+    // Worker: the real worker-side handler. Messages to the main thread are
+    // macrotasks; while `mainBlocked`, they queue as they would behind a
+    // blocked main thread.
     const workerListeners = new Set<(event : { data : WorkerToMainMessage }) => void>();
+    let mainBlocked = false;
+    let queuedForMain : WorkerToMainMessage[] = [];
+    const deliverToMain = (message : WorkerToMainMessage) => {
+        for (const l of [...workerListeners]) l({ data : message });
+    };
+    const reportHang = vi.fn<(event : HangEvent) => void>();
     const workerHandler = createWorkerHandler({
         postMessage : (message) => {
-            setTimeout(() => { for (const l of [...workerListeners]) l({ data : message }); }, 0);
+            if (mainBlocked) queuedForMain.push(message);
+            else setTimeout(() => deliverToMain(message), 0);
         },
         setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
         clearTimeoutFn : (id) => clearTimeout(id),
         clock : { now : () => TIME_ORIGIN + Date.now() },
+        reportHang,
     });
     const worker : WorkerLike = {
         postMessage : (message) => workerHandler.handleMessage(message),
@@ -130,10 +151,13 @@ function createFakeBrowser() {
 
     const meter = createRecordingMeter();
     const logger = { log : vi.fn() };
+    const events = { emit : vi.fn() };
 
     const deps : AllMonitorDeps = {
         logger,
+        events,
         clock : { now : mainNow },
+        wallClock : { now : () => TIME_ORIGIN + mainNow() + wallShiftMs },
         meter : meter.meter,
         setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
         clearTimeoutFn : (id) => clearTimeout(id),
@@ -151,6 +175,7 @@ function createFakeBrowser() {
         memorySource : { readLegacy : () => ({ usedJSHeapSize : 10, totalJSHeapSize : 20, jsHeapSizeLimit : 100 }) },
         PressureObserver : FakePressureObserver as unknown as PressureObserverInit,
         FinalizationRegistry : FakeFinalizationRegistry as unknown as FinalizationRegistryConstructor,
+        ReportingObserver : FakeReportingObserver as unknown as ReportingObserverInit,
         worker,
         workerHeartbeatIntervalMs : 250,
         performance : { timeOrigin : TIME_ORIGIN, now : mainNow },
@@ -160,13 +185,25 @@ function createFakeBrowser() {
         deps,
         meter,
         logger,
+        events,
         document,
         window,
+        reportHang,
         setVisibility,
         emitEntries,
         gc,
         emitPressure : (records : PressureRecord[]) => pressureCallback?.(records),
+        emitReports : (reports : ReportLike[]) => reportingCallback?.(reports),
         addLag : (ms : number) => { lagMs += ms; },
+        /** Step the wall clock only, as an NTP step or a manual clock change does. */
+        shiftWallClock : (ms : number) => { wallShiftMs += ms; },
+        blockMain : () => { mainBlocked = true; },
+        unblockMain : () => {
+            mainBlocked = false;
+            const queued = queuedForMain;
+            queuedForMain = [];
+            for (const message of queued) deliverToMain(message);
+        },
         observerCount : () => observers.size,
         workerListenerCount : () => workerListeners.size,
         workerRunning : () => workerHandler.running,
@@ -179,35 +216,52 @@ function createFakeBrowser() {
  */
 const advance = (ms : number) : Promise<void> => vi.advanceTimersByTimeAsync(ms).then(() => {});
 
-/** Exercise every monitor: timers, observers, pressure and GC. */
+/** Exercise every monitor: timers, observers, pressure, reports and GC. */
 async function generateActivity(browser : ReturnType<typeof createFakeBrowser>) : Promise<void> {
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 24; i++) {
         browser.addLag(i % 3 === 0 ? 40 : 0);
         await advance(500);
     }
     const loafs : LoafEntry[] = [
         { entryType : "long-animation-frame", name : "", startTime : 10, duration : 80, blockingDuration : 30, renderStart : 70, styleAndLayoutStart : 75, scripts : [] },
-        { entryType : "long-animation-frame", name : "", startTime : 99, duration : 123, blockingDuration : 73, renderStart : 0, styleAndLayoutStart : 0, scripts : [] },
+        { entryType : "long-animation-frame", name : "", startTime : 99, duration : 223, blockingDuration : 173, renderStart : 0, styleAndLayoutStart : 0, scripts : [
+            { name : "script", invoker : "BUTTON#buy.onclick", invokerType : "event-listener", startTime : 99, executionStart : 100, duration : 200, forcedStyleAndLayoutDuration : 0, sourceURL : "https://shop.example/app.js?v=123" },
+        ] },
     ];
     const events : EventTimingEntry[] = [1, 2, 3].map(id => ({
-        entryType : "event", name : "pointerdown", startTime : id * 100, duration : 40 + id,
+        entryType : "event", name : id === 3 ? "keydown" : "pointerdown", startTime : id * 100, duration : 40 + id,
         processingStart : id * 100 + 5, processingEnd : id * 100 + 20, interactionId : id, cancelable : true,
     }));
     const shifts : LayoutShiftEntry[] = [
         { entryType : "layout-shift", name : "", startTime : 50, duration : 0, value : 0.013, hadRecentInput : false, lastInputTime : 0, sources : [] },
     ];
-    const lcps : LcpEntry[] = [
-        { entryType : "largest-contentful-paint", name : "", startTime : 400, duration : 0, renderTime : 400, loadTime : 390, size : 5000, id : "hero", url : "", element : null },
-    ];
     browser.emitEntries("long-animation-frame", loafs);
     browser.emitEntries("event", events);
     browser.emitEntries("layout-shift", shifts);
-    browser.emitEntries("paint", [{ entryType : "paint", name : "first-contentful-paint", startTime : 321, duration : 0 }]);
-    browser.emitEntries("largest-contentful-paint", lcps);
     browser.emitPressure([{ source : "cpu", state : "serious", time : 1234.5 }]);
+    browser.emitReports([{ type : "intervention", url : "https://shop.example/", body : { id : "HeavyAdIntervention", message : "Ad removed", sourceFile : "https://ads.example/ad.js?id=9", lineNumber : 3 } }]);
     browser.gc();
     await advance(500);
 }
+
+/** Metrics that need a special situation; other tests cover them. */
+const NOT_IN_NORMAL_ACTIVITY = new Set([
+    METRICS.samplesDiscarded.name,
+    METRICS.stalls.name,
+    METRICS.stallDuration.name,
+    METRICS.hangs.name,
+    METRICS.hangDuration.name,
+    METRICS.clockJumps.name,
+    METRICS.lifecycleTransitions.name,
+    // Fake time does not advance in the checker's tight loop; ClockReliabilityChecker tests cover it
+    METRICS.clockResolution.name,
+    METRICS.vitalInp.name,
+    METRICS.vitalCls.name,
+    METRICS.vitalLcp.name,
+    METRICS.vitalFcp.name,
+    METRICS.vitalTtfb.name,
+    METRICS.livenessBlock.name,
+]);
 
 describe("setupAllMonitors", () => {
     let browser : ReturnType<typeof createFakeBrowser>;
@@ -225,81 +279,59 @@ describe("setupAllMonitors", () => {
     });
 
     it("registers every monitor when all capabilities are present", () => {
-        expect(handles.registry.size).toBe(17);
+        expect(handles.registry.getAll().map(h => h.name)).toEqual([
+            "lifecycle", "measurement-conditions", "drift-lag", "macrotask-lag", "throttle-detector",
+            "loaf", "event-timing", "layout-shift", "frame-timing", "idle-availability", "scheduling-fairness",
+            "memory", "worker-lag", "compute-pressure", "gc-signal", "clock-reliability", "clock-drift", "browser-reports",
+        ]);
         for (const handle of handles.registry.getAll()) {
             expect(handle.monitor, handle.name).toBeDefined();
         }
         expect(browser.logger.log).not.toHaveBeenCalledWith("warn", expect.anything(), expect.anything());
     });
 
-    it("feeds every metric", async () => {
+    it("feeds every metric of the catalog that normal activity produces", async () => {
         await generateActivity(browser);
+        await advance(10_000);
 
-        for (const name of [
-            "lag_drift_histogram",
-            "lag_macrotask_histogram",
-            "lag_loaf_blocking_histogram",
-            "lag_loaf_duration_histogram",
-            "lag_inp_histogram",
-            "lag_inp_input_delay_histogram",
-            "lag_inp_processing_histogram",
-            "lag_inp_presentation_delay_histogram",
-            "lag_cls_shift_histogram",
-            "lag_frame_delta_histogram",
-            "lag_idle_time_remaining_histogram",
-            "lag_idle_gap_histogram",
-            "lag_scheduling_microtask_histogram",
-            "lag_scheduling_macrotask_histogram",
-            "lag_scheduling_message_channel_histogram",
-            "lag_memory_used_bytes_histogram",
-            "lag_worker_main_block_histogram",
-            "lag_worker_self_lag_histogram",
-            "lag_pressure_change_histogram",
-            "lag_gc_events",
-        ]) {
-            expect(browser.meter.values(name).length, name).toBeGreaterThan(0);
-        }
-
-        const gauges = browser.meter.collect();
-        for (const name of [
-            "lag_drift_max_gauge",
-            "lag_drift_avg_gauge",
-            "lag_macrotask_max_gauge",
-            "lag_macrotask_avg_gauge",
-            "lag_timer_throttled_gauge",
-            "lag_inp_worst_gauge",
-            "lag_cls_worst_session_gauge",
-            "lag_paint_first_contentful_paint_gauge",
-            "lag_lcp_gauge",
-            "lag_frame_fps_gauge",
-            "lag_frame_dropped_rate_gauge",
-            "lag_idle_timeout_rate_gauge",
-            "lag_memory_usage_percent_gauge",
-            "lag_worker_main_block_max_gauge",
-            "lag_pressure_state_gauge",
-            "lag_gc_recent_rate_gauge",
-        ]) {
-            expect(gauges.get(name)?.length, name).toBeGreaterThan(0);
+        for (const definition of METRIC_CATALOG) {
+            if (NOT_IN_NORMAL_ACTIVITY.has(definition.name)) continue;
+            expect(browser.meter.values(definition.name).length, definition.name).toBeGreaterThan(0);
         }
     });
 
-    it("uses only low-cardinality attributes (no measured values, timestamps or IDs)", async () => {
+    it("creates only catalog instruments, with the catalog kind, unit and attribute values", async () => {
         await generateActivity(browser);
         browser.setVisibility("hidden");
         browser.setVisibility("visible");
 
-        const allowedKeys = new Set(["source", "from", "to", "trigger"]);
-        for (const [name, records] of browser.meter.records()) {
-            const attributeSets = new Set<string>();
-            for (const { attributes } of records) {
+        const byName = new Map(METRIC_CATALOG.map(m => [m.name, m]));
+        for (const instrument of browser.meter.instruments()) {
+            const definition = byName.get(instrument.name);
+            expect(definition, instrument.name).toBeDefined();
+            expect(instrument.kind, instrument.name).toBe(definition!.kind);
+            expect(instrument.unit, instrument.name).toBe(definition!.unit);
+            for (const { attributes } of instrument.values) {
                 for (const [key, value] of Object.entries(attributes ?? {})) {
-                    expect(allowedKeys.has(key), `${name}.${key}`).toBe(true);
-                    expect(typeof value, `${name}.${key}`).toBe("string");
+                    expect(definition!.attributes[key], `${instrument.name}.${key}`).toBeDefined();
+                    expect(definition!.attributes[key], `${instrument.name}.${key}=${String(value)}`).toContain(value);
                 }
-                attributeSets.add(JSON.stringify(attributes ?? {}));
             }
-            expect(attributeSets.size, name).toBeLessThanOrEqual(2);
         }
+    });
+
+    it("emits attribution events without query strings", async () => {
+        await generateActivity(browser);
+
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.long_animation_frame", expect.objectContaining({
+            blocking_duration_ms : 173,
+            "script.invoker" : "BUTTON#buy.onclick",
+            "script.source_url" : "https://shop.example/app.js",
+        }));
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.browser_report", expect.objectContaining({
+            id : "HeavyAdIntervention",
+            source_file : "https://ads.example/ad.js",
+        }));
     });
 
     // Queueing of heartbeats behind a really blocked main thread is covered
@@ -314,20 +346,64 @@ describe("setupAllMonitors", () => {
         expect(Math.max(...browser.meter.values("lag_worker_main_block_histogram"))).toBe(251);
     });
 
-    it("max gauges report the worst value since the previous collection", () => {
-        vi.advanceTimersByTime(1_000);
-        browser.addLag(80);
-        vi.advanceTimersByTime(1_000);
-        expect(browser.meter.collect().get("lag_drift_max_gauge")).toEqual([{ value : 80, attributes : undefined }]);
-
-        vi.advanceTimersByTime(1_000);
-        expect(browser.meter.collect().get("lag_drift_max_gauge")).toEqual([{ value : 0, attributes : undefined }]);
-
-        // Nothing measured since the last collection: nothing observed
-        expect(browser.meter.collect().get("lag_drift_max_gauge")).toEqual([]);
+    it("synchronizes the worker clock and records the offset", () => {
+        vi.advanceTimersByTime(100);
+        expect(browser.meter.values("lag_worker_clock_offset_histogram").length).toBe(1);
+        expect(handles.workerMonitor!.getClockSync()?.offsetMs).toBeCloseTo(0, 0);
     });
 
-    it("stop() releases every timer, listener, observer and gauge callback", async () => {
+    it("discards a lag sample that overlaps a system suspend, after the worker reports it", async () => {
+        await advance(1_000);
+        const before = browser.meter.values("lag_drift_histogram").length;
+
+        // The system sleeps for 60 s: both clocks jump, and every timer fires late
+        vi.setSystemTime(Date.now() + 60_000);
+        await advance(3_000);
+
+        expect(browser.meter.values("lag_drift_histogram").filter(v => v > 1_000)).toEqual([]);
+        expect(browser.meter.values("lag_drift_histogram").length).toBeGreaterThan(before);
+        expect(browser.meter.sum("lag_stalls")).toBeGreaterThan(0);
+        expect(browser.meter.records().get("lag_stalls")!.every(r => r.attributes?.["kind"] === "suspend")).toBe(true);
+        expect(browser.reportHang).not.toHaveBeenCalled();
+    });
+
+    it("detects a main-thread hang in the worker, and records it when the main thread runs again", async () => {
+        await advance(1_000);
+
+        browser.blockMain();
+        await advance(8_000);
+        expect(browser.reportHang).toHaveBeenCalledWith(expect.objectContaining({ phase : "started" }), expect.anything());
+
+        browser.unblockMain();
+        await advance(3_000);
+
+        expect(browser.reportHang).toHaveBeenCalledWith(expect.objectContaining({ phase : "ended" }), expect.anything());
+        expect(browser.meter.sum("lag_main_thread_hangs")).toBe(1);
+        expect(Math.max(...browser.meter.values("lag_main_thread_hang_duration_histogram"))).toBeGreaterThanOrEqual(5_000);
+        expect(Math.max(...browser.meter.values("lag_worker_main_block_histogram"))).toBeGreaterThanOrEqual(7_000);
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ phase : "ended" }));
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.stall", expect.objectContaining({ kind : "hang" }));
+    });
+
+    it("counts samples that it discards because the page was hidden", async () => {
+        await advance(1_000);
+        // visibilityState flips first; the event comes later
+        browser.document.visibilityState = "hidden";
+        await advance(200);
+
+        expect(browser.meter.records().get("lag_samples_discarded")?.some(r => r.attributes?.["reason"] === "hidden")).toBe(true);
+    });
+
+    it("records clock jumps", async () => {
+        await advance(10_000);
+        browser.shiftWallClock(-5_000);
+        await advance(10_000);
+
+        expect(browser.meter.records().get("lag_clock_jumps")?.map(r => r.attributes)).toEqual([{ direction : "backward" }]);
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.clock.jump", expect.objectContaining({ direction : "backward" }));
+    });
+
+    it("stop() releases every timer, listener, observer and worker loop", async () => {
         await generateActivity(browser);
         handles.stop();
         await advance(100); // let in-flight zero-delay callbacks drain
@@ -338,7 +414,6 @@ describe("setupAllMonitors", () => {
         expect(browser.observerCount()).toBe(0);
         expect(browser.workerListenerCount()).toBe(0);
         expect(browser.workerRunning()).toBe(false);
-        expect(browser.meter.gaugeCallbackCount()).toBe(0);
 
         const recordCount = () => [...browser.meter.records().values()].reduce((n, r) => n + r.length, 0);
         const before = recordCount();
@@ -383,19 +458,6 @@ describe("setupAllMonitors", () => {
         expect(browser.meter.values("lag_drift_histogram").length).toBe(before + 1);
     });
 
-    it("discards a sample whose window covered a hidden period the event hadn't reported yet", () => {
-        vi.advanceTimersByTime(1_000);
-        const before = browser.meter.values("lag_drift_histogram").length;
-
-        // visibilityState flips synchronously; the event arrives as a later task
-        browser.document.visibilityState = "hidden";
-        vi.advanceTimersByTime(50);
-        browser.document.visibilityState = "visible";
-        vi.advanceTimersByTime(50);
-
-        expect(browser.meter.values("lag_drift_histogram").length).toBe(before);
-    });
-
     it("counts lifecycle transitions", () => {
         browser.setVisibility("hidden");
         browser.setVisibility("visible");
@@ -408,6 +470,32 @@ describe("setupAllMonitors", () => {
     });
 });
 
+describe("setupAllMonitors with shared memory", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("adds the shared-memory liveness monitor, and DriftLag beats the counter", async () => {
+        const browser = createFakeBrowser();
+        const buffers : SharedArrayBuffer[] = [];
+        class RecordingSharedArrayBuffer extends SharedArrayBuffer {
+            constructor(bytes : number) {
+                super(bytes);
+                buffers.push(this);
+            }
+        }
+        const handles = setupAllMonitors({ ...browser.deps, SharedArrayBuffer : RecordingSharedArrayBuffer });
+
+        expect(handles.sharedLiveness).toBeDefined();
+        expect(handles.registry.getAll().map(h => h.name)).toContain("shared-liveness");
+        await advance(1_000);
+        expect(Atomics.load(new Int32Array(buffers[0]!), 0)).toBeGreaterThan(100);
+
+        handles.stop();
+        await advance(100);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+});
+
 describe("setupAllMonitors degradation", () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());
@@ -417,7 +505,9 @@ describe("setupAllMonitors degradation", () => {
         const { logger, clock, meter, setTimeoutFn, clearTimeoutFn, setIntervalFn, clearIntervalFn, document, window } = browser.deps;
         const handles = setupAllMonitors({ logger, clock, meter, setTimeoutFn, clearTimeoutFn, setIntervalFn, clearIntervalFn, document, window });
 
-        expect(handles.registry.getAll().map(h => h.name)).toEqual(["lifecycle", "drift-lag", "macrotask-lag", "throttle-detector"]);
+        expect(handles.registry.getAll().map(h => h.name)).toEqual([
+            "lifecycle", "measurement-conditions", "drift-lag", "macrotask-lag", "throttle-detector",
+        ]);
         handles.stop();
         expect(vi.getTimerCount()).toBe(0);
     });

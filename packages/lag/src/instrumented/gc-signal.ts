@@ -1,23 +1,19 @@
 import type { CoreDeps, GCDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { GCSignalDetector } from "../GCSignalDetector.js";
-import { createHandle, observe } from "./shared.js";
-
-const GC_RATE_WINDOW_MS = 60_000;
+import { METRICS, createCounter } from "../metric-catalog.js";
+import { createHandle } from "./shared.js";
 
 /**
- * Constructs a GCSignalDetector wired to an event counter + rate gauge.
- *
- * Metrics:
- * - `lag_gc_events` — +1 per observed GC cycle, counted when the engine runs
- *   the finalization callback
- * - `lag_gc_recent_rate_gauge` — GC cycles observed in the last 60 seconds
+ * Constructs a GCSignalDetector wired to the `lag_gc_events` counter: +1 for
+ * each garbage collection that the detector saw, when the engine runs the
+ * finalization callback. The GC rate is `rate(lag_gc_events[1m])`.
  */
 export function createInstrumentedGCSignal(
     deps : CoreDeps & GCDeps,
 ) : MonitorHandle<GCSignalDetector> {
     return createHandle("gc-signal", deps.logger, () => {
-        const events = deps.meter.createCounter("lag_gc_events", { unit : "{gc}" });
+        const events = createCounter(deps.meter, METRICS.gcEvents);
 
         const monitor = new GCSignalDetector(
             deps.FinalizationRegistry,
@@ -26,17 +22,6 @@ export function createInstrumentedGCSignal(
             () => events.add(1),
         );
 
-        const unobserve = observe(
-            deps.meter.createObservableGauge("lag_gc_recent_rate_gauge", { unit : "events" }),
-            (result) => { result.observe(monitor.getRecentGCEvents(GC_RATE_WINDOW_MS)); },
-        );
-
-        return {
-            monitor,
-            stop : () => {
-                unobserve();
-                monitor.stop();
-            },
-        };
+        return { monitor, stop : () => monitor.stop() };
     });
 }

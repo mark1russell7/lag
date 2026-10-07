@@ -1,62 +1,52 @@
 import type { CoreDeps, IdleDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import { IdleAvailabilityMonitor } from "../IdleAvailabilityMonitor.js";
-import type { LifecycleStateMachine } from "../LifecycleStateMachine.js";
-import { createHandle, observe, pauseWhileHidden } from "./shared.js";
+import { IdleAvailabilityMonitor, type IdleMeasurement } from "../IdleAvailabilityMonitor.js";
+import type { MeasurementConditions } from "../measurement-conditions.js";
+import { METRICS, createCounter, createHistogram } from "../metric-catalog.js";
+import { createHandle } from "./shared.js";
 
 /**
- * Constructs an IdleAvailabilityMonitor wired to two histograms + one gauge.
+ * Constructs an IdleAvailabilityMonitor wired to two histograms and the
+ * `lag_idle_callbacks` counter.
  *
- * Metrics:
- * - `lag_idle_time_remaining_histogram` — idle slice size available (ms)
- * - `lag_idle_gap_histogram` — gap between idle fires (ms)
- * - `lag_idle_timeout_rate_gauge` — fraction of idle fires since the last
- *   collection that only ran because their timeout expired
- *
- * With a `lifecycle`, the monitor is paused while the page is hidden.
+ * The fleet timeout rate is `rate(lag_idle_callbacks{timed_out="true"})`
+ * divided by the rate of all callbacks. With `conditions`, the monitor
+ * pauses while the page is hidden.
  */
 export function createInstrumentedIdleAvailability(
     deps : CoreDeps & IdleDeps,
-    lifecycle? : LifecycleStateMachine,
+    conditions? : MeasurementConditions,
 ) : MonitorHandle<IdleAvailabilityMonitor> {
     return createHandle("idle-availability", deps.logger, () => {
-        const remainingHist = deps.meter.createHistogram("lag_idle_time_remaining_histogram", { unit : "ms" });
-        const gapHist = deps.meter.createHistogram("lag_idle_gap_histogram", { unit : "ms" });
+        const remainingHist = createHistogram(deps.meter, METRICS.idleTimeRemaining);
+        const gapHist = createHistogram(deps.meter, METRICS.idleGap);
+        const callbacks = createCounter<{ timed_out : "true" | "false" }>(deps.meter, METRICS.idleCallbacks);
+        const validator = conditions?.createValidator();
 
-        let fires = 0;
-        let timeouts = 0;
+        const record = (m : IdleMeasurement) : void => {
+            remainingHist.record(m.timeRemainingMs);
+            if (m.timeSinceLastIdleMs > 0) gapHist.record(m.timeSinceLastIdleMs);
+            callbacks.add(1, { timed_out : m.didTimeout ? "true" : "false" });
+        };
 
         const monitor = new IdleAvailabilityMonitor(
             (m) => {
-                remainingHist.record(m.timeRemainingMs);
-                if (m.timeSinceLastIdleMs > 0) {
-                    gapHist.record(m.timeSinceLastIdleMs);
-                }
-                fires++;
-                if (m.didTimeout) timeouts++;
+                if (validator) validator.submit(m.timeSinceLastIdleMs, m.timeSinceLastIdleMs, () => record(m));
+                else record(m);
             },
             deps.logger,
             deps.requestIdleCallback,
             deps.cancelIdleCallback,
             deps.clock,
         );
-        const unpause = lifecycle ? pauseWhileHidden(lifecycle, monitor) : undefined;
-
-        const unobserve = observe(
-            deps.meter.createObservableGauge("lag_idle_timeout_rate_gauge", { unit : "ratio" }),
-            (result) => {
-                if (fires > 0) result.observe(timeouts / fires);
-                fires = 0;
-                timeouts = 0;
-            },
-        );
+        const unpause = conditions?.pauseWhileHidden(monitor);
 
         return {
             monitor,
             stop : () => {
                 unpause?.();
-                unobserve();
                 monitor.stop();
+                validator?.dispose();
             },
         };
     });

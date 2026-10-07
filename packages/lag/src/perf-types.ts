@@ -43,7 +43,11 @@ export type LoafScriptEntry = {
     executionStart : number;
     duration : number;
     forcedStyleAndLayoutDuration : number;
+    /** Time the script spent in synchronous pauses such as `alert()`. */
+    pauseDuration? : number;
     sourceURL : string;
+    sourceFunctionName? : string;
+    sourceCharPosition? : number;
 };
 
 export type LoafEntry = PerformanceEntryLike & {

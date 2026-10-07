@@ -21,6 +21,10 @@
     "./worker-protocol.js": {
       "types": "./dist/worker-protocol.d.ts",
       "import": "./dist/worker-protocol.js"
+    },
+    "./otlp-json.js": {
+      "types": "./dist/otlp-json.d.ts",
+      "import": "./dist/otlp-json.js"
     }
   },
   "scripts": {
@@ -30,6 +34,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "fast-check": "^4.7.0",
     "vitest": "^4.0.18"
   }
 }

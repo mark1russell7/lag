@@ -1,18 +1,14 @@
 import type { Meter } from "./meter.js";
 
 /**
- * A no-op Meter implementation — all `record()`/`add()` calls and gauge
- * callbacks are silent.
+ * A Meter that records nothing.
  *
- * Useful when:
- * - Running the lag monitors without wanting to export telemetry (e.g. in
- *   tests or environments without an OTel collector)
- * - Providing a fallback for consumers who don't pass a real Meter
+ * Use it to run the monitors without telemetry export, for example in tests
+ * or where no OTel collector is available.
  */
 export function createNoopMeter() : Meter {
     return {
         createHistogram : () => ({ record() {} }),
         createCounter : () => ({ add() {} }),
-        createObservableGauge : () => ({ addCallback() {}, removeCallback() {} }),
     };
 }
