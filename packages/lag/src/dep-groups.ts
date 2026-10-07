@@ -44,6 +44,7 @@ import type { WorkerLike } from "./WorkerLagMonitor.js";
 import type { HangReportTarget } from "./worker-protocol.js";
 import type { ReportingObserverInit } from "./BrowserReportMonitor.js";
 import type { PageSource } from "./vitals/types.js";
+import type { AbsoluteClock } from "./absolute-clock.js";
 import type {
     LifecycleDocument,
     LifecycleWindow,
@@ -122,6 +123,14 @@ export type WorkerMonitorDeps = {
 /** `performance.now()` + `timeOrigin`: clock resolution and cross-thread timestamps. */
 export type PerformanceDeps = {
     performance : PerformanceLike;
+};
+
+/**
+ * One absolute clock for the page (`createAbsoluteClock`). setupAllMonitors
+ * makes it from `performance`. A factory without it makes its own.
+ */
+export type AbsoluteClockDeps = {
+    absoluteClock : AbsoluteClock;
 };
 
 /** The wall clock, to compare with the monotonic clock. */

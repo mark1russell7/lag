@@ -1,4 +1,5 @@
 import type { Clock, Logger, SetIntervalFn, ClearIntervalFn, SetTimeoutFn } from "./types.js";
+import { createMessageTaskQueue, type MessageTaskQueue } from "./message-task.js";
 
 // Duck-typed MessageChannel — no DOM lib dependency
 export type MessageChannelLike = {
@@ -28,20 +29,23 @@ export type SchedulingMeasurement = {
  * Measures how long three scheduling primitives take to run a callback queued
  * at the same instant:
  *
- * - **Macrotask** (`setTimeout(0)`): waits behind every queued task. Clamped
- *   to ≥4ms once timers nest (setInterval callbacks count as nested), so
- *   expect a ~4ms floor.
- * - **MessageChannel** (`port.postMessage`): also a task, but without the
- *   timer clamp — the most direct view of task-queue delay.
+ * - **Macrotask** (`setTimeout(0)`): waits behind every queued task.
+ * - **MessageChannel** (`port.postMessage`): also a task, without the timer
+ *   rules. It is the most direct view of the delay of the task queue.
  * - **Microtask** (`queueMicrotask`): runs as soon as the measuring task ends,
  *   so it only captures the remainder of that task and stays near 0. It is a
  *   zero baseline, not a signal of its own — microtasks cannot be starved by
  *   other tasks.
  *
+ * Each cycle starts in a message task (`createMessageTaskQueue`), not in the
+ * `setInterval` callback. In a message task the timer nesting level is 0,
+ * thus the browser does not clamp the `setTimeout(0)` to 4 ms.
+ *
  * Both task-based latencies rise when the task queue backs up.
  */
 export class SchedulingFairnessMonitor {
     private handle : number | undefined;
+    private tasks : MessageTaskQueue | undefined;
     private started = false;
     /** Bumped on start(): a cycle still in flight from before a stop/start must not report. */
     private generation = 0;
@@ -62,9 +66,20 @@ export class SchedulingFairnessMonitor {
 
     start() : void {
         if (this.started) return;
+        let tasks : MessageTaskQueue;
+        try {
+            tasks = createMessageTaskQueue(this.MessageChannelCtor);
+        } catch (error) {
+            this.logger.log("error", "Error in scheduling fairness measurement.", {
+                error,
+                type : "SchedulingFairnessMonitor",
+            });
+            return;
+        }
+        this.tasks = tasks;
         this.started = true;
         this.generation++;
-        this.handle = this.setIntervalFn(() => this.measureCycle(), this.intervalMs);
+        this.handle = this.setIntervalFn(() => tasks.post(() => this.measureCycle()), this.intervalMs);
     }
 
     stop() : void {
@@ -73,9 +88,13 @@ export class SchedulingFairnessMonitor {
             this.clearIntervalFn(this.handle);
             this.handle = undefined;
         }
+        this.tasks?.close();
+        this.tasks = undefined;
     }
 
     private measureCycle() : void {
+        const tasks = this.tasks;
+        if (!tasks) return;
         try {
             // Three independent measurements per cycle, fired simultaneously.
             // We capture the start time once and let each scheduling primitive
@@ -108,17 +127,11 @@ export class SchedulingFairnessMonitor {
                 checkComplete();
             });
 
-            // MessageChannel — port2.postMessage triggers port1.onmessage
-            const channel = new this.MessageChannelCtor();
-            channel.port1.onmessage = () => {
+            // A message task
+            tasks.post(() => {
                 result.messageChannelMs = this.clock.now() - start;
-                channel.port1.onmessage = null;
-                channel.port1.close?.();
-                channel.port2.close?.();
                 checkComplete();
-            };
-            channel.port1.start?.();
-            channel.port2.postMessage(null);
+            });
         } catch (error) {
             this.logger.log("error", "Error in scheduling fairness measurement.", {
                 error,

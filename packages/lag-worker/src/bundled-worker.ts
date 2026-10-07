@@ -2,7 +2,9 @@ import { createWorkerHandler, type HangEvent } from "@lag/core/lag-worker.js";
 import type { HangOptions } from "@lag/core/worker-protocol.js";
 import { encodeOtlpLogs } from "@lag/core/otlp-json.js";
 
-const clock = { now : () => performance.timeOrigin + performance.now() };
+// Read timeOrigin one time: Safari calculates it again from the wall clock at each read
+const origin = performance.timeOrigin;
+const clock = { now : () => origin + performance.now() };
 
 /**
  * Sends a hang report as an OTLP/HTTP JSON log record. The main thread is

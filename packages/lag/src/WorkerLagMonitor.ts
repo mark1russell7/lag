@@ -1,4 +1,5 @@
-import type { ClearTimeoutFn, Logger, PerformanceLike, SetTimeoutFn } from "./types.js";
+import type { ClearTimeoutFn, Logger, SetTimeoutFn } from "./types.js";
+import type { AbsoluteClock } from "./absolute-clock.js";
 import type { HangOptions, MainToWorkerMessage, WorkerToMainMessage } from "./worker-protocol.js";
 import { WorkerClockSync, type ClockSyncResult } from "./WorkerClockSync.js";
 
@@ -80,12 +81,13 @@ export class WorkerLagMonitor {
         private readonly worker : WorkerLike,
         private readonly report : (measurement : WorkerLagMeasurement) => void,
         private readonly logger : Logger,
-        private readonly performance : PerformanceLike,
+        /** The absolute clock of the main thread. The worker must use the same kind of clock. */
+        private readonly clock : AbsoluteClock,
         private readonly options : WorkerLagMonitorOptions,
     ) {
         this.clockSync = new WorkerClockSync(
             (id) => this.worker.postMessage({ type : "sync", id }),
-            () => this.nowAbsolute(),
+            () => this.clock.now(),
             (result) => this.options.events?.onClockSync?.(result),
         );
         this.start();
@@ -117,10 +119,6 @@ export class WorkerLagMonitor {
     /** The last clock synchronization result, if one finished. */
     getClockSync() : ClockSyncResult | undefined {
         return this.clockSync.getResult();
-    }
-
-    private nowAbsolute() : number {
-        return this.performance.timeOrigin + this.performance.now();
     }
 
     private syncClocks() : void {
@@ -157,14 +155,14 @@ export class WorkerLagMonitor {
     }
 
     private handleHeartbeat(sentAt : number, workerSelfLagMs : number, seq : number) : void {
-        const receivedAt = this.nowAbsolute();
+        const receivedAt = this.clock.now();
         // The worker clock runs `correction` ms ahead of the main-thread clock
         const deliveryDelayMs = Math.max(0, receivedAt - sentAt + this.clockSync.getCorrectionMs());
         this.report({ deliveryDelayMs, workerSelfLagMs, seq });
 
         const stallThreshold = this.options.systemStallThresholdMs ?? DEFAULT_SYSTEM_STALL_THRESHOLD_MS;
         if (workerSelfLagMs >= stallThreshold) {
-            const end = this.performance.now();
+            const end = this.clock.monotonic();
             this.options.events?.onSystemStall?.({ start : end - workerSelfLagMs, end, durationMs : workerSelfLagMs });
         }
     }

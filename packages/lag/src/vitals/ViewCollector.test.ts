@@ -82,18 +82,31 @@ describe("ViewCollector", () => {
             expect(Number(a["input_delay_ms"]) + Number(a["processing_duration_ms"]) + Number(a["presentation_delay_ms"])).toBe(104);
         });
 
-        it("combines the entries of one interaction that have the longest duration", () => {
+        it("spans the processing over the entries of the interaction in the same frame", () => {
+            // A real click: pointerdown is the longest entry, the click handler does the work
             const c = collector();
-            c.addEvent(event({ interactionId : 5, startTime : 100, duration : 104, name : "pointerup", processingStart : 120, processingEnd : 130 }));
-            c.addEvent(event({ interactionId : 5, startTime : 100, duration : 104, name : "click", processingStart : 131, processingEnd : 170, target : { id : "buy" } }));
+            c.addEvent(event({ interactionId : 5, startTime : 100, duration : 208, name : "pointerdown", processingStart : 101, processingEnd : 101.3 }));
+            c.addEvent(event({ interactionId : 5, startTime : 150, duration : 160, name : "pointerup", processingStart : 151, processingEnd : 151.2 }));
+            c.addEvent(event({ interactionId : 5, startTime : 152, duration : 152, name : "click", processingStart : 152, processingEnd : 280, target : { id : "buy" } }));
 
             expect(byName(c.values())["INP"]!.attribution).toEqual({
                 interaction_target : "#buy",
                 interaction_type : "pointer",
-                input_delay_ms : 20,
-                processing_duration_ms : 50,
-                presentation_delay_ms : 34,
+                input_delay_ms : 1,
+                processing_duration_ms : 179,
+                presentation_delay_ms : 28,
             });
+        });
+
+        it("leaves out the entries of the interaction that end in a different frame", () => {
+            const c = collector();
+            c.addEvent(event({ interactionId : 5, startTime : 100, duration : 104, name : "keydown", processingStart : 110, processingEnd : 150 }));
+            // keyup ends 300 ms later, in another frame
+            c.addEvent(event({ interactionId : 5, startTime : 380, duration : 24, name : "keyup", processingStart : 381, processingEnd : 400 }));
+
+            const a = byName(c.values())["INP"]!.attribution;
+            expect(a["processing_duration_ms"]).toBe(40);
+            expect(a["interaction_type"]).toBe("keyboard");
         });
 
         it("keeps the entry details only for the interactions that can be INP", () => {

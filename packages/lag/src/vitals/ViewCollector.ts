@@ -54,6 +54,12 @@ type EventFacts = {
  */
 export const SHORT_INTERACTION_ESTIMATE_MS = 8;
 
+/** Entries whose render times are this close belong to one frame (as in web-vitals). */
+const FRAME_GROUP_MS = 8;
+
+/** The collector keeps at most this many entries for one interaction. */
+const MAX_ENTRIES_PER_INTERACTION = 16;
+
 /**
  * Collects the vitals of one page view. The page-view orchestrator
  * (`PageViewVitals`) gives the entries to the collector. The collector
@@ -67,7 +73,7 @@ export const SHORT_INTERACTION_ESTIMATE_MS = 8;
 export class ViewCollector {
     private readonly inp : InpCalculator;
     private readonly cls = new ClsCalculator();
-    /** The longest entries of each INP candidate, keyed by interaction ID. */
+    /** The entries of each INP candidate, keyed by interaction ID. */
     private readonly interactions = new Map<number, EventFacts[]>();
     private clsReportable : boolean;
     private lcp : VitalValue | undefined;
@@ -91,13 +97,10 @@ export class ViewCollector {
         this.inp.add(id, entry.duration);
         if (!this.inp.has(id)) return;
 
-        // Keep the entries with the longest duration, as web-vitals does
-        const kept = this.interactions.get(id);
-        if (!kept || entry.duration > kept[0]!.duration) {
-            this.interactions.set(id, [this.factsOf(entry)]);
-        } else if (entry.duration === kept[0]!.duration && entry.startTime === kept[0]!.startTime) {
-            kept.push(this.factsOf(entry));
-        }
+        // Keep all entries of a candidate: the attribution needs the entries of its frame
+        const kept = this.interactions.get(id) ?? [];
+        if (kept.length < MAX_ENTRIES_PER_INTERACTION) kept.push(this.factsOf(entry));
+        this.interactions.set(id, kept);
         for (const known of this.interactions.keys()) {
             if (!this.inp.has(known)) this.interactions.delete(known);
         }
@@ -170,19 +173,29 @@ export class ViewCollector {
  * The INP attribution of one interaction, with the phase rules of the
  * web-vitals attribution build. The phases (input delay, processing
  * duration, presentation delay) add up to the time from the interaction to
- * the next paint. web-vitals also adds the entries of other events in the
- * same frame. This collector uses only the entries of the interaction.
+ * the next paint.
+ *
+ * The longest entry of the interaction gives the latency and the start of
+ * the interaction. The processing phase spans all entries of the
+ * interaction in the same frame. For example, a click has `pointerdown`,
+ * `pointerup` and `click` entries that end at the same paint: `pointerdown`
+ * is the longest, but the handler of `click` does the processing. web-vitals
+ * also adds the events of other interactions in the same frame. This
+ * collector uses only the entries of the interaction.
  */
 function interactionAttribution(entries : readonly EventFacts[], latency : number) : Record<string, string | number> {
-    const first = entries[0]!;
-    const interactionTime = first.startTime;
-    const processingStart = Math.max(Math.min(...entries.map(e => e.processingStart)), interactionTime);
+    const longest = entries.reduce((a, b) => (b.duration > a.duration ? b : a));
+    const renderTime = longest.startTime + longest.duration;
+    const frame = entries.filter(e => Math.abs(e.startTime + e.duration - renderTime) <= FRAME_GROUP_MS);
+    const interactionTime = longest.startTime;
+    const processingStart = Math.max(Math.min(...frame.map(e => e.processingStart)), interactionTime);
     const nextPaintTime = Math.max(interactionTime + latency, processingStart);
     // A synchronous dialog (`alert()`) can end the processing after the next paint
-    const processingEnd = Math.max(processingStart, Math.min(Math.max(...entries.map(e => e.processingEnd)), nextPaintTime));
+    const processingEnd = Math.max(processingStart, Math.min(Math.max(...frame.map(e => e.processingEnd)), nextPaintTime));
+    const target = [longest, ...frame, ...entries].find(e => e.target !== "")?.target ?? "";
     return {
-        interaction_target : entries.find(e => e.target !== "")?.target ?? "",
-        interaction_type : interactionType(first.name),
+        interaction_target : target,
+        interaction_type : interactionType(longest.name),
         input_delay_ms : processingStart - interactionTime,
         processing_duration_ms : processingEnd - processingStart,
         presentation_delay_ms : nextPaintTime - processingEnd,

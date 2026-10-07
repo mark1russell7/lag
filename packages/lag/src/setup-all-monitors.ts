@@ -28,8 +28,10 @@ import type {
     ReportingDeps,
     SharedMemoryDeps,
     PageDeps,
+    AbsoluteClockDeps,
 } from "./dep-groups.js";
 import { withEventContext } from "./events.js";
+import { createAbsoluteClock } from "./absolute-clock.js";
 import { LIVENESS_BUFFER_BYTES, beatingSetTimeout, createLivenessBeacon } from "./shared-liveness.js";
 import { MonitorRegistry } from "./monitor-registry.js";
 import { createMeasurementConditions, type MeasurementConditions, type StallKind } from "./measurement-conditions.js";
@@ -101,7 +103,8 @@ export type AllMonitorDeps =
     & Partial<EventDeps>
     & Partial<ReportingDeps>
     & Partial<SharedMemoryDeps>
-    & Partial<PageDeps>;
+    & Partial<PageDeps>
+    & Partial<AbsoluteClockDeps>;
 
 /**
  * Handles returned by setupAllMonitors.
@@ -188,7 +191,13 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
     const events = rootDeps.events && vitals
         ? withEventContext(rootDeps.events, () => ({ "lag.page_view.id" : vitals.getView().id }))
         : rootDeps.events;
-    const deps : AllMonitorDeps = events ? { ...rootDeps, events } : rootDeps;
+    // One absolute clock for the page: it reads `timeOrigin` only one time
+    const absoluteClock = rootDeps.performance ? createAbsoluteClock(rootDeps.performance) : undefined;
+    const deps : AllMonitorDeps = {
+        ...rootDeps,
+        ...(events ? { events } : {}),
+        ...(absoluteClock ? { absoluteClock } : {}),
+    };
 
     // 3. Measurement conditions, shared by the timer-driven monitors
     const conditions = createConditions(deps, lifecycle);

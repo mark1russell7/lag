@@ -118,4 +118,30 @@ describe('MacrotaskLag', () => {
             expect(driver.mockSetInterval).toHaveBeenCalledTimes(2);
         });
     });
+
+    describe('postTask', () => {
+        it('starts the measurement in the posted task, so that the timer nesting clamp does not apply', async () => {
+            const posted : Array<() => void> = [];
+            const clock = { now : vi.fn() };
+            clock.now.mockReturnValueOnce(2_000).mockReturnValueOnce(2_003);
+            const setTimeoutFn = vi.fn().mockReturnValue(7);
+            const setIntervalFn = vi.fn().mockReturnValue(1);
+            new MacrotaskLag(
+                INTERVAL, mockReport, { log : vi.fn() },
+                setIntervalFn, vi.fn(), setTimeoutFn, vi.fn(), clock,
+                (callback) => posted.push(callback),
+            );
+
+            void setIntervalFn.mock.calls[0]![0]();
+            // The interval callback only posts the task
+            expect(setTimeoutFn).not.toHaveBeenCalled();
+            posted[0]!();
+            expect(setTimeoutFn).toHaveBeenCalledWith(expect.any(Function), 0);
+            setTimeoutFn.mock.calls[0]![0]();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(mockReport).toHaveBeenCalledWith(3);
+        });
+    });
 });

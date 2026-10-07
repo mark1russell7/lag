@@ -1,62 +1,107 @@
-import type { ClearIntervalFn, Logger, PerformanceLike, SetIntervalFn, WallClock } from "./types.js";
+import type { AbsoluteClock } from "./absolute-clock.js";
+import type { ClearIntervalFn, Logger, SetIntervalFn, WallClock } from "./types.js";
 
 export type ClockDriftSample = {
     /**
-     * `Date.now()` minus `performance.timeOrigin + performance.now()`. It is
-     * near 0 at page load. Its size shows how far timestamps that use the
-     * monotonic clock (for example OpenTelemetry timestamps) are from the wall
+     * `Date.now()` minus the absolute monotonic time (`timeOrigin` from the
+     * start plus `performance.now()`). It is near 0 at the load of the page.
+     * It shows how far a timestamp from the monotonic clock is from the wall
      * clock.
      */
     skewMs : number;
     /** The change of the skew since the previous sample. */
     driftMs : number;
+    /** The monotonic time since the previous sample. */
+    intervalMs : number;
 };
 
 /**
- * A sudden change of the skew. `forward`: the wall clock moved ahead of the
- * monotonic clock. Causes: a system clock step (NTP or the user), or a sleep
- * on a platform where the monotonic clock stops during sleep (Linux, and some
- * macOS versions). `backward`: the wall clock moved back.
+ * A discontinuity of the skew. The monitor classifies it:
+ * - `suspend`: the wall clock moved forward by 1 s or more, and the timer of
+ *   the monitor was not late. The monotonic clock stopped while the device
+ *   slept, as on macOS, Linux, Android and iOS. A forward step of the system
+ *   clock of 1 s or more looks the same.
+ * - `step`: all other discontinuities, for example a change of the system
+ *   clock by NTP or by the user. A backward change is always a step.
+ *
+ * On Windows, the monotonic clock continues during sleep. A sleep there
+ * causes no discontinuity: every timer is late instead. The worker monitor
+ * finds that case.
  */
 export type ClockJump = {
     direction : "forward" | "backward";
+    kind : "suspend" | "step";
     magnitudeMs : number;
     skewMs : number;
+    /** How late the timer of the monitor was at this sample. */
+    latenessMs : number;
 };
 
-const DEFAULT_INTERVAL_MS = 10_000;
-const DEFAULT_JUMP_THRESHOLD_MS = 1_000;
+export type ClockDriftOptions = {
+    /** The time between samples. Default: 1000 ms. */
+    intervalMs? : number;
+    /** The smallest change of the skew that is a discontinuity. Default: 50 ms. */
+    minJumpMs? : number;
+    /**
+     * The smallest change of the skew, as a fraction of the time between the
+     * samples, that is a discontinuity. Default: 0.03. This tolerance lets
+     * the operating system correct the wall clock gradually.
+     */
+    jumpRate? : number;
+    /** The smallest forward change that can be a suspend. Default: 1000 ms. */
+    suspendMinMs? : number;
+};
 
 /**
- * Compares the wall clock (`Date.now()`) with the monotonic clock
- * (`performance.timeOrigin + performance.now()`) at a fixed interval.
+ * A reading in which the two reads of the monotonic clock are farther apart
+ * than this is not accurate: the thread stopped between the reads.
+ */
+const MAX_READ_SPREAD_MS = 1;
+
+type Reading = { skew : number; monotonic : number };
+
+/**
+ * Compares the wall clock (`Date.now()`) with the absolute monotonic clock
+ * at a fixed interval, and finds discontinuities.
  *
- * There is no browser API that reports clock steps or system sleep. A
- * comparison of the two clocks is the standard method. The monitor does not
- * change measurements that use the monotonic clock: a step of the wall clock
- * does not affect them.
+ * No browser API reports clock steps or system sleep. The comparison of the
+ * two clocks is the standard method (Chromium's suspend detector and Sentry
+ * use it too). Each sample reads the monotonic clock before and after the
+ * wall clock, and ignores the sample when the two reads are far apart. The
+ * threshold is max(50 ms, 3% of the interval), because operating systems
+ * correct the wall clock gradually.
+ *
+ * The monitor does not change measurements that use the monotonic clock: a
+ * change of the wall clock does not affect them.
  */
 export class ClockDriftMonitor {
     private handle : number | undefined;
-    private lastSkew = 0;
+    private last : Reading | undefined;
+    private readonly intervalMs : number;
+    private readonly minJumpMs : number;
+    private readonly jumpRate : number;
+    private readonly suspendMinMs : number;
 
     constructor(
         private readonly report : (sample : ClockDriftSample) => void,
         private readonly onJump : (jump : ClockJump) => void,
         private readonly logger : Logger,
-        private readonly performance : PerformanceLike,
+        private readonly clock : AbsoluteClock,
         private readonly wallClock : WallClock,
         private readonly setIntervalFn : SetIntervalFn,
         private readonly clearIntervalFn : ClearIntervalFn,
-        private readonly intervalMs : number = DEFAULT_INTERVAL_MS,
-        private readonly jumpThresholdMs : number = DEFAULT_JUMP_THRESHOLD_MS,
+        options : ClockDriftOptions = {},
     ) {
+        this.intervalMs = options.intervalMs ?? 1_000;
+        this.minJumpMs = options.minJumpMs ?? 50;
+        this.jumpRate = options.jumpRate ?? 0.03;
+        this.suspendMinMs = options.suspendMinMs ?? 1_000;
         this.start();
     }
 
     start() : void {
         if (this.handle !== undefined) return;
-        this.lastSkew = this.readSkew();
+        this.last = this.read();
         this.handle = this.setIntervalFn(() => this.sample(), this.intervalMs);
     }
 
@@ -68,26 +113,40 @@ export class ClockDriftMonitor {
 
     /** The current skew in milliseconds. */
     getSkewMs() : number {
-        return this.readSkew();
+        return this.wallClock.now() - this.clock.now();
     }
 
-    private readSkew() : number {
-        return this.wallClock.now() - (this.performance.timeOrigin + this.performance.now());
+    private read() : Reading | undefined {
+        const before = this.clock.now();
+        const wall = this.wallClock.now();
+        const after = this.clock.now();
+        if (after - before > MAX_READ_SPREAD_MS) return undefined;
+        const middle = (before + after) / 2;
+        return { skew : wall - middle, monotonic : middle - this.clock.origin };
     }
 
     private sample() : void {
         try {
-            const skewMs = this.readSkew();
-            const driftMs = skewMs - this.lastSkew;
-            this.lastSkew = skewMs;
-            this.report({ skewMs, driftMs });
-            if (Math.abs(driftMs) >= this.jumpThresholdMs) {
-                this.onJump({
-                    direction : driftMs > 0 ? "forward" : "backward",
-                    magnitudeMs : Math.abs(driftMs),
-                    skewMs,
-                });
-            }
+            const reading = this.read();
+            if (!reading) return;
+            const last = this.last;
+            this.last = reading;
+            if (!last) return;
+
+            const intervalMs = reading.monotonic - last.monotonic;
+            const driftMs = reading.skew - last.skew;
+            this.report({ skewMs : reading.skew, driftMs, intervalMs });
+
+            if (Math.abs(driftMs) <= Math.max(this.minJumpMs, this.jumpRate * intervalMs)) return;
+            const latenessMs = Math.max(0, intervalMs - this.intervalMs);
+            const onTime = latenessMs <= Math.max(this.minJumpMs, this.jumpRate * intervalMs);
+            this.onJump({
+                direction : driftMs > 0 ? "forward" : "backward",
+                kind : driftMs >= this.suspendMinMs && onTime ? "suspend" : "step",
+                magnitudeMs : Math.abs(driftMs),
+                skewMs : reading.skew,
+                latenessMs,
+            });
         } catch (error) {
             this.logger.log("error", "Error in clock drift measurement.", {
                 error,

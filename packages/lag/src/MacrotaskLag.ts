@@ -1,17 +1,25 @@
 import { LagMonitor } from "./LagMonitor.js";
 
+/** Runs a callback in a new task, for example through `createMessageTaskQueue(...).post`. */
+export type PostTaskFn = (callback : () => void) => void;
+
 /**
  * Every `expectedElapsedTimeMs`, measures how long a zero-delay setTimeout
  * waits in the task queue — a proxy for task-queue congestion.
  *
- * Browsers count setInterval repeats as nested timers, and clamp nested
- * timeouts to ≥4ms: after the first few samples, expect a ~4ms floor.
+ * With `postTask`, each measurement starts in a message task. Without it,
+ * the measurement starts in the `setInterval` callback. Browsers count the
+ * repeats of `setInterval` as nested timers and clamp a nested timeout to
+ * 4 ms or more, thus expect a floor of approximately 4 ms without `postTask`.
  */
 export class MacrotaskLag extends LagMonitor {
     private handle : number | undefined;
+    private readonly postTask : PostTaskFn | undefined;
 
-    constructor(...args : ConstructorParameters<typeof LagMonitor>) {
-        super(...args);
+    constructor(...args : [...ConstructorParameters<typeof LagMonitor>, postTask? : PostTaskFn]) {
+        const [expectedElapsedTimeMs, report, logger, setIntervalFn, clearIntervalFn, setTimeoutFn, clearTimeoutFn, clock, postTask] = args;
+        super(expectedElapsedTimeMs, report, logger, setIntervalFn, clearIntervalFn, setTimeoutFn, clearTimeoutFn, clock);
+        this.postTask = postTask;
         this.start();
     }
 
@@ -30,10 +38,14 @@ export class MacrotaskLag extends LagMonitor {
 
     measure() : Promise<number> {
         return new Promise(resolve => {
-            const start = this.clock.now();
-            this.setTimeoutFn(() => {
-                resolve(this.clock.now() - start);
-            }, 0);
+            const run = () : void => {
+                const start = this.clock.now();
+                this.setTimeoutFn(() => {
+                    resolve(this.clock.now() - start);
+                }, 0);
+            };
+            if (this.postTask) this.postTask(run);
+            else run();
         });
     }
 

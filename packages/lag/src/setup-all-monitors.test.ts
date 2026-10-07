@@ -453,8 +453,8 @@ describe("setupAllMonitors", () => {
         browser.shiftWallClock(-5_000);
         await advance(10_000);
 
-        expect(browser.meter.records().get("lag_clock_jumps")?.map(r => r.attributes)).toEqual([{ direction : "backward" }]);
-        expect(browser.events.emit).toHaveBeenCalledWith("lag.clock.jump", expect.objectContaining({ direction : "backward" }));
+        expect(browser.meter.records().get("lag_clock_jumps")?.map(r => r.attributes)).toEqual([{ direction : "backward", kind : "step" }]);
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.clock.jump", expect.objectContaining({ direction : "backward", kind : "step" }));
     });
 
     it("stop() releases every timer, listener, observer and worker loop", async () => {

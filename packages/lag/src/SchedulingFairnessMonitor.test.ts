@@ -49,7 +49,7 @@ describe("SchedulingFairnessMonitor", () => {
             vi.fn(),
             vi.fn(),
             vi.fn(),
-            (() => createMockMessageChannel()) as unknown as MessageChannelConstructor,
+            function () { return createMockMessageChannel(); } as unknown as MessageChannelConstructor,
             { now : () => 0 },
         );
 
@@ -98,18 +98,26 @@ describe("SchedulingFairnessMonitor", () => {
             clock,
         );
 
-        // Trigger the interval callback to enqueue all three primitives
+        // The interval callback only posts the message task that starts the cycle
         const intervalCallback = setIntervalFn.mock.calls[0]![0] as () => void;
         intervalCallback();
+        expect(queuedCallbacks.map(q => q.kind)).toEqual(["messagechannel"]);
+        expect(setTimeoutFn).not.toHaveBeenCalled();
+
+        // Run one queued callback of a kind. Each step advances the clock.
+        const drain = (kind : string, advance : number) : void => {
+            const index = queuedCallbacks.findIndex((q) => q.kind === kind);
+            if (index < 0) return;
+            const [queued] = queuedCallbacks.splice(index, 1);
+            currentTime += advance;
+            queued!.cb();
+        };
+        // The message task starts the three measurements (at the time 110)
+        drain("messagechannel", 10);
+        expect(queuedCallbacks.map(q => q.kind).sort()).toEqual(["macrotask", "messagechannel", "microtask"]);
 
         // Drain in priority order: microtask first (simulates spec semantics),
-        // then messagechannel, then macrotask. Each step advances the clock.
-        const drain = (kind : string, advance : number) : void => {
-            const queued = queuedCallbacks.find((q) => q.kind === kind);
-            if (!queued) return;
-            currentTime += advance;
-            queued.cb();
-        };
+        // then messagechannel, then macrotask.
         drain("microtask",      0.5);
         drain("messagechannel", 1.0);
         drain("macrotask",      4.0);
@@ -134,7 +142,7 @@ describe("SchedulingFairnessMonitor", () => {
             clearIntervalFn,
             vi.fn(),
             vi.fn(),
-            (() => createMockMessageChannel()) as unknown as MessageChannelConstructor,
+            function () { return createMockMessageChannel(); } as unknown as MessageChannelConstructor,
             { now : () => 0 },
         );
 
@@ -142,7 +150,7 @@ describe("SchedulingFairnessMonitor", () => {
         expect(clearIntervalFn).toHaveBeenCalledWith(42);
     });
 
-    it("logs an error when measurement throws", () => {
+    it("logs an error and does not start when the MessageChannel cannot be constructed", () => {
         const setIntervalFn = vi.fn();
         const logger = { log : vi.fn() };
         const ThrowingChannel = (function () {
@@ -161,9 +169,7 @@ describe("SchedulingFairnessMonitor", () => {
             { now : () => 0 },
         );
 
-        const cb = setIntervalFn.mock.calls[0]![0] as () => void;
-        cb();
-
+        expect(setIntervalFn).not.toHaveBeenCalled();
         expect(logger.log).toHaveBeenCalledWith(
             "error",
             "Error in scheduling fairness measurement.",
@@ -199,5 +205,56 @@ describe("SchedulingFairnessMonitor", () => {
         timeouts[1]!();     // the throttled setTimeout finally fires
 
         expect(report).toHaveBeenCalledTimes(1);
+    });
+
+    it("starts setTimeout(0) from a message task, not from the setInterval callback", () => {
+        const order : string[] = [];
+        let intervalCallback = () => {};
+        let deliver : (() => void) | undefined;
+        const Channel = function () {
+            const channel = createMockMessageChannel();
+            channel.port2.postMessage = vi.fn(() => {
+                deliver = () => (channel.port1.onmessage as ((event : { data : unknown }) => void) | null)?.({ data : null });
+            });
+            return channel;
+        } as unknown as MessageChannelConstructor;
+
+        new SchedulingFairnessMonitor(
+            1000,
+            vi.fn(),
+            { log : vi.fn() },
+            ((cb : () => void) => { intervalCallback = cb; return 1; }) as never,
+            vi.fn(),
+            (() => { order.push("setTimeout"); return 2; }) as never,
+            vi.fn(),
+            Channel,
+            { now : () => 0 },
+        );
+
+        intervalCallback();
+        order.push("interval callback returned");
+        deliver!();
+
+        expect(order).toEqual(["interval callback returned", "setTimeout"]);
+    });
+
+    it("closes its channel on stop()", () => {
+        const channels : MessageChannelLike[] = [];
+        const monitor = new SchedulingFairnessMonitor(
+            1000,
+            vi.fn(),
+            { log : vi.fn() },
+            (() => 1) as never,
+            vi.fn(),
+            vi.fn(),
+            vi.fn(),
+            function () { const c = createMockMessageChannel(); channels.push(c); return c; } as unknown as MessageChannelConstructor,
+            { now : () => 0 },
+        );
+
+        monitor.stop();
+        expect(channels).toHaveLength(1);
+        expect(channels[0]!.port1.close).toHaveBeenCalled();
+        expect(channels[0]!.port1.onmessage).toBeNull();
     });
 });

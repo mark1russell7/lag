@@ -6,7 +6,8 @@ export type ClockSyncResult = {
     roundTripMs : number;
 };
 
-const DEFAULT_SAMPLES = 5;
+/** The number of exchanges in one synchronization. The shortest round trip of 8 is a good estimate. */
+const DEFAULT_SAMPLES = 8;
 /** An offset inside the uncertainty plus this margin is treated as 0. */
 const ALIGNED_MARGIN_MS = 1;
 
@@ -18,8 +19,12 @@ const ALIGNED_MARGIN_MS = 1;
  * several exchanges, the one with the shortest round trip is the most exact.
  *
  * The HR-Time specification aligns `timeOrigin + now()` across a window and
- * its workers. The exchange checks this in each browser, and the monitor
- * corrects its measurements when the clocks do not agree.
+ * its workers, but browsers do not: Chromium takes one anchor for each
+ * context, thus a worker can have a constant offset. When each context reads
+ * `timeOrigin` only one time (`createAbsoluteClock`), the offset stays
+ * constant for the life of the worker. Thus the most accurate estimate of
+ * all synchronizations (the shortest round trip) is the result. Each new
+ * synchronization is a new chance to measure while the main thread is idle.
  */
 export class WorkerClockSync {
     private nextId = 1;
@@ -35,7 +40,7 @@ export class WorkerClockSync {
         private readonly sampleCount : number = DEFAULT_SAMPLES,
     ) {}
 
-    /** Starts a new synchronization. An unfinished one is discarded. */
+    /** Starts a new synchronization. An unfinished one is discarded. The best earlier result stays. */
     begin() : void {
         this.sentAt.clear();
         this.samples = [];
@@ -56,7 +61,7 @@ export class WorkerClockSync {
             return;
         }
         const best = this.samples.reduce((a, b) => (b.roundTripMs < a.roundTripMs ? b : a));
-        this.result = best;
+        if (!this.result || best.roundTripMs < this.result.roundTripMs) this.result = best;
         this.onResult(best);
     }
 
@@ -70,6 +75,7 @@ export class WorkerClockSync {
         return Math.abs(this.result.offsetMs) > uncertainty ? this.result.offsetMs : 0;
     }
 
+    /** The most accurate result of all synchronizations: the one with the shortest round trip. */
     getResult() : ClockSyncResult | undefined {
         return this.result;
     }

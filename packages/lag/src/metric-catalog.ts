@@ -174,10 +174,10 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
     clockResolution : metric("lag_clock_resolution_histogram", "histogram", "ms", "ClockReliabilityChecker",
         "The resolution of performance.now(). The checker measures it one time for each page."),
     clockSkew : metric("lag_clock_skew_histogram", "histogram", "ms", "ClockDriftMonitor",
-        "The absolute difference between Date.now() and performance.timeOrigin + performance.now()."),
+        "The absolute difference between Date.now() and the absolute monotonic clock (timeOrigin from the start plus performance.now())."),
     clockJumps : metric("lag_clock_jumps", "counter", "{jump}", "ClockDriftMonitor",
-        "The number of sudden changes of the difference between the wall clock and the monotonic clock.",
-        { direction : ["forward", "backward"] }),
+        "The number of discontinuities between the wall clock and the monotonic clock: a suspend (the monotonic clock stopped while the device slept) or a step of the system clock.",
+        { direction : ["forward", "backward"], kind : ["suspend", "step"] }),
 
     browserReports : metric("lag_browser_reports", "counter", "{report}", "BrowserReportMonitor",
         "The number of reports from the Reporting API, for example interventions and deprecations.",
@@ -231,8 +231,8 @@ export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
     clockJump : {
         name : "lag.clock.jump",
         monitor : "ClockDriftMonitor",
-        description : "A sudden change of the difference between the wall clock and the monotonic clock, for example after the device slept.",
-        attributes : ["direction", "magnitude_ms", "skew_ms"],
+        description : "A discontinuity between the wall clock and the monotonic clock, with its classification as a suspend or a step.",
+        attributes : ["direction", "kind", "magnitude_ms", "skew_ms", "lateness_ms"],
     },
     longAnimationFrame : {
         name : "lag.long_animation_frame",

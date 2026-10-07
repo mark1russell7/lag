@@ -51,6 +51,37 @@ describe("WorkerClockSync", () => {
         expect(sync.getResult()).toBeUndefined();
     });
 
+    it("keeps the most accurate result of all synchronizations", () => {
+        let mainNow = 1_000;
+        let pending : number | undefined;
+        const results = vi.fn();
+        const sync = new WorkerClockSync((id) => { pending = id; }, () => mainNow, results, 1);
+        const exchange = (oneWayDelay : number, offsetMs : number) => {
+            sync.begin();
+            const id = pending!;
+            mainNow += oneWayDelay;
+            const workerTime = mainNow + offsetMs;
+            mainNow += oneWayDelay;
+            sync.onReply(id, workerTime);
+        };
+
+        exchange(0.25, 30);
+        // A later exchange while the main thread was busy: a long round trip, a poor estimate
+        exchange(40, 70);
+
+        expect(results.mock.calls.map(c => c[0].offsetMs)).toEqual([30, 70]);
+        expect(sync.getResult()).toEqual({ offsetMs : 30, roundTripMs : 0.5 });
+        expect(sync.getCorrectionMs()).toBe(30);
+    });
+
+    it("uses 8 exchanges by default", () => {
+        const sent : number[] = [];
+        const sync = new WorkerClockSync((id) => sent.push(id), () => 0, vi.fn());
+        sync.begin();
+        for (let i = 0; i < 10; i++) sync.onReply(sent[sent.length - 1]!, 0);
+        expect(sent).toHaveLength(8);
+    });
+
     it("ignores replies with an unknown ID", () => {
         const { sync, results } = createExchange(10, [1]);
         sync.begin();

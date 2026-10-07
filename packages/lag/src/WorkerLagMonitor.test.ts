@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkerLagMonitor, type WorkerLike, type WorkerLagMeasurement, type WorkerLagEvents } from "./WorkerLagMonitor.js";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "./worker-protocol.js";
+import { createAbsoluteClock } from "./absolute-clock.js";
 
 function createMockWorker() {
     const listeners : Array<(event : { data : WorkerToMainMessage }) => void> = [];
@@ -36,7 +37,7 @@ function createMonitor(intervalMs = 1000, events : WorkerLagEvents = {}) {
     const logger = { log : vi.fn() };
     // Main thread: timeOrigin 10_000, so absolute time = 10_000 + now
     const performance = { timeOrigin : 10_000, now : vi.fn(() => 0) };
-    const monitor = new WorkerLagMonitor(mock.worker, report, logger, performance, {
+    const monitor = new WorkerLagMonitor(mock.worker, report, logger, createAbsoluteClock(performance), {
         heartbeatIntervalMs : intervalMs,
         setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
         clearTimeoutFn : (id) => clearTimeout(id),
@@ -93,8 +94,8 @@ describe("WorkerLagMonitor", () => {
         const onClockSync = vi.fn();
         const m = createMonitor(1000, { onClockSync });
 
-        // Answer each sync request at once; the worker clock is 40 ms ahead
-        for (let i = 0; i < 5; i++) {
+        // Answer each of the 8 sync requests at once; the worker clock is 40 ms ahead
+        for (let i = 0; i < 8; i++) {
             const request = m.sent("sync").at(-1)!;
             m.deliver({ type : "sync-reply", id : (request as { id : number }).id, workerTime : 10_000 + 40 });
         }

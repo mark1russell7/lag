@@ -1,4 +1,5 @@
-import type { CoreDeps, EventDeps, PerformanceDeps, TimerDeps, WorkerMonitorDeps } from "../dep-groups.js";
+import type { AbsoluteClockDeps, CoreDeps, EventDeps, PerformanceDeps, TimerDeps, WorkerMonitorDeps } from "../dep-groups.js";
+import { createAbsoluteClock } from "../absolute-clock.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { WorkerLagMonitor } from "../WorkerLagMonitor.js";
 import type { MeasurementConditions } from "../measurement-conditions.js";
@@ -29,7 +30,7 @@ const DEFAULT_HANG_THRESHOLD_MS = 5_000;
  * hidden.
  */
 export function createInstrumentedWorkerLag(
-    deps : CoreDeps & WorkerMonitorDeps & PerformanceDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<EventDeps>,
+    deps : CoreDeps & WorkerMonitorDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<EventDeps>,
     conditions? : MeasurementConditions,
 ) : MonitorHandle<WorkerLagMonitor> {
     return createHandle("worker-lag", deps.logger, () => {
@@ -47,7 +48,7 @@ export function createInstrumentedWorkerLag(
                 recorder.submit(m.deliveryDelayMs, m.deliveryDelayMs);
             },
             deps.logger,
-            deps.performance,
+            deps.absoluteClock ?? createAbsoluteClock(deps.performance),
             {
                 heartbeatIntervalMs : deps.workerHeartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS,
                 setTimeoutFn : deps.setTimeoutFn,

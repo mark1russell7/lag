@@ -1,6 +1,7 @@
 // --- Original exports ---
 export { DriftLag } from "./DriftLag.js";
-export { MacrotaskLag } from "./MacrotaskLag.js";
+export { MacrotaskLag, type PostTaskFn } from "./MacrotaskLag.js";
+export { createMessageTaskQueue, type MessageTaskQueue } from "./message-task.js";
 export { LagMonitor, type LagMonitorConstructor } from "./LagMonitor.js";
 export { LagLogger } from "./LagLogger.js";
 export type {
@@ -96,6 +97,7 @@ export type {
     ReportingDeps,
     SharedMemoryDeps,
     PageDeps,
+    AbsoluteClockDeps,
 } from "./dep-groups.js";
 
 // --- Phase 2: Performance Observer monitors ---
@@ -198,7 +200,8 @@ export {
     type PressureMeasurement,
 } from "./ComputePressureMonitor.js";
 export { TimerThrottleDetector, type TimerThrottleConfig, type ThrottleCalibration } from "./TimerThrottleDetector.js";
-export { ClockDriftMonitor, type ClockDriftSample, type ClockJump } from "./ClockDriftMonitor.js";
+export { ClockDriftMonitor, type ClockDriftSample, type ClockJump, type ClockDriftOptions } from "./ClockDriftMonitor.js";
+export { createAbsoluteClock, type AbsoluteClock } from "./absolute-clock.js";
 export {
     BrowserReportMonitor,
     type BrowserReport,
