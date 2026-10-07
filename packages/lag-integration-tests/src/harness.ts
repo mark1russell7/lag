@@ -22,7 +22,7 @@ export function wait(ms : number) : Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/** Resolves after `count` animation frames. */
+/** This function gives a promise that resolves after `count` animation frames. */
 export function nextFrames(count = 1) : Promise<void> {
     return new Promise(resolve => {
         const step = (left : number) : void => {
@@ -33,7 +33,7 @@ export function nextFrames(count = 1) : Promise<void> {
     });
 }
 
-/** Polls `condition` every 50 ms until it is true or `timeoutMs` passes. Returns the last result. */
+/** This function polls `condition` every 50 ms until it is true or `timeoutMs` passes. The function gives the last result. */
 export async function waitUntil(condition : () => boolean, timeoutMs = 5_000) : Promise<boolean> {
     const deadline = performance.now() + timeoutMs;
     while (!condition()) {
@@ -162,8 +162,9 @@ const MIMIR_QUERY_URL = "http://localhost:9009/prometheus/api/v1/query";
 /**
  * The number of `metric` samples (the `_count` series of a histogram) that
  * Mimir has for `service`, or 0 if Mimir has none or does not answer.
- * Mimir translates the OTLP resource attribute service.name into the `job`
- * label; a `service_name` label exists only if Mimir promotes the attribute.
+ * Mimir translates the `service.name` attribute of the OTLP resource into the
+ * `job` label. A `service_name` label exists only if Mimir promotes the
+ * attribute.
  * The query accepts both, and the `_milliseconds` unit suffix that Mimir adds
  * when it is configured to.
  */
@@ -180,7 +181,7 @@ export async function queryMimirCount(metric : string, service : string) : Promi
     }
 }
 
-/** Polls `queryMimirCount` until it is above 0 or `timeoutMs` passes: Alloy batches for 5 s, then Mimir ingests. */
+/** This function polls `queryMimirCount` until the count is above 0 or `timeoutMs` passes. Alloy batches for 5 s, and then Mimir ingests. */
 export async function waitForMimirCount(metric : string, service : string, timeoutMs : number) : Promise<number> {
     const deadline = performance.now() + timeoutMs;
     for (;;) {
@@ -232,9 +233,9 @@ export type CallbackCounts = {
  */
 export type TimerAccounting = {
     globals : BrowserGlobals;
-    /** The callbacks that ran since the start or the last `resetCounts()`. */
+    /** The callbacks that started after `createTimerAccounting()` or after the last `resetCounts()`. */
     counts() : CallbackCounts;
-    /** The timers, intervals, frame and idle requests that are scheduled and did not run or were not cancelled. */
+    /** The timers, intervals, frame requests and idle requests that are scheduled, did not fire and were not cancelled. */
     pending() : Omit<CallbackCounts, "messages">;
     resetCounts() : void;
 };
@@ -251,7 +252,7 @@ export function createTimerAccounting(win : Window & typeof globalThis = window)
     const requestIdle = idleApi.requestIdleCallback?.bind(win);
     const cancelIdle = idleApi.cancelIdleCallback?.bind(win);
 
-    /** port1 of each channel counts its messages: the monitors listen there (see `createMessageTaskQueue`). */
+    /** The `port1` of each channel counts its messages. The monitors listen on `port1`, through `createMessageTaskQueue`. */
     function CountingMessageChannel() : { port1 : unknown; port2 : MessagePort } {
         const channel = new win.MessageChannel();
         const port = channel.port1;
@@ -358,7 +359,7 @@ export function createTimerAccounting(win : Window & typeof globalThis = window)
     };
 }
 
-/** Counts the messages that the main thread receives from the worker (heartbeats and replies). */
+/** This function counts the messages that the main thread receives from the worker (heartbeats and replies). */
 export function countWorkerMessages(worker : LagWorker) : { worker : LagWorker; count() : number; reset() : void } {
     let received = 0;
     const counted : LagWorker = {

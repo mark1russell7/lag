@@ -52,7 +52,7 @@ export function failingTests(run : RunReport) : TestRow[] {
     return flattenTests(run).filter(row => row.status === "failed");
 }
 
-/** The slowest tests that ran (passed or failed), slowest first. */
+/** The slowest tests that passed or failed, slowest first. */
 export function slowestTests(run : RunReport, limit = 10) : TestRow[] {
     return flattenTests(run)
         .filter(row => row.status === "passed" || row.status === "failed")
@@ -60,7 +60,7 @@ export function slowestTests(run : RunReport, limit = 10) : TestRow[] {
         .slice(0, limit);
 }
 
-/** The durations of the tests that ran, in ms. */
+/** The durations of the tests that passed or failed, in ms. */
 export function testDurations(run : RunReport) : number[] {
     return flattenTests(run)
         .filter(row => row.status === "passed" || row.status === "failed")
@@ -70,7 +70,7 @@ export function testDurations(run : RunReport) : number[] {
 export type StatusFilter = TestStatus | "all";
 
 export type TestFilter = {
-    /** Matches the test name, the describe blocks, the file and the package, without case. */
+    /** The query matches the test name, the describe blocks, the file and the package, without case. */
     query : string;
     status : StatusFilter;
     /** Only the tests in this environment, for example "firefox". */
@@ -143,7 +143,7 @@ export function totalTests(counts : StatusCounts) : number {
     return counts.passed + counts.failed + counts.skipped + counts.todo;
 }
 
-/** The sum of the suite durations, in ms. Suites can run at the same time, so this is the total work, not the wall time. */
+/** The sum of the suite durations, in ms. Suites can operate at the same time, so this is the total work, not the wall time. */
 export function totalSuiteDuration(run : RunReport) : number {
     return run.suites.reduce((sum, suite) => sum + suite.durationMs, 0);
 }

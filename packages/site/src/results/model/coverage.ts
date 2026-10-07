@@ -11,7 +11,7 @@ export const COVERAGE_LABELS : Readonly<Record<CoverageMetric, string>> = {
     branches : "Branches",
 };
 
-/** The covered percentage, from 0 to 100. Undefined if there is nothing to cover. */
+/** This function gives the covered percentage, from 0 to 100. It gives `undefined` if there is nothing to cover. */
 export function percent(counts : CoverageCounts) : number | undefined {
     return counts.total === 0 ? undefined : (counts.covered / counts.total) * 100;
 }

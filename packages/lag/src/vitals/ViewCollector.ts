@@ -72,9 +72,9 @@ const FRAME_GROUP_MS = 8;
 
 /**
  * The collector looks for the frame of a new entry in this number of recent
- * frames. web-vitals keeps 10 or more recent frames, and the frames of its
- * candidates. Here, the facts of an INP candidate keep the group of their
- * frame.
+ * frames. The web-vitals library keeps 10 or more recent frames, and also
+ * the frames of its candidates. Here, the facts of an INP candidate keep the
+ * group of their frame.
  */
 const MAX_RECENT_FRAMES = 50;
 

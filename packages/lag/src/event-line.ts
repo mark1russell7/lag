@@ -9,7 +9,7 @@ function lineValue(value : AttributeValue) : string {
 /**
  * This function gives the line of an event: the event name and the
  * attributes, as sorted key=value pairs. The event sink and the worker use
- * it as the body of the log record, and a log store can use the body as the
+ * it as the body of the log record. A log store can use the body as the
  * line. Loki drops an entry when the previous entry of its stream has the
  * same timestamp and the same line. A browser sends several events in one
  * millisecond, for example the five Web Vitals of one report. The attributes

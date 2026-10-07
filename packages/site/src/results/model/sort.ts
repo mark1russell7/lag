@@ -8,8 +8,8 @@ export type SortState<K extends string> = {
 export type SortValue = string | number | undefined;
 
 /**
- * Sorts rows by one column. Rows without a value go last in both
- * directions. Equal rows keep their order.
+ * This function sorts rows by one column. Rows without a value go last in
+ * both directions. Equal rows keep their order.
  */
 export function sortRows<T, K extends string>(
     rows : readonly T[],
@@ -32,7 +32,7 @@ export function sortRows<T, K extends string>(
         .map(entry => entry.row);
 }
 
-/** The sort after a click on a column header: the same column changes direction; a new column starts with `initial`. */
+/** This function gives the sort after a click on a column header. The same column changes direction, and a new column starts with `initial`. */
 export function nextSort<K extends string>(current : SortState<K>, key : K, initial : SortDirection = "ascending") : SortState<K> {
     if (current.key !== key) return { key, direction : initial };
     return { key, direction : current.direction === "ascending" ? "descending" : "ascending" };

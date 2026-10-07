@@ -69,9 +69,9 @@ export type MeasurementGroup = {
 export const OTHER_GROUP = "Other";
 
 /**
- * Joins the values of the measurements by the value of a key. Past
- * `maxGroups`, the smallest groups fold into one "Other" group, so a chart
- * never needs more colors than the palette has.
+ * This function joins the values of the measurements by the value of a key.
+ * Past `maxGroups`, the smallest groups fold into one "Other" group, so a
+ * chart does not need more colors than the palette has.
  */
 export function groupMeasurements(measurements : readonly Measurement[], key : string, maxGroups = 8) : MeasurementGroup[] {
     const groups = new Map<string, { values : number[]; sources : string[] }>();

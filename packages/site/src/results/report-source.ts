@@ -4,7 +4,7 @@ import { ReportDataError, parseRunIndex, parseRunReport } from "./validate";
 
 /** Where the results viewer gets its data. Components use this interface, not `fetch`. */
 export interface ReportSource {
-    /** The list of runs. A source without data returns an empty list. */
+    /** The list of runs. A source without data gives an empty list. */
     listRuns() : Promise<RunIndex>;
     /** One run. `file` is the `file` field of a run in the index. */
     getRun(file : string) : Promise<RunReport>;
@@ -41,7 +41,7 @@ export type HttpReportSourceOptions = {
     fetch? : FetchFunction;
 };
 
-/** Reads `data/results/index.json` and the run files from the web server. */
+/** This source reads `data/results/index.json` and the run files from the web server. */
 export class HttpReportSource implements ReportSource {
     private readonly root : string;
     private readonly fetchFn : FetchFunction;
@@ -64,7 +64,7 @@ export class HttpReportSource implements ReportSource {
         return parseRunReport(await this.readJson(response, file));
     }
 
-    /** Undefined if the file does not exist: HTTP 404, or the HTML page that a single-page app fallback sends. */
+    /** This method gives `undefined` if the file does not exist: HTTP 404, or the HTML page that a single-page app fallback sends. */
     private async request(file : string) : Promise<FetchResponse | undefined> {
         if (!isSafeRelativePath(file)) throw new ReportDataError(`The run file name "${file}" is not valid.`);
         const response = await this.fetchFn(`${this.root}${file}`);
@@ -90,7 +90,7 @@ export class MemoryReportSource implements ReportSource {
         private readonly runs : Readonly<Record<string, RunReport>>,
     ) {}
 
-    /** Makes the index from the runs, as the collector does. */
+    /** This function makes the index from the runs, as the collector does. */
     static fromRuns(runs : ReadonlyArray<{ file : string; report : RunReport }>) : MemoryReportSource {
         const index : RunIndex = {
             schemaVersion : SCHEMA_VERSION,
@@ -113,7 +113,7 @@ export class MemoryReportSource implements ReportSource {
     }
 }
 
-/** Loads each file once. A failed load can try again. */
+/** This function gives a source that loads each file once. A failed load can try again. */
 export function cachedReportSource(inner : ReportSource) : ReportSource {
     const listRuns = memoizePromise(() => inner.listRuns());
     const getRun = memoizePromiseByKey((file) => inner.getRun(file));

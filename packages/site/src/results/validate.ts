@@ -17,7 +17,7 @@ function checkSchemaVersion(value : unknown, what : string) : void {
     }
 }
 
-/** Checks the shape of `index.json`. */
+/** This function checks the shape of `index.json`. */
 export function parseRunIndex(value : unknown) : RunIndex {
     if (!isRecord(value)) throw new ReportDataError("The run index is not a JSON object.");
     checkSchemaVersion(value["schemaVersion"], "The run index");
@@ -37,7 +37,7 @@ export function parseRunIndex(value : unknown) : RunIndex {
 
 const REPORT_LISTS = ["suites", "coverage", "mutation", "measurements", "budgets"] as const;
 
-/** Checks the shape of a run file. */
+/** This function checks the shape of a run file. */
 export function parseRunReport(value : unknown) : RunReport {
     if (!isRecord(value)) throw new ReportDataError("The run file is not a JSON object.");
     checkSchemaVersion(value["schemaVersion"], "The run file");

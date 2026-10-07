@@ -1,8 +1,11 @@
 /**
- * Chart builders of the results viewer. Each one takes model data and returns
- * a function of the chart context (width, theme, Plot), for `PlotFigure`.
- * Mark rules: bars at most 24 px thick with a 4 px round data end, 2 px
- * lines, hairline grids, and a label on only the values that matter.
+ * This module has the chart builders of the results viewer. Each builder
+ * takes model data and gives a function of the chart context (width, theme,
+ * Plot), for `PlotFigure`.
+ *
+ * The marks follow these rules. A bar is at most 24 px thick, with a 4 px
+ * round data end. A line is 2 px wide, and a grid line is a hairline. Only
+ * the values that matter have a label.
  */
 import type { TestStatus } from "../adapters/lag-report";
 import type { Markish, PlotContext, PlotOptions } from "../components/PlotFigure/PlotFigure";
@@ -206,8 +209,9 @@ export function mutationChart(rows : readonly MutationFileRow[], limit = 20) : C
 }
 
 /**
- * Ticks in a 1-2-5 series (0, 1, 2, 5, 10, 20, 50, ...) up to `max`. On a
- * log(1 + x) scale they have about equal spaces, so the labels do not touch.
+ * This function gives the ticks up to `max` in a 1-2-5 series (0, 1, 2, 5,
+ * 10, 20, 50, ...). On a log(1 + x) scale, the ticks have approximately
+ * equal spaces, so the labels do not touch.
  */
 export function symlogTicks(max : number) : number[] {
     if (!(max > 0) || !Number.isFinite(max)) return [0];

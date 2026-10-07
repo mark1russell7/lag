@@ -1,7 +1,7 @@
 /**
- * The types that the Node side (the Vitest browser commands in `commands/`)
- * and the browser side (the tests) share. Only types: this module runs in
- * neither environment.
+ * The Node side (the Vitest browser commands in `commands/`) and the browser
+ * side (the tests) share the types in this module. The module has only
+ * types, so it does not operate in either environment.
  */
 
 /** The result of `freezePage`. The times come from the Node clock. */
@@ -43,7 +43,7 @@ declare module "vitest" {
     export interface ProvidedContext {
         /** The environment name of the instance: "chromium", "firefox", "webkit" or "chrome". */
         environment : string;
-        /** True in the e2e project: the Grafana stack runs, so the Mimir checks are required. */
+        /** True in the e2e project: the Grafana stack operates, so the Mimir checks are necessary. */
         e2e : boolean;
         /** The duration of the soak test, in ms. */
         soakMs : number;

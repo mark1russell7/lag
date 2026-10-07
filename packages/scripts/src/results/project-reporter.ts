@@ -1,9 +1,9 @@
 /**
- * A Vitest reporter that writes one JSON file for each project (each browser
+ * This Vitest reporter writes one JSON file for each project (each browser
  * instance is a project), in the shape of Vitest's JSON reporter that
  * `fromVitestJson` reads. Vitest's own JSON reporter puts the files of all
- * projects in one list, so a file that runs in four browsers comes four
- * times, with no project name.
+ * projects in one list. Thus, if Vitest starts the tests of a file in four
+ * browsers, the list has the file four times, with no project name.
  *
  * The collector gives it to Vitest by path:
  *   vitest run --reporter=default --reporter=<this file>

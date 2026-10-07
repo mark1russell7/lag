@@ -1,7 +1,7 @@
 /**
- * Feature detection for the cross-browser tests. A test that needs an API
- * that only some engines have skips itself with one of the reasons here, so
- * the report says why it did not run.
+ * This module does the feature detection for the cross-browser tests. A test
+ * that needs an API that only some engines have skips itself with one of the
+ * reasons here. Thus, the report gives the reason for the skip.
  */
 
 const entryTypes : readonly string[] = typeof PerformanceObserver === "function"

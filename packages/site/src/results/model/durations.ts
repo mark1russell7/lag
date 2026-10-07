@@ -18,8 +18,9 @@ function binLabel(lower : number, upper : number) : string {
 }
 
 /**
- * Counts durations in 1-2-5 bins (0–1 ms, 1–2 ms, 2–5 ms, ...). The result
- * starts at the first bin with a value and stops at the last one.
+ * This function counts the durations in 1-2-5 bins (0–1 ms, 1–2 ms,
+ * 2–5 ms, ...). The result starts at the first bin with a value and stops
+ * at the last one.
  */
 export function durationBins(values : readonly number[]) : DurationBin[] {
     const bins : DurationBin[] = EDGES.map((lower, index) => {

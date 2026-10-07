@@ -1,5 +1,6 @@
 /**
- * pnpm results: runs the test program and writes the results for the site.
+ * The `pnpm results` script does one run of the test program and writes the
+ * results for the site.
  *
  * 1. The unit tests of @lag/core (with coverage), @lag/load, @lag/report and
  *    @lag/scripts.
@@ -10,10 +11,10 @@
  *
  * Each run uses `project-reporter.ts`, which writes one Vitest JSON report
  * for each project. The browser tests write their measurements and budgets
- * to $LAG_RESULTS_DIR/results.jsonl. The collector converts all of this with
- * the @lag/report converters, adds the latest Stryker report if it exists,
- * and writes packages/site/public/data/results/: index.json and
- * runs/<run ID>.json.
+ * to `$LAG_RESULTS_DIR/results.jsonl`. The collector converts all of this
+ * with the @lag/report converters and adds the latest Stryker report if it
+ * exists. Then it writes `index.json` and `runs/<run ID>.json` in
+ * `packages/site/public/data/results/`.
  *
  * Options: --skip-unit, --skip-browser, --skip-overhead, --skip-site,
  * --soak, --e2e, --no-mutation, --keep-temp.
@@ -100,7 +101,7 @@ function readJson<T>(file : string) : T | undefined {
     }
 }
 
-/** Runs Vitest of a package with Node, so that no shell quotes the arguments. */
+/** This function starts the Vitest of a package with Node, so that no shell quotes the arguments. */
 function runVitest(step : Step, reportDir : string, resultsDir : string) : number {
     const dir = path.join(root, step.dir);
     const vitest = path.join(dir, "node_modules/vitest/vitest.mjs");

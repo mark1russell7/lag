@@ -1,7 +1,7 @@
 /**
- * The pure part of the results collector: it turns the files that the test
- * runs write into the parts of a RunReport. No I/O, so the unit tests can
- * call every function.
+ * This module is the pure part of the results collector. It changes the
+ * files that the test runs write into the parts of a RunReport. The module
+ * does no I/O, so the unit tests can use every function.
  */
 import {
     SCHEMA_VERSION,
@@ -29,7 +29,8 @@ export type ProjectReport = VitestJsonReport & {
 
 /**
  * One line of `results.jsonl`, which the browser commands of
- * @lag/integration-tests write (see its `src/command-types.ts`).
+ * @lag/integration-tests write. Refer to `src/command-types.ts` in that
+ * package.
  */
 export type ResultRecord =
     | {
@@ -142,8 +143,9 @@ export function runFile(id : string) : string {
 }
 
 /**
- * Adds a run to the index. An index with another schema version, or that is
- * not an index, starts again empty: the site cannot read its runs.
+ * This function adds a run to the index. An index with another schema
+ * version, or a value that is not an index, starts again empty: the site
+ * cannot read its runs.
  */
 export function mergeIndex(existing : unknown, run : RunReport, maxRuns = 50) : RunIndex {
     const previous = isRunIndex(existing) ? existing.runs.filter(summary => summary.id !== run.id) : [];
