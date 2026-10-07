@@ -1,0 +1,20 @@
+---
+title: Clock reliability
+description: Measures the resolution of performance.now() in the page.
+order: 35
+status: draft
+---
+
+import { clockMetrics } from "./metrics.data";
+
+`ClockReliabilityChecker` measures the resolution of `performance.now()`. The resolution is about 5–20 μs when the page is cross-origin isolated, and 100 μs–1 ms otherwise. A coarse clock rounds short durations.
+
+## What it measures
+
+## Cross-origin isolation
+
+## Metrics
+
+<MetricTable metrics={clockMetrics} />
+
+## Limits

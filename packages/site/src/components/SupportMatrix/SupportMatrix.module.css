@@ -1,0 +1,75 @@
+.matrix {
+    margin: 0 0 var(--space-5);
+}
+
+.matrix > :first-child {
+    margin-bottom: var(--space-2);
+}
+
+.table {
+    font-size: var(--text-sm);
+}
+
+.table th[scope="row"] {
+    font-weight: 400;
+    min-width: 12rem;
+}
+
+.feature {
+    display: block;
+    font-weight: 600;
+}
+
+.api {
+    display: block;
+    margin-top: 0.1em;
+    color: var(--color-ink-secondary);
+    font-size: 0.9em;
+}
+
+.cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    white-space: nowrap;
+}
+
+.icon {
+    flex: none;
+    width: 1.1em;
+    height: 1.1em;
+    color: var(--status-neutral);
+}
+
+.cell[data-status="supported"] .icon {
+    color: var(--status-good-ink);
+}
+
+.cell[data-status="partial"] .icon {
+    color: var(--status-warning-ink);
+}
+
+.cell[data-status="unsupported"] .icon {
+    color: var(--status-critical-ink);
+}
+
+.version {
+    color: var(--color-ink-secondary);
+}
+
+.mark a {
+    padding: 0 0.15em;
+    text-decoration: none;
+}
+
+.footnotes {
+    margin: 0;
+    padding-left: 1.5em;
+    max-width: var(--measure);
+    color: var(--color-ink-secondary);
+    font-size: var(--text-sm);
+}
+
+.footnotes li:target {
+    background: var(--color-accent-wash);
+}

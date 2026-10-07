@@ -1,0 +1,22 @@
+---
+title: Idle availability
+description: Measures how often the main thread goes idle, and for how long.
+order: 29
+status: draft
+---
+
+import { idleMetrics } from "./metrics.data";
+
+`IdleAvailabilityMonitor` uses `requestIdleCallback` to measure how often the main thread goes idle, and for how long. Few or short idle periods show that the main thread is busy.
+
+## What it measures
+
+## How it works
+
+## Metrics
+
+<MetricTable metrics={idleMetrics} />
+
+## Browser support
+
+## Limits

@@ -1,0 +1,32 @@
+---
+title: All monitors
+description: The monitors of @lag/core, and the signal that each monitor measures.
+order: 20
+status: draft
+---
+
+Each monitor measures one signal of main-thread health. You can use one monitor alone, as a class or through its instrumented factory. You can also use `setupAllMonitors()` to start all the monitors that the browser supports.
+
+## Monitors by signal
+
+- [DriftLag](/docs/monitors/drift-lag): timer drift in 100 ms windows.
+- [MacrotaskLag](/docs/monitors/macrotask-lag): the wait of a `setTimeout(0)` callback.
+- [Worker lag](/docs/monitors/worker-lag): main-thread blocking, measured from a Web Worker.
+- [Long animation frames](/docs/monitors/long-animation-frames): frames longer than 50 ms.
+- [Event timing and INP](/docs/monitors/event-timing): the latency of interactions.
+- [Layout shift](/docs/monitors/layout-shift): layout shifts and CLS.
+- [Paint and LCP](/docs/monitors/paint-and-lcp): FP, FCP and LCP.
+- [Frame timing](/docs/monitors/frame-timing): the time between frames.
+- [Idle availability](/docs/monitors/idle-availability): the idle time of the main thread.
+- [Scheduling fairness](/docs/monitors/scheduling-fairness): the latency of three task queues.
+- [Memory](/docs/monitors/memory): the memory use of the page.
+- [Compute pressure](/docs/monitors/compute-pressure): the CPU pressure state.
+- [Garbage collection signal](/docs/monitors/gc-signal): garbage collection cycles.
+- [Timer throttling](/docs/monitors/timer-throttle): throttled timers.
+- [Clock reliability](/docs/monitors/clock-reliability): the resolution of `performance.now()`.
+
+## Use one monitor
+
+## Use all the monitors
+
+## Monitors that need a browser API

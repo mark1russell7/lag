@@ -1,0 +1,22 @@
+---
+title: Metrics model
+description: The instruments that the monitors record, their units, and the rules for attributes.
+order: 13
+status: draft
+---
+
+import { allMetrics } from "../monitors/metrics.data";
+
+The monitors record OpenTelemetry histograms, counters and gauges through a `Meter` that the caller gives. All durations are in milliseconds. A gauge with a name that ends in `_max_gauge`, `_avg_gauge` or `_rate_gauge` covers the period since the previous collection. Attributes have only a small, fixed set of values, because each set of attributes is a separate time series.
+
+## Instruments
+
+## Units
+
+## Window gauges
+
+## Attributes
+
+## All metrics
+
+<MetricTable metrics={allMetrics} caption="All metrics of setupAllMonitors()" />

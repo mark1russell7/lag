@@ -1,0 +1,22 @@
+---
+title: Event timing and INP
+description: Records each interaction event of 16 ms or more, split into its phases, and the INP of the page.
+order: 25
+status: draft
+---
+
+import { eventTimingMetrics } from "./metrics.data";
+
+`EventTimingMonitor` records each interaction event of 16 ms or more from the Event Timing API. It splits each event into the input delay, the processing time and the presentation delay. It also reports the Interaction to Next Paint (INP) of the page.
+
+## What it measures
+
+## How INP is calculated
+
+## Metrics
+
+<MetricTable metrics={eventTimingMetrics} />
+
+## Browser support
+
+## Limits

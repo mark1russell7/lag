@@ -1,0 +1,20 @@
+---
+title: Scheduling fairness
+description: Measures the latency of a timeout, a message and a microtask that start at the same time.
+order: 30
+status: draft
+---
+
+import { schedulingMetrics } from "./metrics.data";
+
+`SchedulingFairnessMonitor` queues a `setTimeout(0)` callback, a `postMessage` callback and a `queueMicrotask` callback at the same time. It measures the latency of each callback. The microtask latency is a baseline of about 0 ms.
+
+## What it measures
+
+## How it works
+
+## Metrics
+
+<MetricTable metrics={schedulingMetrics} />
+
+## Limits

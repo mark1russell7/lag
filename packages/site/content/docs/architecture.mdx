@@ -1,0 +1,22 @@
+---
+title: Architecture
+description: The packages, the runtime parts and the backend, and how the data moves between them.
+order: 40
+status: draft
+---
+
+The monitors run on the main thread of the page and record metrics through an OpenTelemetry `Meter`. The OpenTelemetry SDK exports the metrics with OTLP to the Grafana stack. Select a box on the map to see what it does.
+
+<Figure caption="The parts of the system and how they connect. The list under the map gives the same information as text.">
+  <ArchitectureMap />
+</Figure>
+
+## The packages
+
+## Inside @lag/core
+
+## The runtime
+
+## The backend
+
+## Design rules

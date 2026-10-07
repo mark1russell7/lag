@@ -1,0 +1,22 @@
+---
+title: MacrotaskLag
+description: Measures how long a setTimeout(0) callback waits in the task queue.
+order: 22
+status: draft
+---
+
+import { macrotaskLagMetrics } from "./metrics.data";
+
+Every 5 s, `MacrotaskLag` measures how long a `setTimeout(0)` callback waits in the task queue. A long wait shows that other tasks keep the main thread busy.
+
+## What it measures
+
+## How it works
+
+## Metrics
+
+<MetricTable metrics={macrotaskLagMetrics} />
+
+## Configuration
+
+## Limits

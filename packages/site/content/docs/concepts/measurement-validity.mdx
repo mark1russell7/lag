@@ -1,0 +1,24 @@
+---
+title: Measurement validity
+description: When a measurement does not describe the app, for example in a hidden page, in a frozen page or with a coarse clock.
+order: 12
+status: draft
+---
+
+A measurement describes the app only if the browser runs the page normally during the measurement. In a hidden page, the browser throttles the timers. In a frozen page, the browser stops the tasks of the page. A coarse clock rounds short durations.
+
+<Callout type="warning" title="Hidden pages">
+  Do not compare values from a hidden page with values from a visible page. The monitors discard each sample whose window overlaps a hidden period.
+</Callout>
+
+## Hidden pages
+
+## Frozen and suspended pages
+
+## Throttled timers
+
+## Clock resolution and reliability
+
+## What the monitors do with invalid samples
+
+## Open questions

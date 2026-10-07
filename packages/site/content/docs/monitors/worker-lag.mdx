@@ -1,0 +1,22 @@
+---
+title: Worker lag
+description: Measures main-thread blocking from a Web Worker, while the block occurs.
+order: 23
+status: draft
+---
+
+import { workerLagMetrics } from "./metrics.data";
+
+A Web Worker sends heartbeats with timestamps from its own timer. `WorkerLagMonitor` measures the time until the main thread handles each heartbeat. This time is main-thread blocking, measured while the block occurs and not after it. `createLagWorker()` from `@lag/worker` starts the worker, and the caller terminates it.
+
+## What it measures
+
+## How it works
+
+## Metrics
+
+<MetricTable metrics={workerLagMetrics} />
+
+## Configuration
+
+## Limits

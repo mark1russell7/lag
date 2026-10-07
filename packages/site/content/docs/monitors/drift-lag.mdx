@@ -1,0 +1,22 @@
+---
+title: DriftLag
+description: Measures timer drift, the time by which a 100 ms window of chained 5 ms timeouts ends late.
+order: 21
+status: draft
+---
+
+import { driftLagMetrics } from "./metrics.data";
+
+`DriftLag` chains 5 ms timeouts across a 100 ms window and measures how late the window ends. Each blocking task in the window adds to the lag. The monitor also sends warnings to `LagLogger` when the lag stays high for 2 s or 5 s.
+
+## What it measures
+
+## How it works
+
+## Metrics
+
+<MetricTable metrics={driftLagMetrics} />
+
+## Configuration
+
+## Limits
