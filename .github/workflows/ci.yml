@@ -37,10 +37,12 @@ jobs:
           name: coverage-core
           path: packages/lag/coverage/
           if-no-files-found: ignore
-      # The Simplified Technical English lint is advisory for now
-      - name: STE lint (non-blocking)
-        continue-on-error: true
-        run: pnpm run --if-present lint:ste
+      # The writing rules (ASD-STE100) of the README, the site and the comments
+      - name: STE lint
+        run: pnpm lint:ste
+      # The metric table of the README must agree with the metric catalog
+      - name: README metric table
+        run: pnpm readme:metrics:check
 
   browser:
     name: Browser tests (${{ matrix.engine }})
