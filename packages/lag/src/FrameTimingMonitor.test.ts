@@ -187,4 +187,56 @@ describe("FrameTimingMonitor", () => {
         fire(10_016);
         expect(reports.map(r => r.frameDeltaMs)).toEqual([16, 16, 16]);
     });
+
+    describe("automatic frame interval", () => {
+        function createAutoDriver() {
+            let currentTime = 0;
+            const reports : FrameMeasurement[] = [];
+            let pending : ((time : number) => void) | undefined;
+            const monitor = new FrameTimingMonitor(
+                (m) => reports.push(m),
+                { log : vi.fn() },
+                (cb) => { pending = cb; return 1; },
+                vi.fn(),
+                { now : () => currentTime },
+            );
+            const frames = (deltaMs : number, count : number) => {
+                for (let i = 0; i < count; i++) {
+                    currentTime += deltaMs;
+                    pending?.(currentTime);
+                }
+            };
+            return { monitor, reports, frames };
+        }
+
+        it("follows a 120 Hz display", () => {
+            const d = createAutoDriver();
+            d.frames(8.33, 50);
+            d.frames(16.66, 1); // one frame missed at 120 Hz
+            expect(d.monitor.getFrameIntervalMs()).toBeCloseTo(8.33);
+            expect(d.reports.at(-1)!.droppedFrames).toBe(1);
+        });
+
+        it("does not count a 30 fps limit (power saving) as dropped frames", () => {
+            const d = createAutoDriver();
+            d.frames(33.33, 100);
+            expect(d.reports.slice(5).every(r => r.droppedFrames === 0)).toBe(true);
+            expect(d.monitor.getFrameIntervalMs()).toBeCloseTo(33.33);
+        });
+
+        it("keeps the estimate through a burst of jank", () => {
+            const d = createAutoDriver();
+            d.frames(16.67, 100);
+            d.frames(50, 60);
+            expect(d.monitor.getFrameIntervalMs()).toBeCloseTo(16.67);
+            expect(d.reports.at(-1)!.droppedFrames).toBe(2);
+        });
+
+        it("ignores deltas too short to be a refresh interval", () => {
+            const d = createAutoDriver();
+            d.frames(16.67, 10);
+            d.frames(1, 1);
+            expect(d.monitor.getFrameIntervalMs()).toBeCloseTo(16.67);
+        });
+    });
 });

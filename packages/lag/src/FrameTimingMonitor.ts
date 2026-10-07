@@ -22,19 +22,35 @@ export type FrameMeasurement = {
     droppedFrames : number;
     /** True iff `droppedFrames > 0`. */
     isDropped : boolean;
-    /** Expected frame interval in ms (1000 / targetFps). */
+    /** The expected frame interval in ms that the estimate used. */
     targetFrameTimeMs : number;
 };
 
-const DEFAULT_TARGET_FPS = 60;
+/** The frame interval comes from the recent frames (see the class description). */
+export const AUTO_FRAME_RATE = "auto";
+
+/**
+ * The window for the frame-interval estimate: about 10 seconds at 60 Hz.
+ * Long enough that a burst of jank does not raise the estimate, short enough
+ * to follow a change of the refresh rate.
+ */
+const ESTIMATE_WINDOW_FRAMES = 600;
+/** Shorter deltas are timing noise (two callbacks in one frame), not a refresh rate. */
+const MIN_PLAUSIBLE_FRAME_MS = 4;
+/** The estimate before the first frames arrive. */
+const INITIAL_FRAME_MS = 1000 / 60;
 
 /**
  * Measures frame delivery rate via requestAnimationFrame.
  *
  * Dropped frames are estimated from the gap between consecutive callbacks:
- * `round(delta / targetFrameTime) - 1`. At 60fps a 50ms gap counts as 2
- * dropped frames. The estimate assumes a fixed refresh rate (`targetFps`,
- * default 60): on a 120Hz display a single missed frame is too short to count.
+ * `round(delta / frameInterval) - 1`. At 60 Hz a 50 ms gap counts as 2
+ * dropped frames.
+ *
+ * By default (`targetFps = "auto"`), the frame interval is the shortest gap
+ * of the last 600 frames. This follows the real refresh rate: 120 Hz
+ * displays, and the 30 fps limit that power-saving modes apply. A fixed
+ * `targetFps` uses `1000 / targetFps` instead.
  *
  * **Different from LongAnimationFrameMonitor:**
  * - LoAF measures *blocking* during frame production (script + render time)
@@ -50,7 +66,10 @@ export class FrameTimingMonitor {
     private started = false;
     private observedFrames = 0;
     private droppedTotal = 0;
-    private readonly targetFrameTimeMs : number;
+    private readonly fixedFrameTimeMs : number | undefined;
+    /** Recent deltas for the sliding-window minimum: a deque of [frame index, delta] with increasing deltas. */
+    private readonly minimumDeque : Array<[number, number]> = [];
+    private frameIndex = 0;
 
     constructor(
         private readonly report : (measurement : FrameMeasurement) => void,
@@ -58,10 +77,26 @@ export class FrameTimingMonitor {
         private readonly requestAnimationFrameFn : RequestAnimationFrameFn,
         private readonly cancelAnimationFrameFn : CancelAnimationFrameFn,
         private readonly clock : Clock,
-        targetFps : number = DEFAULT_TARGET_FPS,
+        targetFps : number | typeof AUTO_FRAME_RATE = AUTO_FRAME_RATE,
     ) {
-        this.targetFrameTimeMs = 1000 / targetFps;
+        this.fixedFrameTimeMs = targetFps === AUTO_FRAME_RATE ? undefined : 1000 / targetFps;
         this.start();
+    }
+
+    /** The frame interval that the next drop estimate uses. */
+    getFrameIntervalMs() : number {
+        if (this.fixedFrameTimeMs !== undefined) return this.fixedFrameTimeMs;
+        return this.minimumDeque[0]?.[1] ?? INITIAL_FRAME_MS;
+    }
+
+    private observeDelta(deltaMs : number) : void {
+        if (deltaMs < MIN_PLAUSIBLE_FRAME_MS) return;
+        const index = this.frameIndex++;
+        while (this.minimumDeque.length > 0 && this.minimumDeque[this.minimumDeque.length - 1]![1] >= deltaMs) {
+            this.minimumDeque.pop();
+        }
+        this.minimumDeque.push([index, deltaMs]);
+        while (this.minimumDeque[0]![0] <= index - ESTIMATE_WINDOW_FRAMES) this.minimumDeque.shift();
     }
 
     start() : void {
@@ -125,9 +160,11 @@ export class FrameTimingMonitor {
 
             if (lastFrameTime >= 0) {
                 const frameDeltaMs = now - lastFrameTime;
-                // Compute how many target-frame intervals this gap covers,
+                this.observeDelta(frameDeltaMs);
+                const targetFrameTimeMs = this.getFrameIntervalMs();
+                // Compute how many frame intervals this gap covers,
                 // then subtract one for the frame that actually fired.
-                const expectedSlots = Math.max(1, Math.round(frameDeltaMs / this.targetFrameTimeMs));
+                const expectedSlots = Math.max(1, Math.round(frameDeltaMs / targetFrameTimeMs));
                 const droppedFrames = expectedSlots - 1;
 
                 this.observedFrames++;
@@ -138,7 +175,7 @@ export class FrameTimingMonitor {
                     fps : 1000 / frameDeltaMs,
                     droppedFrames,
                     isDropped : droppedFrames > 0,
-                    targetFrameTimeMs : this.targetFrameTimeMs,
+                    targetFrameTimeMs,
                 });
             }
         } catch (error) {
