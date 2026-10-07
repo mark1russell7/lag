@@ -1,5 +1,5 @@
 // --- Original exports ---
-export { DriftLag } from "./DriftLag.js";
+export { DriftLag, type DriftLagOptions } from "./DriftLag.js";
 export { MacrotaskLag, type PostTaskFn } from "./MacrotaskLag.js";
 export { createMessageTaskQueue, type MessageTaskQueue } from "./message-task.js";
 export { LagMonitor, type LagMonitorConstructor } from "./LagMonitor.js";
