@@ -37,7 +37,9 @@ describe("DriftLag accuracy", () => {
             await recordMeasurement("drift-accuracy/block-300ms/drift_lag_raw", "ms", [Math.max(...afterBlock)], { scenario : "block-300ms" });
             await recordMeasurement("drift-accuracy/baseline/drift_step_baseline", "ms", [baseline]);
             expect(idle.length).toBeGreaterThan(5);
-            expect(Math.abs(median(idle))).toBeLessThan(5);
+            // macOS can delay the timers of an app that is not in front. Safari on a GitHub runner had no
+            // focus, and its idle median was between 0 ms and 5.4 ms in 22 runs. A window has 100 ms.
+            expect(Math.abs(median(idle))).toBeLessThan(document.hasFocus() ? 5 : 10);
             // The resolution is one step: up to the baseline less than the block
             expect(Math.max(...afterBlock)).toBeGreaterThan(300 - baseline - 10);
             expect(Math.max(...afterBlock)).toBeLessThan(340);
