@@ -152,6 +152,18 @@ describe("createInstrumentedPeerHangWatch", () => {
         a.handle.stop();
     });
 
+    it("does not record a hang when the page becomes hidden at the end of a hang", async () => {
+        const a = open("a");
+        await vi.advanceTimersByTimeAsync(1_500);
+        a.page.hang();
+        await vi.advanceTimersByTimeAsync(7_500);
+        a.page.recover();
+        // The page operates again: only a close is the end of the page
+        a.fake.setVisibility("hidden");
+        expect(a.events.emit).not.toHaveBeenCalled();
+        a.handle.stop();
+    });
+
     it("does not record a hang when the page goes into the back/forward cache", async () => {
         const a = open("a");
         await vi.advanceTimersByTimeAsync(1_500);
