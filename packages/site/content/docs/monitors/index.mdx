@@ -17,6 +17,7 @@ Each monitor measures one signal of the health of the main thread, of the page o
 | [MacrotaskLag](/docs/monitors/macrotask-lag) | The wait of a `setTimeout(0)` from a message task | `setInterval`, `MessageChannel`, `setTimeout` | All | 3 callbacks each 5 s |
 | [Scheduling fairness](/docs/monitors/scheduling-fairness) | The latency of a timeout, a message and a microtask | `MessageChannel`, `queueMicrotask`, `setTimeout` | All with `MessageChannel` and `queueMicrotask` | 5 callbacks each 5 s |
 | [Worker lag](/docs/monitors/worker-lag) | The wait of each worker heartbeat, and hangs of 5 s or more | Web Worker, `performance.timeOrigin`, IndexedDB, `fetch` with `keepalive` | All (`timeOrigin`: Chromium 62, Firefox 53, Safari 15) | 1 heartbeat and 1 `ack` each second, 8 sync exchanges each 60 s |
+| [Peer hang watch](/docs/monitors/peer-hang-watch) | The pages that closed during a hang, seen from another page of the origin | `BroadcastChannel`, `navigator.locks` | All current versions | 1 message each second and 1 held lock for a visible page |
 | [Shared liveness](/docs/monitors/shared-liveness) | The duration of each block of 50 ms or more, from shared memory | `SharedArrayBuffer`, `Atomics` | Cross-origin-isolated pages: Chromium 92, Firefox 79, Safari 15.2 | 200 reads each second in the worker |
 | [Long animation frames](/docs/monitors/long-animation-frames) | The blocking duration and the duration of each frame of 50 ms or more | `PerformanceObserver` (`long-animation-frame`) | Chromium 123 | 1 observer |
 | [Event Timing](/docs/monitors/event-timing) | The duration and the phases of each interaction event of 16 ms or more | `PerformanceObserver` (`event`) | Chromium 96, Firefox 144, Safari 26.2 | 1 observer |
@@ -49,6 +50,7 @@ The overhead benchmark (`overhead/overhead.test.ts`) measures all monitors toget
 | Which script blocked a frame? | [Long animation frames](/docs/monitors/long-animation-frames), only in Chromium | The browser names the scripts of each long frame. |
 | How long does an interaction wait for the next paint? | [Event Timing](/docs/monitors/event-timing) and [page-view vitals](/docs/monitors/page-view-vitals) (INP) | The browser measures each interaction to the next paint, in three phases. |
 | Did the main thread hang, also until the page closed? | [Worker lag](/docs/monitors/worker-lag): hangs and the hang journal | The worker detects a hang while it continues. A later page reports a hang that the page did not survive, except in WebKit and Safari. |
+| Did a page close during a hang, also in WebKit and Safari? | [Peer hang watch](/docs/monitors/peer-hang-watch) | Another open page of the origin gets the Web Lock of the hung page when the page ends. It needs a second page of the origin. |
 | How long was each block, measured from outside without messages? | [Shared liveness](/docs/monitors/shared-liveness), only in cross-origin-isolated pages | The worker reads a counter in shared memory. |
 | Is the task queue long at this time? | [MacrotaskLag](/docs/monitors/macrotask-lag) and [scheduling fairness](/docs/monitors/scheduling-fairness) | A zero-delay timeout and a message wait behind the tasks in the queue. |
 | Are the frames late? | [Frame timing](/docs/monitors/frame-timing) | It measures the time between animation frames. |
@@ -79,17 +81,19 @@ The [thesis](/thesis) explains why these quantities are different, and [the even
 | 10 | Memory | `memorySource` |
 | 11 | Worker lag | `worker` and `performance`. Without `performance`, the setup logs a warning and skips the monitor. |
 | 12 | Shared liveness | `SharedArrayBuffer` and `worker` |
+| 12b | Peer hang watch | `BroadcastChannel`, `locks`, `wallClock` and the lifecycle |
 | 13 | Compute pressure | `PressureObserver` |
 | 14 | Garbage collection signal | `FinalizationRegistry` |
 | 15 | Clock reliability and clock drift | `performance`. Clock drift also uses `wallClock`. |
 | 16 | Browser reports | `ReportingObserver` |
-| 17 | Page-view context | the page-view vitals, and the worker monitor or `crashReport` |
+| 17 | Page-view context | the page-view vitals, and the worker monitor, the peer hang watch or `crashReport` |
 
 The necessary dependencies are `logger`, `clock`, `meter`, the four timer functions, `document` and `window`. All other dependency groups are optional.
 
 The setup also shares these parts between the monitors:
 
 - One absolute clock for the page, made from `performance`. It reads `timeOrigin` one time.
+- One page ID for the hang journal of the worker and for the peer hang watch (`deps.pageId`, or a new random ID).
 - One set of measurement conditions for the timer-driven monitors.
 - An event sink that adds `lag.page_view.id` to each event, when the page-view vitals operate.
 - In a cross-origin-isolated page with a worker: a `SharedArrayBuffer`, and a DriftLag timer that beats the liveness counter.
@@ -103,6 +107,7 @@ Each factory has an error boundary. If the construction of a monitor fails, its 
 - `SharedArrayBuffer` only when `crossOriginIsolated` is true and the option `sharedMemory` is not false.
 - The hang journal in IndexedDB only with a `worker`, and only when the option `hangJournal` is not false.
 - `crashReport` only when `window.crashReport` has a `set()` function and the option `crashReportContext` is not false.
+- `BroadcastChannel` and `locks` only when the browser has both, and only when the option `peerHangWatch` is not false. `locks.request` is bound to `navigator.locks`.
 - `memorySource` only when the browser has `performance.memory` or `measureUserAgentSpecificMemory()`.
 - `pressureSources` with the default `["cpu"]`.
 

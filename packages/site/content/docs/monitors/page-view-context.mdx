@@ -12,6 +12,7 @@ The page-view context gives the ID of the current page view to two parts: the wo
 The page-view context measures nothing. It updates one attribute, `lag.page_view.id`, in two places:
 
 - **The worker.** The [worker monitor](/docs/monitors/worker-lag) sends a `context` message to the worker. The worker adds the context to each hang report and to each record of the hang journal.
+- **The other pages of the origin.** The [peer hang watch](/docs/monitors/peer-hang-watch) adds the context to each heartbeat. Another page reports a hang of this page with this context.
 - **The crash-report context of Chromium.** `window.crashReport` keeps keys and values that the browser adds to its crash reports, for example when it stops an unresponsive page.
 
 It answers this question: which page view was the page in when it hung or crashed? The main thread cannot give this information during a hang, thus the worker and the browser must have it before the hang starts. [Page views](/docs/concepts/page-views) explains the unit.
@@ -19,7 +20,7 @@ It answers this question: which page view was the page in when it hung or crashe
 ## How it works
 
 1. At its start, the context reads the current page view of the [page-view vitals](/docs/monitors/page-view-vitals) (`vitals.getView()`).
-2. It gives `{ "lag.page_view.id": id }` to each receiver with `setContext()`. The worker monitor is a receiver: it sends the context to the worker, and it sends the context again after each restart.
+2. It gives `{ "lag.page_view.id": id }` to each receiver with `setContext()`. The worker monitor is a receiver: it sends the context to the worker, and it sends the context again after each restart. The peer hang watch is also a receiver.
 3. With a crash-report context, it uses `initialize(512)` one time. Then it uses `set("lag.page_view.id", id)`.
 4. It subscribes to the page-view vitals. At each new page view (a restore from the back/forward cache, or a soft navigation), it does steps 2 and 3 again with the new ID.
 5. At `stop()`, it removes the subscription and deletes the key from the crash-report context.
@@ -58,7 +59,7 @@ function createInstrumentedPageViewContext(
 
 The factory uses the `logger`, the page-view vitals and the list of receivers. A receiver is an object with `setContext(attributes)`, for example the `WorkerLagMonitor`. `CrashReportDeps` (`crashReport`) is optional. `getAttributes()` gives the current context.
 
-`setupAllMonitors()` adds the context only when the page-view vitals operate, and only with a worker monitor or a crash-report context. `createBrowserDeps()` gives `window.crashReport` only if it has a `set()` function, and only while the option `crashReportContext` is not false (the default is true).
+`setupAllMonitors()` adds the context only when the page-view vitals operate, and only with a worker monitor, a peer hang watch or a crash-report context. `createBrowserDeps()` gives `window.crashReport` only if it has a `set()` function, and only while the option `crashReportContext` is not false (the default is true).
 
 ```ts
 import { metrics } from "@opentelemetry/api";

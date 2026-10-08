@@ -143,7 +143,13 @@ A page that closes or crashes during a hang cannot report the end of the hang. T
 
 When a hang starts, the worker of the library writes a record to IndexedDB ([`hang-journal.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/hang-journal.ts)). It writes the record again each second while the hang continues. At the end of the hang, it removes the record. The next page of the same origin finds each record that nobody updated for 30 s. It reports the record as a hang with the outcome `abandoned`, with the attributes of the earlier page. An atomic take gives each record to one page only, also when two pages start at the same time.
 
-In WebKit and Safari, the write of the worker completes only when the main thread operates again, also in a service worker. Thus there, the journal cannot keep a hang that the page does not survive ([experiment E4](/research/local-experiments)).
+In WebKit and Safari, the write of the worker completes only when the main thread operates again, also in a service worker. Thus there, the journal cannot keep a hang that the page does not survive ([experiment E4](/research/local-experiments)). The other output APIs of a worker also wait (E6).
+
+### Pages that watch each other
+
+The [peer hang watch](/docs/monitors/peer-hang-watch) of the library uses the other open pages of the origin. A visible page holds a Web Lock and sends a heartbeat each second through a `BroadcastChannel`. The other pages ask for its lock. The browser releases the lock of a hung page only when the page ends. Thus another page sees a page that closed during a hang, also in WebKit and Safari (experiment E7).
+
+The research found no other tool that uses the Web Locks API for this. The method needs a second page of the origin. Firefox and Safari on macOS let a closed hung page operate again before it closes. There, the page reports its own hang at its close, also without a second page.
 
 ### Page-view identity for main-thread data
 

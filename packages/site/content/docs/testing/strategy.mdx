@@ -17,6 +17,7 @@ Each claim of the [thesis](/thesis) has a type of test that can show it. A rule 
 | Property tests | Node, with fast-check | The INP and CLS calculators agree with a reference for all sequences of entries | `pnpm test` |
 | Browser tests | Chromium, Firefox, WebKit and Chrome, through Playwright | The monitors with real timers, real workers, real input and real paints | `pnpm test:browser` |
 | Safari tests | Safari on macOS, through safaridriver (WebDriver) | The same browser test files in the real Safari | `pnpm --filter @lag/integration-tests test:safari` |
+| iOS tests | Safari on iOS in the iOS Simulator, through safaridriver | The same browser test files in Safari on iOS | `pnpm --filter @lag/integration-tests test:ios`, with a booted simulator |
 | web-vitals oracle | The four engines | The vitals agree with web-vitals 6 on the same page | `pnpm test:browser` |
 | CDP tests | Chromium in the new headless mode | Hidden and frozen pages, CPU throttling and compute pressure | `pnpm --filter @lag/integration-tests test:cdp` |
 | Cross-origin-isolated tests | Chromium, Firefox and WebKit | Shared memory, the fine clock and `measureUserAgentSpecificMemory()` | `pnpm --filter @lag/integration-tests test:coi` |
@@ -49,7 +50,7 @@ An adversarial review of the library wrote a proof test for each defect that it 
 
 ## Browser tests
 
-The browser tests use Vitest browser mode with Playwright. Each test file operates in Chromium, Firefox, WebKit and Chrome. On macOS, the same files also operate in Safari, through safaridriver (the `browser (safari)` project, with `LAG_SAFARI=1`). The tests examine the facts that fake time cannot show:
+The browser tests use Vitest browser mode with Playwright. Each test file operates in Chromium, Firefox, WebKit and Chrome. On macOS, the same files also operate in Safari, through safaridriver (the `browser (safari)` project, with `LAG_SAFARI=1`). They also operate in Safari in the iOS Simulator (the `browser (ios)` project, with `LAG_IOS=1`). `LAG_IOS_UDID` selects the booted simulator. The tests examine the facts that fake time cannot show:
 
 - `browser-facts.test.ts`: the facts of the research about each engine. These are the supported entry types, and the order of the listeners at `window` (experiment E1). The test fails if an engine changes, and then the documents need an update.
 - `soft-navigation.test.ts` (Chrome): a real soft navigation in a top-level page. The command `clickInTopLevelPage` opens the page and clicks with Playwright, because Chrome detects soft navigations only in the top-level frame.
@@ -57,7 +58,8 @@ The browser tests use Vitest browser mode with Playwright. Each test file operat
 - `lifecycle.test.ts`: the lifecycle machine notifies its subscribers before a listener that the page added earlier. It uses the time of the event, and it removes its listeners at the end.
 - `lag-monitors.test.ts`: the monitors on a real page, and the INP of a real click on a button that blocks for 120 ms.
 - `worker.test.ts` and `hang-journal.test.ts`: the worker heartbeat, a hang of 6.5 s, and the record of the hang in IndexedDB.
-- `worker-io.test.ts`: the IndexedDB writes and the fetches of a worker during a block of 2 s. WebKit completes them only after the block, thus `hang-journal.test.ts` skips itself there after a probe ([experiment E4](/research/local-experiments)).
+- `worker-io.test.ts`: the IndexedDB writes and the fetches of a worker during a block of 2 s. WebKit completes them only after the block, thus `hang-journal.test.ts` skips itself there after a probe ([experiment E4](/research/local-experiments)). The test also measures OPFS, the Cache API, `XMLHttpRequest` and a WebSocket of a worker, with the expectations of each engine (experiment E6). A WebSocket server in Node (`commands/probe-socket.ts`) records when the message arrives.
+- `peer-tab.test.ts` (experiment E7) and `peer-hang-watch.test.ts`: a second top-level page that blocks its main thread, and that the test closes during the block. The commands of `commands/peer-page.ts` open the page with Playwright, or as a new window with WebdriverIO in Safari. The test page watches the other page through `BroadcastChannel` and the Web Locks API, and the [peer hang watch](/docs/monitors/peer-hang-watch) of the library reports the abandoned hang.
 - `stress.test.ts`: the workload profiles of `@lag/load` (refer to [stress tests](#stress-tests-and-workload-profiles)).
 - `browser-apis.test.ts`: the monitors that need one browser API, with the real API. Examples are the layout shifts, the real CPU pressure source, the visibility-state entries, the idle periods and `performance.memory`.
 
@@ -146,14 +148,15 @@ The results page reads this folder. It shows the tests of each engine, the skips
 
 | Workflow | When | What |
 |---|---|---|
-| `ci.yml` | Each push and each pull request | The build, the type check, the unit tests, the coverage, the browser tests in each engine, Safari on a macOS runner, and the tests and the build of the site |
+| `ci.yml` | Each push and each pull request | The build, the type check, the unit tests, the coverage, the browser tests in each engine, Safari on a macOS runner, Safari in the iOS Simulator, and the tests and the build of the site |
 | `e2e.yml` | Each week, or manually | The Grafana stack in Docker, and the E2E tests |
 | `mutation.yml` | Each week, or manually | Stryker, with the incremental file from the cache |
-| `pages.yml` | Each push to `main`, or manually | Safari on a macOS runner, then `pnpm results` with the Safari reports, the build of this site and its deployment to GitHub Pages |
+| `pages.yml` | Each push to `main`, or manually | Safari and Safari in the iOS Simulator on a macOS runner, then `pnpm results` with their reports, the build of this site and its deployment to GitHub Pages |
 
 ## Limits
 
-- **Safari on iOS.** The tests operate in Safari on macOS and in the WebKit build of Playwright, not in Safari on iOS. Nothing tests Low Power Mode, which aligns the nested timers of Safari to 30 ms.
+- **Safari on iOS.** The tests operate in Safari on iOS only in the iOS Simulator of a macOS runner. A simulator has the CPU and the power of the Mac, not of a phone. Its first page can take more than 60 s to open, thus the iOS project has a connect timeout of 300 s.
+- **Low Power Mode.** A macOS runner refuses Low Power Mode on AC power. Thus no browser test operates in Low Power Mode. `DriftLag.power.test.ts` uses the timer rule of the WebKit source instead: a grid of 30 ms for nested timers.
 - **Safari on a shared runner.** Safari on a macOS runner of GitHub sometimes slows the timers of its window, for example by 9 s. Then a timing test fails for a reason that is not in the code. Thus the Safari job of CI reports its results, but it does not block a pull request. A stress profile that the browser slowed skips itself with the reason.
 - **Safari and the collector.** Only macOS has Safari. Thus a macOS job exports its reports (`--export-reports`), and the Linux job of the site imports them (`--import-reports`).
 - **The E2E tests need a free port.** The Grafana stack uses port 3000 by default. Set `GRAFANA_PORT` when another program uses that port.

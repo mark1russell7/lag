@@ -94,9 +94,18 @@ The pages and the workers of one origin share the IndexedDB database. When a new
 
 1. It takes the record with `take(pageId, latestSeenAt)`. The method removes the record and gives it, but only if the record is still stale. IndexedDB does the read and the removal in one read-write transaction. Thus only one page gets the record, also when two pages start at the same time, for example at a session restore. The page skips a record that it did not get.
 2. It records the hang with the outcome `abandoned`. The duration is the time from `startedAt` to `lastSeenAt`, thus the time until the worker saw the hang for the last time.
-3. It sends the event `lag.main_thread.hang` with the phase `abandoned`. The event has the attributes of the record, and `lag.hang.page_id`.
+3. It sends the event `lag.main_thread.hang` with the phase `abandoned`. The event has the attributes of the record, `lag.hang.page_id`, and `lag.hang.source: "journal"`.
 
 If the monitor stops after a take, the page puts the record back for the next page. A unit test starts two pages at the same time. It makes sure that the two pages report the hang one time, with a journal in memory and with IndexedDB.
+
+### The peer hang watch: another page, or the page at its close
+
+The journal needs a worker that can write during the hang. WebKit and Safari do not let a worker write or send during a hang. The [peer hang watch](/docs/monitors/peer-hang-watch) uses two other ways. The engines end a hung page that the user closes in different ways, and each way leaves one of them (experiment E7, [local experiments](/research/local-experiments)):
+
+- **The browser stops the page**: Chromium and Safari on iOS. Then another open page of the origin reports the hang. A visible page holds a Web Lock and sends a heartbeat each second through a `BroadcastChannel`. Each other page asks for that lock, and the browser releases it when it stops the page. A lock that comes free after 5 s or more without a heartbeat gives a report with `lag.hang.source: "peer"`.
+- **The page operates again before it closes**: Firefox stops the blocked script, and Safari on macOS lets the script continue to its end. Then the page itself reports its hang at its close, with `lag.hang.source: "self"`. Its heartbeats show the hang: none for 5 s or more before the close.
+
+The report of another page comes at once, not at the start of a later page. In Chromium and Firefox, that page also takes the journal record of the hung page, thus the next page does not report the hang again. The own report goes out in the last export of the page.
 
 <MetricTable metrics={workerLagMetrics.filter((row) => row.name.includes("hang"))} />
 
@@ -118,7 +127,10 @@ The metrics use cumulative temporality, thus an export that is lost does not los
 
 ## Limits
 
-- **WebKit and Safari.** WebKit and Safari 26.6.2 complete the IndexedDB requests and the `fetch` requests of a worker on the main thread of the page ([experiment E4](/research/local-experiments)). The worker detects the hang, because its timer continues. But the hang report and the journal record complete only when the main thread operates again. Thus there, the record and the report of a hang that the page does not survive are lost. A service worker also waits, thus it cannot keep the journal either.
+- **WebKit and Safari.** WebKit and Safari 26.6.2 complete the IndexedDB requests and the `fetch` requests of a worker on the main thread of the page ([experiment E4](/research/local-experiments)). The other output of a worker also waits: OPFS, the Cache API, `XMLHttpRequest`, WebSocket and BroadcastChannel (experiments E6 and E7). The worker detects the hang, because its timer continues. But the hang report and the journal record complete only when the main thread operates again. A service worker also waits, thus it cannot keep the journal either.
+
+  Thus there, only the peer hang watch keeps a hang that the page does not survive. On macOS, the page reports the hang itself when its script ends. On iOS, another open page of the origin must report it. With one page on iOS, or with a script that does not end on macOS, the hang is lost.
+- **Firefox closes a hung page normally.** When the user closes a hung page, Firefox stops the blocked script, and the page closes normally (experiment E7). Then the page reports its own hang at its close. The worker monitor can also count the hang as ended before the close. Then the page does not report it again.
 - **A frozen tab.** If the browser freezes the page and its worker during a hang, the worker cannot report or update the record. Chrome on Android freezes background pages and their workers after 1 minute, from Chrome 139 ([browser support](/research/browser-support)). After 30 s without an update, the next page reports the hang as abandoned, also if the frozen page continues later.
 - **The stale time of 30 s.** A record counts as abandoned only after 30 s without an update. The monitor reads the journal only one time, at its start. Thus a page that starts less than 30 s after the hung page closed does not report the record, and a later page must report it. If no page of the origin starts the worker monitor again, nobody reports the hang.
 - **The same origin only.** IndexedDB belongs to one origin. Only a later page of the same origin, with the worker monitor and the journal, can report the hang.
