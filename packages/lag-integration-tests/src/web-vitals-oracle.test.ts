@@ -137,7 +137,8 @@ describe("PageViewVitals agrees with web-vitals", () => {
         // web-vitals processes the entries in an idle callback (at most 1 s later)
         const agreed = await waitUntil(() => {
             const theirs = oracle.get("INP")?.value ?? 0;
-            return theirs >= 180 && theirs === core("INP")?.value;
+            // Event Timing rounds a duration to the nearest 8 ms: a 180 ms handler can give 176 ms
+            return theirs >= 176 && theirs === core("INP")?.value;
         }, 10_000);
         await compare("INP");
 
@@ -163,7 +164,7 @@ describe("PageViewVitals agrees with web-vitals", () => {
 
         expect(agreed, JSON.stringify(comparison)).toBe(true);
         expect(ours.value).toBe(theirs.value);
-        expect(ours.value).toBeGreaterThanOrEqual(180);
+        expect(ours.value).toBeGreaterThanOrEqual(176);
         expect(attribution.core.target).toBe("#slow-180");
         expect(attribution.core.target).toBe(attribution.webVitals.target);
         expect(attribution.core.type).toBe(attribution.webVitals.type);
