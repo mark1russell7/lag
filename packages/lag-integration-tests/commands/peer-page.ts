@@ -33,18 +33,30 @@ async function openWithPlaywright(ctx : BrowserCommandContext, url : string) : P
         // Without beforeunload, so that the close does not wait for the main thread of the page
         close : () => page.close({ runBeforeUnload : false }),
         leaveAndReturn : async (away, awayMs) => {
-            // A restore from the back/forward cache keeps the JavaScript state of the page. A new load does not.
-            await page.evaluate("window.lagBeforeLeave = true");
-            await page.goto(away);
-            await page.waitForTimeout(awayMs);
-            // A restore from the cache has no new load event
-            await page.goBack({ waitUntil : "commit" });
-            await page.waitForFunction("document.readyState === 'complete'", undefined, { timeout : 10_000 });
-            return await page.evaluate(`(() => {
-                const collect = (node) => node ? [...(node.reasons ?? []).map(r => r.reason), ...(node.children ?? []).flatMap(collect)] : [];
-                const navigation = performance.getEntriesByType("navigation")[0];
-                return { restored : window.lagBeforeLeave === true, reasons : collect(navigation?.notRestoredReasons) };
-            })()`) as BackForwardResult;
+            // Only Chromium has the Chrome DevTools Protocol
+            const session = await page.context().newCDPSession(page).catch(() => undefined);
+            const explanations : BackForwardResult["explanations"] = [];
+            session?.on("Page.backForwardCacheNotUsed", (event) => {
+                for (const { type, reason } of event.notRestoredExplanations) explanations.push({ type, reason });
+            });
+            await session?.send("Page.enable");
+            try {
+                // A restore from the back/forward cache keeps the JavaScript state of the page. A new load does not.
+                await page.evaluate("window.lagBeforeLeave = true");
+                await page.goto(away);
+                await page.waitForTimeout(awayMs);
+                // A restore from the cache has no new load event
+                await page.goBack({ waitUntil : "commit" });
+                await page.waitForFunction(`document.readyState === 'complete' && ${READY}`, undefined, { timeout : 10_000 });
+                const result = await page.evaluate(`(() => {
+                    const collect = (node) => node ? [...(node.reasons ?? []).map(r => r.reason), ...(node.children ?? []).flatMap(collect)] : [];
+                    const navigation = performance.getEntriesByType("navigation")[0];
+                    return { restored : window.lagBeforeLeave === true, reasons : collect(navigation?.notRestoredReasons) };
+                })()`) as Omit<BackForwardResult, "explanations">;
+                return { ...result, explanations };
+            } finally {
+                await session?.detach().catch(() => undefined);
+            }
         },
     };
 }

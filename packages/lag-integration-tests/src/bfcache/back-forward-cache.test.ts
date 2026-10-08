@@ -1,6 +1,7 @@
 import { createBrowserDeps, createNoopMeter, peerLockName, PEER_CHANNEL_NAME, setupAllMonitors } from "@lag/core";
 import { closePeerPage, evaluateInPeerPage, leaveAndReturnToPeerPage, openPeerPage } from "../commands.js";
 import { wait } from "../harness.js";
+import type { BackForwardResult } from "../command-types.js";
 
 /**
  * The back/forward cache of Chromium, with the library in two pages of the
@@ -15,6 +16,16 @@ import { wait } from "../harness.js";
  * result does not depend on the visibility of the test page.
  */
 const AWAY_MS = 3_000;
+
+/**
+ * Chromium can also remove a page from the cache for other reasons, for
+ * example memory pressure. In CI, the page got such a reason one time, as
+ * "masked". After such a reason, the test tries again. A reason that the
+ * watch can cause fails the test at once: a message on its channel, a held
+ * lock, or an open channel in an engine that does not cache such a page.
+ */
+const ATTEMPTS = 3;
+const REASONS_OF_THE_WATCH = ["BroadcastChannelOnMessage", "WebLocks", "BroadcastChannel"];
 
 /** This function sends a message on the channel of the watch each 200 ms. The watches ignore it. */
 function sendMessages() : () => void {
@@ -32,7 +43,9 @@ describe("the back/forward cache with the peer hang watch", () => {
         const stopMessages = sendMessages();
         try {
             const result = await leaveAndReturnToPeerPage(peer, "lag-away.html", AWAY_MS);
-            expect(result).toEqual({ restored : false, reasons : ["broadcastchannel-message"] });
+            expect(result.restored).toBe(false);
+            expect(result.reasons).toEqual(["broadcastchannel-message"]);
+            expect(result.explanations.map(explanation => explanation.reason)).toContain("BroadcastChannelOnMessage");
         } finally {
             stopMessages();
             await closePeerPage(peer);
@@ -51,8 +64,13 @@ describe("the back/forward cache with the peer hang watch", () => {
         try {
             // The watch of the peer page must see a heartbeat of the test page first
             await wait(1_500);
-            const result = await leaveAndReturnToPeerPage(peer, "lag-away.html", AWAY_MS);
-            expect(result).toEqual({ restored : true, reasons : [] });
+            const results : BackForwardResult[] = [];
+            for (let attempt = 0; attempt < ATTEMPTS && !results.at(-1)?.restored; attempt++) {
+                const result = await leaveAndReturnToPeerPage(peer, "lag-away.html", AWAY_MS);
+                expect(result.explanations.filter(explanation => REASONS_OF_THE_WATCH.includes(explanation.reason)), JSON.stringify(result)).toEqual([]);
+                results.push(result);
+            }
+            expect(results.at(-1)?.restored, JSON.stringify(results)).toBe(true);
 
             // After the restore, the page is visible again: it takes its lock again
             await expect.poll(
