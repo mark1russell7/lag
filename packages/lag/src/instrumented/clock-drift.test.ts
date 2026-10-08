@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInstrumentedClockDrift } from "./clock-drift.js";
 import { createMeasurementConditions } from "../measurement-conditions.js";
-import { createRecordingMeter } from "../test-utils.js";
+import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "../test-utils.js";
 
 describe("createInstrumentedClockDrift", () => {
     beforeEach(() => vi.useFakeTimers());
@@ -57,5 +57,48 @@ describe("createInstrumentedClockDrift", () => {
         expect(t.events.emit).toHaveBeenCalledWith("lag.clock.jump", expect.objectContaining({ kind : "step", direction : "backward" }));
         expect(t.conditions.tracker.getIntervalCount()).toBe(0);
         t.handle.stop();
+    });
+
+    it("counts a clock jump without an event sink and without measurement conditions", () => {
+        let mono = 0;
+        let wallShift = 0;
+        const meter = createRecordingMeter();
+        const logger = { log : vi.fn() };
+        const handle = createInstrumentedClockDrift({
+            logger,
+            clock : { now : () => mono },
+            meter : meter.meter,
+            performance : { timeOrigin : 1_700_000_000_000, now : () => mono },
+            wallClock : { now : () => 1_700_000_000_000 + mono + wallShift },
+            setIntervalFn : (fn, ms) => setInterval(fn, ms) as unknown as number,
+            clearIntervalFn : (id) => clearInterval(id),
+        });
+
+        mono += 1_000;
+        vi.advanceTimersByTime(1_000);
+        mono += 1_000;
+        wallShift += 60_000;
+        vi.advanceTimersByTime(1_000);
+        handle.stop();
+
+        expect(meter.records().get("lag_clock_jumps")).toEqual([{ value : 1, attributes : { direction : "forward", kind : "suspend" } }]);
+        expect(logger.log).not.toHaveBeenCalled();
+    });
+
+    it("records each kind of jump with the attribute values of the catalog, and events with the attributes of the catalog", () => {
+        const t = setup();
+        t.advance(1_000);
+        t.advance(1_000, 60_000);
+        t.advance(1_000, -5_000);
+        t.advance(1_000, 300);
+        t.handle.stop();
+
+        expect(t.meter.records().get("lag_clock_jumps")!.map(r => r.attributes)).toEqual([
+            { direction : "forward", kind : "suspend" },
+            { direction : "backward", kind : "step" },
+            { direction : "forward", kind : "step" },
+        ]);
+        expectCatalogInstruments(t.meter);
+        expectCatalogEvents(t.events.emit);
     });
 });

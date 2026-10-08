@@ -257,4 +257,56 @@ describe("SchedulingFairnessMonitor", () => {
         expect(channels[0]!.port1.close).toHaveBeenCalled();
         expect(channels[0]!.port1.onmessage).toBeNull();
     });
+
+    describe("rules of the measurement loop", () => {
+        /** A constructor that gives the ports of one mock channel. */
+        function channelClass() : MessageChannelConstructor {
+            const channel = createMockMessageChannel();
+            return class { port1 = channel.port1; port2 = channel.port2; } as unknown as MessageChannelConstructor;
+        }
+
+        function createMonitor(MessageChannelCtor : MessageChannelConstructor = channelClass(), setTimeoutFn = (fn : () => void, ms : number) => setTimeout(fn, ms) as unknown as number) {
+            const logger = { log : vi.fn() };
+            const setIntervalFn = vi.fn((fn : () => void, ms : number) => setInterval(fn, ms) as unknown as number);
+            const monitor = new SchedulingFairnessMonitor(
+                1_000,
+                vi.fn(),
+                logger,
+                setIntervalFn,
+                (id) => clearInterval(id),
+                setTimeoutFn,
+                (cb) => queueMicrotask(cb),
+                MessageChannelCtor,
+                { now : () => Date.now() },
+            );
+            return { monitor, logger, setIntervalFn };
+        }
+
+        it("start() while the monitor operates adds no second interval", () => {
+            const m = createMonitor();
+            m.monitor.start();
+            m.monitor.stop();
+
+            expect(m.setIntervalFn).toHaveBeenCalledTimes(1);
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it("stop() works after a start that could not make the MessageChannel", () => {
+            const Broken = class { constructor() { throw new Error("no MessageChannel"); } } as unknown as MessageChannelConstructor;
+            const m = createMonitor(Broken);
+
+            expect(() => m.monitor.stop()).not.toThrow();
+        });
+
+        it("logs an error when a cycle cannot start, and continues with the next cycle", () => {
+            const setTimeoutFn = vi.fn((fn : () => void, ms : number) => setTimeout(fn, ms) as unknown as number);
+            setTimeoutFn.mockImplementationOnce(() => { throw new Error("no timers"); });
+            const m = createMonitor(channelClass(), setTimeoutFn);
+            vi.advanceTimersByTime(2_000);
+            m.monitor.stop();
+
+            expect(m.logger.log).toHaveBeenCalledWith("error", "Error in scheduling fairness measurement.", { error : expect.any(Error), type : "SchedulingFairnessMonitor" });
+            expect(setTimeoutFn).toHaveBeenCalledTimes(2);
+        });
+    });
 });

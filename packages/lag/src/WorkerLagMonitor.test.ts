@@ -9,12 +9,12 @@ function createMockWorker() {
 
     const worker : WorkerLike = {
         postMessage,
-        addEventListener(_type, handler) {
-            listeners.push(handler);
+        addEventListener(type, handler) {
+            if (type === "message") listeners.push(handler);
         },
-        removeEventListener(_type, handler) {
+        removeEventListener(type, handler) {
             const idx = listeners.indexOf(handler);
-            if (idx >= 0) listeners.splice(idx, 1);
+            if (type === "message" && idx >= 0) listeners.splice(idx, 1);
         },
     };
 
@@ -251,6 +251,105 @@ describe("WorkerLagMonitor", () => {
             m.monitor.stop();
             vi.advanceTimersByTime(20_000);
             expect(m.logger.log).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("rules of the messages and of the lifecycle of the monitor", () => {
+        /** A monitor with the events `events`, or without events. */
+        function createBare(events? : WorkerLagEvents, heartbeatIntervalMs = 1000) {
+            const mock = createMockWorker();
+            const report = vi.fn<(m : WorkerLagMeasurement) => void>();
+            const logger = { log : vi.fn() };
+            const performance = { timeOrigin : 10_000, now : vi.fn(() => 0) };
+            const monitor = new WorkerLagMonitor(mock.worker, report, logger, createAbsoluteClock(performance), {
+                heartbeatIntervalMs,
+                setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+                clearTimeoutFn : (id) => clearTimeout(id),
+                ...(events ? { events } : {}),
+            });
+            return Object.assign(mock, { report, logger, performance, monitor });
+        }
+
+        it("handles a clock synchronization, the end of a hang and a system stall without event listeners, and logs no error", () => {
+            for (const events of [undefined, {}]) {
+                const m = createBare(events);
+                for (let i = 0; i < 8; i++) {
+                    const request = m.sent("sync").at(-1) as { id : number };
+                    m.deliver({ type : "sync-reply", id : request.id, workerTime : 10_000 });
+                }
+                m.deliver({ type : "hang-ended", startedAt : 1, durationMs : 7_500 });
+                m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000, workerSelfLagMs : 60_000 });
+
+                expect(m.monitor.getClockSync()).toEqual({ offsetMs : 0, roundTripMs : 0 });
+                expect(m.logger.log).not.toHaveBeenCalled();
+                m.monitor.dispose();
+            }
+        });
+
+        it("reports a system stall at a self lag of exactly 5 s", () => {
+            const onSystemStall = vi.fn();
+            const m = createBare({ onSystemStall });
+            m.performance.now.mockReturnValue(20_000);
+
+            m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000 + 20_000, workerSelfLagMs : 5_000 });
+
+            expect(onSystemStall).toHaveBeenCalledWith({ start : 15_000, end : 20_000, durationMs : 5_000 });
+            m.monitor.dispose();
+        });
+
+        it("ignores a message without data, also while it is stopped", () => {
+            const m = createBare({});
+            m.deliver(undefined as unknown as WorkerToMainMessage);
+            m.monitor.stop();
+            m.deliver(undefined as unknown as WorkerToMainMessage);
+
+            expect(m.report).not.toHaveBeenCalled();
+            expect(m.logger.log).not.toHaveBeenCalled();
+            m.monitor.dispose();
+        });
+
+        it("start() while the monitor operates sends nothing", () => {
+            const m = createBare({});
+            m.monitor.start();
+
+            expect(m.sent("start")).toHaveLength(1);
+            expect(m.sent("sync")).toHaveLength(1);
+            m.monitor.dispose();
+        });
+
+        it("keeps the context while it is stopped and sends it at the next start", () => {
+            const m = createBare({});
+            m.monitor.stop();
+
+            m.monitor.setContext({ "lag.page_view.id" : "view-2" });
+            expect(m.sent("context")).toEqual([]);
+            m.monitor.start();
+
+            expect(m.sent("context")).toEqual([{ type : "context", attributes : { "lag.page_view.id" : "view-2" } }]);
+            m.monitor.dispose();
+        });
+
+        it("listens again at start() after dispose()", () => {
+            const m = createBare({});
+            m.monitor.dispose();
+            m.monitor.start();
+
+            m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000, workerSelfLagMs : 0 });
+
+            expect(m.listenerCount).toBe(1);
+            expect(m.report).toHaveBeenCalledTimes(1);
+            m.monitor.dispose();
+        });
+
+        it("waits five heartbeat intervals for each watchdog check when that is longer than 5 s", () => {
+            const m = createBare({}, 2_000);
+            vi.advanceTimersByTime(19_999);
+            expect(m.logger.log).not.toHaveBeenCalled();
+
+            vi.advanceTimersByTime(1);
+
+            expect(m.logger.log).toHaveBeenCalledWith("warn", expect.stringContaining("The worker sent no heartbeat"), { type : "WorkerLagMonitor", waitedMs : 20_000 });
+            m.monitor.dispose();
         });
     });
 });

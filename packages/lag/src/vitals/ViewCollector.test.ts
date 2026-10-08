@@ -235,4 +235,89 @@ describe("ViewCollector", () => {
             expect(collector().values()).toEqual([]);
         });
     });
+
+    describe("rules of the entries", () => {
+        it("counts an event and a layout shift that start at the start of the view", () => {
+            const c = collector("back-forward-cache", 1_000);
+            c.addEvent(event({ interactionId : 4, startTime : 1_000, duration : 120 }));
+            c.addLayoutShift({ startTime : 1_000, value : 0.2, hadRecentInput : false });
+
+            expect(byName(c.values())["INP"]!.value).toBe(120);
+            expect(byName(c.values())["CLS"]!.value).toBe(0.2);
+        });
+
+        it("gives 8 ms after a soft navigation when there were interactions but no entries", () => {
+            let count = 3;
+            const c = collector("soft-navigation", 1_000, () => count);
+            count = 5;
+
+            expect(byName(c.values())["INP"]).toEqual({ name : "INP", value : SHORT_INTERACTION_ESTIMATE_MS, attribution : {} });
+        });
+
+        it("keeps no more than 16 entries of one interaction for the attribution", () => {
+            const c = collector();
+            for (let i = 0; i < 16; i++) c.addEvent(event({ interactionId : 5, startTime : 100, duration : 40, name : "pointerdown" }));
+            // The 17th entry is the longest, but the collector does not keep it
+            c.addEvent(event({ interactionId : 5, startTime : 100, duration : 200, name : "keydown" }));
+
+            const inp = byName(c.values())["INP"]!;
+            expect(inp.value).toBe(200);
+            expect(inp.attribution["interaction_type"]).toBe("pointer");
+        });
+
+        it("uses the longest entry of an interaction for the attribution, and the first one of entries with the same duration, as web-vitals does", () => {
+            const longestLast = collector();
+            longestLast.addEvent(event({ interactionId : 5, startTime : 100, duration : 40, name : "pointerdown", processingStart : 102, processingEnd : 104 }));
+            longestLast.addEvent(event({ interactionId : 5, startTime : 104, duration : 96, name : "click", processingStart : 110, processingEnd : 150 }));
+            const sameDuration = collector();
+            sameDuration.addEvent(event({ interactionId : 5, startTime : 100, duration : 96, name : "pointerdown", processingStart : 102, processingEnd : 104 }));
+            sameDuration.addEvent(event({ interactionId : 5, startTime : 104, duration : 96, name : "click", processingStart : 110, processingEnd : 150 }));
+
+            // The interaction starts at the start of the entry that the attribution uses
+            expect(byName(longestLast.values())["INP"]!.attribution["input_delay_ms"]).toBe(6);
+            expect(byName(sameDuration.values())["INP"]!.attribution["input_delay_ms"]).toBe(2);
+        });
+
+        it("puts the entries whose render times are 8 ms apart into one frame", () => {
+            const c = collector();
+            // The click renders at 200 ms, and the pointerover renders at 208 ms
+            c.addEvent(event({ interactionId : 5, startTime : 100, duration : 100, name : "click", processingStart : 110, processingEnd : 150 }));
+            c.addEvent(event({ interactionId : 0, startTime : 120, duration : 88, name : "pointerover", processingStart : 150, processingEnd : 190 }));
+
+            expect(byName(c.values())["INP"]!.attribution["processing_duration_ms"]).toBe(80);
+        });
+
+        it("gives no interaction target when the target of the event is null or when no entry has a target", () => {
+            const removed = collector();
+            removed.addEvent(event({ interactionId : 5, startTime : 100, duration : 200, target : null }));
+            const without = collector();
+            without.addEvent(event({ interactionId : 5, startTime : 100, duration : 200 }));
+
+            expect(byName(removed.values())["INP"]!.attribution["interaction_target"]).toBe("");
+            expect(byName(without.values())["INP"]!.attribution["interaction_target"]).toBe("");
+        });
+
+        it("names the first source with a node, also after a source without a node", () => {
+            const c = collector("soft-navigation", 0);
+            c.addLayoutShift({ startTime : 20, value : 0.2, hadRecentInput : false, sources : [{}, { node : { id : "banner" } }] });
+
+            expect(byName(c.values())["CLS"]!.attribution).toEqual({ largest_shift_target : "#banner" });
+        });
+
+        it("gives no CLS target when the largest shift has no source", () => {
+            const c = collector("soft-navigation", 0);
+            c.addLayoutShift({ startTime : 20, value : 0.2, hadRecentInput : false });
+
+            expect(byName(c.values())["CLS"]!.attribution).toEqual({});
+        });
+
+        it("keeps an LCP that paints at the time at which the LCP became final, and ignores a later paint", () => {
+            const c = collector();
+            c.finalizeLcpAt(1_000);
+            c.setLcp(1_000, { target : "#title" }, 1_000);
+            c.setLcp(1_200, { target : "#late" }, 1_200);
+
+            expect(byName(c.values())["LCP"]).toEqual({ name : "LCP", value : 1_000, attribution : { target : "#title" } });
+        });
+    });
 });

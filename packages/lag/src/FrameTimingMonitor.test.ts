@@ -239,4 +239,68 @@ describe("FrameTimingMonitor", () => {
             expect(d.monitor.getFrameIntervalMs()).toBeCloseTo(16.67);
         });
     });
+
+    describe("rules of the frame interval", () => {
+        function createAutoMonitor(targetFps? : "auto") {
+            let currentTime = 0;
+            let pending : ((time : number) => void) | undefined;
+            const reports : FrameMeasurement[] = [];
+            const logger = { log : vi.fn() };
+            const report = vi.fn((m : FrameMeasurement) => { reports.push(m); });
+            const monitor = new FrameTimingMonitor(report, logger, (cb) => { pending = cb; return 1; }, vi.fn(), { now : () => currentTime }, targetFps);
+            const frames = (deltaMs : number, count : number) => {
+                for (let i = 0; i < count; i++) {
+                    currentTime += deltaMs;
+                    pending?.(currentTime);
+                }
+            };
+            return { monitor, reports, report, logger, frames };
+        }
+
+        it("uses 60 Hz before the first frames", () => {
+            expect(createAutoMonitor().monitor.getFrameIntervalMs()).toBeCloseTo(1000 / 60);
+        });
+
+        it("estimates the interval for the target fps \"auto\"", () => {
+            const d = createAutoMonitor("auto");
+            d.frames(8, 3);
+
+            expect(d.monitor.getFrameIntervalMs()).toBe(8);
+        });
+
+        it("accepts a delta of 4 ms as a frame interval", () => {
+            const d = createAutoMonitor();
+            d.frames(4, 5);
+
+            expect(d.monitor.getFrameIntervalMs()).toBe(4);
+        });
+
+        it("follows a change from 60 Hz to 120 Hz at the first short delta", () => {
+            const d = createAutoMonitor();
+            d.frames(16, 10);
+            d.frames(8, 1);
+
+            expect(d.monitor.getFrameIntervalMs()).toBe(8);
+        });
+
+        it("follows a change from 120 Hz to 60 Hz after 600 frames", () => {
+            const d = createAutoMonitor();
+            // The first frame sets the start, and the second frame gives one delta of 8 ms
+            d.frames(8, 2);
+            d.frames(16, 599);
+            expect(d.monitor.getFrameIntervalMs()).toBe(8);
+
+            d.frames(16, 1);
+            expect(d.monitor.getFrameIntervalMs()).toBe(16);
+        });
+
+        it("logs an error from the report function and continues with the next frame", () => {
+            const d = createAutoMonitor();
+            d.report.mockImplementationOnce(() => { throw new Error("export failed"); });
+            d.frames(16, 3);
+
+            expect(d.logger.log).toHaveBeenCalledWith("error", "Error in frame timing measurement.", { error : expect.any(Error), type : "FrameTimingMonitor" });
+            expect(d.report).toHaveBeenCalledTimes(2);
+        });
+    });
 });

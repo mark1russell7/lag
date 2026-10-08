@@ -208,7 +208,8 @@ export type EventKey = "webVital" | "hang" | "clockJump" | "longAnimationFrame" 
 /**
  * Events carry the details that metrics must not carry: IDs, URLs, CSS
  * selectors and script names. The `browser.web_vital` event follows the
- * OpenTelemetry semantic conventions for browsers.
+ * OpenTelemetry semantic conventions for browsers. `setupAllMonitors` adds
+ * `lag.page_view.id`, the ID of the current page view, to each event.
  */
 export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
     webVital : {
@@ -237,25 +238,25 @@ export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
         name : "lag.clock.jump",
         monitor : "ClockDriftMonitor",
         description : "A discontinuity between the wall clock and the monotonic clock, with its classification as a suspend or a step.",
-        attributes : ["direction", "kind", "magnitude_ms", "skew_ms", "lateness_ms"],
+        attributes : ["direction", "kind", "magnitude_ms", "skew_ms", "lateness_ms", "lag.page_view.id"],
     },
     longAnimationFrame : {
         name : "lag.long_animation_frame",
         monitor : "LongAnimationFrameMonitor",
         description : "A long animation frame above the attribution threshold, with the script that blocked it most.",
-        attributes : ["duration_ms", "blocking_duration_ms", "script.invoker", "script.invoker_type", "script.source_url", "script.duration_ms"],
+        attributes : ["duration_ms", "blocking_duration_ms", "script.invoker", "script.invoker_type", "script.source_url", "script.duration_ms", "lag.page_view.id"],
     },
     browserReport : {
         name : "lag.browser_report",
         monitor : "BrowserReportMonitor",
         description : "One report from the Reporting API.",
-        attributes : ["type", "id", "message", "source_file", "line_number"],
+        attributes : ["type", "id", "message", "source_file", "line_number", "lag.page_view.id"],
     },
     stall : {
         name : "lag.stall",
         monitor : "MeasurementConditions",
         description : "One stall episode, with its classification as a hang or a suspend and its longest sample.",
-        attributes : ["kind", "duration_ms"],
+        attributes : ["kind", "duration_ms", "lag.page_view.id"],
     },
 };
 

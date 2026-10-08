@@ -1,7 +1,7 @@
 import { vi, expect } from "vitest";
 import { setupAllMonitors, type AllMonitorDeps, type AllMonitorHandles } from "./setup-all-monitors.js";
 import { createWorkerHandler, type HangEvent } from "./lag-worker.js";
-import { createRecordingMeter } from "./test-utils.js";
+import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "./test-utils.js";
 import { METRIC_CATALOG, METRICS } from "./metric-catalog.js";
 import type {
     EventTimingEntry,
@@ -253,7 +253,7 @@ async function generateActivity(browser : ReturnType<typeof createFakeBrowser>) 
     await advance(500);
 }
 
-/** Metrics that need a special situation; other tests cover them. */
+/** The metrics that need a special situation. Other tests examine them. */
 const NOT_IN_NORMAL_ACTIVITY = new Set([
     METRICS.samplesDiscarded.name,
     METRICS.stalls.name,
@@ -346,6 +346,15 @@ describe("setupAllMonitors", () => {
         expect(handles.pageViewContext!.getAttributes()).toEqual({ "lag.page_view.id" : handles.vitals!.getView().id });
     });
 
+    // This test shows a bug in the catalog. setupAllMonitors gives the attribute lag.page_view.id to each event.
+    // But the catalog does not list it for lag.long_animation_frame, lag.browser_report, lag.stall and
+    // lag.clock.jump. Thus the documentation of these events does not show it.
+    it("sends only the event attributes that the catalog lists", async () => {
+        await generateActivity(browser);
+
+        expectCatalogEvents(browser.events.emit);
+    });
+
     it("gives the ID of the current page view to the events of the other monitors", async () => {
         await generateActivity(browser);
 
@@ -424,6 +433,8 @@ describe("setupAllMonitors", () => {
         // The stall samples of all monitors are one episode
         expect(browser.meter.records().get("lag_stalls")).toEqual([{ value : 1, attributes : { kind : "suspend" } }]);
         expect(browser.reportHang).not.toHaveBeenCalled();
+        expectCatalogInstruments(browser.meter);
+        expectCatalogEvents(browser.events.emit, ["lag.page_view.id"]);
     });
 
     it("detects a main-thread hang in the worker, and records it when the main thread runs again", async () => {
@@ -444,6 +455,8 @@ describe("setupAllMonitors", () => {
         expect(Math.max(...browser.meter.values("lag_worker_main_block_histogram"))).toBeGreaterThanOrEqual(7_000);
         expect(browser.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ phase : "ended" }));
         expect(browser.events.emit).toHaveBeenCalledWith("lag.stall", expect.objectContaining({ kind : "hang" }));
+        expectCatalogInstruments(browser.meter);
+        expectCatalogEvents(browser.events.emit, ["lag.page_view.id"]);
     });
 
     it("counts samples that it discards because the page was hidden", async () => {
@@ -453,6 +466,7 @@ describe("setupAllMonitors", () => {
         await advance(200);
 
         expect(browser.meter.records().get("lag_samples_discarded")?.some(r => r.attributes?.["reason"] === "hidden")).toBe(true);
+        expectCatalogInstruments(browser.meter);
     });
 
     it("records clock jumps", async () => {
@@ -519,6 +533,62 @@ describe("setupAllMonitors", () => {
         expect(browser.meter.values("lag_drift_histogram").length).toBe(before + 1);
     });
 
+    it("gives each monitor of the registry through its typed getter", () => {
+        const getters : Array<[keyof AllMonitorHandles, string]> = [
+            ["conditions", "measurement-conditions"],
+            ["vitals", "page-view-vitals"],
+            ["driftLag", "drift-lag"],
+            ["macrotaskLag", "macrotask-lag"],
+            ["lifecycleStateMachine", "lifecycle"],
+            ["loafMonitor", "loaf"],
+            ["eventTimingMonitor", "event-timing"],
+            ["layoutShiftMonitor", "layout-shift"],
+            ["frameMonitor", "frame-timing"],
+            ["idleMonitor", "idle-availability"],
+            ["schedulingMonitor", "scheduling-fairness"],
+            ["memoryMonitor", "memory"],
+            ["workerMonitor", "worker-lag"],
+            ["pressureMonitor", "compute-pressure"],
+            ["gcSignal", "gc-signal"],
+            ["throttleDetector", "throttle-detector"],
+            ["clockChecker", "clock-reliability"],
+            ["clockDrift", "clock-drift"],
+            ["browserReports", "browser-reports"],
+            ["pageViewContext", "page-view-context"],
+        ];
+
+        for (const [getter, name] of getters) {
+            expect(handles[getter], getter).toBeDefined();
+            expect(handles[getter], getter).toBe(handles.registry.get(name)!.monitor);
+        }
+    });
+
+    it("gives the ID of the current page view to the hang reports of the worker", async () => {
+        await advance(1_000);
+
+        browser.blockMain();
+        await advance(8_000);
+
+        expect(browser.reportHang).toHaveBeenCalledWith(
+            expect.objectContaining({ phase : "started", attributes : { "lag.page_view.id" : handles.vitals!.getView().id } }),
+            expect.anything(),
+        );
+        browser.unblockMain();
+    });
+
+    it("stop() reports the stall episode that waits, with its kind", async () => {
+        await advance(1_000);
+        // The main thread falls 6 s behind. Each timer-driven monitor gets a stall sample.
+        browser.addLag(6_000);
+        await advance(3_000);
+        expect(browser.meter.sum("lag_stalls")).toBe(0);
+
+        handles.stop();
+
+        expect(browser.meter.records().get("lag_stalls")).toEqual([{ value : 1, attributes : { kind : "hang" } }]);
+        expect(browser.meter.records().get("lag_stall_duration_histogram")).toEqual([{ value : expect.any(Number), attributes : { kind : "hang" } }]);
+    });
+
     it("counts lifecycle transitions", () => {
         browser.setVisibility("hidden");
         browser.setVisibility("visible");
@@ -579,7 +649,20 @@ describe("setupAllMonitors degradation", () => {
         const handles = setupAllMonitors(deps);
 
         expect(handles.workerMonitor).toBeUndefined();
-        expect(browser.logger.log).toHaveBeenCalledWith("warn", expect.stringContaining("Worker lag monitor skipped"), expect.anything());
+        expect(browser.logger.log).toHaveBeenCalledWith("warn", expect.stringContaining("Worker lag monitor skipped"), { type : "setupAllMonitors" });
+        handles.stop();
+    });
+
+    it("keeps the timer-driven monitors when the page lifecycle cannot start", () => {
+        const browser = createFakeBrowser();
+        const document = { ...browser.deps.document, addEventListener : () => { throw new Error("no events"); } };
+        const handles = setupAllMonitors({ ...browser.deps, document });
+
+        expect(handles.lifecycleStateMachine).toBeUndefined();
+        expect(handles.vitals).toBeUndefined();
+        expect(handles.driftLag).toBeDefined();
+        expect(handles.conditions).toBeDefined();
+        expect(browser.logger.log).toHaveBeenCalledWith("warn", 'Failed to create the "lifecycle" monitor.', expect.objectContaining({ monitor : "lifecycle" }));
         handles.stop();
     });
 
@@ -598,6 +681,68 @@ describe("setupAllMonitors degradation", () => {
             'Failed to create the "gc-signal" monitor.',
             expect.objectContaining({ monitor : "gc-signal" }),
         );
+        handles.stop();
+    });
+
+    it("registers no monitor whose dependencies are not complete, and logs no warning", () => {
+        const browser = createFakeBrowser();
+        const { cancelAnimationFrame : _frame, cancelIdleCallback : _idle, queueMicrotask : _microtask, worker : _worker, wallClock : _wall, ...deps } = browser.deps;
+        const handles = setupAllMonitors(deps);
+        const names = handles.registry.getAll().map(h => h.name);
+
+        for (const name of ["frame-timing", "idle-availability", "scheduling-fairness", "worker-lag", "clock-drift", "page-view-context"]) {
+            expect(names, name).not.toContain(name);
+        }
+        expect(browser.logger.log).not.toHaveBeenCalledWith("warn", expect.anything(), expect.anything());
+        handles.stop();
+    });
+
+    it("registers no page-view context without the page-view vitals", () => {
+        const browser = createFakeBrowser();
+        const { PerformanceObserver : _observer, ...deps } = browser.deps;
+        const handles = setupAllMonitors(deps);
+
+        expect(handles.registry.getAll().map(h => h.name)).not.toContain("page-view-context");
+        expect(() => handles.flush()).not.toThrow();
+        expect(browser.logger.log).not.toHaveBeenCalledWith("warn", expect.anything(), expect.anything());
+        handles.stop();
+    });
+
+    it("gives the page-view ID to the crash-report context of the browser, also without a worker", async () => {
+        const browser = createFakeBrowser();
+        const { worker : _worker, ...deps } = browser.deps;
+        const crashReport = { set : vi.fn() };
+        const handles = setupAllMonitors({ ...deps, crashReport });
+        await advance(0);
+
+        expect(handles.pageViewContext).toBeDefined();
+        expect(crashReport.set).toHaveBeenCalledWith("lag.page_view.id", handles.vitals!.getView().id);
+        handles.stop();
+    });
+
+    it("counts a stall without an event sink", async () => {
+        const browser = createFakeBrowser();
+        const { events : _events, ...deps } = browser.deps;
+        const handles = setupAllMonitors(deps);
+        await advance(1_000);
+
+        browser.addLag(6_000);
+        await advance(5_000);
+
+        expect(browser.meter.sum("lag_stalls")).toBe(1);
+        handles.stop();
+    });
+
+    it("sends the stall events without a page-view ID when the page-view vitals are missing", async () => {
+        const browser = createFakeBrowser();
+        const { PerformanceObserver : _observer, ...deps } = browser.deps;
+        const handles = setupAllMonitors(deps);
+        await advance(1_000);
+
+        browser.addLag(6_000);
+        await advance(5_000);
+
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.stall", { kind : "hang", duration_ms : expect.any(Number) });
         handles.stop();
     });
 });

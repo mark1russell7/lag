@@ -78,4 +78,27 @@ describe("BrowserReportMonitor", () => {
         monitor.start();
         expect(o.observe).toHaveBeenCalledTimes(2);
     });
+
+    it("start() while the monitor observes makes no second observer, and stop() works after a start that failed", () => {
+        const o = createObserver();
+        const monitor = new BrowserReportMonitor(vi.fn(), { log : vi.fn() }, o.Ctor);
+        monitor.start();
+        expect(o.options).toHaveBeenCalledTimes(1);
+
+        const failing = new BrowserReportMonitor(vi.fn(), { log : vi.fn() }, class { constructor() { throw new Error("no"); } } as unknown as ReportingObserverInit);
+        expect(() => failing.stop()).not.toThrow();
+    });
+
+    it("names the error and the monitor in its logs", () => {
+        const logger = { log : vi.fn() };
+        new BrowserReportMonitor(vi.fn(), logger, class { constructor() { throw new Error("no"); } } as unknown as ReportingObserverInit);
+        const o = createObserver();
+        new BrowserReportMonitor(() => { throw new Error("boom"); }, logger, o.Ctor);
+        o.emit([{ type : "intervention", url : "https://shop.example/", body : {} }]);
+
+        expect(logger.log.mock.calls).toEqual([
+            ["warn", "ReportingObserver not available in this browser.", { error : expect.any(Error), type : "BrowserReportMonitor" }],
+            ["error", "Error processing browser report.", { error : expect.any(Error), type : "BrowserReportMonitor" }],
+        ]);
+    });
 });

@@ -215,4 +215,63 @@ describe("MemoryMonitor", () => {
         expect(measureModern).toHaveBeenCalledTimes(1);
         expect(reports.map(r => r.source)).toEqual(["legacy", "legacy"]);
     });
+
+    describe("rules of the sources", () => {
+        function createMonitor(source : MemorySource, report : (m : MemoryMeasurement) => void = () => {}) {
+            const logger = { log : vi.fn() };
+            const setIntervalFn = vi.fn((fn : () => void, ms : number) => setInterval(fn, ms) as unknown as number);
+            const monitor = new MemoryMonitor(1_000, source, report, logger, setIntervalFn, (id) => clearInterval(id), { now : () => 0 });
+            return { monitor, logger, setIntervalFn };
+        }
+
+        it("start() while the monitor operates adds no second interval", () => {
+            const m = createMonitor({ readLegacy : () => ({ usedJSHeapSize : 1, totalJSHeapSize : 2, jsHeapSizeLimit : 3 }) });
+
+            m.monitor.start();
+            m.monitor.stop();
+
+            expect(m.setIntervalFn).toHaveBeenCalledTimes(1);
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it("logs an error from the report function and continues with the next sample", async () => {
+            const report = vi.fn<(m : MemoryMeasurement) => void>();
+            report.mockImplementationOnce(() => { throw new Error("export failed"); });
+            const m = createMonitor({ readLegacy : () => ({ usedJSHeapSize : 1, totalJSHeapSize : 2, jsHeapSizeLimit : 3 }) }, report);
+            await vi.advanceTimersByTimeAsync(1_000);
+            m.monitor.stop();
+
+            expect(m.logger.log).toHaveBeenCalledWith("error", "Error in memory measurement.", { error : expect.any(Error), type : "MemoryMonitor" });
+            expect(report).toHaveBeenCalledTimes(2);
+        });
+
+        it("logs the failure of the standard API at debug level, and reports nothing without a legacy API", async () => {
+            const report = vi.fn();
+            const m = createMonitor({ measureModern : () => Promise.reject(new Error("not isolated")) }, report);
+            await vi.advanceTimersByTimeAsync(0);
+            m.monitor.stop();
+
+            expect(m.logger.log.mock.calls).toEqual([["debug", "measureUserAgentSpecificMemory failed; using legacy performance.memory from now on.", { error : expect.any(Error), type : "MemoryMonitor" }]]);
+            expect(report).not.toHaveBeenCalled();
+        });
+
+        it("reports nothing, and logs nothing, when the legacy API gives no value", async () => {
+            const report = vi.fn();
+            const m = createMonitor({ readLegacy : () => undefined }, report);
+            await vi.advanceTimersByTimeAsync(0);
+            m.monitor.stop();
+
+            expect(report).not.toHaveBeenCalled();
+            expect(m.logger.log).not.toHaveBeenCalled();
+        });
+
+        it("gives no usage for a heap limit of 0", async () => {
+            const report = vi.fn();
+            const m = createMonitor({ readLegacy : () => ({ usedJSHeapSize : 10, totalJSHeapSize : 20, jsHeapSizeLimit : 0 }) }, report);
+            await vi.advanceTimersByTimeAsync(0);
+            m.monitor.stop();
+
+            expect(report).toHaveBeenCalledWith(expect.objectContaining({ usedBytes : 10, usagePercent : undefined }));
+        });
+    });
 });

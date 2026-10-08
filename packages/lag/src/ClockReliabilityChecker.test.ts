@@ -71,4 +71,24 @@ describe("ClockReliabilityChecker", () => {
         expect(checker.getResolutionMs()).toBe(0);
         expect(checker.isHighResolution()).toBe(false);
     });
+
+    /** A clock that gives these values, and then the last value at each read. */
+    const clockOf = (values : number[]) => {
+        let index = 0;
+        return { timeOrigin : 0, now : () => values[Math.min(index++, values.length - 1)]! };
+    };
+
+    it("is not high-resolution at a resolution of exactly 50 μs", () => {
+        // Each value is two times the previous one: each difference is exact
+        const checker = new ClockReliabilityChecker(clockOf([0, 0.05, 0.1, 0.2, 0.4, 0.8]));
+
+        expect(checker.getResolutionMs()).toBe(0.05);
+        expect(checker.isHighResolution()).toBe(false);
+    });
+
+    it("measures the resolution from the smallest of the first 5 ticks of the clock", () => {
+        const checker = new ClockReliabilityChecker(clockOf([0, 0.0625, 0.1875, 0.3125, 0.4375, 0.5625, 0.59375]));
+
+        expect(checker.getResolutionMs()).toBe(0.0625);
+    });
 });

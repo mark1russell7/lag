@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import { createInstrumentedWorkerLag } from "./worker-lag.js";
-import { createRecordingMeter } from "../test-utils.js";
+import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "../test-utils.js";
 import { createMemoryHangJournal, HANG_JOURNAL_STALE_MS, type HangJournal, type HangRecord } from "../hang-journal.js";
 import { createIndexedDbHangJournal } from "../browser/indexeddb-journal.js";
-import { createMeasurementConditions } from "../measurement-conditions.js";
+import { createMeasurementConditions, type MeasurementConditions } from "../measurement-conditions.js";
 import { createWorkerHandler } from "../lag-worker.js";
 import { createFakeLifecycle } from "../vitals/test-fakes.js";
 import type { WorkerLike } from "../WorkerLagMonitor.js";
@@ -68,6 +68,8 @@ describe("createInstrumentedWorkerLag with a hang journal", () => {
             "lag.page_view.id" : "view-of-closed-page",
         });
         expect((await t.journal.list()).map(r => r.pageId).sort()).toEqual(["live-page", "this-page"]);
+        expectCatalogInstruments(t.meter);
+        expectCatalogEvents(t.events.emit);
         t.handle.stop();
     });
 
@@ -209,5 +211,179 @@ describe("createInstrumentedWorkerLag with a real worker handler", () => {
         runMain();
 
         expect(meter.sum("lag_main_thread_hangs")).toBe(1);
+    });
+});
+
+describe("createInstrumentedWorkerLag with the messages of a worker", () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(NOW);
+    });
+
+    afterEach(() => vi.useRealTimers());
+
+    /** A monitor on a worker whose messages the test sends. The absolute time of the main thread is `NOW`. */
+    function withWorker(options : {
+        journal? : HangJournal;
+        events? : boolean;
+        wallClock? : boolean;
+        conditions? : MeasurementConditions;
+        workerHangReport? : { url : string };
+    } = {}) {
+        const listeners = new Set<(event : { data : WorkerToMainMessage }) => void>();
+        const sent : MainToWorkerMessage[] = [];
+        const meter = createRecordingMeter();
+        const events = { emit : vi.fn() };
+        const logger = { log : vi.fn() };
+        const handle = createInstrumentedWorkerLag({
+            logger,
+            clock : { now : () => 0 },
+            meter : meter.meter,
+            worker : {
+                postMessage : (message) => { sent.push(message); },
+                addEventListener : (_type, listener) => { listeners.add(listener); },
+                removeEventListener : (_type, listener) => { listeners.delete(listener); },
+            },
+            performance : { timeOrigin : NOW, now : () => Date.now() - NOW },
+            setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+            clearTimeoutFn : (id) => clearTimeout(id),
+            pageId : "this-page",
+            ...(options.journal ? { hangJournal : options.journal } : {}),
+            ...(options.events === false ? {} : { events }),
+            ...(options.wallClock === false ? {} : { wallClock : { now : () => NOW } }),
+            ...(options.workerHangReport ? { workerHangReport : options.workerHangReport } : {}),
+        }, options.conditions);
+        return {
+            handle,
+            sent,
+            meter,
+            events,
+            logger,
+            deliver(message : WorkerToMainMessage) {
+                for (const listener of [...listeners]) listener({ data : message });
+            },
+        };
+    }
+
+    it("gives the hang report target to the worker", () => {
+        const t = withWorker({ workerHangReport : { url : "https://otel.example/v1/logs" } });
+
+        expect(t.sent.find(m => m.type === "start")).toMatchObject({ hang : { thresholdMs : 5_000, report : { url : "https://otel.example/v1/logs" } } });
+        t.handle.stop();
+    });
+
+    it("counts a hang that the worker ended, with the outcome ended, and records its duration", () => {
+        const t = withWorker();
+
+        t.deliver({ type : "hang-ended", startedAt : NOW - 8_000, durationMs : 8_000 });
+        t.handle.stop();
+
+        expect(t.meter.records().get("lag_main_thread_hangs")).toEqual([{ value : 1, attributes : { outcome : "ended" } }]);
+        expect(t.meter.records().get("lag_main_thread_hang_duration_histogram")).toEqual([{ value : 8_000, attributes : { outcome : "ended" } }]);
+        expect(t.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", { phase : "ended", duration_ms : 8_000 });
+        expectCatalogInstruments(t.meter);
+        expectCatalogEvents(t.events.emit);
+    });
+
+    it("handles a system stall and the end of a hang without measurement conditions and without an event sink", () => {
+        const t = withWorker({ events : false });
+
+        t.deliver({ type : "heartbeat", seq : 1, sentAt : NOW, workerSelfLagMs : 6_000 });
+        t.deliver({ type : "hang-ended", startedAt : NOW - 8_000, durationMs : 8_000 });
+        t.handle.stop();
+
+        expect(t.meter.values("lag_worker_self_lag_histogram")).toEqual([6_000]);
+        expect(t.meter.sum("lag_main_thread_hangs")).toBe(1);
+        expect(t.logger.log).not.toHaveBeenCalled();
+    });
+
+    it("stop() cancels the heartbeat delays that wait for evidence", () => {
+        const conditions = createMeasurementConditions({
+            clock : { now : () => Date.now() },
+            setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+            clearTimeoutFn : (id) => clearTimeout(id),
+        });
+        const t = withWorker({ conditions });
+
+        // The heartbeat waited 6 s for the main thread
+        t.deliver({ type : "heartbeat", seq : 1, sentAt : NOW - 6_000, workerSelfLagMs : 0 });
+        t.handle.stop();
+        vi.advanceTimersByTime(5_000);
+
+        expect(t.meter.values("lag_worker_main_block_histogram")).toEqual([]);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("uses Date.now() to find the abandoned hangs when the dependencies have no wall clock", async () => {
+        const journal = createMemoryHangJournal();
+        await journal.put(record("closed-page", NOW - HANG_JOURNAL_STALE_MS - 1));
+        const t = withWorker({ journal, wallClock : false });
+        await vi.advanceTimersByTimeAsync(0);
+        t.handle.stop();
+
+        expect(t.meter.records().get("lag_main_thread_hangs")).toEqual([{ value : 1, attributes : { outcome : "abandoned" } }]);
+        expect(t.logger.log).not.toHaveBeenCalled();
+    });
+
+    it("reports an abandoned hang without an event sink", async () => {
+        const journal = createMemoryHangJournal();
+        await journal.put(record("closed-page", NOW - 60_000));
+        const t = withWorker({ journal, events : false });
+        await vi.advanceTimersByTimeAsync(0);
+        t.handle.stop();
+
+        expect(t.meter.sum("lag_main_thread_hangs")).toBe(1);
+        expect(t.logger.log).not.toHaveBeenCalled();
+    });
+
+    it("does not report a hang whose record another page updated after the read, because the hang continues", async () => {
+        const journal = createMemoryHangJournal();
+        // The worker of the other page wrote the record again 1 s ago
+        await journal.put(record("other-page", NOW - 1_000));
+        const stale = record("other-page", NOW - 60_000);
+        const t = withWorker({ journal : { ...journal, list : () => Promise.resolve([stale]) } });
+        await vi.advanceTimersByTimeAsync(0);
+        t.handle.stop();
+
+        expect(t.meter.sum("lag_main_thread_hangs")).toBe(0);
+        expect((await journal.list()).map(r => r.pageId)).toEqual(["other-page"]);
+    });
+
+    it("skips a record that another page took first", async () => {
+        const journal = createMemoryHangJournal();
+        const t = withWorker({ journal : { ...journal, list : () => Promise.resolve([record("closed-page", NOW - 60_000)]) } });
+        await vi.advanceTimersByTimeAsync(0);
+        t.handle.stop();
+
+        expect(t.meter.sum("lag_main_thread_hangs")).toBe(0);
+        expect(t.logger.log).not.toHaveBeenCalled();
+    });
+
+    it("puts a record back for the next page when the monitor stops while it takes the record", async () => {
+        const journal = createMemoryHangJournal();
+        await journal.put(record("closed-page", NOW - 60_000));
+        let release : () => void = () => {};
+        const slow : HangJournal = {
+            ...journal,
+            take : (pageId, latestSeenAt) => new Promise(resolve => { release = () => resolve(journal.take(pageId, latestSeenAt)); }),
+        };
+        const t = withWorker({ journal : slow });
+        await vi.advanceTimersByTimeAsync(0);
+
+        t.handle.stop();
+        release();
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(t.events.emit).not.toHaveBeenCalled();
+        expect((await journal.list()).map(r => r.pageId)).toEqual(["closed-page"]);
+    });
+
+    it("logs a warning when it cannot read the hang journal", async () => {
+        const journal = createMemoryHangJournal();
+        const t = withWorker({ journal : { ...journal, list : () => Promise.reject(new Error("blocked")) } });
+        await vi.advanceTimersByTimeAsync(0);
+        t.handle.stop();
+
+        expect(t.logger.log).toHaveBeenCalledWith("warn", "Could not read the hang journal.", { error : expect.any(Error), type : "WorkerLagMonitor" });
     });
 });

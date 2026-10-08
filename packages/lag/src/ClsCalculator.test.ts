@@ -3,9 +3,10 @@ import fc from "fast-check";
 import { ClsCalculator } from "./ClsCalculator.js";
 
 /**
- * The CLS definition of web-vitals (`LayoutShiftManager`): a shift joins the
- * session window if it is less than 1000 ms after the previous shift and
- * less than 5000 ms after the first shift. CLS is the largest window sum.
+ * This function gives the CLS of web-vitals (`LayoutShiftManager`). A shift
+ * joins the session window if it is less than 1000 ms after the previous
+ * shift and less than 5000 ms after the first shift. CLS is the largest
+ * window sum.
  */
 function referenceCls(shifts : ReadonlyArray<{ t : number; v : number }>) : number {
     let worst = 0;
@@ -65,6 +66,56 @@ describe("ClsCalculator", () => {
         cls.add(100, 0.2, ["b"]);
         cls.add(5_000, 0.05, ["c"]);
         expect(cls.getLargestShiftSources()).toEqual(["b"]);
+    });
+
+    it("counts the 5 s length of a window from its first shift, also when the first shift is late", () => {
+        const late = new ClsCalculator();
+        for (const t of [3_000, 3_900, 4_800, 5_700, 6_600, 7_500, 7_900]) late.add(t, 0.01);
+        const early = new ClsCalculator();
+        for (const t of [100, 900, 1_700, 2_500, 3_300, 4_100, 4_900, 5_050]) early.add(t, 0.01);
+
+        // Each window takes all its shifts: the last shift is less than 5000 ms after the first one
+        expect(late.getCLS()).toBeCloseTo(0.07);
+        expect(early.getCLS()).toBeCloseTo(0.08);
+    });
+
+    it("starts the first window after reset() at the first shift", () => {
+        const cls = new ClsCalculator();
+        cls.add(0, 0.3);
+        cls.reset();
+        for (const t of [500, 1_400, 2_300, 3_200, 4_100, 5_000, 5_400]) cls.add(t, 0.01);
+
+        expect(cls.getCLS()).toBeCloseTo(0.07);
+    });
+
+    it("gives no sources for a shift without sources", () => {
+        const cls = new ClsCalculator();
+        cls.add(0, 0.1);
+        expect(cls.getLargestShiftSources()).toEqual([]);
+    });
+
+    it("keeps the largest shift of a window when a smaller shift follows", () => {
+        const cls = new ClsCalculator();
+        cls.add(0, 0.3, ["large"]);
+        cls.add(100, 0.1, ["small"]);
+        expect(cls.getLargestShiftSources()).toEqual(["large"]);
+    });
+
+    // A difference from web-vitals: for two shifts with the same score in the worst window, web-vitals
+    // names the later shift (getLargestLayoutShiftEntry in attribution/onCLS.ts). The calculator keeps
+    // the first shift. Only the attribution changes, not the value of CLS.
+    it("names the later of two shifts with the same score in a window, as web-vitals does", () => {
+        const cls = new ClsCalculator();
+        cls.add(0, 0.1, ["first"]);
+        cls.add(100, 0.1, ["second"]);
+        expect(cls.getLargestShiftSources()).toEqual(["second"]);
+    });
+
+    it("keeps the first of two windows with the same score as the worst window, as web-vitals does", () => {
+        const cls = new ClsCalculator();
+        cls.add(0, 0.1, ["first"]);
+        cls.add(2_000, 0.1, ["second"]);
+        expect(cls.getLargestShiftSources()).toEqual(["first"]);
     });
 
     it("reset() clears everything", () => {

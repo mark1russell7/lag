@@ -6,8 +6,9 @@ import {
 } from "./GCSignalDetector.js";
 
 /**
- * Mock FinalizationRegistry that lets us deterministically simulate GC
- * cycles. Real GC is non-deterministic and not testable in isolation.
+ * This function makes a mock `FinalizationRegistry`. A test uses it to
+ * simulate GC cycles at known times. A real GC occurs at times that a test
+ * cannot control.
  */
 function createMockFinalizationRegistry() {
     let cleanup : ((heldValue : unknown) => void) | undefined;
@@ -25,7 +26,7 @@ function createMockFinalizationRegistry() {
 
     return {
         Ctor : MockFR as unknown as FinalizationRegistryConstructor,
-        /** Simulate one GC cycle: every currently registered canary is collected. */
+        /** This function simulates one GC cycle: the registry collects each canary that it has at this time. */
         gc() : number {
             const collected = registered;
             registered = [];
@@ -166,5 +167,15 @@ describe("GCSignalDetector", () => {
             expect.objectContaining({ type : "GCSignalDetector" }),
         );
         expect(t.fr.pendingCanaries).toBe(1);
+    });
+
+    it("counts a GC exactly at the edge of the window", () => {
+        const d = createDetector();
+        d.setTime(1_000);
+        d.fr.gc();
+        d.setTime(1_500);
+
+        expect(d.detector.didGCRecently(500)).toBe(true);
+        expect(d.detector.getRecentGCEvents(500)).toBe(1);
     });
 });

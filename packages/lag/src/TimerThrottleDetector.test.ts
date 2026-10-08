@@ -224,4 +224,60 @@ describe("TimerThrottleDetector", () => {
             { throttled : false, throttledSamples : 0, totalSamples : 5 },
         ]);
     });
+
+    describe("rules of a calibration round", () => {
+        /** A detector on fake timers. Each calibration sample takes the next delay of `sampleDelays` (5 ms after they end). */
+        function createDetector(sampleDelays : number[], calibrationSamples : number, report = vi.fn()) {
+            const logger = { log : vi.fn() };
+            const detector = new TimerThrottleDetector(
+                report,
+                (fn, ms) => setTimeout(fn, ms === 5 ? sampleDelays.shift() ?? 5 : ms) as unknown as number,
+                (id) => clearTimeout(id),
+                { now : () => Date.now() },
+                logger,
+                { calibrationTargetMs : 5, throttleThresholdMs : 100, calibrationSamples, calibrationIntervalMs : 1_000 },
+            );
+            detector.start();
+            return { detector, logger, report };
+        }
+
+        it("does not count a sample of exactly the threshold as throttled", () => {
+            const d = createDetector([100], 1);
+            vi.advanceTimersByTime(100);
+
+            expect(d.report).toHaveBeenCalledWith({ throttled : false, throttledSamples : 0, totalSamples : 1 });
+            d.detector.stop();
+        });
+
+        it("is not throttled when exactly half of the samples are throttled", () => {
+            const d = createDetector([200, 5], 2);
+            vi.advanceTimersByTime(205);
+
+            expect(d.report).toHaveBeenCalledWith({ throttled : false, throttledSamples : 1, totalSamples : 2 });
+            d.detector.stop();
+        });
+
+        it("logs an error from the report function and starts the next round", () => {
+            const report = vi.fn();
+            report.mockImplementationOnce(() => { throw new Error("export failed"); });
+            const d = createDetector([], 1, report);
+            vi.advanceTimersByTime(5 + 1_000 + 5);
+
+            expect(d.logger.log).toHaveBeenCalledWith("error", "Error reporting timer calibration.", { error : expect.any(Error), type : "TimerThrottleDetector" });
+            expect(report).toHaveBeenCalledTimes(2);
+            d.detector.stop();
+        });
+
+        it("logs the start of the throttling and its end one time each", () => {
+            // The rounds are normal, throttled, throttled, normal and normal
+            const d = createDetector([5, 200, 200, 5, 5], 1);
+            vi.advanceTimersByTime(5 + 1_000 + 200 + 1_000 + 200 + 1_000 + 5 + 1_000 + 5);
+            d.detector.stop();
+
+            expect(d.logger.log.mock.calls).toEqual([
+                ["warn", "Timer throttling detected.", { type : "TimerThrottleDetector", throttledSamples : 1, totalSamples : 1 }],
+                ["info", "Timer throttling ended.", { type : "TimerThrottleDetector" }],
+            ]);
+        });
+    });
 });

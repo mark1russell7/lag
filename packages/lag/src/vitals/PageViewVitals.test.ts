@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { PageViewVitals, type VitalsReport } from "./PageViewVitals.js";
 import {
     createFakeLifecycle,
@@ -17,12 +17,13 @@ const ALL_TYPES = ["event", "first-input", "layout-shift", "paint", "largest-con
 function setup(options : {
     page? : FakePage | undefined;
     visibility? : "visible" | "hidden";
-    supported? : readonly string[];
+    supported? : readonly string[] | undefined;
     softNavigations? : boolean;
     interactionCount? : () => number;
+    describeNode? : (node : unknown) => string;
 } = {}) {
     const fake = createFakeLifecycle(options.visibility ?? "visible");
-    const observer = createFakePerformanceObserver(options.supported ?? ALL_TYPES);
+    const observer = createFakePerformanceObserver("supported" in options ? options.supported : ALL_TYPES);
     const reports : VitalsReport[] = [];
     const frames : Array<() => void> = [];
     const logger = { log : vi.fn() };
@@ -36,7 +37,7 @@ function setup(options : {
         lifecycle : fake.lifecycle,
         ...(page ? { page } : {}),
         requestAnimationFrame : (callback) => { frames.push(() => callback(fake.clock.now())); return frames.length; },
-        describeNode : (node) => `#${(node as { id : string }).id}`,
+        describeNode : options.describeNode ?? ((node) => `#${(node as { id : string }).id}`),
         createId : () => `view-${++ids}`,
         ...(options.softNavigations !== undefined ? { softNavigations : options.softNavigations } : {}),
         ...(options.interactionCount ? { readInteractionCount : options.interactionCount } : {}),
@@ -49,7 +50,7 @@ function setup(options : {
         report,
         logger,
         page,
-        /** Starts the animation frames that are waiting. */
+        /** This function starts the animation frames that wait. */
         runFrames() {
             const waiting = frames.splice(0);
             for (const frame of waiting) frame();
@@ -164,6 +165,8 @@ describe("PageViewVitals", () => {
 
         it("ignores the paints after the page was hidden for the first time", () => {
             const t = setup();
+            // The clock is after the times of the events, thus the events give their times
+            t.setNow(2_000);
             t.setVisibility("hidden", 300);
             t.setVisibility("visible", 400);
             t.observer.deliver("paint", paintEntry(500));
@@ -436,7 +439,7 @@ describe("PageViewVitals", () => {
             t.setVisibility("visible");
             t.setVisibility("hidden");
 
-            expect(t.logger.log).toHaveBeenCalledWith("error", "Error reporting page-view vitals.", expect.anything());
+            expect(t.logger.log).toHaveBeenCalledWith("error", "Error reporting page-view vitals.", { error : expect.any(Error), type : "PageViewVitals" });
             expect(t.reports).toHaveLength(1);
         });
     });
@@ -463,7 +466,7 @@ describe("PageViewVitals", () => {
             t.pagehide(true);
             t.pageshow(true, 5_000);
 
-            expect(t.logger.log).toHaveBeenCalledWith("error", "Error in a page-view listener.", expect.anything());
+            expect(t.logger.log).toHaveBeenCalledWith("error", "Error in a page-view listener.", { error : expect.any(Error), type : "PageViewVitals" });
             expect(second).toHaveBeenCalled();
         });
     });
@@ -525,6 +528,368 @@ describe("PageViewVitals", () => {
             const t = setup({ supported : ["event", "paint", "largest-contentful-paint"] });
             expect(t.observer.observedTypes()).toEqual(["event", "paint", "largest-contentful-paint"]);
             expect(t.logger.log).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("view IDs", () => {
+        beforeEach(() => {
+            vi.useFakeTimers();
+            vi.setSystemTime(1_700_000_000_000);
+        });
+
+        afterEach(() => {
+            vi.useRealTimers();
+            vi.restoreAllMocks();
+        });
+
+        it("makes an ID of the form lag-<time>-<13 random digits> without an ID function, and a new ID for each view", () => {
+            vi.spyOn(Math, "random").mockReturnValueOnce(0.1).mockReturnValueOnce(0.2);
+            const fake = createFakeLifecycle();
+            const vitals = new PageViewVitals(() => {}, {
+                logger : { log : vi.fn() },
+                clock : fake.clock,
+                PerformanceObserver : createFakePerformanceObserver(ALL_TYPES).PerformanceObserver,
+                lifecycle : fake.lifecycle,
+            });
+            const load = vitals.getView().id;
+            fake.pagehide(true);
+            fake.pageshow(true, 5_000);
+            const restore = vitals.getView().id;
+
+            expect(load).toMatch(/^lag-1700000000000-\d{13}$/);
+            expect(restore).toMatch(/^lag-1700000000000-\d{13}$/);
+            expect(restore).not.toBe(load);
+        });
+    });
+
+    describe("rules of the load metrics", () => {
+        it("uses the describeNode function of the dependencies for the attribution", () => {
+            const t = setup({ describeNode : (node) => `node:${(node as { id : string }).id}` });
+            t.observer.deliver("largest-contentful-paint", lcpEntry(800, { id : "hero" }));
+            t.setVisibility("hidden", 2_000);
+
+            expect(t.reports.at(-1)!.values.find(v => v.name === "LCP")!.attribution).toEqual({ target : "node:hero" });
+        });
+
+        it("describes a node with the selector of web-vitals when the dependencies have no describeNode function", () => {
+            const fake = createFakeLifecycle();
+            const observer = createFakePerformanceObserver(ALL_TYPES);
+            const reports : VitalsReport[] = [];
+            new PageViewVitals((report) => reports.push(report), {
+                logger : { log : vi.fn() },
+                clock : fake.clock,
+                PerformanceObserver : observer.PerformanceObserver,
+                lifecycle : fake.lifecycle,
+            });
+            const body = { nodeType : 1, nodeName : "BODY", classList : [], parentNode : { nodeType : 9, nodeName : "#document" } };
+            observer.deliver("largest-contentful-paint", lcpEntry(800, { nodeType : 1, nodeName : "IMG", classList : ["hero"], parentNode : body }));
+            fake.setVisibility("hidden", 2_000);
+
+            expect(reports.at(-1)!.values.find(v => v.name === "LCP")!.attribution).toEqual({ target : "body>img.hero" });
+        });
+
+        it("ignores a first-paint entry: only first-contentful-paint gives FCP", () => {
+            const t = setup();
+            t.observer.deliver("paint", { entryType : "paint", name : "first-paint", startTime : 300, duration : 0 });
+            t.observer.deliver("paint", paintEntry(500));
+            t.setVisibility("hidden", 2_000);
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ FCP : 500 });
+        });
+
+        it("ignores a paint at the time at which the page became hidden, as web-vitals does", () => {
+            const t = setup();
+            t.setNow(600);
+            t.setVisibility("hidden", 500);
+            t.setVisibility("visible", 600);
+            t.observer.deliver("paint", paintEntry(500));
+            t.observer.deliver("largest-contentful-paint", lcpEntry(500));
+            t.setVisibility("hidden", 2_000);
+
+            expect(valuesOf(t.reports.at(-1))).toEqual({ TTFB : 200 });
+        });
+
+        it("keeps the first hidden time when the page becomes hidden again", () => {
+            const t = setup();
+            t.setNow(2_000);
+            t.setVisibility("hidden", 300);
+            t.setVisibility("visible", 400);
+            // The browser did not deliver this paint before the second checkpoint
+            t.observer.queue("paint", paintEntry(500));
+            t.setVisibility("hidden", 2_000);
+
+            expect(valuesOf(t.reports.at(-1))).not.toHaveProperty("FCP");
+        });
+
+        it("takes the earliest hidden time of the visibility-state entries", () => {
+            const t = setup({ page : createFakePage({ hiddenTimes : [300, 100] }) });
+            t.observer.deliver("paint", paintEntry(200));
+            t.setVisibility("hidden", 5_000);
+
+            expect(valuesOf(t.reports.at(-1))).not.toHaveProperty("FCP");
+        });
+
+        it("thinks that a page that is hidden at the start was hidden from the start, also without a page source", () => {
+            const t = setup({ page : undefined, visibility : "hidden" });
+            t.observer.deliver("paint", paintEntry(500));
+            t.pagehide(false);
+
+            expect(valuesOf(t.reports.at(-1))).toEqual({});
+        });
+
+        it("ignores the hidden times before the activation of a prerendered page", () => {
+            const page = createFakePage({ prerendering : true, hiddenTimes : [100] });
+            const t = setup({ page, visibility : "hidden" });
+            page.setNavigation({ type : "navigate", activationStart : 1_000, responseStart : 300, url : "https://shop.example/" });
+            t.setVisibility("visible", 1_000);
+            page.activate();
+            t.observer.deliver("paint", paintEntry(1_400));
+            t.setVisibility("hidden", 3_000);
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ FCP : 400 });
+        });
+
+        it("counts a hidden time at the activation of a prerendered page, as web-vitals does", () => {
+            const page = createFakePage({ prerendering : true, hiddenTimes : [1_000] });
+            const t = setup({ page, visibility : "hidden" });
+            page.setNavigation({ type : "navigate", activationStart : 1_000, responseStart : 300, url : "https://shop.example/" });
+            t.setVisibility("visible", 1_000);
+            page.activate();
+            t.observer.deliver("paint", paintEntry(1_400));
+            t.setVisibility("hidden", 3_000);
+
+            expect(valuesOf(t.reports.at(-1))).not.toHaveProperty("FCP");
+        });
+
+        it("uses the navigation type prerender for a page that the browser activated before the monitors started", () => {
+            const t = setup({ page : createFakePage({ navigation : { type : "navigate", activationStart : 1_000, responseStart : 300, url : "https://shop.example/" } }) });
+            t.setVisibility("hidden", 2_000);
+
+            expect(t.vitals.getView().navigationType).toBe("prerender");
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ TTFB : 0 });
+        });
+
+        it("makes the LCP final at a key press", () => {
+            const t = setup();
+            t.observer.deliver("largest-contentful-paint", lcpEntry(700));
+            t.observer.deliver("event", eventEntry({ interactionId : 4, startTime : 1_000, duration : 40, name : "keydown" }));
+            t.observer.deliver("largest-contentful-paint", lcpEntry(1_600));
+            t.setVisibility("hidden", 5_000);
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ LCP : 700 });
+        });
+
+        it("does not make the LCP final at a pointer event without a click", () => {
+            const t = setup();
+            t.observer.deliver("largest-contentful-paint", lcpEntry(700));
+            t.observer.deliver("event", eventEntry({ interactionId : 4, startTime : 1_000, duration : 40, name : "pointerdown" }));
+            t.observer.deliver("largest-contentful-paint", lcpEntry(1_600));
+            t.setVisibility("hidden", 5_000);
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ LCP : 1_600 });
+        });
+
+        it("processes the entries that the other observers did not deliver yet before a later entry", () => {
+            const t = setup();
+            t.observer.deliver("largest-contentful-paint", lcpEntry(700));
+            // The click is earlier than the next LCP candidate, but its observer did not deliver it yet
+            t.observer.queue("event", eventEntry({ interactionId : 4, startTime : 1_000, duration : 40, name : "click" }));
+            t.observer.deliver("largest-contentful-paint", lcpEntry(1_600));
+            t.setVisibility("hidden", 5_000);
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ LCP : 700 });
+        });
+
+        it("counts the first input for INP, also when the event entries do not contain it", () => {
+            const t = setup();
+            t.observer.deliver("first-input", { ...eventEntry({ interactionId : 3, startTime : 1_000, duration : 8 }), entryType : "first-input" });
+            t.setVisibility("hidden", 2_000);
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ INP : 8 });
+        });
+
+        it("gives FCP and LCP entries only to the load: a restored view gets these values from the animation frames", () => {
+            const t = setup();
+            t.pagehide(true);
+            t.setNow(10_040);
+            t.pageshow(true, 10_000);
+            t.observer.deliver("paint", paintEntry(12_000));
+            t.runFrames();
+            t.runFrames();
+            t.observer.deliver("largest-contentful-paint", lcpEntry(12_500));
+            t.setVisibility("hidden", 20_000);
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ FCP : 40, LCP : 40 });
+        });
+    });
+
+    describe("rules of soft navigations", () => {
+        it("observes no soft navigations when the browser gives no list of supported entry types", () => {
+            const t = setup({ softNavigations : true, supported : undefined });
+
+            expect(t.observer.observedTypes()).toEqual(["event", "first-input", "layout-shift", "paint", "largest-contentful-paint"]);
+        });
+
+        it("does not make the LCP final at the interaction that started the soft navigation", () => {
+            const t = setup({ softNavigations : true });
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9", presentationTime : 3_100 }));
+            // The click of the navigation arrives after the soft-navigation entry
+            t.observer.deliver("event", eventEntry({ interactionId : 77, startTime : 3_000, duration : 48, name : "click" }));
+            t.observer.deliver("interaction-contentful-paint", contentfulPaint(77, 3_000, 3_400, "photo"));
+            t.setVisibility("hidden", 8_000);
+
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ LCP : 400 });
+        });
+
+        it("ignores the paints of other interactions, also when they come last", () => {
+            const t = setup({ softNavigations : true });
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9", presentationTime : 3_100 }));
+            t.observer.deliver("interaction-contentful-paint", contentfulPaint(77, 3_000, 3_400, "photo"));
+            t.observer.deliver("interaction-contentful-paint", contentfulPaint(12, 3_000, 9_000, "banner"));
+            t.setVisibility("hidden", 12_000);
+
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ LCP : 400 });
+        });
+
+        it("counts an interaction paint without an interaction ID for the current soft navigation", () => {
+            const t = setup({ softNavigations : true });
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9", presentationTime : 3_100 }));
+            const paint = { entryType : "interaction-contentful-paint", name : "", startTime : 3_000, duration : 0, largestContentfulPaint : { renderTime : 3_400 } } as PerformanceEntryLike;
+            t.observer.deliver("interaction-contentful-paint", paint);
+            t.setVisibility("hidden", 8_000);
+
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ LCP : 400 });
+        });
+
+        it("ignores an interaction paint before the first soft navigation", () => {
+            const t = setup({ softNavigations : true });
+            t.observer.deliver("largest-contentful-paint", lcpEntry(700));
+            const paint = { entryType : "interaction-contentful-paint", name : "", startTime : 1_000, duration : 0, largestContentfulPaint : { renderTime : 1_500 } } as PerformanceEntryLike;
+            t.observer.deliver("interaction-contentful-paint", paint);
+            t.setVisibility("hidden", 2_000);
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ LCP : 700 });
+        });
+
+        it("ignores an interaction paint at or after the time at which the page became hidden", () => {
+            const t = setup({ softNavigations : true });
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9", presentationTime : 3_100 }));
+            t.setNow(5_500);
+            t.setVisibility("hidden", 5_000);
+            t.setVisibility("visible", 5_500);
+            t.observer.deliver("interaction-contentful-paint", contentfulPaint(77, 3_000, 5_000, "photo"));
+            t.setVisibility("hidden", 8_000);
+
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).not.toHaveProperty("LCP");
+        });
+
+        it("starts a view for an entry without a largest paint, and logs no error", () => {
+            const t = setup({ softNavigations : true });
+            const withoutMethod = { entryType : "soft-navigation", name : "https://shop.example/p/9", startTime : 3_000, duration : 0, interactionId : 77, presentationTime : 3_100 } as PerformanceEntryLike;
+            t.observer.deliver("soft-navigation", withoutMethod);
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 5_000, interactionId : 78, url : "https://shop.example/p/10", presentationTime : 5_050 }));
+            t.setVisibility("hidden", 8_000);
+
+            expect(t.logger.log).not.toHaveBeenCalled();
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toEqual({ TTFB : 0, FCP : 100, CLS : 0 });
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-3").at(-1))).toEqual({ TTFB : 0, FCP : 50, CLS : 0 });
+        });
+
+        it("logs no error for an interaction paint without a paint", () => {
+            const t = setup({ softNavigations : true });
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9", presentationTime : 3_100 }));
+            const paint = { entryType : "interaction-contentful-paint", name : "", startTime : 3_000, duration : 0, interactionId : 77, largestContentfulPaint : null } as PerformanceEntryLike;
+            t.observer.deliver("interaction-contentful-paint", paint);
+
+            expect(t.logger.log).not.toHaveBeenCalled();
+        });
+
+        it("does not take the paint times of a soft navigation from the animation frames", () => {
+            const t = setup({ softNavigations : true });
+            t.observer.deliver("soft-navigation", softNavigation({
+                startTime : 3_000,
+                interactionId : 77,
+                url : "https://shop.example/p/9",
+                presentationTime : 3_100,
+                largest : contentfulPaint(77, 3_000, 3_400),
+            }));
+            t.setNow(3_500);
+            t.runFrames();
+            t.runFrames();
+            t.setVisibility("hidden", 8_000);
+
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ FCP : 100, LCP : 400 });
+        });
+    });
+
+    describe("rules of restores and of the end of a view", () => {
+        it("gives no TTFB to a restored view when the load had no navigation entry", () => {
+            const t = setup({ page : createFakePage({ navigation : undefined }) });
+            t.pagehide(true);
+            t.pageshow(true, 5_000);
+            t.setVisibility("hidden", 9_000);
+
+            expect(valuesOf(t.reports.at(-1))).toEqual({ CLS : 0 });
+        });
+
+        it("gives the pending entries before a restore to the view that ends, and the other entries to the new view", () => {
+            const t = setup();
+            t.pagehide(true);
+            t.observer.queue("event",
+                eventEntry({ interactionId : 1, startTime : 4_000, duration : 80 }),
+                eventEntry({ interactionId : 2, startTime : 5_000, duration : 300 }),
+                eventEntry({ interactionId : 3, startTime : 6_000, duration : 200 }));
+            t.setNow(6_500);
+            t.pageshow(true, 5_000);
+            t.setVisibility("hidden", 9_000);
+
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-1").at(-1))).toMatchObject({ INP : 80 });
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ INP : 300 });
+        });
+
+        it("gives a restored view no URL when the load had no URL", () => {
+            const t = setup({ page : undefined });
+            t.pagehide(true);
+            t.setNow(5_000);
+            t.pageshow(true, 5_000);
+
+            expect(t.vitals.getView()).toStrictEqual({ id : "view-2", navigationType : "back-forward-cache", startTime : 5_000 });
+        });
+
+        it("makes no report when a prerendered page terminates before the activation", () => {
+            const t = setup({ page : createFakePage({ prerendering : true }), visibility : "hidden" });
+            t.pagehide(false);
+
+            expect(t.reports).toEqual([]);
+        });
+
+        it("makes no report after the final report of a view, also at a later lifecycle event", () => {
+            const t = setup();
+            t.observer.deliver("paint", paintEntry(500));
+            t.pagehide(false);
+            const count = t.reports.length;
+            t.document.dispatch("freeze", {});
+            t.document.dispatch("resume", {});
+
+            expect(t.reports).toHaveLength(count);
+        });
+
+        it("observes each entry type one time, also when the page source reports the activation two times", () => {
+            const page = createFakePage({ prerendering : true });
+            const t = setup({ page, visibility : "hidden" });
+            page.activate();
+            page.activate();
+
+            expect(t.observer.observedTypes()).toEqual(["event", "first-input", "layout-shift", "paint", "largest-contentful-paint"]);
+        });
+
+        it("stop() removes its activation listener from the page source", () => {
+            const removeListener = vi.fn();
+            const page : FakePage = { ...createFakePage({ prerendering : true }), onActivation : () => removeListener };
+            const t = setup({ page, visibility : "hidden" });
+            t.vitals.stop();
+
+            expect(removeListener).toHaveBeenCalledTimes(1);
         });
     });
 });

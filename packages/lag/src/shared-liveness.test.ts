@@ -24,7 +24,7 @@ function createWatcher(options = { thresholdMs : 50, pollIntervalMs : 5 }) {
         beacon,
         watcher,
         blocks,
-        /** Advance time; the main thread beats every `beatEveryMs` unless 0. */
+        /** This method moves the time forward. The main thread beats each `beatEveryMs`, but not when the value is 0. */
         run(ms : number, beatEveryMs = 5) {
             for (let t = 0; t < ms; t += 5) {
                 now += 5;
@@ -95,5 +95,73 @@ describe("shared-memory liveness", () => {
         vi.advanceTimersByTime(10);
 
         expect(callback).toHaveBeenCalled();
+    });
+
+    it("uses a threshold of 50 ms and a poll interval of 5 ms by default", () => {
+        let now = 0;
+        const buffer = new SharedArrayBuffer(LIVENESS_BUFFER_BYTES);
+        const beacon = createLivenessBeacon(buffer);
+        const blocks : LivenessBlock[] = [];
+        const setIntervalFn = vi.fn((fn : () => void, ms : number) => setInterval(fn, ms) as unknown as number);
+        const watcher = new LivenessWatcher(buffer, (block) => blocks.push(block), { now : () => now }, setIntervalFn, (id) => clearInterval(id));
+        const step = (beat : boolean) => {
+            now += 5;
+            if (beat) beacon.beat();
+            vi.advanceTimersByTime(5);
+        };
+
+        watcher.start();
+        for (let i = 0; i < 20; i++) step(true);
+        for (let i = 0; i < 11; i++) step(false);
+        step(true);
+        watcher.stop();
+
+        expect(setIntervalFn).toHaveBeenCalledWith(expect.any(Function), 5);
+        expect(blocks).toEqual([{ startedAt : 100, durationMs : 60 }]);
+    });
+
+    it("start() while the watcher operates adds no second poll", () => {
+        const w = createWatcher();
+        w.watcher.start();
+        w.watcher.start();
+        w.watcher.stop();
+
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("reports a quiet period of exactly the threshold", () => {
+        const w = createWatcher();
+        w.watcher.start();
+        w.run(100);
+        w.run(45, 0);
+        w.run(5);
+
+        expect(w.blocks).toEqual([{ startedAt : 100, durationMs : 50 }]);
+    });
+
+    it("measures a block also when one poll of the watcher is late by less than the threshold", () => {
+        const w = createWatcher();
+        w.watcher.start();
+        w.run(100);
+        w.run(100, 0);
+        // The next poll comes 40 ms late
+        w.jumpClock(40);
+        w.run(100, 0);
+        w.run(10);
+
+        expect(w.blocks).toEqual([{ startedAt : 100, durationMs : 245 }]);
+    });
+
+    it("does not count the time in which the watcher itself was late by exactly the threshold", () => {
+        const w = createWatcher();
+        w.watcher.start();
+        w.run(100);
+        w.run(100, 0);
+        // The next poll comes 50 ms late: the block starts again at that poll
+        w.jumpClock(50);
+        w.run(100, 0);
+        w.run(10);
+
+        expect(w.blocks).toEqual([{ startedAt : 255, durationMs : 100 }]);
     });
 });

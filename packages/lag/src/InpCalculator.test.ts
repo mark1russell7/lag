@@ -52,6 +52,33 @@ describe("InpCalculator", () => {
         expect(inp.getInteractionCount()).toBe(1);
     });
 
+    it("counts the events of one interaction as one candidate, also at 50 or more interactions", () => {
+        let count = 0;
+        const inp = new InpCalculator(() => count);
+        inp.add(1, 300);
+        inp.add(1, 280);
+        inp.add(2, 100);
+        count = 60;
+
+        // With 60 interactions, INP ignores the longest interaction, not the longest event
+        expect(inp.getINP()).toBe(100);
+        expect(inp.getINPInteractionId()).toBe(2);
+    });
+
+    it("gives the shortest kept interaction when the number of outliers is larger than the number of kept interactions", () => {
+        let count = 0;
+        const inp = new InpCalculator(() => count);
+        for (let id = 1; id <= 10; id++) inp.add(id, 100 + id);
+        count = 1_000;
+
+        expect(inp.getINP()).toBe(101);
+        expect(inp.getINPInteractionId()).toBe(1);
+    });
+
+    it("gives 0 as the longest duration without interactions", () => {
+        expect(new InpCalculator().getLongestDuration()).toBe(0);
+    });
+
     it("agrees with the reference definition for any sequence of entries (property test)", () => {
         fc.assert(fc.property(
             fc.array(fc.record({

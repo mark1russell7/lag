@@ -76,4 +76,41 @@ describe("forwarding meter", () => {
         const receiver = createMeterReceiver(recording.meter);
         expect(() => receiver.handleMessage({ type : "records", records : [[42, 1, undefined]] })).not.toThrow();
     });
+
+    it("sends the kind of each instrument, and a first batch with the records of the meter only", () => {
+        const { forwarding, sent } = createPair();
+        forwarding.meter.createCounter("lag_gc_events", { unit : "{gc}" }).add(1);
+        forwarding.flush();
+
+        expect(sent).toEqual([
+            { type : "instrument", id : 1, kind : "counter", name : "lag_gc_events", options : { unit : "{gc}" } },
+            { type : "records", records : [[1, 1, undefined]] },
+        ]);
+    });
+
+    it("flushes at the interval of the options", () => {
+        const { forwarding, recording } = createPair({ flushIntervalMs : 250 });
+        forwarding.meter.createHistogram("h", { unit : "ms" }).record(5);
+
+        vi.advanceTimersByTime(250);
+
+        expect(recording.values("h")).toEqual([5]);
+        forwarding.dispose();
+    });
+
+    it("sends each record in one batch only, and no batch when no record came after the last batch", () => {
+        const { forwarding, sent } = createPair();
+        const histogram = forwarding.meter.createHistogram("h", { unit : "ms" });
+
+        histogram.record(1);
+        forwarding.flush();
+        forwarding.flush();
+        histogram.record(2);
+        forwarding.flush();
+
+        expect(sent.filter(m => m.type === "records")).toEqual([
+            { type : "records", records : [[1, 1, undefined]] },
+            { type : "records", records : [[1, 2, undefined]] },
+        ]);
+    });
 });

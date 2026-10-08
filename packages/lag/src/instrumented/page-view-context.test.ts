@@ -65,7 +65,7 @@ describe("createInstrumentedPageViewContext", () => {
         createInstrumentedPageViewContext({ logger, pageContext : () => { throw new Error("no session"); } }, fake.vitals, [receiver]);
 
         expect(receiver.setContext).toHaveBeenCalledWith({ "lag.page_view.id" : "view-1" });
-        expect(logger.log).toHaveBeenCalledWith("warn", "The pageContext function failed.", expect.anything());
+        expect(logger.log).toHaveBeenCalledWith("warn", "The pageContext function failed.", { error : expect.any(Error), type : "PageViewContext" });
     });
 
     it("initializes the crash-report context, sets the view ID, and deletes it on stop", async () => {
@@ -102,7 +102,28 @@ describe("createInstrumentedPageViewContext", () => {
         await settle();
         fake.startView(view("view-2"));
 
-        expect(logger.log).toHaveBeenCalledWith("debug", "Could not set the crash-report context.", expect.anything());
+        expect(logger.log).toHaveBeenCalledWith("debug", "Could not set the crash-report context.", { error : expect.any(Error) });
         expect(receiver.setContext).toHaveBeenCalledTimes(2);
+    });
+
+    it("still sets the context when initialize() of the crash-report context throws an error", async () => {
+        const fake = fakeVitals(view("view-1"));
+        const crashReport = { initialize : vi.fn(() => { throw new Error("already initialized"); }), set : vi.fn() };
+        const handle = createInstrumentedPageViewContext({ logger : { log : vi.fn() }, crashReport }, fake.vitals, []);
+        await settle();
+
+        expect(handle.monitor).toBeDefined();
+        expect(crashReport.set).toHaveBeenCalledWith("lag.page_view.id", "view-1");
+    });
+
+    it("logs nothing without a crash-report context", async () => {
+        const fake = fakeVitals(view("view-1"));
+        const logger = { log : vi.fn() };
+        createInstrumentedPageViewContext({ logger }, fake.vitals, [{ setContext : vi.fn() }]);
+        await settle();
+        fake.startView(view("view-2"));
+        await settle();
+
+        expect(logger.log).not.toHaveBeenCalled();
     });
 });

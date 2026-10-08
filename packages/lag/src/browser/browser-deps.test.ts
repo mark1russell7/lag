@@ -151,4 +151,96 @@ describe("createBrowserDeps", () => {
         handles.stop();
         expect(vi.getTimerCount()).toBe(0);
     });
+
+    it("adapts the timer functions of the browser: each one passes the callback and the delay, and gives the handle of the browser", () => {
+        const calls : unknown[] = [];
+        const handler = () => {};
+        const deps = createBrowserDeps(createGlobals({
+            setTimeout : (callback : () => void, timeout : number) => { calls.push(["setTimeout", callback === handler, timeout]); return 11; },
+            clearTimeout : (handle : number) => { calls.push(["clearTimeout", handle]); },
+            setInterval : (callback : () => void, timeout : number) => { calls.push(["setInterval", callback === handler, timeout]); return 12; },
+            clearInterval : (handle : number) => { calls.push(["clearInterval", handle]); },
+        }), options());
+
+        expect(deps.setTimeoutFn(handler, 5)).toBe(11);
+        deps.clearTimeoutFn(11);
+        expect(deps.setIntervalFn(handler, 1_000)).toBe(12);
+        deps.clearIntervalFn(12);
+
+        expect(calls).toEqual([["setTimeout", true, 5], ["clearTimeout", 11], ["setInterval", true, 1_000], ["clearInterval", 12]]);
+    });
+
+    it("leaves out PerformanceObserver when the browser does not have it", () => {
+        expect(createBrowserDeps(createGlobals({ PerformanceObserver : undefined }), options()).PerformanceObserver).toBeUndefined();
+    });
+
+    it("reads the wall clock from Date.now()", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(1_700_000_123_456);
+
+        expect(createBrowserDeps(createGlobals(), options()).wallClock!.now()).toBe(1_700_000_123_456);
+    });
+
+    it("gives requestIdleCallback and cancelIdleCallback, bound to the window, only when the browser has both", () => {
+        const globals = createGlobals();
+        Object.assign(globals, {
+            requestIdleCallback(this : unknown) {
+                if (this !== globals) throw new TypeError("Illegal invocation");
+                return 7;
+            },
+            cancelIdleCallback(this : unknown) {
+                if (this !== globals) throw new TypeError("Illegal invocation");
+            },
+        });
+        const deps = createBrowserDeps(globals, options());
+
+        expect(deps.requestIdleCallback!(() => {})).toBe(7);
+        expect(() => deps.cancelIdleCallback!(7)).not.toThrow();
+        expect(createBrowserDeps(createGlobals({ requestIdleCallback : () => 7 }), options()).requestIdleCallback).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ cancelIdleCallback : () => {} }), options()).cancelIdleCallback).toBeUndefined();
+    });
+
+    it("gives MessageChannel with queueMicrotask, and leaves out an API that is not a function", () => {
+        class FakeChannel {}
+        const deps = createBrowserDeps(createGlobals({ MessageChannel : FakeChannel }), options());
+
+        expect(deps.MessageChannel).toBe(FakeChannel);
+        expect(() => deps.queueMicrotask!(() => {})).not.toThrow();
+        expect(createBrowserDeps(createGlobals({ MessageChannel : {} }), options()).MessageChannel).toBeUndefined();
+    });
+
+    it("leaves out requestAnimationFrame when the browser has no cancelAnimationFrame", () => {
+        const deps = createBrowserDeps(createGlobals({ cancelAnimationFrame : undefined }), options());
+
+        expect(deps.requestAnimationFrame).toBeUndefined();
+        expect(deps.cancelAnimationFrame).toBeUndefined();
+    });
+
+    it("finds one memory API without the other, and leaves out a memory object that is null", () => {
+        const legacy = createGlobals();
+        const memory = { usedJSHeapSize : 1, totalJSHeapSize : 2, jsHeapSizeLimit : 3 };
+        Object.assign(legacy.performance, { memory });
+        const modern = createGlobals();
+        Object.assign(modern.performance, { measureUserAgentSpecificMemory : () => Promise.resolve({ bytes : 42, breakdown : [] }) });
+        const withNull = createGlobals();
+        Object.assign(withNull.performance, { memory : null });
+
+        expect(createBrowserDeps(legacy, options()).memorySource!.readLegacy!()).toBe(memory);
+        expect(createBrowserDeps(modern, options()).memorySource!.measureModern).toBeTypeOf("function");
+        expect(createBrowserDeps(modern, options()).memorySource!.readLegacy).toBeUndefined();
+        expect(createBrowserDeps(withNull, options()).memorySource).toBeUndefined();
+    });
+
+    it("uses a crash-report object only when it has a set() function", () => {
+        expect(createBrowserDeps(createGlobals({ crashReport : { initialize : vi.fn() } }), options()).crashReport).toBeUndefined();
+    });
+
+    it("gives FinalizationRegistry and ReportingObserver when the browser has them", () => {
+        class FakeRegistry {}
+        class FakeReportingObserver {}
+        const deps = createBrowserDeps(createGlobals({ FinalizationRegistry : FakeRegistry, ReportingObserver : FakeReportingObserver }), options());
+
+        expect(deps.FinalizationRegistry).toBe(FakeRegistry);
+        expect(deps.ReportingObserver).toBe(FakeReportingObserver);
+    });
 });

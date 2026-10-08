@@ -177,4 +177,16 @@ describe("ObserverMonitor", () => {
 
         expect(monitor.entries).toEqual([]);
     });
+
+    it("stop() works after a start that failed, and the warning names the entry type and the error", () => {
+        const logger = { log : vi.fn() };
+        const Throwing = class {
+            observe() { throw new Error("unsupported"); }
+            disconnect() {}
+        } as unknown as PerformanceObserverInit;
+        const monitor = new TestObserverMonitor("test-entry", logger, Throwing);
+
+        expect(() => monitor.stop()).not.toThrow();
+        expect(logger.log).toHaveBeenCalledWith("warn", 'PerformanceObserver type "test-entry" not supported.', { error : expect.any(Error), entryType : "test-entry" });
+    });
 });

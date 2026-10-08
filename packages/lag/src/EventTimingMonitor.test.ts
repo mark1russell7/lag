@@ -1,5 +1,5 @@
 import { vi, expect } from "vitest";
-import { EventTimingMonitor } from "./EventTimingMonitor.js";
+import { EventTimingMonitor, interactionType } from "./EventTimingMonitor.js";
 import type { PerformanceEntryList, PerformanceObserverInit, EventTimingEntry } from "./perf-types.js";
 
 function createMockPerformanceObserver() {
@@ -203,5 +203,20 @@ describe("EventTimingMonitor", () => {
 
         expect(monitor.getInteractionCount()).toBe(10);
         expect(monitor.getINP()).toBe(300);
+    });
+
+    it.each([
+        ["keydown", "keyboard"],
+        ["keyup", "keyboard"],
+        ["pointerdown", "pointer"],
+        ["mousedown", "pointer"],
+        ["click", "pointer"],
+        ["auxclick", "pointer"],
+        ["contextmenu", "pointer"],
+        ["touchstart", "pointer"],
+        ["dblclick", "other"],
+        ["input", "other"],
+    ])("gives the event %s the interaction type %s", (name, type) => {
+        expect(interactionType(name)).toBe(type);
     });
 });

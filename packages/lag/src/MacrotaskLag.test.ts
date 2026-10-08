@@ -111,6 +111,12 @@ describe('MacrotaskLag', () => {
             expect(mockReport).not.toHaveBeenCalled();
         });
 
+        it('start() while the monitor operates adds no second interval', () => {
+            driver.createMonitor(MacrotaskLag).start();
+
+            driver.expectIntervalSetup();
+        });
+
         it('can be restarted', () => {
             const monitor = driver.createMonitor(MacrotaskLag);
             monitor.stop();

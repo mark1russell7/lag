@@ -27,6 +27,12 @@ function createPage(initial : "visible" | "hidden" = "visible") {
         show() { document.visibilityState = "visible"; fire("visibilitychange"); },
         /** Flip visibilityState without the (asynchronous) event. */
         hideSilently() { document.visibilityState = "hidden"; },
+        /** The window loses the focus, or gets it again. */
+        blur() { fire("blur"); },
+        focus() { fire("focus"); },
+        /** The browser freezes a hidden page, or resumes it. */
+        freeze() { fire("freeze"); },
+        resume() { fire("resume"); },
     };
 }
 
@@ -267,6 +273,105 @@ describe("createMeasurementConditions", () => {
             expect(vi.getTimerCount()).toBe(0);
         });
 
+        it("waits for late evidence before it records a sample at the outlier threshold", () => {
+            const { conditions } = createConditions();
+            const record = vi.fn();
+
+            conditions.createValidator().submit(5_000, 5_000, record);
+            expect(record).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(2_000);
+
+            expect(record).toHaveBeenCalledWith(5_000);
+        });
+
+        it("counts a suspend stall for a discarded sample at the outlier threshold", () => {
+            const { conditions, onStall } = createConditions();
+            const now = Date.now();
+            conditions.tracker.add(now - 5_000, now, "suspend");
+
+            conditions.createValidator().submit(5_000, 5_000, vi.fn());
+            vi.advanceTimersByTime(3_000);
+
+            expect(onStall.mock.calls).toEqual([["suspend", 5_000]]);
+        });
+
+        it("reports a stall sample that does not overlap the waiting episode as a separate episode", () => {
+            const { conditions, onStall } = createConditions();
+            const validator = conditions.createValidator();
+
+            validator.submit(6_000, 6_000, vi.fn());
+            vi.advanceTimersByTime(1_000);
+            // This window starts 500 ms after the end of the first window
+            validator.submit(7_000, 500, vi.fn());
+            vi.advanceTimersByTime(10_000);
+
+            expect(onStall.mock.calls).toEqual([["hang", 6_000], ["hang", 7_000]]);
+        });
+
+        it("adds a stall sample whose window starts at the end of the waiting episode to the episode", () => {
+            const { conditions, onStall } = createConditions();
+            const validator = conditions.createValidator();
+
+            validator.submit(6_000, 6_000, vi.fn());
+            vi.advanceTimersByTime(1_000);
+            validator.submit(7_000, 1_000, vi.fn());
+            vi.advanceTimersByTime(10_000);
+
+            expect(onStall.mock.calls).toEqual([["hang", 7_000]]);
+        });
+
+        it("extends an episode with each sample that it gets, so that a later sample can overlap the extension", () => {
+            const { conditions, onStall } = createConditions();
+            const validator = conditions.createValidator();
+
+            validator.submit(6_000, 6_000, vi.fn());
+            vi.advanceTimersByTime(500);
+            // This window ends 500 ms after the first window
+            validator.submit(6_000, 1_000, vi.fn());
+            vi.advanceTimersByTime(500);
+            // This window overlaps only the part that the second window added
+            validator.submit(6_000, 600, vi.fn());
+            vi.advanceTimersByTime(10_000);
+
+            expect(onStall.mock.calls).toEqual([["hang", 6_000]]);
+        });
+
+        it("gives a hang episode the kind suspend when a sample with suspend evidence joins it", () => {
+            const { conditions, onStall } = createConditions();
+            const validator = conditions.createValidator();
+            const start = Date.now();
+
+            validator.submit(6_000, 6_000, vi.fn());
+            vi.advanceTimersByTime(2_500);
+            // The evidence covers only the window of the second sample
+            conditions.tracker.add(start + 1_000, start + 2_000, "suspend");
+            validator.submit(6_000, 3_000, vi.fn());
+            vi.advanceTimersByTime(10_000);
+
+            expect(onStall.mock.calls).toEqual([["suspend", 6_000]]);
+        });
+
+        it("works without stall and discard listeners", () => {
+            const page = createPage();
+            const clock = { now : () => Date.now() };
+            const conditions = createMeasurementConditions({
+                clock,
+                setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+                clearTimeoutFn : (id) => clearTimeout(id),
+                lifecycle : new LifecycleStateMachine(page.document, page.window, clock, { log : vi.fn() }),
+            });
+            const record = vi.fn();
+
+            page.hide();
+            conditions.createValidator().submit(5, 100, record);
+            page.show();
+            vi.advanceTimersByTime(100);
+            conditions.createValidator().submit(8_000, 100, record);
+            vi.advanceTimersByTime(5_000);
+
+            expect(record.mock.calls).toEqual([[8_000]]);
+        });
+
         it("works without a lifecycle", () => {
             const record = vi.fn();
             const conditions = createMeasurementConditions({
@@ -331,6 +436,35 @@ describe("createMeasurementConditions", () => {
             conditions.pauseWhileHidden(monitor);
 
             expect(monitor.stop).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not stop or start a monitor when the page loses the focus or gets it again", () => {
+            const { conditions, page, lifecycle } = createConditions();
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            conditions.pauseWhileHidden(monitor);
+            page.blur();
+            expect(lifecycle.getState()).toBe("passive");
+            page.focus();
+
+            expect(monitor.stop).not.toHaveBeenCalled();
+            expect(monitor.start).not.toHaveBeenCalled();
+        });
+
+        it("does not start a monitor when a hidden page becomes frozen and resumes, but starts it when the page is visible", () => {
+            const { conditions, page, lifecycle } = createConditions();
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            conditions.pauseWhileHidden(monitor);
+            page.hide();
+            page.freeze();
+            expect(lifecycle.getState()).toBe("frozen");
+            page.resume();
+            expect(monitor.start).not.toHaveBeenCalled();
+            page.show();
+
+            expect(monitor.stop).toHaveBeenCalledTimes(1);
+            expect(monitor.start).toHaveBeenCalledTimes(1);
         });
     });
 });

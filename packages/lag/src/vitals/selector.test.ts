@@ -53,4 +53,13 @@ describe("describeNode", () => {
         const broken = { nodeType : 1, get nodeName() : string { throw new Error("detached"); } };
         expect(describeNode(broken)).toBe("");
     });
+
+    it("describes an element without a node name by its classes", () => {
+        expect(describeNode({ nodeType : 1, classList : ["hero"] })).toBe(".hero");
+    });
+
+    it("keeps a selector of exactly the maximum length, and stops before a longer one", () => {
+        expect(describeNode(body, 9)).toBe("html>body");
+        expect(describeNode(body, 8)).toBe("body");
+    });
 });

@@ -88,4 +88,63 @@ describe("WorkerClockSync", () => {
         sync.onReply(999, 0);
         expect(results).not.toHaveBeenCalled();
     });
+
+    describe("rules of the exchanges", () => {
+        /** A synchronization of one exchange for each `exchange()`, with a worker clock that is `offsetMs` ahead. */
+        function createSync(sampleCount = 1) {
+            let mainNow = 1_000;
+            const sent : number[] = [];
+            const results = vi.fn();
+            const sync = new WorkerClockSync((id) => { sent.push(id); }, () => mainNow, results, sampleCount);
+            const exchange = (oneWayDelay : number, offsetMs : number) => {
+                sync.begin();
+                const id = sent.at(-1)!;
+                mainNow += oneWayDelay;
+                const workerTime = mainNow + offsetMs;
+                mainNow += oneWayDelay;
+                sync.onReply(id, workerTime);
+            };
+            return { sync, sent, results, exchange };
+        }
+
+        it("ignores a reply to a synchronization that a new synchronization replaced", () => {
+            const s = createSync(2);
+            s.sync.begin();
+            const replaced = s.sent[0]!;
+            s.sync.begin();
+
+            s.sync.onReply(replaced, 0);
+
+            expect(s.sent).toEqual([1, 2]);
+        });
+
+        it("counts a reply that comes two times only one time", () => {
+            const s = createSync(2);
+            s.sync.begin();
+            s.sync.onReply(1, 0);
+            s.sync.onReply(1, 0);
+
+            expect(s.sent).toEqual([1, 2]);
+            expect(s.results).not.toHaveBeenCalled();
+        });
+
+        it("keeps the result of a later synchronization with a shorter round trip", () => {
+            const s = createSync();
+            s.exchange(40, 70);
+            s.exchange(0.25, 30);
+
+            expect(s.sync.getResult()).toEqual({ offsetMs : 30, roundTripMs : 0.5 });
+        });
+
+        it("corrects by an offset that is larger than half the round trip plus 1 ms, but not by an offset of that size", () => {
+            const larger = createSync();
+            larger.exchange(5, 12);
+            const same = createSync();
+            same.exchange(5, 6);
+
+            // The round trip is 10 ms: the clocks agree within 5 + 1 = 6 ms
+            expect(larger.sync.getCorrectionMs()).toBe(12);
+            expect(same.sync.getCorrectionMs()).toBe(0);
+        });
+    });
 });

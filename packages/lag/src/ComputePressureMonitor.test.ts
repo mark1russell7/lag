@@ -183,4 +183,59 @@ describe("ComputePressureMonitor", () => {
         monitor.start();
         expect(mock.constructCount).toBe(1);
     });
+
+    describe("rules of the observer", () => {
+        it("observes again after stop() and start()", () => {
+            const mock = createMockPressureObserver();
+            const monitor = new ComputePressureMonitor(["cpu"], vi.fn(), { log : vi.fn() }, mock.Ctor);
+
+            monitor.stop();
+            monitor.start();
+
+            expect(mock.constructCount).toBe(2);
+            expect(mock.observeSpy).toHaveBeenCalledTimes(2);
+        });
+
+        it("stop() works, and the monitor logs the reason, when the browser has no PressureObserver", () => {
+            const logger = { log : vi.fn() };
+            const Missing = class { constructor() { throw new Error("not supported"); } } as unknown as PressureObserverInit;
+            const monitor = new ComputePressureMonitor(["cpu"], vi.fn(), logger, Missing);
+
+            expect(() => monitor.stop()).not.toThrow();
+            expect(logger.log).toHaveBeenCalledWith("warn", "PressureObserver not available in this browser.", { error : expect.any(Error), type : "ComputePressureMonitor" });
+        });
+
+        it("logs the source that the browser does not support", async () => {
+            const mock = createMockPressureObserver();
+            mock.observeSpy.mockImplementationOnce(() => Promise.reject(new Error("unsupported")));
+            const logger = { log : vi.fn() };
+            new ComputePressureMonitor(["thermals"], vi.fn(), logger, mock.Ctor);
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(logger.log).toHaveBeenCalledWith("warn", 'PressureObserver source "thermals" not supported.', { error : expect.any(Error), type : "ComputePressureMonitor" });
+        });
+
+        it("gives the most severe state of all sources, also when a less severe record comes last", () => {
+            const mock = createMockPressureObserver();
+            const monitor = new ComputePressureMonitor(["cpu", "thermals"], vi.fn(), { log : vi.fn() }, mock.Ctor);
+
+            mock.emit([{ source : "cpu", state : "serious", time : 0 }, { source : "thermals", state : "fair", time : 0 }]);
+
+            expect(monitor.getWorstStateOrdinal()).toBe(2);
+        });
+
+        it("logs an error from the report function and continues with the next record", () => {
+            const mock = createMockPressureObserver();
+            const logger = { log : vi.fn() };
+            const report = vi.fn<(m : PressureMeasurement) => void>();
+            report.mockImplementationOnce(() => { throw new Error("export failed"); });
+            new ComputePressureMonitor(["cpu"], report, logger, mock.Ctor);
+
+            mock.emit([{ source : "cpu", state : "fair", time : 0 }, { source : "cpu", state : "critical", time : 1 }]);
+
+            expect(logger.log).toHaveBeenCalledWith("error", "Error processing pressure record.", { error : expect.any(Error), type : "ComputePressureMonitor" });
+            expect(report).toHaveBeenLastCalledWith(expect.objectContaining({ state : "critical", stateOrdinal : 3 }));
+        });
+    });
 });

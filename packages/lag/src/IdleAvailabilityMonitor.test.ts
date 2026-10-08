@@ -105,4 +105,73 @@ describe("IdleAvailabilityMonitor", () => {
         monitor.stop();
         expect(cancelIdleSpy).toHaveBeenCalled();
     });
+
+    describe("rules of the gaps and of the callback chain", () => {
+        /** A monitor whose idle callbacks the test starts. Each request gets a new handle. */
+        function createChain() {
+            let currentTime = 0;
+            const pending = new Map<number, (deadline : IdleDeadline) => void>();
+            let nextHandle = 1;
+            const reports : IdleMeasurement[] = [];
+            const logger = { log : vi.fn() };
+            const report = vi.fn((m : IdleMeasurement) => { reports.push(m); });
+            const monitor = new IdleAvailabilityMonitor(
+                report,
+                logger,
+                (cb) => {
+                    const handle = nextHandle++;
+                    pending.set(handle, cb);
+                    return handle;
+                },
+                (handle) => { pending.delete(handle); },
+                { now : () => currentTime },
+            );
+            const idle = (time : number) => {
+                currentTime = time;
+                const callbacks = [...pending.values()];
+                pending.clear();
+                for (const callback of callbacks) callback({ didTimeout : false, timeRemaining : () => 10 });
+            };
+            return { monitor, reports, report, logger, idle, pendingCount : () => pending.size };
+        }
+
+        it("gives a gap of 0 for the first callback after a restart", () => {
+            const d = createChain();
+            d.idle(100);
+            d.monitor.stop();
+            d.monitor.start();
+            d.idle(5_000);
+
+            expect(d.reports.map(r => r.timeSinceLastIdleMs)).toEqual([0, 0]);
+        });
+
+        it("measures the gap from a callback at the time 0", () => {
+            const d = createChain();
+            d.idle(0);
+            d.idle(50);
+
+            expect(d.reports.map(r => r.timeSinceLastIdleMs)).toEqual([0, 50]);
+        });
+
+        it("logs an error from the report function and continues with the next callback", () => {
+            const d = createChain();
+            d.report.mockImplementationOnce(() => { throw new Error("export failed"); });
+            d.idle(100);
+            d.idle(150);
+
+            expect(d.logger.log).toHaveBeenCalledWith("error", "Error in idle measurement.", { error : expect.any(Error), type : "IdleAvailabilityMonitor" });
+            expect(d.report).toHaveBeenCalledTimes(2);
+        });
+
+        it("leaves one waiting callback when report() stops and starts the monitor", () => {
+            const d = createChain();
+            d.report.mockImplementationOnce(() => {
+                d.monitor.stop();
+                d.monitor.start();
+            });
+            d.idle(100);
+
+            expect(d.pendingCount()).toBe(1);
+        });
+    });
 });

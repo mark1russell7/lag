@@ -85,4 +85,28 @@ describe("ReliabilityTracker", () => {
 
         expect(listener.mock.calls.map(c => c[0].reason)).toEqual(["suspend", "hidden"]);
     });
+
+    it("counts a closed interval of zero length inside a window", () => {
+        const tracker = new ReliabilityTracker({ now : () => 0 });
+        tracker.add(5, 5, "suspend");
+
+        expect(tracker.findOverlap(0, 10)).toMatchObject({ start : 5, end : 5, reason : "suspend" });
+    });
+
+    it("is unreliable now while one interval is open, also when other intervals are closed", () => {
+        const tracker = new ReliabilityTracker({ now : () => 100 });
+        tracker.add(0, 10, "suspend");
+        tracker.open("hidden");
+
+        expect(tracker.isUnreliableNow()).toBe(true);
+    });
+
+    it("forgets an old closed interval before it searches", () => {
+        let now = 0;
+        const tracker = new ReliabilityTracker({ now : () => now }, 1_000);
+        tracker.add(0, 10, "hidden");
+        now = 5_000;
+
+        expect(tracker.findOverlap(0, 10)).toBeUndefined();
+    });
 });

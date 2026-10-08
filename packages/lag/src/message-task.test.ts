@@ -49,4 +49,14 @@ describe("createMessageTaskQueue", () => {
         expect(callback).not.toHaveBeenCalled();
         expect(channel.closed).toHaveBeenCalledTimes(2);
     });
+
+    it("closes a channel whose ports have no close()", () => {
+        class Channel {
+            readonly port1 : MessagePortLike = { postMessage : () => {}, onmessage : null };
+            readonly port2 : MessagePortLike = { postMessage : () => {}, onmessage : null };
+        }
+        const queue = createMessageTaskQueue(Channel as unknown as MessageChannelConstructor);
+
+        expect(() => queue.close()).not.toThrow();
+    });
 });

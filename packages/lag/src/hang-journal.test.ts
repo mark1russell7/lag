@@ -12,6 +12,13 @@ const record = (pageId : string, lastSeenAt : number) : HangRecord => ({
 
 function describeJournal(name : string, create : () => HangJournal) {
     describe(name, () => {
+        it("takes a record that was seen exactly at the limit", async () => {
+            const journal = create();
+            await journal.put(record("a", 5_000));
+
+            expect(await journal.take("a", 5_000)).toEqual(record("a", 5_000));
+        });
+
         it("keeps one record for each page, and the newest write wins", async () => {
             const journal = create();
             await journal.put(record("a", 1_000));
@@ -78,6 +85,30 @@ describe("createIndexedDbHangJournal", () => {
         await journal.put(record("a", 1));
         await journal.put({ pageId : "b" } as unknown as HangRecord);
         expect((await journal.list()).map(r => r.pageId)).toEqual(["a"]);
+    });
+
+    it("ignores and does not take the records whose fields have the wrong type", async () => {
+        const factory = new IDBFactory();
+        const journal = createIndexedDbHangJournal(factory);
+        await journal.put(record("a", 1));
+        await new Promise<void>((resolve, reject) => {
+            const request = factory.open("lag-hang-journal", 1);
+            request.onsuccess = () => {
+                const db = request.result;
+                const transaction = db.transaction("hangs", "readwrite");
+                const store = transaction.objectStore("hangs");
+                store.put({ pageId : "b", startedAt : "1", lastSeenAt : 2, attributes : {} });
+                store.put({ pageId : "c", startedAt : 1, lastSeenAt : "2", attributes : {} });
+                store.put({ pageId : "d", startedAt : 1, lastSeenAt : 2, attributes : null });
+                store.put({ pageId : "e", startedAt : 1, lastSeenAt : 2, attributes : "x" });
+                transaction.oncomplete = () => { db.close(); resolve(); };
+                transaction.onerror = () => reject(transaction.error);
+            };
+            request.onerror = () => reject(request.error);
+        });
+
+        expect((await journal.list()).map(r => r.pageId)).toEqual(["a"]);
+        expect(await journal.take("b", 10)).toBeUndefined();
     });
 
     it("rejects when the database cannot open, and tries again at the next operation", async () => {

@@ -22,6 +22,7 @@ describe("stripUrlParameters", () => {
         expect(stripUrlParameters("https://a.example/app.js?token=secret#x")).toBe("https://a.example/app.js");
         expect(stripUrlParameters("https://a.example/p#frag")).toBe("https://a.example/p");
         expect(stripUrlParameters("https://a.example/p")).toBe("https://a.example/p");
+        expect(stripUrlParameters("?token=secret")).toBe("");
         expect(stripUrlParameters("")).toBe("");
     });
 });
@@ -89,6 +90,13 @@ describe("event sinks", () => {
         const bodies = otelLogger.emit.mock.calls.map(([record]) => (record as { body : string }).body);
         expect(new Set(bodies).size).toBe(4);
         expect(bodies[3]).toBe('lag.stall empty="" kind=hang note="say \\"hi\\"" ok=true target="#a b"');
+    });
+
+    it("the OTel event sink leaves out the attributes that are null", () => {
+        const otelLogger = { emit : vi.fn() };
+        createOtelEventSink(otelLogger).emit("lag.stall", { kind : "hang", nothing : null as unknown as string });
+
+        expect(otelLogger.emit).toHaveBeenCalledWith(expect.objectContaining({ body : "lag.stall kind=hang", attributes : { kind : "hang" } }));
     });
 
     it("the no-op event sink accepts events", () => {

@@ -35,7 +35,8 @@ export class ClsCalculator {
 
         this.sessionValue += value;
         this.lastShiftTime = startTime;
-        if (!this.largestShiftInSession || value > this.largestShiftInSession.value) {
+        // As web-vitals: of two shifts with the same score, the later one is the largest
+        if (!this.largestShiftInSession || value >= this.largestShiftInSession.value) {
             this.largestShiftInSession = { value, sources };
         }
 

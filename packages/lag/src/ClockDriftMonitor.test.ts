@@ -9,11 +9,11 @@ const TIME_ORIGIN = 1_700_000_000_000;
  * clock and the timers. `wallExtra` moves only the wall clock. `late` delays
  * the timer, as a blocked main thread or a Windows sleep does.
  */
-function createMonitor(options : ClockDriftOptions = {}) {
+function createMonitor(options : ClockDriftOptions = {}, initialReadSpread = 0) {
     let mono = 0;
     let wall = TIME_ORIGIN;
     /** Extra time that each read of the monotonic clock adds (the thread stopped between reads). */
-    let readSpread = 0;
+    let readSpread = initialReadSpread;
     const report = vi.fn();
     const onJump = vi.fn();
     const logger = { log : vi.fn() };
@@ -42,7 +42,7 @@ function createMonitor(options : ClockDriftOptions = {}) {
             wall += ms + wallExtra;
             vi.advanceTimersByTime(ms);
         },
-        /** The next timer callback runs `ms` late: both clocks move, and the callback runs once. */
+        /** The next timer callback starts `ms` late: both clocks move, and the callback starts one time. */
         late(ms : number) {
             mono += ms;
             wall += ms;
@@ -167,6 +167,46 @@ describe("ClockDriftMonitor", () => {
         const m = createMonitor();
         m.report.mockImplementation(() => { throw new Error("boom"); });
         m.advance(1_000);
-        expect(m.logger.log).toHaveBeenCalledWith("error", "Error in clock drift measurement.", expect.anything());
+        expect(m.logger.log).toHaveBeenCalledWith("error", "Error in clock drift measurement.", { error : expect.any(Error), type : "ClockDriftMonitor" });
+    });
+
+    it("start() while the monitor operates adds no second interval", () => {
+        const m = createMonitor();
+        m.monitor.start();
+        m.monitor.stop();
+
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("keeps a reading whose two reads of the monotonic clock are 1 ms apart", () => {
+        const m = createMonitor();
+        m.setReadSpread(1);
+        m.advance(1_000);
+
+        expect(m.report).toHaveBeenCalledTimes(1);
+    });
+
+    it("compares the first sample with nothing when the reading at the start was not valid", () => {
+        const m = createMonitor({}, 5);
+        m.setReadSpread(0);
+        m.advance(1_000, 10_000);
+
+        expect(m.report).not.toHaveBeenCalled();
+        expect(m.logger.log).not.toHaveBeenCalled();
+    });
+
+    it("does not count a drift of exactly the limit as a jump", () => {
+        // The limit is the larger of 50 ms and 3 % of the 1000 ms interval
+        const m = createMonitor();
+        m.advance(1_000, 50);
+
+        expect(m.onJump).not.toHaveBeenCalled();
+    });
+
+    it("classifies a forward jump of exactly 1000 ms as a suspend", () => {
+        const m = createMonitor();
+        m.advance(1_000, 1_000);
+
+        expect(m.onJump).toHaveBeenCalledWith(expect.objectContaining({ direction : "forward", kind : "suspend", magnitudeMs : 1_000 }));
     });
 });

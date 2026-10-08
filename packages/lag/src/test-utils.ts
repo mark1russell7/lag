@@ -1,6 +1,7 @@
 import { vi, expect, type Mock } from 'vitest';
 import type { LagMonitor, LagMonitorConstructor } from "./LagMonitor.js";
 import type { Meter } from "./meter.js";
+import { EVENT_CATALOG, METRIC_CATALOG } from "./metric-catalog.js";
 
 /**
  * A test utility for `MacrotaskLag`. It controls the order of the
@@ -137,4 +138,43 @@ export function createRecordingMeter() {
         /** All instruments that the meter made. */
         instruments : () : readonly RecordedInstrument[] => [...instruments.values()],
     };
+}
+
+/**
+ * This function makes sure that the meter made only instruments of the metric
+ * catalog, with the kind and the unit of the catalog. It also makes sure
+ * that each recorded attribute has a value that the catalog permits.
+ */
+export function expectCatalogInstruments(recording : ReturnType<typeof createRecordingMeter>) : void {
+    const byName = new Map(METRIC_CATALOG.map(m => [m.name, m]));
+    for (const instrument of recording.instruments()) {
+        const definition = byName.get(instrument.name);
+        expect(definition, instrument.name).toBeDefined();
+        expect(instrument.kind, instrument.name).toBe(definition!.kind);
+        expect(instrument.unit, instrument.name).toBe(definition!.unit);
+        for (const { attributes } of instrument.values) {
+            for (const [key, value] of Object.entries(attributes ?? {})) {
+                expect(definition!.attributes[key], `${instrument.name}.${key}=${String(value)}`).toContain(value);
+            }
+        }
+    }
+}
+
+/**
+ * This function makes sure that each event that `emit` got has a name of the
+ * event catalog. Each attribute name of the event must be in its catalog
+ * entry. A catalog name that ends with `.*` permits each name with that
+ * prefix. The names in `contextAttributes` are permitted for each event.
+ */
+export function expectCatalogEvents(emit : Mock, contextAttributes : readonly string[] = []) : void {
+    const byName = new Map(EVENT_CATALOG.map(e => [e.name, e]));
+    for (const [name, attributes] of emit.mock.calls as Array<[string, Record<string, unknown>]>) {
+        const definition = byName.get(name);
+        expect(definition, name).toBeDefined();
+        for (const key of Object.keys(attributes)) {
+            const listed = contextAttributes.includes(key)
+                || definition!.attributes.some(a => a === key || (a.endsWith(".*") && key.startsWith(a.slice(0, -1))));
+            expect(listed, `${name}: ${key}`).toBe(true);
+        }
+    }
 }

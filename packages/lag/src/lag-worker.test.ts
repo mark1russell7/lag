@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createWorkerHandler, type HangEvent } from "./lag-worker.js";
+import { createWorkerHandler, type HangEvent, type WorkerDeps } from "./lag-worker.js";
 import type { WorkerToMainMessage } from "./worker-protocol.js";
 import { createMemoryHangJournal, type HangJournal } from "./hang-journal.js";
+import { LIVENESS_BUFFER_BYTES, createLivenessBeacon } from "./shared-liveness.js";
 
 /** The wall clock of the tests is 1 000 000 ms ahead of the monotonic clock. */
 const WALL_OFFSET = 1_000_000;
@@ -177,6 +178,17 @@ describe("lag-worker handler", () => {
             expect(w.messages("hang-ended")).toEqual([{ type : "hang-ended", startedAt : 0, durationMs : 7_200 }]);
         });
 
+        it("does not blame the main thread when the worker itself was late by exactly the threshold", () => {
+            const w = createHandler();
+            w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 1_000 } });
+
+            // The timer of the worker fires 1000 ms late
+            w.advance(100, 1_100);
+
+            expect(w.messages("heartbeat")).toEqual([expect.objectContaining({ workerSelfLagMs : 1_000 })]);
+            expect(w.reportHang).not.toHaveBeenCalled();
+        });
+
         it("does not detect hangs without hang options", () => {
             const w = createHandler();
             w.handler.handleMessage({ type : "start", intervalMs : 100 });
@@ -186,7 +198,7 @@ describe("lag-worker handler", () => {
     });
 
     describe("page context and hang journal", () => {
-        /** Lets the promise jobs of the journal finish. */
+        /** This function lets the promise jobs of the journal finish. */
         const settle = () => vi.advanceTimersByTimeAsync(0);
 
         it("adds the last context to its hang reports", () => {
@@ -240,6 +252,69 @@ describe("lag-worker handler", () => {
             expect(await journal.list()).toEqual([]);
         });
 
+        it("writes the wall-clock time of the start of the hang to the journal", async () => {
+            const journal = createMemoryHangJournal();
+            const w = createHandler(5_000, journal);
+            w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 1_000 }, pageId : "page-a" });
+
+            for (let i = 0; i < 10; i++) w.advance(100);
+            await settle();
+
+            expect(await journal.list()).toEqual([expect.objectContaining({ startedAt : WALL_OFFSET + 5_000, lastSeenAt : WALL_OFFSET + 6_000 })]);
+        });
+
+        it("uses Date.now() for the times of the journal when the dependencies have no wall clock", async () => {
+            vi.setSystemTime(1_700_000_000_000);
+            const journal = createMemoryHangJournal();
+            let now = 0;
+            const handler = createWorkerHandler({
+                postMessage : vi.fn(),
+                setTimeoutFn : setTimeout,
+                clearTimeoutFn : clearTimeout,
+                clock : { now : () => now },
+                journal,
+            });
+            handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 300 }, pageId : "page-a" });
+
+            for (let i = 0; i < 3; i++) {
+                now += 100;
+                vi.advanceTimersByTime(100);
+            }
+            await settle();
+
+            // The hang started at the start of the loop, and the worker saw it at 300 ms
+            expect(await journal.list()).toEqual([{ pageId : "page-a", startedAt : 1_700_000_000_000, lastSeenAt : 1_700_000_000_300, attributes : {} }]);
+        });
+
+        it("writes no record while the main thread acknowledges the heartbeats", async () => {
+            const journal = createMemoryHangJournal();
+            const put = vi.spyOn(journal, "put");
+            const w = createHandler(0, journal);
+            w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 1_000 }, pageId : "page-a" });
+
+            for (let i = 0; i < 30; i++) {
+                w.advance(100);
+                w.ackAll();
+            }
+            await settle();
+
+            expect(put).not.toHaveBeenCalled();
+        });
+
+        it("removes no record at the end of a hang without a page ID", async () => {
+            const journal = createMemoryHangJournal();
+            const remove = vi.spyOn(journal, "remove");
+            const w = createHandler(0, journal);
+            w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 300 } });
+
+            for (let i = 0; i < 5; i++) w.advance(100);
+            w.handler.handleMessage({ type : "ack", seq : 5 });
+            await settle();
+
+            expect(w.reportHang).toHaveBeenLastCalledWith(expect.objectContaining({ phase : "ended" }), expect.anything());
+            expect(remove).not.toHaveBeenCalled();
+        });
+
         it("keeps no record without a page ID", async () => {
             const journal = createMemoryHangJournal();
             const w = createHandler(0, journal);
@@ -262,6 +337,108 @@ describe("lag-worker handler", () => {
             await settle();
 
             expect(w.messages("heartbeat")).toHaveLength(10);
+        });
+    });
+
+    describe("shared-memory liveness", () => {
+        /** A handler with the interval functions that the liveness watcher needs, and a main thread that beats the counter. */
+        function createLivenessHandler(intervals : Pick<WorkerDeps, "setIntervalFn" | "clearIntervalFn"> = {
+            setIntervalFn : (fn, ms) => setInterval(fn, ms) as unknown as number,
+            clearIntervalFn : (id) => clearInterval(id),
+        }) {
+            let now = 0;
+            const postMessage = vi.fn<(message : WorkerToMainMessage) => void>();
+            const handler = createWorkerHandler({
+                postMessage,
+                setTimeoutFn : setTimeout,
+                clearTimeoutFn : clearTimeout,
+                clock : { now : () => now },
+                ...intervals,
+            });
+            const buffer = new SharedArrayBuffer(LIVENESS_BUFFER_BYTES);
+            const beacon = createLivenessBeacon(buffer);
+            return {
+                handler,
+                buffer,
+                /** The time advances in steps of 5 ms. The main thread beats at each step, but not while it is blocked. */
+                run(ms : number, blocked = false) {
+                    for (let t = 0; t < ms; t += 5) {
+                        now += 5;
+                        if (!blocked) beacon.beat();
+                        vi.advanceTimersByTime(5);
+                    }
+                },
+                blocks : () => postMessage.mock.calls.map(c => c[0]).filter(m => m.type === "liveness-block"),
+            };
+        }
+
+        it("starts a watcher at liveness-start, and posts each block that the watcher sees", () => {
+            const w = createLivenessHandler();
+            w.handler.handleMessage({ type : "liveness-start", buffer : w.buffer, thresholdMs : 50, pollIntervalMs : 5 });
+
+            w.run(100);
+            w.run(200, true);
+            w.run(10);
+
+            // The last change before the block was at 100 ms, and the first change after it at 305 ms
+            expect(w.blocks()).toEqual([{ type : "liveness-block", startedAt : 100, durationMs : 205 }]);
+        });
+
+        it("uses the threshold and the poll interval of the liveness-start message", () => {
+            const w = createLivenessHandler();
+            w.handler.handleMessage({ type : "liveness-start", buffer : w.buffer, thresholdMs : 250, pollIntervalMs : 50 });
+
+            w.run(100);
+            w.run(200, true);
+            w.run(100);
+            w.run(190, true);
+            w.run(100);
+
+            // The watcher polls each 50 ms. The first block is 250 ms, from the poll at 100 ms to the poll at 350 ms. The second block is shorter than 250 ms.
+            expect(w.blocks()).toEqual([{ type : "liveness-block", startedAt : 100, durationMs : 250 }]);
+        });
+
+        it("stops the watcher at liveness-stop", () => {
+            const w = createLivenessHandler();
+            w.handler.handleMessage({ type : "liveness-start", buffer : w.buffer, thresholdMs : 50, pollIntervalMs : 5 });
+            w.run(100);
+
+            w.handler.handleMessage({ type : "liveness-stop" });
+            w.run(200, true);
+            w.run(10);
+
+            expect(vi.getTimerCount()).toBe(0);
+            expect(w.blocks()).toEqual([]);
+        });
+
+        it("replaces the watcher at a second liveness-start", () => {
+            const w = createLivenessHandler();
+            w.handler.handleMessage({ type : "liveness-start", buffer : w.buffer, thresholdMs : 50, pollIntervalMs : 5 });
+            w.handler.handleMessage({ type : "liveness-start", buffer : w.buffer, thresholdMs : 50, pollIntervalMs : 5 });
+
+            w.run(100);
+            w.run(200, true);
+            w.run(10);
+
+            expect(vi.getTimerCount()).toBe(1);
+            expect(w.blocks()).toHaveLength(1);
+        });
+
+        it("ignores liveness-stop when no watcher operates", () => {
+            const w = createLivenessHandler();
+            expect(() => w.handler.handleMessage({ type : "liveness-stop" })).not.toThrow();
+        });
+
+        it("does not watch without both interval functions", () => {
+            const setIntervalFn = vi.fn((fn : () => void, ms : number) => setInterval(fn, ms) as unknown as number);
+            const withoutClear = createLivenessHandler({ setIntervalFn });
+            const withoutSet = createLivenessHandler({ clearIntervalFn : (id) => clearInterval(id) });
+
+            withoutClear.handler.handleMessage({ type : "liveness-start", buffer : withoutClear.buffer, thresholdMs : 50, pollIntervalMs : 5 });
+            withoutSet.handler.handleMessage({ type : "liveness-start", buffer : withoutSet.buffer, thresholdMs : 50, pollIntervalMs : 5 });
+
+            expect(setIntervalFn).not.toHaveBeenCalled();
+            expect(vi.getTimerCount()).toBe(0);
         });
     });
 });

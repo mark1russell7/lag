@@ -3,7 +3,10 @@ import {
     LifecycleStateMachine,
     summarizeTransitions,
     type LifecycleDocument,
+    type LifecycleState,
+    type LifecycleTrigger,
     type LifecycleWindow,
+    type StateTransition,
 } from "./LifecycleStateMachine.js";
 import { createFakeEventTarget } from "./vitals/test-fakes.js";
 
@@ -62,7 +65,7 @@ function createMocks(initialVisibility : "visible" | "hidden" = "visible", focus
 
     const advanceClock = (ms : number) => { now += ms; };
 
-    /** Flip visibilityState without dispatching the (asynchronous) visibilitychange event. */
+    /** This function changes `visibilityState`. It does not send the visibilitychange event, because the browser sends it later. */
     const setVisibilitySilently = (v : "visible" | "hidden") => { visibilityState = v; };
 
     return {
@@ -250,6 +253,20 @@ describe("LifecycleStateMachine", () => {
             expect(aTransitions[1]!.to).toBe("hidden");
         });
 
+        it("cancel() of a mark that is not open keeps the open marks and their transitions", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const resolved = sm.mark();
+            sm.resolve(resolved);
+            const open = sm.mark();
+            m.setFocus(false);
+
+            sm.cancel(resolved);
+
+            expect(sm.getMarkCount()).toBe(1);
+            expect(sm.resolve(open).map(t => t.to)).toEqual(["passive"]);
+        });
+
         it("cancel() drops a mark without retrieving transitions", () => {
             const m = createMocks();
             const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
@@ -401,7 +418,7 @@ describe("LifecycleStateMachine", () => {
             m.setVisibility("hidden");
 
             expect(second).toHaveBeenCalled();
-            expect(logger.log).toHaveBeenCalledWith("error", "Error in lifecycle subscriber.", expect.any(Object));
+            expect(logger.log).toHaveBeenCalledWith("error", "Error in lifecycle subscriber.", { error : expect.any(Error), type : "LifecycleStateMachine" });
         });
     });
 
@@ -461,6 +478,266 @@ describe("LifecycleStateMachine", () => {
             const { sm, document, window } = setupTargets();
             sm.dispose();
             expect([...document.listeners(), ...window.listeners()]).toEqual([]);
+        });
+    });
+
+    describe("rules of the transitions", () => {
+        /** The transitions that a subscriber gets, as "from>to:trigger". */
+        function record(sm : LifecycleStateMachine) : string[] {
+            const transitions : string[] = [];
+            sm.subscribe(t => transitions.push(`${t.from}>${t.to}:${t.trigger}`));
+            return transitions;
+        }
+
+        it("names the trigger of each transition", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const transitions = record(sm);
+
+            m.setFocus(false);
+            m.setFocus(true);
+            m.setVisibility("hidden");
+            m.fireDoc("freeze");
+            m.fireDoc("resume");
+            m.fireWin("pagehide", { persisted : false });
+
+            expect(transitions).toEqual([
+                "active>passive:blur",
+                "passive>active:focus",
+                "active>hidden:visibilitychange",
+                "hidden>frozen:freeze",
+                "frozen>hidden:resume",
+                "hidden>terminated:pagehide",
+            ]);
+        });
+
+        it("does not change the state at a focus or a blur while the page is hidden or frozen", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const transitions = record(sm);
+
+            m.setVisibility("hidden");
+            m.fireWin("focus");
+            m.fireWin("blur");
+            m.fireDoc("freeze");
+            m.fireWin("focus");
+            m.fireWin("blur");
+
+            expect(sm.getState()).toBe("frozen");
+            expect(transitions).toEqual(["active>hidden:visibilitychange", "hidden>frozen:freeze"]);
+        });
+
+        it("ignores a pageshow that is not a restore from the back/forward cache", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const transitions = record(sm);
+
+            m.fireWin("pageshow", { persisted : false });
+
+            expect(transitions).toEqual([]);
+        });
+
+        it("notifies a second freeze of a frozen page one time only", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            m.setVisibility("hidden");
+            const transitions = record(sm);
+
+            m.fireDoc("freeze");
+            m.fireDoc("freeze");
+
+            expect(transitions).toEqual(["hidden>frozen:freeze"]);
+        });
+
+        it("starts in the hidden state without a transition when the document is hidden", () => {
+            const m = createMocks("hidden", true);
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const transitions = record(sm);
+
+            expect(sm.getState()).toBe("hidden");
+            expect(transitions).toEqual([]);
+            expect(sm.getTotalTransitions()).toBe(0);
+        });
+
+        it("starts in the active state when the document has no hasFocus()", () => {
+            const m = createMocks();
+            const document : LifecycleDocument = {
+                visibilityState : "visible",
+                addEventListener : m.document.addEventListener,
+                removeEventListener : m.document.removeEventListener,
+            };
+            const sm = new LifecycleStateMachine(document, m.window, m.clock, { log : vi.fn() });
+
+            expect(sm.getState()).toBe("active");
+        });
+
+        it("stays terminated when the page is still visible after pagehide", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+
+            m.fireWin("pagehide", { persisted : false });
+
+            expect(sm.getState()).toBe("terminated");
+        });
+
+        it("terminates at a pagehide event without data", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+
+            m.fireWin("pagehide");
+
+            expect(sm.getState()).toBe("terminated");
+        });
+
+        it("uses the clock when the time of the event is not a positive number", () => {
+            const document = Object.assign(createFakeEventTarget(), { visibilityState : "visible", hasFocus : () => true });
+            const window = createFakeEventTarget();
+            const sm = new LifecycleStateMachine(document, window, { now : () => 5_000 }, { log : vi.fn() });
+            const times : unknown[] = [];
+            sm.subscribe(t => times.push(t.timestamp));
+
+            document.visibilityState = "hidden";
+            document.dispatch("visibilitychange", { timeStamp : 0 });
+            document.dispatch("freeze", { timeStamp : -5 });
+            document.dispatch("resume", { timeStamp : "4000" });
+
+            expect(times).toEqual([5_000, 5_000, 5_000]);
+        });
+    });
+
+    describe("rules of the marks", () => {
+        it("puts a mark after a visibility change that has no event yet", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+
+            m.setVisibilitySilently("hidden");
+            const mark = sm.mark();
+
+            expect(sm.resolve(mark)).toEqual([]);
+        });
+
+        it("includes a visibility change that has no event yet in resolve()", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+
+            const mark = sm.mark();
+            m.setVisibilitySilently("hidden");
+
+            expect(sm.resolve(mark).map(t => t.to)).toEqual(["hidden"]);
+        });
+
+        it("gives an empty array for a resolved mark, also while another mark is open", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const first = sm.mark();
+            sm.mark();
+            m.setFocus(false);
+
+            sm.resolve(first);
+
+            expect(sm.resolve(first)).toEqual([]);
+        });
+
+        it("resolve() of a later mark gives only the transitions after it, while an earlier mark is open", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            sm.mark();
+            m.setFocus(false);
+            const later = sm.mark();
+            m.setVisibility("hidden");
+
+            expect(sm.resolve(later).map(t => t.to)).toEqual(["hidden"]);
+        });
+
+        it("keeps the transitions of the earliest open mark when a later mark is cancelled", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const first = sm.mark();
+            m.setFocus(false);
+            const second = sm.mark();
+            m.setFocus(true);
+            sm.mark();
+            m.setVisibility("hidden");
+
+            sm.cancel(second);
+
+            expect(sm.resolve(first).map(t => t.to)).toEqual(["passive", "active", "hidden"]);
+        });
+
+        it("removes the transitions before the earliest open mark", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const first = sm.mark();
+            m.setFocus(false);
+            const second = sm.mark();
+            m.setVisibility("hidden");
+
+            sm.resolve(first);
+
+            expect(sm.getBufferedCount()).toBe(1);
+            expect(sm.resolve(second).map(t => t.to)).toEqual(["hidden"]);
+        });
+
+        it("dispose() removes the subscribers, the marks and the buffered transitions", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const listener = vi.fn();
+            sm.subscribe(listener);
+            const mark = sm.mark();
+            m.setFocus(false);
+            listener.mockClear();
+
+            sm.dispose();
+            m.setVisibilitySilently("hidden");
+            sm.getState();
+
+            expect(listener).not.toHaveBeenCalled();
+            expect(sm.getMarkCount()).toBe(0);
+            expect(sm.getBufferedCount()).toBe(0);
+            expect(sm.resolve(mark)).toEqual([]);
+        });
+    });
+
+    describe("summarizeTransitions of a list", () => {
+        const at = (from : LifecycleState, to : LifecycleState, trigger : LifecycleTrigger) : StateTransition => ({ from, to, trigger, timestamp : 0 });
+        const none = {
+            wasHidden : false,
+            wasFrozen : false,
+            wasTerminated : false,
+            wasRestoredFromBFCache : false,
+            wasFocused : false,
+            wasBlurred : false,
+            transitionCount : 0,
+        };
+
+        it("flags nothing for an empty list", () => {
+            expect(summarizeTransitions([])).toEqual(none);
+        });
+
+        it("flags each kind of change in a list that has all of them", () => {
+            const all = [
+                at("active", "passive", "blur"),
+                at("passive", "active", "focus"),
+                at("active", "hidden", "visibilitychange"),
+                at("hidden", "frozen", "freeze"),
+                at("frozen", "active", "pageshow"),
+                at("active", "terminated", "pagehide"),
+            ];
+
+            expect(summarizeTransitions(all)).toEqual({
+                wasHidden : true,
+                wasFrozen : true,
+                wasTerminated : true,
+                wasRestoredFromBFCache : true,
+                wasFocused : true,
+                wasBlurred : true,
+                transitionCount : 6,
+            });
+        });
+
+        it("flags only the change of a list with one transition", () => {
+            expect(summarizeTransitions([at("active", "passive", "blur")])).toEqual({ ...none, wasBlurred : true, transitionCount : 1 });
+            expect(summarizeTransitions([at("active", "hidden", "visibilitychange")])).toEqual({ ...none, wasHidden : true, transitionCount : 1 });
         });
     });
 });
