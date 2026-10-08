@@ -338,14 +338,19 @@ export async function probeServiceWorker(blockMs : number) : Promise<{ completed
     }
 }
 
+/** The worker and the page read different clocks. Thus a completion this short time before the end of the block also counts as a wait. */
+const CLOCK_MARGIN_MS = 25;
+
 /**
  * True when an operation of a worker waited for the end of a block of the
- * main thread. The worker and the page read different clocks, which can
- * differ by a few milliseconds. Thus a completion in the second half of the
- * block also counts: Chromium and Firefox complete in tens of milliseconds.
+ * main thread. Then it completed at the end of the block or later. An operation
+ * that waits needs the main thread, thus it cannot complete during the
+ * block. A slow operation that completes during the block did not wait. On a
+ * busy CI runner, an IndexedDB write of Firefox completed after 1141 ms of a
+ * block of 2000 ms.
  */
 export function waitedForBlock(times : WorkerIoTimes) : boolean {
-    return times.doneMs > times.blockMs / 2;
+    return times.doneMs >= times.blockMs - CLOCK_MARGIN_MS;
 }
 
 /** True when the IndexedDB requests of a worker complete only after a block of the main thread, as in WebKit. */
