@@ -1,5 +1,8 @@
 import type { MessageChannelConstructor } from "./SchedulingFairnessMonitor.js";
 
+/** A function that starts a callback in a new task, for example `createMessageTaskQueue(...).post`. */
+export type PostTaskFn = (callback : () => void) => void;
+
 /** A queue that starts each callback in a new task. */
 export type MessageTaskQueue = {
     /** This method starts `callback` in a new task, after the tasks that are in the queue at this time. */

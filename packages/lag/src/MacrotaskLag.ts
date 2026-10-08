@@ -1,7 +1,5 @@
 import { LagMonitor } from "./LagMonitor.js";
-
-/** A function that starts a callback in a new task, for example `createMessageTaskQueue(...).post`. */
-export type PostTaskFn = (callback : () => void) => void;
+import type { PostTaskFn } from "./message-task.js";
 
 /**
  * This monitor measures how long a zero-delay `setTimeout` waits in the task

@@ -57,7 +57,7 @@ All durations are in milliseconds. All metrics are counters or histograms. The a
 | Monitor | Metric | Type | Unit | Attributes | Description |
 | --- | --- | --- | --- | --- | --- |
 | DriftLag | `lag_drift_histogram` | histogram | `ms` |  | The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag. |
-| DriftLag | `lag_drift_baseline_histogram` | histogram | `ms` |  | The idle duration of one timer step: the mean of the recent steps that are not blocks. It is the timer granularity of the browser and the operating system. DriftLag subtracts it. |
+| DriftLag | `lag_drift_baseline_histogram` | histogram | `ms` |  | The idle duration of one timer step: the mean of the recent steps that are not blocks. An increase needs a probe that shows an idle thread. It is the timer granularity of the browser and the operating system. DriftLag subtracts it. |
 | MacrotaskLag | `lag_macrotask_histogram` | histogram | `ms` |  | The time that a zero-delay timeout waits in the task queue. The monitor measures one sample every 5 seconds. |
 | MeasurementConditions | `lag_samples_discarded` | counter | `{sample}` | `reason` | The number of samples that a monitor did not record because the measurement window was not valid. |
 | MeasurementConditions | `lag_stalls` | counter | `{stall}` | `kind` | The number of stall episodes: very long samples (5000 ms or more) of all monitors whose windows overlap count as one episode. A hang has no evidence of a suspend. A suspend has evidence that the system stopped. |

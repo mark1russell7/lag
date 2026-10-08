@@ -66,7 +66,7 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
     drift : metric("lag_drift_histogram", "histogram", "ms", "DriftLag",
         "The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag."),
     driftBaseline : metric("lag_drift_baseline_histogram", "histogram", "ms", "DriftLag",
-        "The idle duration of one timer step: the mean of the recent steps that are not blocks. It is the timer granularity of the browser and the operating system. DriftLag subtracts it."),
+        "The idle duration of one timer step: the mean of the recent steps that are not blocks. An increase needs a probe that shows an idle thread. It is the timer granularity of the browser and the operating system. DriftLag subtracts it."),
     macrotask : metric("lag_macrotask_histogram", "histogram", "ms", "MacrotaskLag",
         "The time that a zero-delay timeout waits in the task queue. The monitor measures one sample every 5 seconds."),
 

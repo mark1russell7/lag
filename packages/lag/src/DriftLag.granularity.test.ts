@@ -90,6 +90,19 @@ describe("DriftLag when the timer granularity changes", () => {
         d.monitor.stop();
     });
 
+    it("ends the window at the step that accepts the new granularity", () => {
+        const d = createDriftLag();
+        // The first window has 20 steps of 6 ms. The second window has 17 steps; 15 of them come before the change.
+        vi.advanceTimersByTime(20 * 6 + 15 * 6);
+        d.setGranularity(11);
+        // One step of 6 ms started before the change. The 17th step is the first step of the row, and the
+        // window waits for the row. The 10th step of the row ends the window.
+        vi.advanceTimersByTime(6 + 10 * 16);
+
+        expect(d.monitor.getLastWindowMs()).toBe(15 * 6 + 6 + 10 * 16);
+        d.monitor.stop();
+    });
+
     it("follows a change to a finer granularity, and then measures a block correctly", () => {
         const d = createDriftLag(11);
         vi.advanceTimersByTime(3_000);
