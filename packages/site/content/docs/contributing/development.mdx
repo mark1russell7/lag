@@ -25,7 +25,6 @@ pnpm build
 | `packages/lag-integration-tests` | The browser tests |
 | `packages/load` | `@lag/load` |
 | `packages/report` | `@lag/report` |
-| `packages/ste-lint` | `@lag/ste-lint` |
 | `packages/scripts` | The scripts of the repository |
 | `packages/site` | `@lag/site` |
 
@@ -46,8 +45,7 @@ The scaffold makes the folder, the `package.json` and `tsconfig.json` files, and
 | `pnpm test` | The unit tests of `@lag/core`. |
 | `pnpm test:integration` | The browser tests. They start the Grafana stack first. |
 | `pnpm --filter @lag/site test` | The tests of the site, in Node and in Chromium. |
-| `pnpm --filter @lag/ste-lint test` | The tests of the linter. |
-| `pnpm lint:ste` | The writing rules. |
+| `pnpm lint:ste` | The writing rules. The linter [`@mark1russell7/ste-lint`](https://github.com/mark1russell7/ste-lint) has its own repository and tests. |
 
 The [test strategy](/docs/testing/strategy) explains each type of test.
 

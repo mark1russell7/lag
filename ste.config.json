@@ -1,5 +1,5 @@
 {
-  "$schema": "./packages/ste-lint/ste.config.schema.json",
+  "$schema": "./node_modules/@mark1russell7/ste-lint/ste.config.schema.json",
   "include": [
     "README.md",
     "docs/**/*.{md,mdx}",

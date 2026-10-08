@@ -33,8 +33,9 @@ The [monitor overview](/docs/monitors) lists all monitors with their browser sup
 | `@lag/worker` | The Web Worker of the worker-lag monitor. It sends heartbeats, detects hangs and keeps the hang journal. |
 | `@lag/load` | Synthetic main-thread load for tests and for the playground. |
 | `@lag/report` | The data format of the test reports, and the converters from Vitest, Istanbul and Stryker. |
-| `@lag/ste-lint` | A linter for the writing rules of ASD-STE100. It examines this site, the READMEs and the TSDoc comments. |
 | `@lag/site` | This website. |
+
+The linter [`@mark1russell7/ste-lint`](https://github.com/mark1russell7/ste-lint) examines this site, the READMEs and the TSDoc comments for the writing rules of ASD-STE100. It has its own repository.
 
 The metrics go through [otel-ts](/docs/operations/opentelemetry), the OpenTelemetry setup of the project, to the [Grafana stack](/docs/operations/grafana-stack).
 
