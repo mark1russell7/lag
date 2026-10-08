@@ -10,7 +10,7 @@ importers:
     devDependencies:
       '@mark1russell7/ste-lint':
         specifier: github:mark1russell7/ste-lint
-        version: https://codeload.github.com/mark1russell7/ste-lint/tar.gz/35b615950ac8d60a70d0b0afd73a4765e6c80b92
+        version: https://codeload.github.com/mark1russell7/ste-lint/tar.gz/f597d6c1e09bcfcb487bb575825d6d5f29e9e0c7
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -866,8 +866,8 @@ packages:
     resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/a4a77223b4bcec6c5ed62c9513c59263b0a224c0}
     version: 0.0.1
 
-  '@mark1russell7/ste-lint@https://codeload.github.com/mark1russell7/ste-lint/tar.gz/35b615950ac8d60a70d0b0afd73a4765e6c80b92':
-    resolution: {tarball: https://codeload.github.com/mark1russell7/ste-lint/tar.gz/35b615950ac8d60a70d0b0afd73a4765e6c80b92}
+  '@mark1russell7/ste-lint@https://codeload.github.com/mark1russell7/ste-lint/tar.gz/f597d6c1e09bcfcb487bb575825d6d5f29e9e0c7':
+    resolution: {tarball: https://codeload.github.com/mark1russell7/ste-lint/tar.gz/f597d6c1e09bcfcb487bb575825d6d5f29e9e0c7}
     version: 0.1.0
     engines: {node: '>=22'}
     hasBin: true
@@ -4368,7 +4368,7 @@ snapshots:
       - supports-color
       - zone.js
 
-  '@mark1russell7/ste-lint@https://codeload.github.com/mark1russell7/ste-lint/tar.gz/35b615950ac8d60a70d0b0afd73a4765e6c80b92':
+  '@mark1russell7/ste-lint@https://codeload.github.com/mark1russell7/ste-lint/tar.gz/f597d6c1e09bcfcb487bb575825d6d5f29e9e0c7':
     dependencies:
       typescript: 6.0.3
 

@@ -1,6 +1,2 @@
 packages:
   - "packages/*"
-
-# Packages allowed to run install scripts. ste-lint comes from GitHub, and its install builds it.
-onlyBuiltDependencies:
-  - "@mark1russell7/ste-lint"
