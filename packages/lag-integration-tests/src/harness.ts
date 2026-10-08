@@ -1,3 +1,4 @@
+import { queryMimirValue } from "./commands.js";
 import {
     createBrowserDeps as createCoreBrowserDeps,
     type AllMonitorDeps,
@@ -157,31 +158,31 @@ export function createSummaryMeter() : SummaryMeter {
     };
 }
 
-const MIMIR_QUERY_URL = "http://localhost:9009/prometheus/api/v1/query";
-
 /**
- * The number of `metric` samples (the `_count` series of a histogram) that
- * Mimir has for `service`, or 0 if Mimir has none or does not answer.
+ * The number of `metric` samples (the count of a histogram) that Mimir has
+ * for `service`, or 0 if Mimir has none or does not answer. The query
+ * accepts a native histogram and a classic histogram (a `_count` series).
  * Mimir translates the `service.name` attribute of the OTLP resource into the
  * `job` label. A `service_name` label exists only if Mimir promotes the
- * attribute.
- * The query accepts both, and the `_milliseconds` unit suffix that Mimir adds
- * when it is configured to.
+ * attribute. The query accepts both, and the `_milliseconds` unit suffix that
+ * Mimir adds when it is configured to.
  */
 export async function queryMimirCount(metric : string, service : string) : Promise<number> {
-    const name = `__name__=~"${metric}(_milliseconds)?_count"`;
-    const query = `sum({${name}, service_name="${service}"}) or sum({${name}, job=~"(.+/)?${service}"})`;
-    try {
-        const response = await fetch(`${MIMIR_QUERY_URL}?query=${encodeURIComponent(query)}`);
-        const json = await response.json() as { data? : { result? : Array<{ value : [number, string] }> } };
-        return Number(json.data?.result?.[0]?.value[1] ?? 0);
-    } catch {
-        // Mimir is not reachable: expected without the Grafana stack
-        return 0;
-    }
+    // A native histogram (an exponential histogram of OTLP) is one series: histogram_count() gives its count.
+    // A classic histogram has a _count series.
+    const native = `__name__=~"${metric}(_milliseconds)?"`;
+    const classic = `__name__=~"${metric}(_milliseconds)?_count"`;
+    const query = [
+        `sum(histogram_count({${native}, service_name="${service}"}))`,
+        `sum(histogram_count({${native}, job=~"(.+/)?${service}"}))`,
+        `sum({${classic}, service_name="${service}"})`,
+        `sum({${classic}, job=~"(.+/)?${service}"})`,
+    ].join(" or ");
+    // Node sends the query: Mimir sends no CORS headers, thus the page cannot read the answer
+    return queryMimirValue(query);
 }
 
-/** This function polls `queryMimirCount` until the count is above 0 or `timeoutMs` passes. Alloy batches for 5 s, and then Mimir ingests. */
+/** This function polls `queryMimirCount` until the count is above 0 or `timeoutMs` passes. Alloy batches for up to 1 s, and then Mimir ingests. */
 export async function waitForMimirCount(metric : string, service : string, timeoutMs : number) : Promise<number> {
     const deadline = performance.now() + timeoutMs;
     for (;;) {

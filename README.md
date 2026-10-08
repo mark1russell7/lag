@@ -174,3 +174,7 @@ To show the test results on the site, do these steps:
 To include the soak test or the E2E tests, add `--soak` or `--e2e` to `pnpm results`.
 
 GitHub Actions starts the build, the unit tests, the coverage, the browser tests and the site checks for each push and pull request (`ci.yml`). `e2e.yml` and `mutation.yml` start each week. You can also start them manually.
+
+## AI-assisted text
+
+An AI model (Claude, from Anthropic) wrote most of the text and the code of this repository, under the direction of the author. The tests, the mutation tests and the STE linter examine them. The STEMG of ASD-STE100 asks for this disclosure in its white paper on STE and artificial intelligence (June 2026).

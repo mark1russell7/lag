@@ -5,6 +5,7 @@ import type { Plugin } from "vite";
 import { playwright } from "@vitest/browser-playwright";
 import { cdpCommands } from "./commands/cdp.js";
 import { resultCommands } from "./commands/results.js";
+import { mimirCommands } from "./commands/mimir.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sourceOf = (packageDir : string) : string => path.resolve(here, "..", packageDir, "src");
@@ -16,7 +17,7 @@ type Instance = NonNullable<NonNullable<NonNullable<TestProjectInlineConfigurati
 /** The duration of the soak test. Set LAG_SOAK_MS to change it. */
 const SOAK_MS = Number(process.env["LAG_SOAK_MS"] ?? 180_000);
 
-const COMMANDS = { ...cdpCommands, ...resultCommands };
+const COMMANDS = { ...cdpCommands, ...resultCommands, ...mimirCommands };
 
 /**
  * Chromium in the new headless mode (Chrome for Testing). The default

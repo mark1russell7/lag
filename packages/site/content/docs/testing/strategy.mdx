@@ -148,5 +148,6 @@ The results page reads this folder. It shows the tests of each engine, the skips
 
 - **WebKit is not Safari.** The WebKit tests use the WebKit build of Playwright for Windows. Safari on macOS and iOS can behave differently, for example in Low Power Mode.
 - **The E2E tests need a free port.** The Grafana stack uses port 3000 by default. Set `GRAFANA_PORT` when another program uses that port.
-- **Mimir labels.** Mimir puts `service.name` into the `job` label. The E2E query accepts `job` or `service_name`.
+- **Mimir labels.** Mimir puts `service.name` into the `job` label. The E2E query accepts `job` or `service_name`, and a native or a classic histogram.
+- **Mimir and CORS.** Mimir sends no CORS headers, thus a test page cannot read the answer of a query. A Vitest command sends the query from Node (`commands/mimir.ts`).
 - **The CI workflows have not operated on GitHub.** Their first operation comes with the first push of this branch.

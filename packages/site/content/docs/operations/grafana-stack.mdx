@@ -7,20 +7,8 @@ status: draft
 
 The [grafana-infra](https://github.com/mark1russell7/grafana-infra) repository has a Docker Compose stack for development and for the integration tests. The browser exports the metrics and the events with OTLP over HTTP. Grafana Alloy receives the data and sends the metrics to Mimir, the logs to Loki and the traces to Tempo. Grafana shows the [dashboards](/docs/operations/dashboards). The page [OpenTelemetry setup](/docs/operations/opentelemetry) tells you how to configure the SDK in the page.
 
-<Callout type="caution" title="Two versions of grafana-infra">
-  This page describes the local branch `lag-pipeline-v2` of grafana-infra (commit `c56a945`). The branch is not on GitHub at this time. The `main` branch on GitHub and the lockfile of this repository have the earlier commit `b67cf97`. The scripts `infra:up` and `test:e2e` of `@lag/integration-tests` start that earlier commit from `node_modules/@mark1russell7/grafana-infra`.
-
-  Only the new branch has these parts of the stack:
-
-  - the recording rules, and the `service_name` label in Mimir
-  - the created-timestamp zero ingestion of Mimir
-  - the Loki index labels `service_name` and `event_name`, and the line of the log records without a body
-  - the CORS list of `localhost` origins (the earlier commit accepts all origins)
-  - the Lag Monitor dashboard for the metric catalog
-  - the scripts that send sample data and examine the pipeline
-  - fixed image versions (the earlier commit uses `latest` for Mimir, Alloy and Grafana)
-
-  otel-ts also has two versions. The `main` branch of otel-ts on GitHub and the lockfile of this repository have the earlier commit `b98c3ea`. That version puts `session.id` on the resource and sets no `service.instance.id`. Then the series get no `instance` label. The settings of [OpenTelemetry setup](/docs/operations/opentelemetry) need the local branch `fix/lifecycle-flush` of otel-ts.
+<Callout type="note" title="The versions">
+  This page describes grafana-infra at commit `4e183e3`, the `main` branch on 2026-10-08. The lockfile of this repository has this commit. The scripts `infra:up` and `test:e2e` of `@lag/integration-tests` start the stack from `node_modules/@mark1russell7/grafana-infra`. The settings of [OpenTelemetry setup](/docs/operations/opentelemetry) need otel-ts at commit `a4a7722` or later, and the lockfile has that commit too.
 </Callout>
 
 ## The services
@@ -298,7 +286,7 @@ The containers have fixed names, for example `mimir` and `grafana`. To change a 
 
 You need Docker with Docker Compose. The scripts of grafana-infra also need Node.js and pnpm.
 
-1. Open a terminal in the directory of grafana-infra, on the branch `lag-pipeline-v2`.
+1. Open a terminal in the directory of grafana-infra.
 2. Start the stack:
 
    ```sh
@@ -308,7 +296,7 @@ You need Docker with Docker Compose. The scripts of grafana-infra also need Node
 3. Open Grafana at `http://localhost:3000`.
 4. To edit a dashboard, sign in as `admin` with the password `admin`.
 
-In this repository, `pnpm run infra:up` in `packages/lag-integration-tests` starts the stack from `node_modules/@mark1russell7/grafana-infra`. That stack is the earlier commit `b67cf97`.
+When another program uses port 3000, set `GRAFANA_PORT` before the start, for example `GRAFANA_PORT=3007`. In this repository, `pnpm run infra:up` in `packages/lag-integration-tests` starts the stack from `node_modules/@mark1russell7/grafana-infra`, at the commit of the lockfile.
 
 ## Check the stack
 
@@ -393,7 +381,7 @@ To stop the stack of `node_modules`, use `pnpm run infra:down` in `packages/lag-
 
 ## Source
 
-- [grafana-infra](https://github.com/mark1russell7/grafana-infra) on GitHub. The branch `lag-pipeline-v2` is not on GitHub at this time.
+- [grafana-infra](https://github.com/mark1russell7/grafana-infra) on GitHub.
 - `docker-compose.yml` and `.env`: the services, the images, the ports and the volumes.
 - `config/alloy/config.alloy`: the receiver, the CORS settings, the `transform` processor and the exporters.
 - `config/mimir/mimir.yaml` and `config/mimir/rules/anonymous/lag.yaml`: the Mimir settings and the recording rules.

@@ -196,6 +196,8 @@ A soak test of 10 minutes kept the heap after garbage collection at 9.50 MB to 9
 | Branch coverage of `@lag/core` | 89.0% | 97.8% |
 | Mutation score of `@lag/core` | 77.8% of 4095 mutants | 96.6% of 4118 mutants |
 
+The export works from end to end. On 8 October 2026, the E2E tests (20 tests) found the metrics of the test pages in Mimir, as native histograms. The pipeline check of grafana-infra passed 297 of 297 checks with its sample data.
+
 A surviving mutant is a change of the code that no test finds. The first mutation run showed weak tests, for example for the sign of the `delta` of a web-vital event. The new tests find those mutants, and they found two more defects. The event catalog did not list `lag.page_view.id` for four events. Of two layout shifts with the same score, the library named a different shift than web-vitals.
 
 Each of the 139 mutants that survive has no effect that a user of the metrics can see. Examples are a second guard that repeats a first one, and code that a browser cannot reach. The [test strategy](/docs/testing/strategy) describes each kind of test, and the [results](/results) give the newest run.
@@ -213,7 +215,7 @@ Each of the 139 mutants that survive has no effect that a user of the metrics ca
 - **A busy machine.** The timing tests measure the page and the machine together. In one run of all browsers at the same time, on a busy machine, an idle Chromium page had a median lag of 5.0 ms. The same test alone gave less than 0.3 ms three times.
 - **Cost.** The monitors use approximately 2.5% of one core on an idle page, with approximately 300 wake-ups each second. The DriftLag chain and the animation-frame loop of the frame timing cost the most. This cost is real, especially on battery power.
 - **Granularity or load.** DriftLag accepts a row of 10 steps that agree with each other as a new timer granularity. A busy thread with tasks of the same length, shorter than 40 ms, looks the same. The worker measures that case.
-- **CDP tests.** The tests of hidden pages need Chromium in the new headless mode and an internal API of Playwright. The tests of the export to the Grafana stack have not operated green on this machine yet.
+- **CDP tests.** The tests of hidden pages need Chromium in the new headless mode and an internal API of Playwright.
 
 ## Future work
 

@@ -297,7 +297,7 @@ The research names these risks for tests before production:
 
 IDs, URLs, selectors and script names go only into events, which are OTel log records with an event name. Each event of the monitors gets `lag.page_view.id`. The `browser.web_vital` events use the attribute names of v1.44. The histograms of the vitals have only the attribute `navigation_type`.
 
-**otel-ts.** The local source of [otel-ts](https://github.com/mark1russell7/otel-ts) (commit `d2ca8f7` of 2026-10-07, branch `fix/lifecycle-flush`) has these defaults and options, in `src/init.ts`, `src/metrics.ts`, `src/resource.ts` and `src/lifecycle.ts`:
+**otel-ts.** The source of [otel-ts](https://github.com/mark1russell7/otel-ts) (commit `d2ca8f7` of 2026-10-07, in `main` from the merge `a4a7722`) has these defaults and options, in `src/init.ts`, `src/metrics.ts`, `src/resource.ts` and `src/lifecycle.ts`:
 
 - **Writer identity.** Each `init()` gets a new random version 4 UUID as `service.instance.id`. Without `crypto.randomUUID()`, it uses `crypto.getRandomValues()`, or `Math.random()`. The metrics, logs and traces resources share the value. otel-ts does not store it.
 - **Temporality.** Cumulative by default. The option `metricsTemporality: "delta"` exists.
@@ -307,11 +307,11 @@ IDs, URLs, selectors and script names go only into events, which are OTel log re
 - **`onBeforeFlush`.** Each flush first starts the `onBeforeFlush` listeners, synchronously. The quick start connects it to `monitors.flush()`. The [local experiments](/research/local-experiments) explain the reason: in Chromium, the order of the `pagehide` listeners cannot protect the final values.
 - **Session.** `session.id` goes on each log record and each span through processors, not on the resource. Thus the metrics do not carry it. The session is in `sessionStorage` and changes after 30 minutes without activity.
 
-<Callout type="caution" title="Two versions of otel-ts">
-  The `main` branch of otel-ts on GitHub and the lockfile of this repository have the earlier commit `b98c3ea` (2026-04-09). That version puts `session.id` on the resource, sets no `service.instance.id` and has no `onBeforeFlush`.
+<Callout type="note" title="An earlier version of otel-ts">
+  Before the merge `a4a7722`, the `main` branch of otel-ts had commit `b98c3ea` (2026-04-09). That version puts `session.id` on the resource, sets no `service.instance.id` and has no `onBeforeFlush`.
 </Callout>
 
-**The Grafana stack.** The local source of [grafana-infra](https://github.com/mark1russell7/grafana-infra) (branch `lag-pipeline-v2`, commit `c56a945`) uses Mimir 3.2.2. Its Mimir configuration enables native histograms and the created-timestamp zero ingestion. It promotes `service.name`, `service.namespace`, `service.version`, `deployment.environment.name`, `browser.platform` and `browser.mobile`, but not `session.id`. It sets `out_of_order_time_window: 10m` and `max_global_series_per_user: 500000`.
+**The Grafana stack.** The source of [grafana-infra](https://github.com/mark1russell7/grafana-infra) (commit `c56a945`, in `main` from the merge `4e183e3`) uses Mimir 3.2.2. Its Mimir configuration enables native histograms and the created-timestamp zero ingestion. It promotes `service.name`, `service.namespace`, `service.version`, `deployment.environment.name`, `browser.platform` and `browser.mobile`, but not `session.id`. It sets `out_of_order_time_window: 10m` and `max_global_series_per_user: 500000`.
 
 Loki 3.6.0 indexes only `service.name` and `event.name`, and keeps `service_instance_id` and `session_id` in the structured metadata. The Alloy configuration says that Loki 3.6 and 3.7 ignore the `EventName` field, thus Alloy copies it to the attribute `event.name`. The research read the `main` branch of Loki, not the version of the stack. Thus both facts can be correct, but this is not verified.
 

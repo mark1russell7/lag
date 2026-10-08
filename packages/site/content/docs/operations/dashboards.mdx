@@ -7,8 +7,8 @@ status: draft
 
 The [Grafana stack](/docs/operations/grafana-stack) provisions two dashboards from the [grafana-infra](https://github.com/mark1russell7/grafana-infra) repository. The Lag Monitor dashboard shows the metrics of the monitors in Mimir and their events in Loki. The Frontend Observability dashboard shows span metrics, traces and logs. This page describes each panel and the query that it uses.
 
-<Callout type="caution" title="Two versions of grafana-infra">
-  This page describes the dashboards of the local branch `lag-pipeline-v2` of grafana-infra (commit `c56a945`). The branch is not on GitHub at this time. The lockfile of this repository has the earlier commit `b67cf97`, and `pnpm test:e2e` starts the stack of that commit. Its Lag Monitor dashboard is an earlier version. It queries explicit-bucket series and gauges that the catalog does not have, for example `lag_drift_max_gauge`.
+<Callout type="note" title="The version">
+  This page describes the dashboards of grafana-infra at commit `4e183e3`, the `main` branch on 2026-10-08. The lockfile of this repository has this commit, and `pnpm test:e2e` starts its stack.
 </Callout>
 
 ## The dashboards
@@ -86,7 +86,7 @@ The names are in these files:
 
 The attribute names are also part of the contract. The panels group by attributes, for example `outcome`, `kind` and `navigation_type`. The Loki panels use the event names and the event attributes, for example `blocking_duration_ms`.
 
-On 2026-10-07, the copy of commit `c56a945` agrees with the catalog of this repository. Both have 42 metrics (32 histograms and 10 counters) and 6 events, with the same names, kinds, units and attributes. The dashboard uses all 42 metric names, and no other `lag_*` name.
+On 2026-10-08, the copy of commit `4e183e3` agrees with the catalog of this repository. Both have 42 metrics (32 histograms and 10 counters) and 6 events, with the same names, kinds, units and attributes. The dashboard uses all 42 metric names, and no other `lag_*` name. The check `verify --catalog` of grafana-infra compares the two catalogs.
 
 ### Examine a change of a name
 
@@ -655,7 +655,7 @@ histogram_quantile(0.75, sum(service_name_navigation_type:lag_web_vital_ttfb_his
 
 ## The Frontend Observability panels
 
-The Frontend Observability dashboard is from the first commit of grafana-infra, and the branch `lag-pipeline-v2` does not change it. It uses the span metrics that the metrics generator of Tempo writes to Mimir (`traces_spanmetrics_*`), the traces in Tempo, and the logs in Loki. It has the variable `service` (`label_values(traces_spanmetrics_calls_total, service)`), but no panel query uses it.
+The Frontend Observability dashboard is from the first commit of grafana-infra. The only later change is the query of the Log Entries panel. It uses the span metrics that the metrics generator of Tempo writes to Mimir (`traces_spanmetrics_*`), the traces in Tempo, and the logs in Loki. It has the variable `service` (`label_values(traces_spanmetrics_calls_total, service)`), but no panel query uses it.
 
 The verification script does not examine this dashboard, thus its panels are not verified. The Loki configuration of the stack makes only `service_name` and `event_name` index labels. Thus the selector `{exporter="OTLP"}` of the Log Stream panel finds no stream (not verified).
 
@@ -664,7 +664,7 @@ The verification script does not examine this dashboard, thus its panels are not
 | Overview | Total Traces (1h) | Stat | `short` | The increase of `traces_spanmetrics_calls_total` in the last hour. |
 | Overview | Errors (1h) | Stat | `short` | The same for the spans with the status code `STATUS_CODE_ERROR`. |
 | Overview | Avg Span Duration | Stat | `ms` | The mean duration of the spans in 5-minute windows. |
-| Overview | Log Entries (1h) | Stat | `short` | The number of log lines in Loki in the last hour, with the empty stream selector `{}`. |
+| Overview | Log Entries (1h) | Stat | `short` | The number of log lines in Loki in the last hour, of all services. Loki does not accept the empty selector `{}`. |
 | Page Load Performance | Page Load Duration (documentLoad spans) | Time series | `ms` | The p50, p95 and p99 duration of the `documentLoad` spans, from explicit buckets. |
 | Page Load Performance | Span Rate by Type | Time series, stacked bars | `short` | The spans each second, for each span name. |
 | HTTP Requests | HTTP Request Duration (fetch spans) | Time series | `ms` | The p50 and the p95 duration of the HTTP spans: span names that start with `HTTP`, `fetch` or an HTTP method. |
@@ -696,14 +696,14 @@ sum(rate(traces_spanmetrics_calls_total{span_name=~"HTTP.*|fetch.*|GET.*|POST.*|
 
 ```logql
 # Log Entries (1h)
-sum(count_over_time({} [1h]))
+sum(count_over_time({service_name=~".+"} [1h]))
 # Log Stream
 {exporter="OTLP"}
 ```
 
 ## Source
 
-- [grafana-infra](https://github.com/mark1russell7/grafana-infra) on GitHub. The branch `lag-pipeline-v2` is not on GitHub at this time.
+- [grafana-infra](https://github.com/mark1russell7/grafana-infra) on GitHub.
 - `scripts/build-dashboards.mjs`: the panels of the Lag Monitor dashboard and the query rules.
 - `scripts/lib/lag-catalog.mjs`: the copy of the metric catalog.
 - `config/grafana/provisioning/dashboards`: `lag-monitor.json`, `frontend.json` and the dashboard provider.

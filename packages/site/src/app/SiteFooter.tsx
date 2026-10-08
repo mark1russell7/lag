@@ -13,6 +13,11 @@ export function SiteFooter() {
                     To change a page, edit its file in <code>packages/site/content/</code>. The{" "}
                     <Link to="/docs/contributing/writing-style">writing style guide</Link> tells you how.
                 </p>
+                <p className={styles.text}>
+                    An AI model (Claude, from Anthropic) wrote most of the text and the code of this site and of the
+                    library, under the direction of the author. The tests and the STE linter examine them. The{" "}
+                    <Link to="/research/writing-standard">writing standard</Link> gives the reason for this note.
+                </p>
             </div>
         </footer>
     );

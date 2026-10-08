@@ -20,6 +20,7 @@ declare module "vitest/browser" {
         resetPage : () => Promise<void>;
         recordMeasurement : (measurement : MeasurementPayload) => Promise<void>;
         recordBudget : (budget : BudgetPayload) => Promise<void>;
+        queryMimirValue : (query : string) => Promise<number>;
     }
 }
 
@@ -50,6 +51,11 @@ export const cdp = {
  */
 export function recordMeasurement(name : string, unit : string, values : readonly number[], labels : Record<string, string> = {}) : Promise<void> {
     return commands.recordMeasurement({ name, unit, values : [...values], labels });
+}
+
+/** This function sends a PromQL query to Mimir from Node, because Mimir sends no CORS headers. It gives the first value, or 0. */
+export function queryMimirValue(query : string) : Promise<number> {
+    return commands.queryMimirValue(query);
 }
 
 /** This function saves a budget check for the results collector. The budget passes when `value <= limit`. */

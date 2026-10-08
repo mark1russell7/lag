@@ -1,5 +1,5 @@
 import { expect, inject } from "vitest";
-import { init } from "@mark1russell7/otel-ts";
+import { createInstanceId, init } from "@mark1russell7/otel-ts";
 import {
     setupAllMonitors,
     createOtelLoggerAdapter,
@@ -37,8 +37,10 @@ type StressContext = {
 function makeContext(serviceName : string) : StressContext {
     const otel = init({
         serviceName,
+        serviceInstanceId : createInstanceId(),
         endpoint : OTLP_ENDPOINT,
         metricsExportIntervalMs : 5_000,
+        histogramAggregation : "exponential",
         tracing : true,
         logs : true,
         faro : false,
@@ -54,6 +56,7 @@ function makeContext(serviceName : string) : StressContext {
         workerHeartbeatIntervalMs : 250,
         memoryIntervalMs : 2_000,
     }));
+    otel.onBeforeFlush(() => handles.flush());
 
     return { otel, handles, tee, worker };
 }

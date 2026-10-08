@@ -1,6 +1,6 @@
 import { expect, inject } from "vitest";
 import { userEvent } from "vitest/browser";
-import { init } from "@mark1russell7/otel-ts";
+import { createInstanceId, init } from "@mark1russell7/otel-ts";
 import {
     setupAllMonitors,
     createOtelEventSink,
@@ -50,10 +50,14 @@ describe("Lag Monitor Integration", () => {
     let worker : LagWorker;
 
     beforeAll(() => {
+        // The setup of the documentation: one writer identity for each page, and native histograms
+        const serviceInstanceId = createInstanceId();
         otel = init({
             serviceName : SERVICE_NAME,
+            serviceInstanceId,
             endpoint : OTLP_ENDPOINT,
             metricsExportIntervalMs : 5_000,
+            histogramAggregation : "exponential",
             tracing : true,
             logs : true,
             faro : false,
@@ -72,9 +76,15 @@ describe("Lag Monitor Integration", () => {
             events : createOtelEventSink(otel.getLogger("lag-events")),
             worker,
             workerHeartbeatIntervalMs : 100,
-            workerHangReport : { url : `${OTLP_ENDPOINT}/v1/logs`, resource : { "service.name" : SERVICE_NAME } },
+            workerHangReport : {
+                url : `${OTLP_ENDPOINT}/v1/logs`,
+                resource : { "service.name" : SERVICE_NAME, "service.instance.id" : serviceInstanceId },
+            },
+            pageContext : () => ({ "session.id" : otel.getSessionId() }),
             memoryIntervalMs : 5_000,
         }));
+        // The monitors record their pending values before each export
+        otel.onBeforeFlush(() => handles.flush());
     });
 
     afterAll(async () => {
@@ -243,7 +253,7 @@ describe("Lag Monitor Integration", () => {
 
     it("flushes metrics to the OTLP endpoint", async () => {
         await otel.shutdown();
-        // Alloy batches for 5 s before it forwards to Mimir. Without the stack, one query returns 0 at once.
+        // Alloy batches for up to 1 s before it forwards to Mimir. Without the stack, one query returns 0 at once.
         const driftCount = inject("e2e")
             ? await waitForMimirCount("lag_drift_histogram", SERVICE_NAME, 45_000)
             : await queryMimirCount("lag_drift_histogram", SERVICE_NAME);
