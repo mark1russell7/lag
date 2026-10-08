@@ -142,7 +142,8 @@ describe("The overhead of all monitors on an idle page", () => {
         expect(taskOverheadPercent).toBeLessThanOrEqual(CPU_BUDGET_PERCENT);
         expect(timersPerS).toBeLessThanOrEqual(TIMER_BUDGET_PER_SECOND);
         expect(wakeUpsPerS).toBeLessThanOrEqual(WAKE_UP_BUDGET_PER_SECOND);
-        // The monitors run: DriftLag alone needs more than 100 timer callbacks each second
-        expect(timersPerS).toBeGreaterThan(100);
+        // The monitors operate: DriftLag alone gives more than 60 timer callbacks each second,
+        // also with the 15.6 ms tick of Windows (approximately 175 with a 1 ms tick)
+        expect(timersPerS).toBeGreaterThan(40);
     });
 });

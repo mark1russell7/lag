@@ -2,6 +2,7 @@ import { expect } from "vitest";
 import { createBrowserDeps, createIndexedDbHangJournal, createNoopMeter, setupAllMonitors } from "@lag/core";
 import { createLagWorker } from "@lag/worker";
 import { blockMainThread, wait } from "./harness.js";
+import { workerIndexedDbWaitsForMainThread } from "./worker-io.js";
 
 /**
  * A page that does not survive a hang: the worker writes the hang to
@@ -9,7 +10,9 @@ import { blockMainThread, wait } from "./harness.js";
  * the main thread runs again, as when the page closes during the hang.
  */
 describe("hang journal in a browser", () => {
-    it("keeps the record of a hang that did not end", async () => {
+    it("keeps the record of a hang that did not end", async (ctx) => {
+        ctx.skip(await workerIndexedDbWaitsForMainThread(),
+            "This browser completes the IndexedDB requests of a worker on the main thread (WebKit), thus the worker cannot write the record during the hang.");
         const journal = createIndexedDbHangJournal(indexedDB);
         for (const record of await journal.list()) await journal.remove(record.pageId);
 
