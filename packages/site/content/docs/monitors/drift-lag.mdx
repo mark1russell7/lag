@@ -174,7 +174,7 @@ Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in
 - `stress.test.ts`: with the light profile of `@lag/load`, the largest lag is less than 150 ms. With the heavy profile, it is more than 100 ms.
 - `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no window while the page is hidden or frozen. It records more than 5 windows after the page is visible again. After a freeze of 2 s, each lag after the resume is less than half of the freeze, and no stall occurs.
 - `cdp/cpu-throttling.test.ts` (Chromium in the new headless mode): with 4× CPU throttling, the same work gives a median lag of more than 2.5 times the lag without throttling.
-- `overhead/overhead.test.ts` (Chromium in the new headless mode): all monitors together make more than 100 and not more than 210 timer callbacks each second on an idle page.
+- `overhead/overhead.test.ts` (Chromium in the new headless mode): all monitors together make more than 40 and not more than 210 timer callbacks each second on an idle page. The lower limit is also true with the 15.6 ms timer tick of Windows. The comment of the test gives approximately 175 callbacks each second for DriftLag with a 1 ms tick.
 
 ## Source
 

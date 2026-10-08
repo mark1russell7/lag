@@ -266,6 +266,14 @@ The background throttling of worker timers has no standard. The research found t
 - For Safari, the research found no authoritative document. It is not verified that iOS suspends background tabs and their workers.
 - In Low Power Mode, Safari halves `requestAnimationFrame` to 30 fps, and it throttles rAF in cross-origin iframes without interaction ([Motion](https://motion.dev/magazine/when-browsers-throttle-requestanimationframe), 2020). This affects a lag probe that uses rAF heartbeats.
 
+A block of the main thread also stops the input and output of the workers in WebKit. Experiment E4 measured this in the Playwright builds on Windows 11 ([local experiments](/research/local-experiments)):
+
+- Chromium and Firefox complete the IndexedDB writes and the `fetch` requests of a dedicated worker during a block of 2 s, after 7 ms to 58 ms. A shared worker that writes and sends each 100 ms also completes operations during the block: 18 in Chromium and 16 in Firefox.
+- WebKit completes them on the main thread, after the block: the IndexedDB write after 2015 ms and the `fetch` after 2013 ms. A shared worker completes none of its operations during the block.
+- In WebKit, a message from the page to a shared worker that the page posts immediately before the block arrives only after the block.
+
+Thus in WebKit, a worker can detect a hang with its own timer. But it cannot send a report or write a record until the main thread operates again. The WebKit build for Windows is not Safari. The IndexedDB and loader code of workers is shared code of WebCore, thus Safari probably behaves the same. This is not verified.
+
 The note [clocks and timers](/research/clocks-and-timers) gives the timer rules of each engine from the source code.
 
 ## Changes in 2025 and 2026
@@ -344,7 +352,7 @@ The research gives seven implications. This table shows the response of the libr
 | INP from `interactionId` and `performance.interactionCount`, or from a count of the distinct IDs, with the engine on each value | `InpCalculator` uses the native count, or else the count of the interactions that it saw. The metrics have no engine attribute. |
 | Page views of single-page apps from soft navigations in Chrome 151 and later, and from the Navigation API in other browsers | `PageViewVitals` starts a new page view at each soft navigation when the option `softNavigations` is true. The library does not use the Navigation API. |
 | No samples from hidden time, prerender before `activationStart`, the back/forward cache, `freeze` to `resume`, or sleep | The measurement conditions discard samples that overlap hidden, frozen and suspend intervals. The page-view vitals start at the activation. |
-| Delivery at `pagehide` and `visibilitychange` with `fetchLater()` or `sendBeacon()`, and no `unload` | otel-ts flushes when the page becomes hidden and at `pagehide`. The worker sends hang reports with `fetch` and `keepalive`. Nothing uses `unload`. |
+| Delivery at `pagehide` and `visibilitychange` with `fetchLater()` or `sendBeacon()`, and no `unload` | otel-ts flushes when the page becomes hidden and at `pagehide`. The worker sends hang reports with `fetch` and `keepalive`, but in WebKit the request completes only after a block of the main thread. Nothing uses `unload`. |
 | The Chromium extras where they help: Compute Pressure, crash reports and `window.crashReport` | `ComputePressureMonitor` observes the `"cpu"` source. The page-view ID goes into `window.crashReport`. The library does not use `deviceMemory`, `cpuPerformance` or JS Self-Profiling. |
 
 The code is in [`browser/browser-deps.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/browser/browser-deps.ts), [`ObserverMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ObserverMonitor.ts), [`InpCalculator.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/InpCalculator.ts) and [`measurement-conditions.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/measurement-conditions.ts). The page [measurement validity](/docs/concepts/measurement-validity) explains the discarded samples.

@@ -80,7 +80,7 @@ The worker detects a hang itself, because the main thread cannot do work during 
 
 The next message of the main thread ends the hang: an `ack`, a `stop` or a new `start`. The main thread sent the message, thus it operates again. For example, the main thread can stop the monitor when the page becomes hidden, before it handles the heartbeats that waited. The worker then reports the end, removes the journal record and sends `hang-ended` to the main thread.
 
-The worker sends each hang report as an OTLP/HTTP JSON log record to `workerHangReport.url`, through `fetch` with `keepalive`. Workers have no `sendBeacon`, and `keepalive` lets the request continue if the page closes. The record has the event name `lag.main_thread.hang`, the severity `WARN`, and the context of the page, for example `lag.page_view.id`. Its time comes from `Date.now()`, as in the OpenTelemetry SDK.
+The worker sends each hang report as an OTLP/HTTP JSON log record to `workerHangReport.url`, through `fetch` with `keepalive`. Workers have no `sendBeacon`, and `keepalive` lets the request continue if the page closes. In WebKit, the request completes only after the hang (refer to the limits). The record has the event name `lag.main_thread.hang`, the severity `WARN`, and the context of the page, for example `lag.page_view.id`. Its time comes from `Date.now()`, as in the OpenTelemetry SDK.
 
 The worker does not blame the main thread for time in which the worker itself did not operate. When its own timer is 5000 ms late or more, the worker sets the time of the last acknowledgement to the current time. During a hang, it also moves the start of the hang forward by the lateness of its timer. Thus a sleep on Windows, in which `performance.now()` continues, does not count as time of the hang.
 
@@ -95,7 +95,7 @@ A page can close or crash during a hang. Then nobody reports the end of the hang
 5. For each such record, the reading page uses `take(pageId, latestSeenAt)`, with `latestSeenAt` 30 000 ms before the read. The method removes the record and gives it, but only if nobody updated the record after `latestSeenAt`. The operation is atomic, thus only one page gets the record. This is also true when two pages start at the same time, for example at a session restore.
 6. The page that gets the record records that hang with the outcome `abandoned`, and it sends a `lag.main_thread.hang` event with the phase `abandoned`. If the monitor stopped after the take, the page puts the record back for the next page.
 
-The duration of an abandoned hang is the time from the start of the hang to the last write of the worker. The page ID is a random ID of 32 hexadecimal digits for each page instance (`createRandomId()`). The main thread sends the page ID to the worker only when it has a journal. Without a page ID, the worker writes no records.
+The duration of an abandoned hang is the time from the start of the hang to the last write of the worker. The page ID is a random ID of 32 hexadecimal digits for each page instance (`createRandomId()`). The main thread sends the page ID to the worker only when it has a journal. Without a page ID, the worker writes no records. In WebKit, the writes of the worker complete only after the hang. Thus there, the journal does not keep a hang that the page does not survive.
 
 ### System stalls
 
@@ -119,6 +119,7 @@ The research does not give versions for IndexedDB and `fetch` with `keepalive`. 
 - Chromium does not throttle the timers of dedicated workers in hidden pages. WebKit does not throttle worker timers. The research found no evidence of worker timer throttling in Firefox. With measurement conditions, the monitor pauses in hidden pages all the same.
 - In Chromium, a message from a worker to its page is a posted-message task. The scheduler can pause it, but it does not throttle it.
 - The time origin of a worker is the start of the worker. In a probe of Chrome 153, the `timeOrigin` of the worker was approximately 20.9 s after the `timeOrigin` of the page. The absolute clock removes this difference.
+- In WebKit, a worker completes its IndexedDB requests and its `fetch` requests on the main thread of the page. Thus they wait for the end of a block. Chromium and Firefox complete them during a block ([experiment E4](/research/local-experiments)).
 
 ## Measurement validity
 
@@ -214,6 +215,7 @@ The collector must accept cross-origin `POST` requests with JSON from the page. 
 - **The clock uncertainty.** The offset has an uncertainty of half the round trip plus the clock resolution. The research gives approximately ±0.2 ms more in Chrome, and ±1–2 ms in Firefox and Safari ([clocks and timers](/research/clocks-and-timers)).
 - **No hang detection in hidden pages.** The heartbeats stop while the page is hidden. A hang that continues when the page becomes hidden ends at the `stop`.
 - **A hang that ends at the stop of the handle.** The `stop()` of the handle removes the listener. Thus the main thread does not count a hang that ends at that time. The worker still removes the record, and it sends its `ended` report when it has a report target.
+- **No report and no record during a hang in WebKit.** The timer of the worker continues, thus the worker detects the hang. But WebKit completes the `fetch` of the hang report and the IndexedDB write of the record only when the main thread operates again ([experiment E4](/research/local-experiments)). Thus in WebKit, a hang that the page does not survive leaves no report and no record. In Chromium and Firefox, the two operations complete during the hang. Safari probably behaves the same as WebKit, but this is not verified.
 - **The start of a hang is only in the hang report.** Without `workerHangReport`, a hang that does not end is lost unless the journal has it.
 - **Late abandoned reports.** A record is abandoned only after 30 s without a write. A page that starts less than 30 s after the last write does not report the record. A page of the origin that starts later reports it. If no page of the origin starts again, nobody reports it.
 - **IndexedDB can be unavailable.** For example, some private windows do not let a page use it. Then the worker keeps no records, and the monitor logs "Could not read the hang journal."
@@ -235,7 +237,8 @@ Unit tests:
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
 
 - `worker.test.ts`: a real Web Worker sends at least 8 heartbeats in 1.5 s, in sequence, with an average delay of less than 20 ms. After an 800 ms block, at least 10 heartbeats arrive, and the largest delay is more than 600 ms.
-- `hang-journal.test.ts`: a 6.5 s block, and a worker that stops before the main thread can operate again. IndexedDB keeps one record with a hang of 5 s or more and the page-view ID.
+- `hang-journal.test.ts`: a 6.5 s block, and a worker that stops before the main thread can operate again. IndexedDB keeps one record with a hang of 5 s or more and the page-view ID. The test skips itself where a probe finds that the IndexedDB requests of a worker wait for the main thread, as in WebKit. The skip comes from that measurement, not from the name of the browser.
+- `worker-io.test.ts`: the main thread blocks for 2 s. An IndexedDB write and a `fetch` with `keepalive` of a dedicated worker complete in the first half of the block. A shared worker completes more than 5 operations during the block. In WebKit, the test expects that the write and the fetch complete after the block, and that the shared worker completes no operation during it. Thus the test fails if an engine changes. The shared-worker test skips itself without `SharedWorker`.
 - `lag-monitors.test.ts`: a 500 ms block gives a delay of more than 300 ms, while the worker timer stays less than 100 ms late.
 - `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no delay while the page is hidden or frozen. After the page is visible again, each delay is less than 200 ms, also after a freeze of 2 s.
 - `cdp/cpu-throttling.test.ts` (Chromium in the new headless mode): the worker sends a heartbeat each 25 ms. With 4× CPU throttling, the same work gives a median delay of more than 2.5 times the delay without throttling.

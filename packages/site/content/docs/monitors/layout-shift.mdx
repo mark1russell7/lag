@@ -35,7 +35,7 @@ The factory records the score of each shift in `lag_layout_shift_histogram`.
 
 These are the rules of web-vitals, also at the exact limits of 1000 ms and 5000 ms.
 
-The calculator also keeps the sources of the largest shift in the worst window, for the attribution. `getCLS()` gives the current CLS. `stop()` clears the calculator, because a restart gets the buffered entries of the browser again.
+The calculator also keeps the sources of the largest shift in the worst window, for the attribution. Of two shifts with the same score in one window, the later one is the largest, as in web-vitals. Of two windows with the same score, the first one stays the worst window. `getCLS()` gives the current CLS. `stop()` clears the calculator, because a restart gets the buffered entries of the browser again.
 
 ## Browser support
 
@@ -96,7 +96,7 @@ if (deps.PerformanceObserver) {
 Unit tests:
 
 - `LayoutShiftMonitor.test.ts`: the monitor records the score of each shift, and it ignores a shift with `hadRecentInput`. A window continues across a gap of 500 ms. A new window starts after a gap of 1.5 s, or after more than 5 s. CLS is the worst window. `stop()` clears the state.
-- `ClsCalculator.test.ts`: the sum of one window, the two rules for a new window, the sources of the largest shift in the worst window, and `reset()`. A gap of exactly 1000 ms and a length of exactly 5000 ms start a new window, as in web-vitals. A property test (fast-check) compares the calculator with the definition of web-vitals for all sequences of shifts.
+- `ClsCalculator.test.ts`: the sum of one window, the two rules for a new window, the sources of the largest shift in the worst window, and `reset()`. At equal scores, the later shift and the first window win. A gap of exactly 1000 ms and a length of exactly 5000 ms start a new window, as in web-vitals. A property test (fast-check) compares the calculator with the definition of web-vitals for all sequences of shifts.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
 

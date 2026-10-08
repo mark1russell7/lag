@@ -21,7 +21,7 @@ The usual monitors learn about a block only after its end. `PerformanceObserver`
 
 ## What the library does
 
-The library has four parts that decrease this bias. The worker reports a hang while the hang continues. The hang journal lets the next page report a hang that the page did not survive. The crash-report context connects the crash reports of Chromium with the page view. The exporter flushes each time that the page becomes hidden.
+The library has four parts that decrease this bias. The worker reports a hang while the hang continues. The hang journal lets the next page report a hang that the page did not survive. In WebKit, these two parts do not operate during a hang (refer to the limits). The crash-report context connects the crash reports of Chromium with the page view. The exporter flushes each time that the page becomes hidden.
 
 ### The worker reports a hang while it continues
 
@@ -33,7 +33,7 @@ The [worker monitor](/docs/monitors/worker-lag) sends a heartbeat from its own t
   caption="The worker reports the start of the hang while the main thread is blocked. The first message of the main thread after the block stops the hang."
 />
 
-The bundled worker of `@lag/worker` sends each hang report as an OTLP/HTTP JSON log record, with the event name `lag.main_thread.hang`. The record has the context of the page, the `phase` (`started` or `ended`) and `duration_ms`. A worker has no `navigator.sendBeacon()`, thus the worker uses `fetch()` with `keepalive: true`. With `keepalive`, the request can complete after the page closes. The Fetch standard limits the body of all `keepalive` requests in progress to 64 KiB ([RUM landscape](/research/rum-landscape)).
+The bundled worker of `@lag/worker` sends each hang report as an OTLP/HTTP JSON log record, with the event name `lag.main_thread.hang`. The record has the context of the page, the `phase` (`started` or `ended`) and `duration_ms`. A worker has no `navigator.sendBeacon()`, thus the worker uses `fetch()` with `keepalive: true`. With `keepalive`, the request can complete after the page closes. In WebKit, the request completes only when the main thread operates again ([experiment E4](/research/local-experiments)). The Fetch standard limits the body of all `keepalive` requests in progress to 64 KiB ([RUM landscape](/research/rum-landscape)).
 
 The worker sends the reports only when you give the target, with `workerHangReport`:
 
@@ -100,7 +100,9 @@ If the monitor stops after a take, the page puts the record back for the next pa
 
 <MetricTable metrics={workerLagMetrics.filter((row) => row.name.includes("hang"))} />
 
-`createBrowserDeps()` gives the journal to the worker monitor when there is a worker and the page has IndexedDB. With `hangJournal: false`, the monitor does not read the journal, and it sends no page ID to the worker. Without a page ID, the worker writes no records. A browser test blocks the main thread for 6.5 s and stops the worker before the end of the block, as when the page closes. Then it finds one record in IndexedDB, with a duration of 5 s or more and the ID of the page view.
+`createBrowserDeps()` gives the journal to the worker monitor when there is a worker and the page has IndexedDB. With `hangJournal: false`, the monitor does not read the journal, and it sends no page ID to the worker. Without a page ID, the worker writes no records.
+
+A browser test blocks the main thread for 6.5 s and stops the worker before the end of the block, as when the page closes. Then it finds one record in IndexedDB, with a duration of 5 s or more and the ID of the page view. The test skips itself where a probe finds that the IndexedDB requests of a worker wait for the main thread, as in WebKit. The skip comes from that measurement, not from the name of the browser.
 
 ### The crash-report context
 
@@ -116,6 +118,7 @@ The metrics use cumulative temporality, thus an export that is lost does not los
 
 ## Limits
 
+- **WebKit.** WebKit completes the IndexedDB requests and the `fetch` requests of a worker on the main thread of the page ([experiment E4](/research/local-experiments)). The worker detects the hang, because its timer continues. But the hang report and the journal record complete only when the main thread operates again. Thus in WebKit, the record and the report of a hang that the page does not survive are lost. `worker-io.test.ts` fails if an engine changes this behavior, and Safari probably behaves the same (not verified).
 - **A frozen tab.** If the browser freezes the page and its worker during a hang, the worker cannot report or update the record. Chrome on Android freezes background pages and their workers after 1 minute, from Chrome 139 ([browser support](/research/browser-support)). After 30 s without an update, the next page reports the hang as abandoned, also if the frozen page continues later.
 - **The stale time of 30 s.** A record counts as abandoned only after 30 s without an update. The monitor reads the journal only one time, at its start. Thus a page that starts less than 30 s after the hung page closed does not report the record, and a later page must report it. If no page of the origin starts the worker monitor again, nobody reports the hang.
 - **The same origin only.** IndexedDB belongs to one origin. Only a later page of the same origin, with the worker monitor and the journal, can report the hang.

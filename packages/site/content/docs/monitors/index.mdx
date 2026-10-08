@@ -48,7 +48,7 @@ The overhead benchmark (`overhead/overhead.test.ts`) measures all monitors toget
 | How much of each 100 ms was the main thread blocked? | [DriftLag](/docs/monitors/drift-lag) | Each block in a window adds its length to the lag of the window. |
 | Which script blocked a frame? | [Long animation frames](/docs/monitors/long-animation-frames), only in Chromium | The browser names the scripts of each long frame. |
 | How long does an interaction wait for the next paint? | [Event Timing](/docs/monitors/event-timing) and [page-view vitals](/docs/monitors/page-view-vitals) (INP) | The browser measures each interaction to the next paint, in three phases. |
-| Did the main thread hang, also until the page closed? | [Worker lag](/docs/monitors/worker-lag): hangs and the hang journal | The worker detects a hang while it continues. A later page reports a hang that the page did not survive. |
+| Did the main thread hang, also until the page closed? | [Worker lag](/docs/monitors/worker-lag): hangs and the hang journal | The worker detects a hang while it continues. A later page reports a hang that the page did not survive, except in WebKit. |
 | How long was each block, measured from outside without messages? | [Shared liveness](/docs/monitors/shared-liveness), only in cross-origin-isolated pages | The worker reads a counter in shared memory. |
 | Is the task queue long at this time? | [MacrotaskLag](/docs/monitors/macrotask-lag) and [scheduling fairness](/docs/monitors/scheduling-fairness) | A zero-delay timeout and a message wait behind the tasks in the queue. |
 | Are the frames late? | [Frame timing](/docs/monitors/frame-timing) | It measures the time between animation frames. |

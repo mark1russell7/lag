@@ -54,6 +54,7 @@ The browser tests use Vitest browser mode with Playwright. Each test file operat
 - `lifecycle.test.ts`: the lifecycle machine notifies its subscribers before a listener that the page added earlier. It uses the time of the event, and it removes its listeners at the end.
 - `lag-monitors.test.ts`: the monitors on a real page, and the INP of a real click on a button that blocks for 120 ms.
 - `worker.test.ts` and `hang-journal.test.ts`: the worker heartbeat, a hang of 6.5 s, and the record of the hang in IndexedDB.
+- `worker-io.test.ts`: the IndexedDB writes and the fetches of a worker during a block of 2 s. WebKit completes them only after the block, thus `hang-journal.test.ts` skips itself there after a probe ([experiment E4](/research/local-experiments)).
 - `stress.test.ts`: the workload profiles of `@lag/load` (refer to [stress tests](#stress-tests-and-workload-profiles)).
 - `browser-apis.test.ts`: the monitors that need one browser API, with the real API. Examples are the layout shifts, the real CPU pressure source, the visibility-state entries, the idle periods and `performance.memory`.
 
