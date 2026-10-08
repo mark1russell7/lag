@@ -186,7 +186,7 @@ Another page of the origin has its own main thread. A browser test opens a secon
 
 The engines end a closed hung page in three ways. Chromium, Safari on iOS and the WebKit build for Windows stop it. Then another page can report the hang. Firefox stops the blocked script, and Safari on macOS lets the script continue to its end. Then the page closes normally, and it can report its own hang.
 
-The [peer hang watch](/docs/monitors/peer-hang-watch) uses both ways. A browser test in two pages expects the right report in each engine, also in Safari on macOS and on iOS.
+The [peer hang watch](/docs/monitors/peer-hang-watch) uses both ways. A browser test in two pages expects the right report in each engine, also in Safari on macOS. Safari on iOS operates only the visible tab, thus the test cannot make a hung visible tab and a second tab that operates there.
 
 ### The Web Vitals
 
