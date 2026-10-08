@@ -12,6 +12,7 @@
     "test:soak": "vitest run --project soak",
     "test:chromium": "vitest run --project \"browser (chromium)\"",
     "test:safari": "LAG_SAFARI=1 vitest run --project \"browser (safari)\"",
+    "test:ios": "LAG_IOS=1 vitest run --project \"browser (ios)\"",
     "test:e2e": "pnpm run infra:up && vitest run --project e2e",
     "test:watch": "vitest --project \"browser (chromium)\"",
     "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.node.json",

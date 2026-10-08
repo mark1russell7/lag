@@ -25,7 +25,7 @@ jobs:
   # exports its reports, and the build job adds them to the run of the site.
   safari:
     runs-on: macos-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -45,12 +45,14 @@ jobs:
         run: |
           defaults write com.apple.Safari NSAppSleepDisabled -bool YES
           defaults write NSGlobalDomain NSAppSleepDisabled -bool YES
-      - name: Test in Safari
+      - name: Boot an iPhone simulator
+        run: .github/scripts/boot-ios-simulator.sh
+      - name: Test in Safari and in Safari on iOS
         continue-on-error: true
         # caffeinate keeps the display awake: WebKit slows the timers of a window that it does not show
         run: |
           caffeinate -dimsu -t 3600 &
-          pnpm results --skip-unit --skip-browser --skip-overhead --skip-site --no-mutation --safari --export-reports=safari-reports
+          pnpm results --skip-unit --skip-browser --skip-overhead --skip-site --no-mutation --safari --ios --export-reports=safari-reports
       - uses: actions/upload-artifact@v4
         with:
           name: safari-reports

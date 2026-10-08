@@ -136,6 +136,38 @@ jobs:
           caffeinate -dimsu -t 3600 &
           pnpm run test:safari
 
+  # Safari on iOS in the iOS Simulator of a macOS runner, through safaridriver. The job reports,
+  # but it does not block: a simulator has the CPU and the power of the Mac, not of a phone, and
+  # its first page can take more than 60 s to open.
+  ios:
+    name: Browser tests (Safari on iOS, simulator)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Show Xcode and the iOS runtimes
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes | grep iOS
+      - name: Boot an iPhone simulator
+        run: .github/scripts/boot-ios-simulator.sh
+      # safaridriver needs a one-time permission for remote automation
+      - name: Enable safaridriver
+        run: sudo safaridriver --enable
+      - name: Browser tests in Safari on iOS
+        working-directory: packages/lag-integration-tests
+        run: pnpm run test:ios
+
   site:
     name: Site typecheck, tests, build
     runs-on: ubuntu-latest
