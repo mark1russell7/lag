@@ -124,6 +124,56 @@ export async function probeSharedWorker(blockMs : number) : Promise<{ completed 
     return { completed : completed.length, duringBlock };
 }
 
+/** This function waits until the service worker of `registration` is active. */
+function activeWorker(registration : ServiceWorkerRegistration) : Promise<ServiceWorker> {
+    return new Promise((resolve, reject) => {
+        const worker = registration.active ?? registration.waiting ?? registration.installing;
+        if (!worker) {
+            reject(new Error("The registration has no service worker."));
+            return;
+        }
+        if (worker.state === "activated") {
+            resolve(worker);
+            return;
+        }
+        worker.addEventListener("statechange", () => {
+            if (worker.state === "activated") resolve(worker);
+            if (worker.state === "redundant") reject(new Error("The service worker became redundant."));
+        });
+    });
+}
+
+/**
+ * This function counts the writes and fetches of a service worker
+ * (`public/lag-sw-probe.js`) that complete during a block of `blockMs`. A
+ * service worker operates outside the page. Thus it could keep a record of a
+ * hang where a dedicated worker cannot. The function gives `undefined` when
+ * the page cannot have a service worker.
+ */
+export async function probeServiceWorker(blockMs : number) : Promise<{ completed : number; duringBlock : number } | undefined> {
+    if (!("serviceWorker" in navigator)) return undefined;
+    const registration = await navigator.serviceWorker.register("/lag-sw-probe.js", { scope : "/lag-sw-probe/" });
+    try {
+        const worker = await activeWorker(registration);
+        const report = () : Promise<number[]> => new Promise((resolve) => {
+            const channel = new MessageChannel();
+            channel.port1.onmessage = (event) => resolve(event.data as number[]);
+            worker.postMessage("report", [channel.port2]);
+        });
+        worker.postMessage("start");
+        await wait(600);
+        const blockStart = absoluteNow();
+        blockMainThread(blockMs);
+        const blockEnd = absoluteNow();
+        await wait(300);
+        const completed = await report();
+        const duringBlock = completed.filter(time => time > blockStart + 100 && time < blockEnd - 100).length;
+        return { completed : completed.length, duringBlock };
+    } finally {
+        await registration.unregister();
+    }
+}
+
 /** True when the IndexedDB requests of a worker complete only after a block of the main thread, as in WebKit. */
 export async function workerIndexedDbWaitsForMainThread() : Promise<boolean> {
     const times = await probeWorkerIndexedDb(500);
