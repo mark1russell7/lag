@@ -99,6 +99,31 @@ jobs:
           path: packages/lag-integration-tests/src/**/__screenshots__/
           if-no-files-found: ignore
 
+  # The real Safari, through safaridriver. Only macOS has it.
+  safari:
+    name: Browser tests (safari)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Show the version of Safari
+        run: defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString
+      # safaridriver needs a one-time permission for remote automation
+      - name: Enable safaridriver
+        run: sudo safaridriver --enable
+      - name: Browser tests in Safari
+        working-directory: packages/lag-integration-tests
+        run: pnpm run test:safari
+
   site:
     name: Site typecheck, tests, build
     runs-on: ubuntu-latest

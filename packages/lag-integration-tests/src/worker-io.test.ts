@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { recordMeasurement } from "./commands.js";
-import { probeSharedWorker, probeWorkerFetch, probeWorkerIndexedDb } from "./worker-io.js";
+import { probeServiceWorker, probeSharedWorker, probeWorkerFetch, probeWorkerIndexedDb } from "./worker-io.js";
 
 /**
  * A worker must write and send during a hang of the main thread: the hang
@@ -27,6 +27,16 @@ describe("the input and output of a worker during a main-thread block", () => {
         await recordMeasurement("worker-io/fetch_done_after_block_start", "ms", [times.doneMs], { engine });
         if (webKit) expect(times.doneMs).toBeGreaterThanOrEqual(times.blockMs);
         else expect(times.doneMs).toBeLessThan(times.blockMs / 2);
+    }, 20_000);
+
+    it("the writes and fetches of a service worker complete during the block", async (ctx) => {
+        const result = await probeServiceWorker(BLOCK_MS);
+        ctx.skip(result === undefined, "This page cannot have a service worker.");
+        console.log(`Service worker (${engine}): ${result!.duringBlock} of ${result!.completed} operations completed during the block`);
+        await recordMeasurement("worker-io/service_worker_operations_during_block", "{operation}", [result!.duringBlock], { engine });
+        expect(result!.completed).toBeGreaterThan(0);
+        // The measurement of WebKit is the open question: it decides if a service worker can keep the hang journal there
+        if (!webKit) expect(result!.duringBlock).toBeGreaterThan(5);
     }, 20_000);
 
     it("the writes and fetches of a shared worker complete during the block, except in WebKit", async (ctx) => {
