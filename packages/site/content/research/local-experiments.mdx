@@ -142,12 +142,20 @@ There were two loads. In the first, each task of 20 ms starts the next task with
 - **Messages wait in WebKit for Windows.** A chain of messages posted 84 messages in 100 ms there, and more than 13,000 in Chromium and Firefox. After an idle period, the first message waited 12 ms to 17 ms: the next timer tick of the system. Thus the probe finds no idle step there, and DriftLag operates as before the change.
 - **Irregular steps in Firefox.** For some seconds after a load, the steps changed between 8 ms and 16 ms. A first version lowered the confirmed value to the recent baseline of one window. Then each window had 6 ms to 10 ms of lag. Thus the confirmed value decreases only to the highest recent baseline of 3 windows.
 
-**Result.** The browser test [`drift-load.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/drift-load.test.ts) uses a load of 3 s. The table gives the lag in the second half of the load, from three runs of four browsers at the same time:
+**Result.** The browser test [`drift-load.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/drift-load.test.ts) uses a load of 3 s. The table gives the lag in the second half of the load. The rows of Windows 11 come from three runs of four browsers at the same time. The rows of GitHub runners come from the logs of one CI run:
 
-| Load | Chromium 145 | Chrome 153 | Firefox 146 | WebKit |
-|---|---|---|---|---|
-| Message tasks of 20 ms | 80% to 86% | 80% to 86% | 24% to 29% | The test skips itself |
-| Timer tasks of 30 ms | 78% to 85% | 79% to 85% | 53% to 72% | The test skips itself |
+| Browser | Platform | Message tasks of 20 ms | Timer tasks of 30 ms, 4 ms apart |
+|---|---|---|---|
+| Chromium 145 | Windows 11, three runs | 80% to 86% | 78% to 85% |
+| Chrome 153 | Windows 11, three runs | 80% to 86% | 79% to 85% |
+| Firefox 146 | Windows 11, three runs | 24% to 29% | 53% to 72% |
+| WebKit (Playwright) | Windows 11 | The test skips itself | The test skips itself |
+| Chromium 145 | Linux, GitHub runner | 87% | 85% |
+| Firefox 146 | Linux, GitHub runner | 75% | 84% |
+| WebKit (Playwright) | Linux, GitHub runner | 60% | 79% |
+| Safari 26.6.2 | macOS, GitHub runner | 62% | 77% |
+
+In WebKit on Linux and in Safari on macOS, a probe on an idle page measured 0 ms of busy time. Thus only the WebKit build for Windows makes a message wait.
 
 After the load, the median lag of a window was between −9 ms and 8 ms, in windows of approximately 100 ms. In Firefox on Windows, an idle step already takes 15.6 ms. Thus a step that waits for a task of 20 ms gives only 4.4 ms of lag.
 
@@ -160,5 +168,5 @@ After the load, the median lag of a window was between −9 ms and 8 ms, in wind
 - The experiments did not test Safari in Low Power Mode, or Chromium on battery power. On battery, Chromium uses a timer tick of 8 ms on Windows ([Bruce Dawson](https://randomascii.wordpress.com/2020/10/04/windows-timer-resolution-the-great-rule-change/)).
 - E3 used approximately 30 idle windows for each engine.
 - E4 used a block of 2 s. The fetch probes send their requests to the test server of Vitest on the same machine, not to a remote collector.
-- E5 used one load of 4 s for each case before the change. The results of the change come from three runs, with the four browsers at the same time on the same machine.
+- E5 used one load of 4 s for each case before the change, on Windows 11. The results of the change come from three local runs, with the four browsers at the same time on the same machine. They also come from one CI run on Linux and macOS.
 - The browser tests of the repository operate in Chromium, Firefox, WebKit and Chrome ([testing strategy](/docs/testing/strategy)). Thus they check the `document` case of E1, the two properties of E3 and the behavior of E4 in the four browsers. A CI job also operates them in Safari on macOS. No test checks the `window` case of E1.
