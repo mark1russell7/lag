@@ -37,6 +37,7 @@ function setup(options : {
         lifecycle : fake.lifecycle,
         ...(page ? { page } : {}),
         requestAnimationFrame : (callback) => { frames.push(() => callback(fake.clock.now())); return frames.length; },
+        inputTarget : fake.window,
         describeNode : options.describeNode ?? ((node) => `#${(node as { id : string }).id}`),
         createId : () => `view-${++ids}`,
         ...(options.softNavigations !== undefined ? { softNavigations : options.softNavigations } : {}),
@@ -122,6 +123,31 @@ describe("PageViewVitals", () => {
             const last = t.reports.at(-1)!;
             expect(valuesOf(last)).toMatchObject({ LCP : 800 });
             expect(last.values.find(v => v.name === "LCP")!.attribution).toMatchObject({ target : "#hero" });
+        });
+
+        it("makes the LCP final at a click that gives no Event Timing entry, as the DOM listener of web-vitals does", () => {
+            const t = setup();
+            t.observer.deliver("largest-contentful-paint", lcpEntry(700, { id : "headline" }));
+            // A fast click (less than 16 ms) gives no event entry, only the DOM event
+            t.setNow(1_100);
+            t.window.dispatch("click", { isTrusted : true, timeStamp : 1_000 });
+            t.observer.deliver("largest-contentful-paint", lcpEntry(1_600, { id : "late" }));
+            t.setVisibility("hidden", 5_000);
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ LCP : 700 });
+        });
+
+        it("ignores a synthetic click (isTrusted false), and removes its listeners at stop()", () => {
+            const t = setup();
+            t.observer.deliver("largest-contentful-paint", lcpEntry(700));
+            t.setNow(1_100);
+            t.window.dispatch("click", { isTrusted : false, timeStamp : 1_000 });
+            t.observer.deliver("largest-contentful-paint", lcpEntry(1_600));
+            t.setVisibility("hidden", 5_000);
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ LCP : 1_600 });
+
+            t.vitals.stop();
+            expect(t.window.listeners().filter(l => l.type === "click" || l.type === "keydown")).toEqual([]);
         });
 
         it("ignores the LCP candidates that paint after the first click or key press, as web-vitals does", () => {
