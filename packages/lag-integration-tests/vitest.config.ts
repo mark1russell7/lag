@@ -7,6 +7,7 @@ import { webdriverio } from "@vitest/browser-webdriverio";
 import { cdpCommands } from "./commands/cdp.js";
 import { resultCommands } from "./commands/results.js";
 import { mimirCommands } from "./commands/mimir.js";
+import { topLevelPageCommands } from "./commands/top-level-page.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sourceOf = (packageDir : string) : string => path.resolve(here, "..", packageDir, "src");
@@ -18,7 +19,7 @@ type Instance = NonNullable<NonNullable<NonNullable<TestProjectInlineConfigurati
 /** The duration of the soak test. Set LAG_SOAK_MS to change it. */
 const SOAK_MS = Number(process.env["LAG_SOAK_MS"] ?? 180_000);
 
-const COMMANDS = { ...cdpCommands, ...resultCommands, ...mimirCommands };
+const COMMANDS = { ...cdpCommands, ...resultCommands, ...mimirCommands, ...topLevelPageCommands };
 
 /**
  * Chromium in the new headless mode (Chrome for Testing). The default
