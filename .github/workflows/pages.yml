@@ -47,7 +47,10 @@ jobs:
           defaults write NSGlobalDomain NSAppSleepDisabled -bool YES
       - name: Test in Safari
         continue-on-error: true
-        run: pnpm results --skip-unit --skip-browser --skip-overhead --skip-site --no-mutation --safari --export-reports=safari-reports
+        # caffeinate keeps the display awake: WebKit slows the timers of a window that it does not show
+        run: |
+          caffeinate -dimsu -t 3600 &
+          pnpm results --skip-unit --skip-browser --skip-overhead --skip-site --no-mutation --safari --export-reports=safari-reports
       - uses: actions/upload-artifact@v4
         with:
           name: safari-reports
