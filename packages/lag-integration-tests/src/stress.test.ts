@@ -94,8 +94,10 @@ async function logResult(profile : string, result : WorkloadResult, tee : TeeMet
  * function skips the test in that case, and the skip gives the reason.
  */
 function skipIfThrottled(test : TestContext, result : WorkloadResult) : void {
-    test.skip(result.durationMs > PROFILE_DURATION_MS * 1.5,
-        `The browser slowed the timers of the page: the profile took ${Math.round(result.durationMs)} ms, not ${PROFILE_DURATION_MS} ms (visibilityState "${document.visibilityState}").`);
+    if (result.durationMs <= PROFILE_DURATION_MS * 1.5) return;
+    const state = `visibilityState "${document.visibilityState}", hasFocus ${document.hasFocus()}, window ${window.innerWidth}x${window.innerHeight}`;
+    console.log(`The browser slowed the timers of the page (${state})`);
+    test.skip(true, `The browser slowed the timers of the page: the profile took ${Math.round(result.durationMs)} ms, not ${PROFILE_DURATION_MS} ms (${state}).`);
 }
 
 describe("Lag Monitor Stress Tests", () => {

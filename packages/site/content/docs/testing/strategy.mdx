@@ -148,6 +148,7 @@ The results page reads this folder. It shows the tests of each engine, the skips
 ## Limits
 
 - **Safari on iOS.** The tests operate in Safari on macOS and in the WebKit build of Playwright, not in Safari on iOS. Nothing tests Low Power Mode, which aligns the nested timers of Safari to 30 ms.
+- **Safari on a shared runner.** Safari on a macOS runner of GitHub sometimes slows the timers of its window, for example by 9 s. Then a timing test fails for a reason that is not in the code. Thus the Safari job of CI reports its results, but it does not block a pull request. A stress profile that the browser slowed skips itself with the reason.
 - **Safari and the collector.** Only macOS has Safari. Thus a macOS job exports its reports (`--export-reports`), and the Linux job of the site imports them (`--import-reports`).
 - **The E2E tests need a free port.** The Grafana stack uses port 3000 by default. Set `GRAFANA_PORT` when another program uses that port.
 - **Mimir labels.** Mimir puts `service.name` into the `job` label. The E2E query accepts `job` or `service_name`, and a native or a classic histogram.
