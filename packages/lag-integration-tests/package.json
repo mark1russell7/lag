@@ -11,6 +11,7 @@
     "test:overhead": "vitest run --project overhead",
     "test:soak": "vitest run --project soak",
     "test:chromium": "vitest run --project \"browser (chromium)\"",
+    "test:safari": "LAG_SAFARI=1 vitest run --project \"browser (safari)\"",
     "test:e2e": "pnpm run infra:up && vitest run --project e2e",
     "test:watch": "vitest --project \"browser (chromium)\"",
     "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.node.json",
@@ -28,9 +29,11 @@
     "@types/node": "^25.3.0",
     "@vitest/browser": "^4.1.2",
     "@vitest/browser-playwright": "^4.1.2",
+    "@vitest/browser-webdriverio": "^4.1.2",
     "playwright": "^1.56.0",
     "vite": "^7.3.1",
     "vitest": "^4.1.2",
-    "web-vitals": "^6.2.3"
+    "web-vitals": "^6.2.3",
+    "webdriverio": "^9.32.0"
   }
 }

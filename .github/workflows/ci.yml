@@ -99,6 +99,40 @@ jobs:
           path: packages/lag-integration-tests/src/**/__screenshots__/
           if-no-files-found: ignore
 
+  # The real Safari, through safaridriver. Only macOS has it.
+  safari:
+    name: Browser tests (safari)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Show the version of Safari
+        run: defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString
+      # safaridriver needs a one-time permission for remote automation
+      - name: Enable safaridriver
+        run: sudo safaridriver --enable
+      # App Nap of macOS slows the timers of a window that is not in front: a CI runner
+      # slowed the timers of Safari by 9 s one time
+      - name: Turn off App Nap
+        run: |
+          defaults write com.apple.Safari NSAppSleepDisabled -bool YES
+          defaults write NSGlobalDomain NSAppSleepDisabled -bool YES
+      - name: Browser tests in Safari
+        working-directory: packages/lag-integration-tests
+        # caffeinate keeps the display awake: WebKit slows the timers of a window that it does not show
+        run: |
+          caffeinate -dimsu -t 3600 &
+          pnpm run test:safari
+
   site:
     name: Site typecheck, tests, build
     runs-on: ubuntu-latest

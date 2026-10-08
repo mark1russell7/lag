@@ -1,5 +1,5 @@
 import { ObserverMonitor } from "../ObserverMonitor.js";
-import { isVisibleState, type LifecycleStateMachine, type StateTransition } from "../LifecycleStateMachine.js";
+import { eventTime, isVisibleState, type LifecycleEventTarget, type LifecycleStateMachine, type StateTransition } from "../LifecycleStateMachine.js";
 import type { PerformanceEntryLike, PerformanceObserverInit, PerformanceObserverOptions } from "../perf-types.js";
 import type { RequestAnimationFrameFn } from "../FrameTimingMonitor.js";
 import type { Clock, Logger } from "../types.js";
@@ -28,6 +28,13 @@ export type PageViewVitalsDeps = {
     readInteractionCount? : () => number | undefined;
     describeNode? : (node : unknown) => string;
     createId? : () => string;
+    /**
+     * The window, for the `keydown` and `click` events. As in web-vitals, the
+     * first trusted key press or click after the start of a view makes its
+     * LCP final. This is also true for an input that gives no Event Timing
+     * entry (an input shorter than 16 ms).
+     */
+    inputTarget? : LifecycleEventTarget;
     /**
      * When true, each soft navigation (Chromium 151 and later) starts a new
      * page view, as web-vitals does with `reportSoftNavs`. The default is
@@ -251,6 +258,22 @@ export class PageViewVitals {
         if (this.deps.softNavigations === true && this.isSupported("soft-navigation") && this.isSupported("interaction-contentful-paint")) {
             this.observe("soft-navigation", (e) => this.onSoftNavigation(e as SoftNavigationEntryLike));
             this.observe("interaction-contentful-paint", (e) => this.onInteractionContentfulPaint(e as InteractionContentfulPaintLike));
+        }
+        this.listenForInput();
+    }
+
+    /** The trusted `keydown` and `click` events make the LCP of the current view final (refer to `inputTarget`). */
+    private listenForInput() : void {
+        const target = this.deps.inputTarget;
+        if (!target) return;
+        const onInput = (event : unknown) : void => {
+            if (this.stopped || (event as { isTrusted? : unknown } | undefined)?.isTrusted === false) return;
+            const time = eventTime(event, this.deps.clock.now());
+            if (time > this.collector.view.startTime) this.collector.finalizeLcpAt(time);
+        };
+        for (const type of ["keydown", "click"]) {
+            target.addEventListener(type, onInput, { capture : true });
+            this.disposers.push(() => target.removeEventListener(type, onInput, { capture : true }));
         }
     }
 

@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
 import type { Plugin } from "vite";
 import { playwright } from "@vitest/browser-playwright";
+import { webdriverio } from "@vitest/browser-webdriverio";
 import { cdpCommands } from "./commands/cdp.js";
 import { resultCommands } from "./commands/results.js";
 import { mimirCommands } from "./commands/mimir.js";
@@ -10,7 +11,7 @@ import { mimirCommands } from "./commands/mimir.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sourceOf = (packageDir : string) : string => path.resolve(here, "..", packageDir, "src");
 
-type Environment = "chromium" | "firefox" | "webkit" | "chrome";
+type Environment = "chromium" | "firefox" | "webkit" | "chrome" | "safari";
 type Provider = ReturnType<typeof playwright>;
 type Instance = NonNullable<NonNullable<NonNullable<TestProjectInlineConfiguration["test"]>["browser"]>["instances"]>[number];
 
@@ -57,6 +58,29 @@ function instance(project : string, environment : Environment, provider? : Provi
         name : `${project} (${environment})`,
         provide : { environment, e2e, soakMs : SOAK_MS },
         ...(chosen ? { provider : chosen } : {}),
+    };
+}
+
+/**
+ * Safari on macOS, through safaridriver (WebDriver). The project exists only
+ * with LAG_SAFARI=1, because only macOS has Safari. Safari has no headless
+ * mode, and safaridriver permits one session at a time.
+ */
+function safariProject() : TestProjectInlineConfiguration {
+    return {
+        extends : true,
+        test : {
+            name : "safari",
+            include : ["src/*.test.ts"],
+            fileParallelism : false,
+            browser : {
+                enabled : true,
+                headless : false,
+                provider : webdriverio(),
+                commands : COMMANDS,
+                instances : [{ browser : "safari", name : "browser (safari)", provide : { environment : "safari", e2e : false, soakMs : SOAK_MS } }],
+            },
+        },
     };
 }
 
@@ -128,6 +152,8 @@ export default defineConfig({
             project("e2e", ["src/lag-monitors.test.ts", "src/stress.test.ts"], [
                 instance("e2e", "chromium", undefined, true),
             ]),
+            // Safari on macOS (LAG_SAFARI=1): the browser tests in the real Safari
+            ...(process.env["LAG_SAFARI"] === "1" ? [safariProject()] : []),
         ],
     },
 });

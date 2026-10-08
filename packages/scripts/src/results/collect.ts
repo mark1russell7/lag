@@ -7,7 +7,8 @@
  * 2. The browser tests of @lag/integration-tests in every engine (the
  *    browser, cdp and coi projects), then the overhead benchmark alone.
  * 3. The tests of @lag/site (Node and Chromium).
- * 4. With --soak and --e2e: the soak test and the e2e tests.
+ * 4. With --soak and --e2e: the soak test and the e2e tests. With --safari:
+ *    the browser tests in Safari (only on macOS, through safaridriver).
  *
  * Each run uses `project-reporter.ts`, which writes one Vitest JSON report
  * for each project. The browser tests write their measurements and budgets
@@ -17,10 +18,16 @@
  * `packages/site/public/data/results/`.
  *
  * Options: --skip-unit, --skip-browser, --skip-overhead, --skip-site,
- * --soak, --e2e, --no-mutation, --keep-temp.
+ * --soak, --e2e, --safari, --no-mutation, --keep-temp.
+ *
+ * Two options connect two machines. `--export-reports=<dir>` writes the raw
+ * reports and the measurements of this machine to `<dir>`, and it writes no
+ * run. `--import-reports=<dir>` adds the reports of `<dir>` to the run of
+ * this machine. For example, a macOS job tests Safari and exports its
+ * reports, and the Linux job of the site imports them.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,6 +57,14 @@ const RESULTS_DIR_ENV = "LAG_RESULTS_DIR";
 
 const flags = new Set(process.argv.slice(2));
 const has = (flag : string) : boolean => flags.has(flag);
+/** The value of an option `--name=<value>`, as an absolute path. */
+const pathOption = (name : string) : string | undefined => {
+    const prefix = `--${name}=`;
+    const value = process.argv.slice(2).find(arg => arg.startsWith(prefix))?.slice(prefix.length);
+    return value ? path.resolve(process.cwd(), value) : undefined;
+};
+const exportDir = pathOption("export-reports");
+const importDir = pathOption("import-reports");
 
 type Step = {
     title : string;
@@ -57,6 +72,8 @@ type Step = {
     /** The package folder, relative to the repository root. */
     dir : string;
     args : string[];
+    /** More environment variables for the step. */
+    env? : Record<string, string>;
 };
 
 const steps : Step[] = [
@@ -75,6 +92,7 @@ const steps : Step[] = [
     ]),
     ...(has("--soak") ? [{ title : "Soak test", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "soak"] }] : []),
     ...(has("--e2e") ? [{ title : "E2E tests with the Grafana stack", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "e2e"] }] : []),
+    ...(has("--safari") ? [{ title : "Browser tests in Safari", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "browser (safari)"], env : { LAG_SAFARI : "1" } }] : []),
     ...(has("--skip-site") ? [] : [
         { title : "Tests of @lag/site", packageName : "@lag/site", dir : "packages/site", args : [] },
     ]),
@@ -110,7 +128,7 @@ function runVitest(step : Step, reportDir : string, resultsDir : string) : numbe
     const result = spawnSync(process.execPath, args, {
         cwd : dir,
         stdio : "inherit",
-        env : { ...process.env, [PROJECT_REPORT_DIR_ENV] : reportDir, [RESULTS_DIR_ENV] : resultsDir },
+        env : { ...process.env, ...step.env, [PROJECT_REPORT_DIR_ENV] : reportDir, [RESULTS_DIR_ENV] : resultsDir },
     });
     return result.status ?? 1;
 }
@@ -123,6 +141,22 @@ function suitesFrom(reportDir : string, packageName : string) : SuiteResult[] {
             const report = readJson<ProjectReport>(path.join(reportDir, file));
             return report ? [fromVitestJson(report, suiteMeta(packageName, report.project, report.environment), root)] : [];
         });
+}
+
+/** This function copies the raw reports and the measurements of this machine to `dir` (--export-reports). */
+function exportReports(dir : string, temp : string, resultsDir : string) : void {
+    mkdirSync(dir, { recursive : true });
+    const reportsRoot = path.join(temp, "reports");
+    let count = 0;
+    for (const step of existsSync(reportsRoot) ? readdirSync(reportsRoot) : []) {
+        for (const file of readdirSync(path.join(reportsRoot, step)).filter(name => name.endsWith(".json"))) {
+            copyFileSync(path.join(reportsRoot, step, file), path.join(dir, `${step}-${file}`));
+            count++;
+        }
+    }
+    const resultsFile = path.join(resultsDir, "results.jsonl");
+    if (existsSync(resultsFile)) copyFileSync(resultsFile, path.join(dir, "results.jsonl"));
+    console.log(`\nExported ${count} reports to ${dir}.`);
 }
 
 function coverageReports() : CoverageReport[] {
@@ -161,8 +195,25 @@ function main() : void {
         suites.push(...found);
     });
 
+    if (exportDir) {
+        exportReports(exportDir, temp, resultsDir);
+        if (!has("--keep-temp")) rmSync(temp, { recursive : true, force : true });
+        process.exitCode = exitCodes.some(([, code]) => code !== 0) ? 1 : 0;
+        return;
+    }
+
     const resultsFile = path.join(resultsDir, "results.jsonl");
     const records : ResultRecord[] = existsSync(resultsFile) ? parseResultLines(readFileSync(resultsFile, "utf8")) : [];
+    // The reports of another machine (--import-reports), for example Safari from macOS
+    if (importDir && existsSync(importDir)) {
+        const imported = suitesFrom(importDir, "@lag/integration-tests");
+        suites.push(...imported);
+        const importedResults = path.join(importDir, "results.jsonl");
+        if (existsSync(importedResults)) records.push(...parseResultLines(readFileSync(importedResults, "utf8")));
+        console.log(`Imported ${imported.length} suites from ${importDir}.`);
+    } else if (importDir) {
+        console.warn(`No reports to import: ${importDir} does not exist.`);
+    }
     const run : RunReport = {
         schemaVersion : SCHEMA_VERSION,
         id,
