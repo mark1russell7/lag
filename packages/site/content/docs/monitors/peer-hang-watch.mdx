@@ -83,7 +83,9 @@ Experiment E7 measured each part of the watch ([local experiments](/research/loc
 | The test closes the blocked page: what the browser does | It stops the page. The other page gets the lock 0.5 s to 8 s later. | It stops the blocked script. The page closes normally 13 ms to 38 ms later. | Windows: it stops the page, and the lock comes free less than 60 ms later. Linux: the lock comes free after 3 s, and the page continues. | It lets the script continue to its end, also for 90 s. Then the page closes normally. |
 | The report of the hang | The other page (`peer`) | The closed page (`self`) | Windows: `peer`. Linux: `peer` and `self` | The closed page (`self`) |
 
-Safari 26.5 in the iOS Simulator stopped a closed page during a block of 90 s. The other page got the lock 5.3 s after the start of the close, and the page sent no `pagehide`. Thus on iOS, another page reports the hang, as in Chromium.
+Safari 26.5 in the iOS Simulator stopped a closed page during a block of 90 s. The other page got the lock 3.4 s to 5.3 s after the start of the close, and the page sent no `pagehide`. Thus on iOS, only another page can report the hang, as in Chromium.
+
+Safari on iOS operates only the visible tab. A hidden tab operates again when the user goes back to it. The research did not examine if that tab then gets the heartbeats of a page that hung while it was hidden. Thus the watch on iOS is not verified from end to end.
 
 ## Measurement validity
 
@@ -145,6 +147,7 @@ A hidden page holds no lock. The page also releases its lock in `pagehide`, befo
 
 - **An endless hang in Safari on macOS.** Safari on macOS lets the script of a closed page continue until it ends. A script that does not end keeps the page alive without a window. Then neither the page nor another page reports the hang.
 - **Another page is necessary in Chromium and on iOS.** Chromium and Safari on iOS stop a hung page that the user closes. Then only another open page of the origin can report the hang. In Chromium, the next page can also report it from the hang journal of the worker.
+- **One visible tab on iOS.** Safari on iOS operates only the visible tab, thus a hidden watching page operates only when the user goes back to it. The browser test cannot make a hung visible tab and a second tab that operates on iOS, thus it skips itself there.
 - **One process.** A browser can put two pages of one site in one process. Then they share one main thread, and a hang stops both of them. Chrome can do this for pages of the same site.
 - **A double count in WebKit for Linux.** The WebKit build of Playwright for Linux releases the lock of a closed page after approximately 3 s, but the page continues. When its script ends, the page reports its own hang too. Thus the hang counts two times there.
 - **The end of the hang.** For a report of another page, the end is the time of the lock grant. Chromium gave the lock up to 8 s after the close. Thus without a journal record, a hang can seem longer by that time.
@@ -166,7 +169,8 @@ Unit tests:
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), and the CI job in Safari):
 
-- `peer-hang-watch.test.ts`: a second top-level page operates all monitors and blocks its main thread for 12 s. The test closes it after 7 s. In Chromium, Chrome and WebKit for Windows, the monitors of the test page report the hang (`peer`). In Firefox and Safari, the closed page reports its own hang (`self`), and the test page reports nothing. The report has the page-view ID of the closed page and a duration of 5 s or more. In WebKit for Linux, the test expects both reports.
+- `peer-hang-watch.test.ts`: a second top-level page operates all monitors and blocks its main thread for 12 s. The test closes it after 7 s. In Chromium, Chrome and WebKit for Windows, the monitors of the test page report the hang (`peer`). In Firefox and Safari on macOS, the closed page reports its own hang (`self`), and the test page reports nothing. The report has the page-view ID of the closed page and a duration of 5 s or more.
+- `peer-hang-watch.test.ts`, the other engines: in WebKit for Linux, the test expects both reports. The test skips itself in Safari on iOS (refer to the limits).
 - `peer-tab.test.ts` (experiment E7): the parts of the watch with the real APIs. The silence of the main thread, the lock during the block, and the BroadcastChannel of a worker. What each browser does when the test closes the blocked page.
 
 ## Source

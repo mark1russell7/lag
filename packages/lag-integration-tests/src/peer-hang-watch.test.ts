@@ -25,6 +25,13 @@ import type { PeerEvent } from "./pages/peer-watch-page.js";
  *
  * In WebKit and Safari, these are the only ways to keep such a hang
  * (experiments E6 and E7).
+ *
+ * The test skips itself in Safari on iOS. Safari there operates only the
+ * visible tab. When WebDriver goes back to the test page, the peer page
+ * becomes hidden. If its block has not started yet, the page says "away" and
+ * releases its lock, as a hidden page must. Thus WebDriver cannot make a hung
+ * visible tab and a second tab that operates. `peer-tab.test.ts` measures how
+ * Safari on iOS ends a closed page.
  */
 type Emitted = { name : string; attributes : Record<string, unknown> };
 
@@ -35,8 +42,9 @@ const isHangOf = (pageId : string) => (event : Emitted) : boolean =>
     event.name === "lag.main_thread.hang" && event.attributes["lag.hang.page_id"] === pageId;
 
 describe("the peer hang watch in a browser", () => {
-    it("reports a page that closes during a hang: the other page reports it, or the page itself at its close", async () => {
+    it("reports a page that closes during a hang: the other page reports it, or the page itself at its close", async (ctx) => {
         const env = environment();
+        ctx.skip(env === "ios", "Safari on iOS operates only the visible tab: the peer page becomes hidden when the test page is visible again.");
         // Safari on iOS stops the page, as Chromium does
         const pageClosesNormally = env === "firefox" || env === "safari";
         const webKitOnLinux = env === "webkit" && inject("platform") === "linux";
