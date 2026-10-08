@@ -81,7 +81,12 @@ function isPersisted(event : unknown) : boolean {
  * it is applicable, or `now`. A timestamp after `now` is not applicable: old
  * browsers give `timeStamp` in Unix time.
  */
-function eventTime(event : unknown, now : number) : number {
+/**
+ * The time of an event in `performance.now()` time: its `timeStamp`, or
+ * `now` when the time stamp is missing or not in that time base (old
+ * browsers gave Unix time).
+ */
+export function eventTime(event : unknown, now : number) : number {
     const timeStamp = (event as { timeStamp? : unknown } | undefined)?.timeStamp;
     return typeof timeStamp === "number" && timeStamp > 0 && timeStamp <= now ? timeStamp : now;
 }
