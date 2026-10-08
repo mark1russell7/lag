@@ -121,7 +121,7 @@ In WebKit and Safari, the timer of the worker continues, thus the worker detects
 
 **Check in the repository.** The browser test [`worker-io.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/worker-io.test.ts) operates the four probes in Chromium, Firefox, WebKit and Chrome, and in the CI job in Safari. In WebKit and Safari, it expects that the write and the fetch complete after the block. It also expects that the shared worker and the service worker complete no operation during the block there.
 
-In the other browsers, it expects the write and the fetch in the first half of the block. It also expects more than 5 operations of the shared worker and of the service worker there. Thus the test fails if an engine changes its behavior.
+In the other browsers, it expects the write and the fetch before the end of the block. A completion 25 ms or less before the end of the block counts as a wait, because the worker and the page read different clocks. On a busy CI runner, a write of Firefox completed after 1141 ms of a block of 2000 ms: slow, but not a wait. It also expects more than 5 operations of the shared worker and of the service worker there. Thus the test fails if an engine changes its behavior.
 
 The browser test `hang-journal.test.ts` skips itself where a probe finds that the IndexedDB requests of a worker wait for the main thread. The probe uses a block of 500 ms. Thus the skip comes from a measurement, not from the name of the browser. In the CI log, the test skips itself in Safari.
 

@@ -35,6 +35,10 @@ const COMMANDS = { ...cdpCommands, ...resultCommands, ...mimirCommands, ...topLe
 const newHeadlessChromium = (args : string[] = []) : Provider =>
     playwright({ launchOptions : { channel : "chromium", ...(args.length > 0 ? { args } : {}) } });
 
+/** Chromium with the back/forward cache. Playwright turns off the cache by default with this switch. */
+const chromiumWithBackForwardCache = () : Provider =>
+    playwright({ launchOptions : { channel : "chromium", ignoreDefaultArgs : ["--disable-back-forward-cache"] } });
+
 /**
  * This plugin sends COOP and COEP with every response, so the page is
  * cross-origin isolated. A plugin is necessary because the browser server of
@@ -171,6 +175,10 @@ export default defineConfig({
             // Chromium only: page freezing, hidden pages, CPU throttling and virtual compute pressure through CDP
             project("cdp", ["src/cdp/**/*.test.ts"], [
                 instance("cdp", "chromium", newHeadlessChromium()),
+            ], { fileParallelism : false }),
+            // Chromium only: the back/forward cache with the library in two pages of the origin
+            project("bfcache", ["src/bfcache/**/*.test.ts"], [
+                instance("bfcache", "chromium", chromiumWithBackForwardCache()),
             ], { fileParallelism : false }),
             // A cross-origin-isolated page: shared memory, the fine clock and measureUserAgentSpecificMemory()
             project("coi", ["src/coi/**/*.test.ts"], [

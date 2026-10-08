@@ -5,7 +5,7 @@
  */
 import { commands, server } from "vitest/browser";
 import { inject } from "vitest";
-import type { BudgetPayload, FreezeResult, HeapUsage, MeasurementPayload } from "./command-types.js";
+import type { BackForwardResult, BudgetPayload, FreezeResult, HeapUsage, MeasurementPayload } from "./command-types.js";
 
 declare module "vitest/browser" {
     interface BrowserCommands {
@@ -27,6 +27,7 @@ declare module "vitest/browser" {
         openPeerPage : (path : string) => Promise<string>;
         evaluateInPeerPage : (id : string, expression : string) => Promise<unknown>;
         closePeerPage : (id : string) => Promise<{ startedAt : number; endedAt : number } | undefined>;
+        leaveAndReturnToPeerPage : (id : string, path : string, awayMs : number) => Promise<BackForwardResult>;
     }
 }
 
@@ -100,6 +101,15 @@ export function evaluateInPeerPage<T>(id : string, expression : string) : Promis
 /** This function closes the peer page `id`, and gives the time of Node (`Date.now()`) at the start and at the end of the close. */
 export function closePeerPage(id : string) : Promise<{ startedAt : number; endedAt : number } | undefined> {
     return commands.closePeerPage(id);
+}
+
+/**
+ * This function goes from the peer page `id` to `path` of the Vitest server,
+ * and back after `awayMs` (Playwright only). It tells if the browser
+ * restored the page from the back/forward cache.
+ */
+export function leaveAndReturnToPeerPage(id : string, path : string, awayMs : number) : Promise<BackForwardResult> {
+    return commands.leaveAndReturnToPeerPage(id, path, awayMs);
 }
 
 /** This function sends a PromQL query to Mimir from Node, because Mimir sends no CORS headers. It gives the first value, or 0. */
