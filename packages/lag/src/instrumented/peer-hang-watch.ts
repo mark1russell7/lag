@@ -23,7 +23,9 @@ import { createRandomId } from "../random-id.js";
  *
  * The page sends heartbeats and holds its lock only while it is visible
  * (the states `active` and `passive` of `lifecycle`). A hidden page watches
- * the others.
+ * the others. A frozen page and a page in the back/forward cache close their
+ * channel. Thus the messages of other pages do not remove them from the
+ * cache.
  */
 export function createInstrumentedPeerHangWatch(
     deps : CoreDeps & PeerDeps & WallClockDeps & TimerDeps & Partial<EventDeps> & Pick<WorkerMonitorDeps, "hangJournal" | "pageId">,
@@ -50,8 +52,15 @@ export function createInstrumentedPeerHangWatch(
                 });
             },
         });
-        // A page that closes (pagehide without the back/forward cache) reports its own hang, if it closes at the end of one
+        // A page in the back/forward cache or a frozen page closes its channel: Chrome removes a page from
+        // the cache when a message arrives for it. A page that closes (pagehide without the back/forward
+        // cache) reports its own hang, if it closes at the end of one.
         const unsubscribe = lifecycle.subscribe(({ to }) => {
+            if (to === "frozen") {
+                watch.suspend();
+                return;
+            }
+            watch.resume();
             if (isVisibleState(to)) watch.show();
             else watch.hide(to === "terminated");
         });

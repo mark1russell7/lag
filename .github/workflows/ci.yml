@@ -55,7 +55,7 @@ jobs:
           # Chrome stable is on the runner image: the "chrome" channel uses it
           - engine: chromium
             playwright: chromium
-            projects: '["browser (chromium)", "browser (chrome)", "cdp", "coi (chromium)"]'
+            projects: '["browser (chromium)", "browser (chrome)", "cdp", "bfcache", "coi (chromium)"]'
           - engine: firefox
             playwright: firefox
             projects: '["browser (firefox)", "coi (firefox)"]'

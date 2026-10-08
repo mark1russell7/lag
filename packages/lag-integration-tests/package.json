@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run --project browser --project cdp --project coi",
-    "test:browser": "vitest run --project browser --project cdp --project coi",
+    "test": "vitest run --project browser --project cdp --project bfcache --project coi",
+    "test:browser": "vitest run --project browser --project cdp --project bfcache --project coi",
     "test:cdp": "vitest run --project cdp",
+    "test:bfcache": "vitest run --project bfcache",
     "test:coi": "vitest run --project coi",
     "test:overhead": "vitest run --project overhead",
     "test:soak": "vitest run --project soak",

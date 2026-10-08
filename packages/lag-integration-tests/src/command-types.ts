@@ -26,6 +26,14 @@ export type MeasurementPayload = {
     labels? : Record<string, string>;
 };
 
+/** The result of `leaveAndReturnToPeerPage`. */
+export type BackForwardResult = {
+    /** True if the browser restored the page from the back/forward cache. */
+    restored : boolean;
+    /** If not, the reasons of Chromium (`notRestoredReasons`), for example "broadcastchannel-message". */
+    reasons : string[];
+};
+
 /** One budget check from a test, for the results collector. */
 export type BudgetPayload = {
     name : string;

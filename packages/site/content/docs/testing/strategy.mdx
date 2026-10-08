@@ -20,6 +20,7 @@ Each claim of the [thesis](/thesis) has a type of test that can show it. A rule 
 | iOS tests | Safari on iOS in the iOS Simulator, through safaridriver | The same browser test files in Safari on iOS | `pnpm --filter @lag/integration-tests test:ios`, with a booted simulator |
 | web-vitals oracle | The four engines | The vitals agree with web-vitals 6 on the same page | `pnpm test:browser` |
 | CDP tests | Chromium in the new headless mode | Hidden and frozen pages, CPU throttling and compute pressure | `pnpm --filter @lag/integration-tests test:cdp` |
+| Back/forward cache tests | Chromium with the back/forward cache | A page with the library stays in the cache while another page of the origin sends messages | `pnpm --filter @lag/integration-tests test:bfcache` |
 | Cross-origin-isolated tests | Chromium, Firefox and WebKit | Shared memory, the fine clock and `measureUserAgentSpecificMemory()` | `pnpm --filter @lag/integration-tests test:coi` |
 | Overhead benchmark | Chromium in the new headless mode | The cost of all monitors on an idle page, against budgets | `pnpm test:overhead` |
 | Soak test | Chromium, for 3 minutes or more | The heap does not grow without limit, and `stop()` releases each timer | `pnpm test:soak` |

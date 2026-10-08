@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Channel only</title>
+</head>
+<body>
+    <p>A page with only an open channel of the peer hang watch, without the library (src/bfcache/back-forward-cache.test.ts).</p>
+    <script type="module">
+        const channel = new BroadcastChannel("lag-peer-hang-watch");
+        channel.onmessage = () => {};
+        window.peerReady = true;
+    </script>
+</body>
+</html>
