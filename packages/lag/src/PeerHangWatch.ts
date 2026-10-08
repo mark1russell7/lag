@@ -136,9 +136,15 @@ export function isPeerMessage(value : unknown) : value is PeerMessage {
  * heartbeat for `thresholdMs` or more before the close, or a heartbeat after
  * such a gap immediately before the close. The page does not report a hang
  * that its worker monitor counted already (`noteHangEnded()`).
+ *
+ * A page in the back/forward cache must not get messages: Chrome removes a
+ * page from the cache when a BroadcastChannel message arrives for it. Thus
+ * the page closes its channel when it goes into the cache or the browser
+ * freezes it (`suspend()`), and opens it again after that (`resume()`).
  */
 export class PeerHangWatch {
-    private readonly channel : BroadcastChannelLike;
+    /** The channel to the other pages. It is closed while the page is in the back/forward cache or frozen. */
+    private channel : BroadcastChannelLike | undefined;
     private readonly peers = new Map<string, Peer>();
     private readonly graceTimers = new Set<number>();
     private readonly beatIntervalMs : number;
@@ -163,8 +169,7 @@ export class PeerHangWatch {
         this.beatIntervalMs = options.beatIntervalMs ?? PEER_BEAT_INTERVAL_MS;
         this.thresholdMs = options.thresholdMs ?? PEER_HANG_THRESHOLD_MS;
         this.graceMs = options.graceMs ?? PEER_GRACE_MS;
-        this.channel = new deps.BroadcastChannel(PEER_CHANNEL_NAME);
-        this.channel.onmessage = (event) => this.receive(event.data);
+        this.channel = this.openChannel();
         if (options.visible) this.show();
     }
 
@@ -211,14 +216,48 @@ export class PeerHangWatch {
         this.hangEndedAt = this.deps.clock.now();
     }
 
+    /**
+     * The page goes into the back/forward cache, or the browser freezes it.
+     * The page says "away", releases its lock and closes its channel.
+     */
+    suspend() : void {
+        this.hide();
+        this.closeChannel();
+        // Without the channel, the page misses the "away" of the other pages. Thus it forgets them:
+        // a page that closes normally in this time must not look like a page that closed during a hang.
+        this.peers.clear();
+    }
+
+    /** The page operates again after a freeze or a restore from the back/forward cache: it opens its channel again. */
+    resume() : void {
+        if (this.stopped || this.channel) return;
+        try {
+            this.channel = this.openChannel();
+        } catch (error) {
+            this.deps.logger.log("debug", "Could not open the channel to the other pages.", { error, type : "PeerHangWatch" });
+        }
+    }
+
     /** This method stops the watch. The page says "away", and releases its locks. */
     stop() : void {
         this.hide();
         this.stopped = true;
         this.resolveStopped();
         for (const timer of this.graceTimers) this.deps.clearTimeoutFn(timer);
+        this.closeChannel();
+    }
+
+    private openChannel() : BroadcastChannelLike {
+        const channel = new this.deps.BroadcastChannel(PEER_CHANNEL_NAME);
+        channel.onmessage = (event) => this.receive(event.data);
+        return channel;
+    }
+
+    private closeChannel() : void {
+        if (!this.channel) return;
         this.channel.onmessage = null;
         this.channel.close();
+        this.channel = undefined;
     }
 
     private beat() : void {
@@ -254,6 +293,7 @@ export class PeerHangWatch {
     }
 
     private post(message : PeerMessage) : void {
+        if (!this.channel) return;
         try {
             this.channel.postMessage(message);
         } catch (error) {
@@ -294,6 +334,8 @@ export class PeerHangWatch {
     }
 
     private peerEnded(pageId : string, peer : Peer) : void {
+        // The lock of a page that the watch forgot (refer to `suspend()`)
+        if (this.peers.get(pageId) !== peer) return;
         const endedAt = this.deps.wallClock.now();
         const timer = this.deps.setTimeoutFn(() => {
             this.graceTimers.delete(timer);

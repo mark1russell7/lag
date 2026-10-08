@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Peer hang watch without the Vite client</title>
+</head>
+<body>
+    <!--
+        Vite does not change the pages of the public folder. Thus this page has no Vite client, and no WebSocket
+        of the Vite client: Chrome does not keep a page with an open WebSocket in the back/forward cache.
+    -->
+    <p>A page with the monitors of the library, for src/bfcache/back-forward-cache.test.ts.</p>
+    <script type="module" src="/src/pages/peer-watch-page.ts"></script>
+</body>
+</html>

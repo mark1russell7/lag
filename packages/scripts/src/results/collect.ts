@@ -85,7 +85,7 @@ const steps : Step[] = [
         { title : "Unit tests of @lag/scripts", packageName : "@lag/scripts", dir : "packages/scripts", args : [] },
     ]),
     ...(has("--skip-browser") ? [] : [
-        { title : "Browser tests in every engine", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "browser", "--project", "cdp", "--project", "coi"] },
+        { title : "Browser tests in every engine", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "browser", "--project", "cdp", "--project", "bfcache", "--project", "coi"] },
     ]),
     // Alone, after the other browser tests: they would use the CPU that it measures
     ...(has("--skip-overhead") ? [] : [
