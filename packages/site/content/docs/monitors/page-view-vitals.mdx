@@ -286,7 +286,7 @@ Unit tests:
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
 
-- `lag-monitors.test.ts` (only where the browser has Event Timing with `interactionId`): on the test page, TTFB is 0 or more, and FCP is more than 0. LCP is not less than FCP. A real click on a button whose handler blocks for 120 ms gives an INP of 120 ms or more. Its attribution has the target `#slow-button`, the type `pointer` and a processing phase of 110 ms or more.
+- `lag-monitors.test.ts` (only where the browser has Event Timing with `interactionId`): on the test page, TTFB is 0 or more, and FCP is more than 0. LCP is not less than FCP. A real click on a button whose handler blocks for 120 ms gives an INP of 119 ms or more (a margin of 1 ms for the clock of WebKit). Its attribution has the target `#slow-button`, the type `pointer` and a processing phase of 110 ms or more.
 - `web-vitals-oracle.test.ts`: web-vitals 6.2.3 and the monitor observe the same page, both with a `durationThreshold` of 16 ms. FCP, LCP and TTFB are exactly the same. CLS is exactly the same where the browser has `layout-shift` entries, and the two libraries give no CLS elsewhere.
 - `web-vitals-oracle.test.ts`, INP (only with Event Timing and `interactionId`): real clicks on buttons that block for 40, 100 and 180 ms give exactly the same INP in the two libraries. The target, the type and the three phases of the attribution also agree.
 - `browser-apis.test.ts` (only where the browser has `visibility-state` entries: Chromium and Chrome): the first entry is `visible` at the time 0. The page source of a page that was not hidden gives no hidden times.

@@ -161,7 +161,7 @@ The tests of this change found three behaviors of the engines. A probe changes t
 
 ### The Web Vitals
 
-The [page-view vitals](/docs/monitors/page-view-vitals) obey the rules of web-vitals 6.2. A browser test clicks a button. For 120 ms, the click handler blocks the main thread. The monitor gives an INP of 120 ms or more and a processing phase of 110 ms or more. It gives the target `#slow-button` and the type `pointer`.
+The [page-view vitals](/docs/monitors/page-view-vitals) obey the rules of web-vitals 6.2. A browser test clicks a button. For 120 ms, the click handler blocks the main thread. The monitor gives an INP of 120 ms or more (119.99999999999955 ms one time in WebKit, whose clock moves in steps of 1 ms) and a processing phase of 110 ms or more. It gives the target `#slow-button` and the type `pointer`.
 
 That test found an error in the first version of the attribution. In a real click, `pointerdown` is the longest entry, but the handler of `click` does the work. At this time, the attribution uses the frame groups of web-vitals. The processing phase spans all the events that the browser presented in the frame of the longest entry.
 
