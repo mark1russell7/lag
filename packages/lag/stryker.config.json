@@ -12,6 +12,7 @@
     "!src/**/*.test.ts",
     "!src/test-utils.ts",
     "!src/test-thread.ts",
+    "!src/test-peers.ts",
     "!src/vitals/test-fakes.ts"
   ],
   "coverageAnalysis": "perTest",

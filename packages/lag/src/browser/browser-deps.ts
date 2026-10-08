@@ -16,6 +16,7 @@ import type { HangReportTarget } from "../worker-protocol.js";
 import { createPageSource, type PageDocument } from "./page-source.js";
 import { createIndexedDbHangJournal, type IdbFactoryLike } from "./indexeddb-journal.js";
 import type { CrashReportContextLike } from "../dep-groups.js";
+import type { BroadcastChannelConstructor, LockManagerLike } from "../PeerHangWatch.js";
 
 /**
  * The browser globals that the adapter reads. In a page, `window` has them.
@@ -47,6 +48,8 @@ export type BrowserGlobals = LifecycleWindow & {
     readonly crossOriginIsolated? : unknown;
     readonly indexedDB? : unknown;
     readonly crashReport? : unknown;
+    readonly BroadcastChannel? : unknown;
+    readonly navigator? : unknown;
 };
 
 export type BrowserDepsOptions = {
@@ -75,6 +78,14 @@ export type BrowserDepsOptions = {
     hangJournal? : boolean;
     /** When true (the default), the page-view ID goes into the crash-report context of the browser (Chrome 145 and later). */
     crashReportContext? : boolean;
+    /**
+     * When true (the default), the open pages of the origin watch each other
+     * for hangs, through `BroadcastChannel` and the Web Locks API. A visible
+     * page sends one heartbeat each second and holds one Web Lock. In WebKit
+     * and Safari, this is the only way to keep a hang that the page does not
+     * survive. It needs a second open page of the origin.
+     */
+    peerHangWatch? : boolean;
     /** More attributes for the hang reports of the worker, for example the session ID. Refer to `PageDeps.pageContext`. */
     pageContext? : () => Readonly<Record<string, string>>;
 };
@@ -131,6 +142,11 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
     const hangJournal = options.hangJournal !== false && options.worker && typeof indexedDB?.open === "function"
         ? createIndexedDbHangJournal(indexedDB)
         : undefined;
+    const BroadcastChannel = constructorOf<BroadcastChannelConstructor>(globals.BroadcastChannel);
+    const locks = (globals.navigator as { locks? : Partial<LockManagerLike> } | undefined)?.locks;
+    const peerDeps = options.peerHangWatch !== false && BroadcastChannel && typeof locks?.request === "function"
+        ? { BroadcastChannel, locks : { request : locks.request.bind(locks) } }
+        : undefined;
     const crashReport = globals.crashReport as CrashReportContextLike | undefined;
     const crashReportContext = options.crashReportContext !== false && typeof crashReport?.set === "function" ? crashReport : undefined;
 
@@ -165,5 +181,6 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         ...(options.workerHangReport ? { workerHangReport : options.workerHangReport } : {}),
         ...(hangJournal ? { hangJournal } : {}),
         ...(crashReportContext ? { crashReport : crashReportContext } : {}),
+        ...peerDeps,
     };
 }

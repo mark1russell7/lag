@@ -251,6 +251,21 @@ export {
     type MessageTarget,
 } from "./forwarding-meter.js";
 export { createWorkerHandler, type WorkerDeps, type WorkerHandler, type HangEvent } from "./lag-worker.js";
+export {
+    PeerHangWatch,
+    isPeerMessage,
+    peerLockName,
+    PEER_CHANNEL_NAME,
+    PEER_BEAT_INTERVAL_MS,
+    PEER_HANG_THRESHOLD_MS,
+    PEER_GRACE_MS,
+    type PeerMessage,
+    type PeerHangWatchDeps,
+    type PeerHangWatchOptions,
+    type BroadcastChannelLike,
+    type BroadcastChannelConstructor,
+    type LockManagerLike,
+} from "./PeerHangWatch.js";
 export type {
     MainToWorkerMessage,
     WorkerToMainMessage,

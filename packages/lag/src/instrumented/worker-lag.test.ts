@@ -65,6 +65,7 @@ describe("createInstrumentedWorkerLag with a hang journal", () => {
             phase : "abandoned",
             duration_ms : 12_000,
             "lag.hang.page_id" : "closed-page",
+            "lag.hang.source" : "journal",
             "lag.page_view.id" : "view-of-closed-page",
         });
         expect((await t.journal.list()).map(r => r.pageId).sort()).toEqual(["live-page", "this-page"]);
