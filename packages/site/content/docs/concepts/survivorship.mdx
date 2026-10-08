@@ -1,0 +1,130 @@
+---
+title: Survivorship bias
+description: Why the worst sessions report least, how the library reports a hang that the page does not survive, and the limits of these reports.
+order: 16
+status: draft
+---
+
+import { abandonedHangChart, hangSequenceChart } from "./diagrams.data";
+import { workerLagMetrics } from "../monitors/metrics.data";
+
+A monitor on the main thread can send data only while the main thread operates. A hang stops the main thread. If the page closes during the hang, or the browser stops the page, the monitor does not send the samples of the hang. Thus the longest hangs are the ones that such a monitor loses. This page tells you how the library reports these hangs, and where it cannot.
+
+## Why the worst sessions report least
+
+Two effects remove the worst sessions from the data ([clocks and timers](/research/clocks-and-timers)):
+
+- **Abandonment.** Users leave slow pages. In data of Chrome on Android, each second more of First Contentful Paint added 2.6 percentage points of abandonment, to 17.3% at 4 s. The visitors with the worst experiences are "phantom bounces" that do not report.
+- **Lost beacons.** A page that sends its data at the end can lose it. In a study of approximately 2 million Chrome page views (May 2023), `sendBeacon` at `pagehide` or `visibilitychange` was 95.8% reliable. Beacons at `load`, `pagehide` and `visibilitychange` together got to 98%, and an `XMLHttpRequest` got to 84.9%.
+
+The usual monitors learn about a block only after its end. `PerformanceObserver` callbacks, timers and animation frames all start on the main thread, thus they wait for the end of the block. A page that does not recover, or a tab that the user closes during a hang, sends nothing. In the survey of RUM tools, only the server-side crash report of Chrome for an unresponsive page sees this case ([RUM landscape](/research/rum-landscape)).
+
+## What the library does
+
+The library has four parts that decrease this bias. The worker reports a hang while the hang continues. The hang journal lets the next page report a hang that the page did not survive. In WebKit, these two parts do not operate during a hang (refer to the limits). The crash-report context connects the crash reports of Chromium with the page view. The exporter flushes each time that the page becomes hidden.
+
+### The worker reports a hang while it continues
+
+The [worker monitor](/docs/monitors/worker-lag) sends a heartbeat from its own timer, and the main thread acknowledges each heartbeat. When no acknowledgement comes for 5 s, the worker starts a hang itself. The start of the hang is the time of the last acknowledgement.
+
+<Mermaid
+  chart={hangSequenceChart}
+  title="A hang that the worker detects"
+  caption="The worker reports the start of the hang while the main thread is blocked. The first message of the main thread after the block stops the hang."
+/>
+
+The bundled worker of `@lag/worker` sends each hang report as an OTLP/HTTP JSON log record, with the event name `lag.main_thread.hang`. The record has the context of the page, the `phase` (`started` or `ended`) and `duration_ms`. A worker has no `navigator.sendBeacon()`, thus the worker uses `fetch()` with `keepalive: true`. With `keepalive`, the request can complete after the page closes. In WebKit, the request completes only when the main thread operates again ([experiment E4](/research/local-experiments)). The Fetch standard limits the body of all `keepalive` requests in progress to 64 KiB ([RUM landscape](/research/rum-landscape)).
+
+The worker sends the reports only when you give the target, with `workerHangReport`:
+
+```ts
+import { createInstanceId, init } from "@mark1russell7/otel-ts";
+import { createBrowserDeps, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
+import { createLagWorker } from "@lag/worker";
+
+const endpoint = "http://localhost:4318";
+const serviceInstanceId = createInstanceId();
+const otel = init({ serviceName : "shop", serviceInstanceId, endpoint });
+
+const monitors = setupAllMonitors(createBrowserDeps(window, {
+    meter : otel.getMeter("lag"),
+    logger : createOtelLoggerAdapter(otel.getLogger("lag")),
+    worker : createLagWorker(),
+    // The worker sends its hang reports to this OTLP endpoint, with the identity of the page
+    workerHangReport : {
+        url : `${endpoint}/v1/logs`,
+        resource : { "service.name" : "shop", "service.instance.id" : serviceInstanceId },
+    },
+    // More attributes for each hang report, for example the session ID
+    pageContext : () => ({ "session.id" : otel.getSessionId() }),
+}));
+otel.onBeforeFlush(() => monitors.flush());
+```
+
+The worker sends the reports without the OpenTelemetry SDK of the page. Give `workerHangReport.resource` the same `service.instance.id` as the page. Then a query can connect the reports with the metrics of the page. The worker adds the attributes of `pageContext` to each report, and the ID of the current page view. Refer to [OpenTelemetry setup](/docs/operations/opentelemetry).
+
+When the main thread operates again, it acknowledges the heartbeats that waited. The first acknowledgement stops the hang. The worker removes the journal record, sends the report of the phase `ended`, and tells the main thread. The main thread then records the hang with the outcome `ended`, and it sends the event `lag.main_thread.hang`.
+
+A `stop` or a `start` message also stops the hang, because the main thread sent it. For example, the main thread stops the worker monitor when the page becomes hidden. That can occur before it handles the heartbeats that waited. While the monitor is stopped, the main thread still handles `hang-ended`, thus the hang counts.
+
+When the timer of the worker itself is late by 5 s or more, the worker did not operate. Then the worker resets the time of the last acknowledgement, and it does not start a hang. A system suspend thus does not give a hang. During a hang, the worker also moves the start of the hang forward by that time. Thus a sleep on Windows, in which `performance.now()` continues, does not count as time of the hang. Refer to [measurement validity](/docs/concepts/measurement-validity).
+
+A unit test of `setupAllMonitors()` blocks the main thread for 8 s. It makes sure that the worker reports the start of the hang during the block. After the block, the main thread records one hang of 5 s or more.
+
+### The hang journal and the outcome abandoned
+
+The worker keeps a record of each hang in progress in IndexedDB, in the hang journal. A record has these properties:
+
+- `pageId`: the random ID of the page instance whose main thread hung.
+- `startedAt`: the time of the last acknowledgement before the hang.
+- `lastSeenAt`: the last time that the worker saw the hang continue.
+- `attributes`: the context of the page at the time of the hang, for example `lag.page_view.id`.
+
+The times are wall-clock times (`Date.now()`). Other pages compare them with their own time, and the wall clock is the only clock that all pages share. The monotonic clock of a page stops while the device sleeps, except on Windows.
+
+The worker writes the record when the hang starts, writes it again each second while the hang continues, and removes it when the hang stops. A stop of the monitor also stops the hang, thus it also removes the record. A failed operation of the journal does not stop the heartbeats.
+
+<Mermaid
+  chart={abandonedHangChart}
+  title="A hang that the page did not survive"
+  caption="The next page of the same origin takes the record that nobody updated for 30 s, and reports it as abandoned. Only one page can take a record."
+/>
+
+The pages and the workers of one origin share the IndexedDB database. When a new page starts the worker monitor, the monitor reads the journal one time. It selects the records of other pages that nobody updated for 30 s or more. For each of these records, it does these steps:
+
+1. It takes the record with `take(pageId, latestSeenAt)`. The method removes the record and gives it, but only if the record is still stale. IndexedDB does the read and the removal in one read-write transaction. Thus only one page gets the record, also when two pages start at the same time, for example at a session restore. The page skips a record that it did not get.
+2. It records the hang with the outcome `abandoned`. The duration is the time from `startedAt` to `lastSeenAt`, thus the time until the worker saw the hang for the last time.
+3. It sends the event `lag.main_thread.hang` with the phase `abandoned`. The event has the attributes of the record, and `lag.hang.page_id`.
+
+If the monitor stops after a take, the page puts the record back for the next page. A unit test starts two pages at the same time. It makes sure that the two pages report the hang one time, with a journal in memory and with IndexedDB.
+
+<MetricTable metrics={workerLagMetrics.filter((row) => row.name.includes("hang"))} />
+
+`createBrowserDeps()` gives the journal to the worker monitor when there is a worker and the page has IndexedDB. With `hangJournal: false`, the monitor does not read the journal, and it sends no page ID to the worker. Without a page ID, the worker writes no records.
+
+A browser test blocks the main thread for 6.5 s and stops the worker before the end of the block, as when the page closes. Then it finds one record in IndexedDB, with a duration of 5 s or more and the ID of the page view. The test skips itself where a probe finds that the IndexedDB requests of a worker wait for the main thread, as in WebKit. The skip comes from that measurement, not from the name of the browser.
+
+### The crash-report context
+
+Chromium can stop an unresponsive page and send a crash report to the reporting endpoint of the page. From Chrome 145, the page can add keys and values to such reports with `window.crashReport`. The [page-view context](/docs/monitors/page-view-context) sets the key `lag.page_view.id` there at each new page view. Thus the server can connect a crash report with the events and the Web Vitals of the same page view. Refer to [page views](/docs/concepts/page-views).
+
+### Flush on hide
+
+otel-ts exports all telemetry each time the page becomes hidden. At `pagehide`, it exports again: a page that goes into the back/forward cache keeps its providers, and a page that unloads stops them. With `onBeforeFlush(() => monitors.flush())`, these exports contain the latest values of the monitors. Refer to [the flush hook](/docs/concepts/page-lifecycle).
+
+The library does not use `unload`. From Chrome 154, Chrome does not start `unload` listeners ([browser support](/research/browser-support)). The README of web-vitals gives the same advice: send the data when the page goes into the background or unloads. Refer to [Web Vitals algorithms](/research/web-vitals-algorithms).
+
+The metrics use cumulative temporality, thus an export that is lost does not lose data. The next export contains the totals. Only the data after the last successful export is lost ([OpenTelemetry metrics in the browser](/research/otel-browser-metrics)).
+
+## Limits
+
+- **WebKit.** WebKit completes the IndexedDB requests and the `fetch` requests of a worker on the main thread of the page ([experiment E4](/research/local-experiments)). The worker detects the hang, because its timer continues. But the hang report and the journal record complete only when the main thread operates again. Thus in WebKit, the record and the report of a hang that the page does not survive are lost. `worker-io.test.ts` fails if an engine changes this behavior, and Safari probably behaves the same (not verified).
+- **A frozen tab.** If the browser freezes the page and its worker during a hang, the worker cannot report or update the record. Chrome on Android freezes background pages and their workers after 1 minute, from Chrome 139 ([browser support](/research/browser-support)). After 30 s without an update, the next page reports the hang as abandoned, also if the frozen page continues later.
+- **The stale time of 30 s.** A record counts as abandoned only after 30 s without an update. The monitor reads the journal only one time, at its start. Thus a page that starts less than 30 s after the hung page closed does not report the record, and a later page must report it. If no page of the origin starts the worker monitor again, nobody reports the hang.
+- **The same origin only.** IndexedDB belongs to one origin. Only a later page of the same origin, with the worker monitor and the journal, can report the hang.
+- **Private windows.** The journal needs IndexedDB. The code comments name some private windows as an example of a browser that does not permit IndexedDB. Then each operation of the journal fails, the worker continues without the journal, and the monitor logs a warning. We did not examine this case in each browser.
+- **Short hangs.** A hang starts after 5 s without an acknowledgement. A page that closes during a block of less than 5 s gives no report and no record.
+- **The duration of an abandoned hang.** The duration stops at the last write of the record. The worker writes the record at a heartbeat, at most one time each second. Thus the duration is too short by up to 1 s, or by up to one heartbeat interval if the interval is longer.
+- **The wall clock.** The stale test compares the wall-clock time of the new page with the times that the worker of the earlier page wrote. A step of the system clock between the write and the read changes the age of a record ([clocks and time](/docs/concepts/clocks-and-time)). We did not test this case.
+- **No target.** Without `workerHangReport`, the worker does not send reports during the hang. The library then reports a hang only when it stops, or from the journal.
+- **Crash reports.** Only Chromium sends crash reports, and only to the reporting endpoint that the page declares. A script cannot read them ([browser support](/research/browser-support)).

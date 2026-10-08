@@ -1,4 +1,5 @@
 import { ObserverMonitor } from "./ObserverMonitor.js";
+import { InpCalculator } from "./InpCalculator.js";
 import type { PerformanceEntryLike, PerformanceObserverInit, EventTimingEntry } from "./perf-types.js";
 import type { Logger } from "./types.js";
 
@@ -9,41 +10,50 @@ export type EventTimingReport = {
     presentationDelay : number;
     interactionId : number;
     name : string;
+    startTime : number;
+    /** The DOM node of the event target, if the browser exposes it. */
+    target : unknown;
 };
 
+/**
+ * The browser default (104 ms) hides most interactions. Thus, it gives a
+ * bias to the histograms of the events and to the INP calculation. 16 ms is
+ * the minimum that the specification permits.
+ */
+const DURATION_THRESHOLD_MS = 16;
+
+/**
+ * This monitor observes the Event Timing entries of user interactions, and
+ * it calculates the INP for the lifetime of the page. Give
+ * `readInteractionCount` (for example `() => performance.interactionCount`)
+ * when the browser supports it.
+ */
 export class EventTimingMonitor extends ObserverMonitor {
-    private interactions = new Map<number, number>();
-    private worstDuration = 0;
+    private readonly inp : InpCalculator;
 
     constructor(
         private readonly report : (entry : EventTimingReport) => void,
         logger : Logger,
         PerformanceObserverCtor : PerformanceObserverInit,
+        readInteractionCount? : () => number | undefined,
     ) {
-        super("event", logger, PerformanceObserverCtor);
+        super("event", logger, PerformanceObserverCtor, { durationThreshold : DURATION_THRESHOLD_MS });
+        this.inp = new InpCalculator(readInteractionCount);
     }
 
     protected processEntry(entry : PerformanceEntryLike) : void {
-        const event = entry as EventTimingEntry;
+        const event = entry as EventTimingEntry & { target? : unknown };
 
-        // Only process actual user interactions (not synthetic events)
-        if (!event.interactionId || event.interactionId === 0) {
+        // Only user interactions carry an interactionId (0 for other events)
+        if (!event.interactionId) {
             return;
         }
+        this.inp.add(event.interactionId, event.duration);
 
         const inputDelay = event.processingStart - event.startTime;
         const processingDuration = event.processingEnd - event.processingStart;
-        const presentationDelay = event.duration - (event.processingEnd - event.startTime);
-
-        // Track worst duration per interaction (multiple events per interaction)
-        const existing = this.interactions.get(event.interactionId);
-        if (existing === undefined || event.duration > existing) {
-            this.interactions.set(event.interactionId, event.duration);
-        }
-
-        if (event.duration > this.worstDuration) {
-            this.worstDuration = event.duration;
-        }
+        // `duration` is rounded to 8ms, so this can come out slightly negative
+        const presentationDelay = Math.max(0, event.duration - (event.processingEnd - event.startTime));
 
         this.report({
             duration : event.duration,
@@ -52,26 +62,40 @@ export class EventTimingMonitor extends ObserverMonitor {
             presentationDelay,
             interactionId : event.interactionId,
             name : event.name,
+            startTime : event.startTime,
+            target : event.target,
         });
     }
 
     getWorstInteractionDuration() : number {
-        return this.worstDuration;
+        return this.inp.getLongestDuration();
     }
 
+    /** The INP for the lifetime of the page, since the monitor started. */
     getINP() : number {
-        if (this.interactions.size === 0) {
-            return 0;
-        }
-        // INP is the p98 of interaction durations
-        const durations = [...this.interactions.values()].sort((a, b) => a - b);
-        const p98Index = Math.max(0, Math.ceil(durations.length * 0.98) - 1);
-        return durations[p98Index]!;
+        return this.inp.getINP();
+    }
+
+    getInteractionCount() : number {
+        return this.inp.getInteractionCount();
     }
 
     override stop() : void {
         super.stop();
-        this.interactions.clear();
-        this.worstDuration = 0;
+        // A restart reads the browser's buffered entries again, so start clean
+        this.inp.reset();
     }
+}
+
+/**
+ * This function maps an event type to a value of the `interaction` metric
+ * attribute. The attribute has a low cardinality.
+ */
+export function interactionType(eventName : string) : "pointer" | "keyboard" | "other" {
+    if (eventName.startsWith("key")) return "keyboard";
+    if (eventName.startsWith("pointer") || eventName.startsWith("mouse") || eventName === "click"
+        || eventName === "auxclick" || eventName === "contextmenu" || eventName.startsWith("touch")) {
+        return "pointer";
+    }
+    return "other";
 }

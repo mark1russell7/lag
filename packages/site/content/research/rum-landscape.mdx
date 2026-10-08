@@ -1,0 +1,180 @@
+---
+title: Real user monitoring
+description: How the RUM products measure the main thread and the Web Vitals, how they store the data, and the gaps that the library fills.
+order: 6
+status: draft
+---
+
+This note compares the real user monitoring (RUM) products with the library. The research read the source code and the documentation of Grafana Faro, Sentry, Datadog, New Relic, SpeedCurve LUX, Akamai mPulse (boomerang) and Elastic on 2026-10-07. The note marks an inference of the research as an inference.
+
+All products record events first, and make the fleet metrics on the server. All products watch the main thread from the main thread, with LoAF or Long Tasks, which only Chromium has. No surveyed browser SDK uses a Web Worker or shared memory to watch the main thread. The last section gives the gaps that the library fills, and the gaps that it does not fill. The [sources](/research/sources) page lists all sources of this note.
+
+## Data models
+
+| Product | Data in the client | Origin of the fleet numbers |
+|---|---|---|
+| [Grafana Faro](https://github.com/grafana/faro-web-sdk) | Measurements, for example the Web Vitals with their values, rating, navigation type and attribution. `faro.receiver` writes them to Loki as log lines (`kind=measurement`). | LogQL over the raw lines. The Faro dashboard (updated 2025-07-10) uses `quantile_over_time(0.75, … \| unwrap lcp [5m])`. The alerts of Grafana Cloud Frontend Observability come directly from Loki. |
+| [Datadog RUM](https://docs.datadoghq.com/real_user_monitoring/browser/data_collected/) | Events: Session, View, Action, Error, Resource, Long Task and Vitals. The Core Web Vitals are view attributes. `long_task.duration` covers tasks of more than 50 ms. | Custom metrics on the server, made at an interval of 10 seconds from 100% of the ingested traffic, and kept for 15 months ([Datadog](https://docs.datadoghq.com/real_user_monitoring/platform/generate_metrics/)). The documentation tells users not to group by session ID. |
+| [New Relic Browser](https://docs.newrelic.com/docs/browser/new-relic-browser/page-load-timing-resources/pageviewtiming-async-or-dynamic-page-details/) | A `PageViewTiming` event for each data point, as soon as it is available | NRQL over the events |
+| [Sentry](https://docs.sentry.io/platforms/javascript/tracing/instrumentation/automatic-instrumentation/) | Web Vitals on pageload and navigation spans. In the default stream mode of JS SDK v11, LCP, CLS and INP are Web Vital spans. | The span data. The trace-connected Metrics API (JS 10.25.0 and later, 2025-10-29) is a separate product. |
+| [Honeycomb](https://github.com/honeycombio/honeycomb-opentelemetry-web/blob/main/docs/web-vitals.md) | Web Vitals as traces of one span, with attributes, for example `lcp.value` and `inp.value` | Queries of the spans |
+| [Elastic](https://www.elastic.co/docs/reference/apm/agents/rum-js/supported-technologies) | The classic agent records the vitals as marks and spans of the page-load transaction. | Queries of transactions and spans. The [EDOT Browser](https://www.elastic.co/docs/reference/opentelemetry/edot-sdks/browser/telemetry) documentation says that each export batch shows the view of one client, with no aggregation on the server. |
+| [OpenTelemetry Browser](https://github.com/open-telemetry/opentelemetry-browser) | Instrumentations that emit events as structured log records (repository of 2025-09-11) | The backend. The design principle is high-fidelity events from the client, with all aggregation in the backend. The SDK README (2026-09-18) has logs and traces, and says that metrics are not in scope. |
+
+The Faro OTLP transport ([README](https://github.com/grafana/faro-web-sdk/tree/main/experimental/transport-otlp-http)) explains this choice. Faro stores metric values as log lines, because it cannot translate its measurements to OpenTelemetry metrics and stay compliant with the specification. Thus the industry model is one event for each page view, each vital or each long task, with metrics on the server. None of these products aggregates client-side OTel metric streams in a collector. The note [OpenTelemetry metrics in the browser](/research/otel-browser-metrics) shows that a collector cannot do this.
+
+## Main-thread signals of each product
+
+### Grafana Faro
+
+- **Web Vitals.** Faro (web-sdk v2.12.x) uses `web-vitals/attribution` with `reportAllChanges`, but not with `reportSoftNavs` ([source](https://github.com/grafana/faro-web-sdk/blob/main/packages/web-sdk/src/instrumentations/webVitals/webVitalsWithAttribution.ts)). Version 2.10.0 (2026-08-17) forwards the LoAF fields of the INP attribution.
+- **Long tasks.** Faro has no instrumentation for long tasks or LoAF. LoAF data comes only through the INP attribution.
+- **Frustration.** A new frustration instrumentation finds rage, dead and error clicks. The changelog says that the next release, not released yet, will report them by default. A dead click is a click with no response of the page within 100 ms.
+- **Navigation.** The experimental navigation instrumentation is a heuristic. An input starts a window of activity, and a URL change plus a DOM change in that window gives `faro.navigation`. It does not use the soft-navigation entries of Chrome.
+- **Sampling.** `sessionTracking.samplingRate` is 1 by default, thus 100% of the sessions.
+
+### Sentry
+
+- **Long tasks and LoAF.** `enableLongTask` (default true) makes `ui.long-task` spans without script attribution. `enableLongAnimationFrame` (from 8.18.0, default true) makes `ui.long-animation-frame` spans from the first script of each entry. Both handlers stop early when no span is active ([source](https://github.com/getsentry/sentry-javascript/blob/develop/packages/browser-utils/src/performance/entries.ts)). Thus Sentry records blocking only while a pageload, navigation or interaction span is active.
+- **INP.** INP goes into separate `ui.interaction.*` spans, which get the sampling decision of the pageload. The maximum plausible INP is 60 seconds.
+- **Soft navigations.** Sentry uses the same check as `reportSoftNavs` of web-vitals, and joins navigation spans to soft-navigation entries.
+- **Profiling.** The UI profiler uses JS Self-Profiling at 100 Hz (10 ms), only in Chromium, with the header `Document-Policy: js-profiling`.
+- **Cost.** The Replay benchmark (M1 Pro, 50 iterations) gave a median TBT of 2621.67 ms without the SDK, 2663.35 ms with the SDK, and 3036.80 ms with the SDK and Replay ([Sentry](https://docs.sentry.io/product/explore/session-replay/web/performance-overhead/)).
+- **Workers.** Replay compresses in a Web Worker. Only Node.js and Electron have a watchdog on a separate thread.
+
+### Datadog
+
+- **Long tasks and LoAF.** Datadog observes `long-animation-frame` where it exists, else `longtask` ([source](https://github.com/DataDog/browser-sdk/blob/main/packages/browser-rum-core/src/domain/longTask/longTaskCollection.ts)). It keeps all LoAF data, with every script. `trackLongTasks` is true by default, for the whole session. Datadog has no fallback for Firefox and Safari.
+- **INP.** Its own implementation uses the rules of web-vitals. It has a threshold of 40 ms, the 10 longest interactions and the "/50" rule with a polyfill of the count. It also has a maximum of 1 minute and a grouping by render time of 8 ms. INP is bounded to the view.
+- **Sampling.** `sessionSampleRate` is 100, `sessionReplaySampleRate` is 0 and `profilingSampleRate` is 0.
+- **Workers.** `@datadog/browser-worker` compresses the data with deflate. It does not watch the main thread.
+
+### New Relic
+
+- **Web Vitals.** The agent wraps `web-vitals/attribution` v6. It drops the synthetic INP of web-vitals v6 (value 8, no entries).
+- **Long tasks.** Version 1.266.0 removed the reports of long tasks. The agent has no LoAF collection.
+- **Frustration.** A rage click is 4 clicks within 1000 ms. Dead clicks and error clicks use a timeout of 2000 ms.
+- **Soft navigations.** The SPA tracking is a heuristic. A draft pull request ([#1869](https://github.com/newrelic/newrelic-browser-agent/pull/1869), September 2026) adds the Core Web Vitals of Chrome 151 soft navigations. It is not merged.
+- **Cost.** The documentation says that the JavaScript of the agent adds less than 15 ms in total to each page load ([New Relic](https://docs.newrelic.com/docs/browser/new-relic-browser/performance-quality/browser-monitoring-performance-impact/)). The agent sends data each 30 s.
+
+### SpeedCurve LUX
+
+- **CPU metrics.** lux.js counts long tasks with `longtask`. Without the API, it reports nothing, and it has no polling fallback ([source](https://github.com/embrace-io/lux.js/blob/main/src/lux.ts)).
+- **LoAF.** A summary groups the scripts by `sourceURL` and keeps the 25 slowest.
+- **INP.** Its own implementation keeps 10 interactions with a `durationThreshold` of 0, and uses the index `floor(interactionCount / 50)`.
+- **Defaults.** `samplerate` is 100 and `maxMeasureTime` is 60 s. `newBeaconOnPageShow` is false, thus a restore from the back/forward cache does not start a new page view. Single-page apps use `LUX.startSoftNavigation()` by hand.
+
+### Akamai mPulse (boomerang)
+
+The Continuity plugin is the nearest analogue to this library ([source](https://github.com/akamai/boomerang/blob/master/plugins/continuity.js)):
+
+- **Long Tasks**, with attribution.
+- **Page Busy.** A `setInterval` poll each 32 ms counts the late and missed polls. In effect, this measures timer drift. Page Busy is off where Long Tasks exist, and off in Firefox, because Firefox gives `setInterval` a low priority during the page load.
+- **Frame rate** through rAF, with the average, the minimum and the frames of 50 ms or more.
+- **Time to Interactive**: 500 ms with no long tasks, more than 20 fps and less than 10% busy.
+
+Boomerang has no LoAF support. By default, `afterOnload` is false, thus it measures the main thread only up to the `load` event. The documentation gives a CPU cost of 10 ms to 35 ms for each page load, and 1 ms to 2 ms for Page Busy ([boomerang](https://akamai.github.io/boomerang/oss/BOOMR.plugins.Continuity.html)).
+
+### Elastic and OpenTelemetry
+
+- **Elastic** (`@elastic/apm-rum` 5.17.x) records long tasks with the Long Tasks API during an active transaction, as spans ([Elastic](https://www.elastic.co/docs/reference/apm/agents/rum-js/longtasks)). It has no LoAF. `transactionSampleRate` is 1.0 by default.
+- **OpenTelemetry.** The deprecation of `@opentelemetry/instrumentation-long-task` in favor of a LoAF instrumentation is open ([contrib #3669](https://github.com/open-telemetry/opentelemetry-js-contrib/pull/3669), 2026-08-12). The `browser.web_vital` convention still has the status Development.
+
+### Comparison
+
+| Product | Main-thread signal | LoAF | Fallback outside Chromium | Coverage | Default sampling |
+|---|---|---|---|---|---|
+| web-vitals | INP attribution only | In the INP attribution | – | Page lifetime | – |
+| Faro | Through the INP of web-vitals | In the INP attribution | None | Page lifetime | 100% of sessions |
+| Sentry | LoAF, else long-task spans | The first script | None | Only while a span is active | Set by the user |
+| Datadog | LoAF, else `long_task` events | All scripts | None | Session | 100% of sessions |
+| New Relic | None | No | None | Page lifetime (vitals) | All page views |
+| SpeedCurve LUX | Long tasks and a LoAF summary | Yes | None | Up to 60 s, or until hidden | 100% |
+| mPulse (boomerang) | Long tasks, Page Busy and rAF frame rate | No | Page Busy, but not in Firefox | Up to the `load` event | Server-side |
+| Elastic | Long-task spans | No | None | Active transaction | 100% |
+
+## Workers and shared memory
+
+No surveyed browser RUM SDK watches the main thread from a worker, and none uses `SharedArrayBuffer`. Workers appear only for compression, in Datadog and in Sentry Replay. `SharedArrayBuffer` is available only on a cross-origin-isolated page, and a third-party RUM snippet cannot be sure of that. The research infers that this is a likely reason. A heartbeat with `postMessage` works without isolation.
+
+Watchdogs on a separate thread exist in other environments:
+
+- **Sentry for Node.js.** The legacy `anrIntegration` sends a heartbeat from the main thread to a worker each 50 ms. After 5 s without a heartbeat, the worker reports an ANR. Its successor `eventLoopBlockIntegration` has a configurable threshold ([Sentry](https://docs.sentry.io/platforms/javascript/guides/node/configuration/event-loop-block/)).
+- **Sentry for Electron.** The ANR detection of the renderer polls each 1000 ms, with a threshold of 5000 ms.
+- **Browsers.** The HangWatcher of Chromium and the BackgroundHangMonitor of Firefox watch their own threads ([HangWatcher](https://chromium.googlesource.com/chromium/src/+/HEAD/base/threading/README.md)).
+- **Android.** [ANR-WatchDog](https://github.com/SalomonBrys/ANR-WatchDog) posts a runnable to the main thread of the app and makes sure that it started within 5 s.
+
+A [DEV Community article](https://dev.to/yadhubuilds/how-to-catch-the-frozen-tabs-and-jank-your-monitoring-misses-3h2a) of September 2026 describes a worker ping and echo. It sends pings approximately each second, waits for a prompt echo within 16 ms, and finds a freeze at 5 s. It gives no packaged library. Its snippet uses `sendBeacon` in a worker, which does not work, because only `Navigator` has `sendBeacon` ([Beacon](https://w3c.github.io/beacon/)). A worker must use `fetch(…, { keepalive: true })`, which has an in-flight body budget of 64 KiB.
+
+## Open-source tools
+
+- **boomerang Continuity** measures timer drift, rAF frame rate, long frames and TTI. It is ready for production, but it measures only the load by default and has no LoAF.
+- **stats.js** and other FPS meters are overlays for development, not RUM.
+- **Perfume.js** calculates TBT from long tasks, only in Chromium. Its last npm release is approximately two years old.
+- **frustration-observer** finds rage, hesitation and dead clicks, in 2.4 KB.
+- The Node.js tools (`perf_hooks.monitorEventLoopDelay`, `event-loop-lag`, `blocked-at`) are prior art for drift histograms, but they do not operate in browsers.
+
+A real report shows a common error: the [Daintree issue](https://github.com/daintreehq/daintree/issues/12887) "Event loop lag monitor reports system sleep as lag".
+
+## Platform features near hangs
+
+- **Crash Reporting API.** The body has `reason` (`oom` or `unresponsive`), `stack`, `is_top_level`, `visibility_state` and `crash_report_api` ([Crash Reporting](https://wicg.github.io/crash-reporting/)). `stack` is present only for an unresponsive page with `Document-Policy: include-js-call-stacks-in-crash-reports`. `window.crashReport` (`initialize(bytes)`, `set`, `delete`) adds data to the reports, from Chrome 145. The reports go to the `Reporting-Endpoints` of the server, and the JavaScript of the page cannot read them.
+- **JS Self-Profiling.** Facebook reported a slower load of less than 1%. The minimum sample interval is approximately 16 ms on Windows and 10 ms on macOS and Android ([Nic Jansma](https://nicj.net/js-self-profiling-api-in-practice/)).
+- **New LoAF fields.** `styleDuration` and `forcedStyleDuration` are proposed for approximately Chrome 157 ([Sentry radar #39](https://github.com/getsentry/browser-updates-radar/issues/39), 2026-10-05).
+
+## Gaps that the library fills
+
+### The main thread from outside
+
+Each product learns about a block after it ends. PerformanceObserver callbacks, timers and rAF all operate on the blocked thread. Thus no client SDK reports a permanent freeze, or a tab that closes while it is hung. The only signal is the `unresponsive` crash report of Chrome on the server.
+
+The library measures the main thread from a worker ([`WorkerLagMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/WorkerLagMonitor.ts), [`lag-worker.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/lag-worker.ts)). These are its properties:
+
+- The worker sends a heartbeat from its own timer, by default each second. The delay until the main thread handles the heartbeat is the time that the main thread was blocked.
+- When the main thread does not acknowledge heartbeats for 5 s, the worker detects a hang. With a report target, the worker reports the start of the hang itself, through `fetch` with `keepalive`, while the hang continues. WebKit is an exception: it completes the request only after the hang ([experiment E4](/research/local-experiments)).
+- The method uses only a worker and `postMessage`, which Firefox and Safari also have. The browser tests of the library operate in Chromium, Firefox, WebKit and Chrome. WebKit is the build of Playwright, not Safari.
+- On a cross-origin-isolated page, `SharedLivenessMonitor` adds a counter in a `SharedArrayBuffer`. The DriftLag timer callbacks increase it, and the worker reads it each 5 ms. A counter that does not change for 50 ms is a block.
+
+The pages [worker lag](/docs/monitors/worker-lag) and [shared liveness](/docs/monitors/shared-liveness) describe the two monitors.
+
+### The hang journal
+
+A page that closes or crashes during a hang cannot report the end of the hang. Thus the longest hangs are the hangs that a monitor loses.
+
+When a hang starts, the worker of the library writes a record to IndexedDB ([`hang-journal.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/hang-journal.ts)). It writes the record again each second while the hang continues. At the end of the hang, it removes the record. The next page of the same origin finds each record that nobody updated for 30 s. It reports the record as a hang with the outcome `abandoned`, with the attributes of the earlier page. An atomic take gives each record to one page only, also when two pages start at the same time.
+
+In WebKit, the write of the worker completes only when the main thread operates again. Thus there, the journal cannot keep a hang that the page does not survive ([experiment E4](/research/local-experiments)).
+
+### Page-view identity for main-thread data
+
+The web-vitals library splits the Core Web Vitals at soft navigations, but no vendor splits LoAF, long-task or blocking aggregates by page view. In the library, each event of each monitor carries `lag.page_view.id`. The page view is the same page view as the vitals. It starts at a load, at a restore from the back/forward cache, or at a soft navigation when the option `softNavigations` is true. The worker gets the ID for its hang reports, and `window.crashReport` gets it for the crash reports of Chrome ([`instrumented/page-view-context.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/page-view-context.ts)). The metrics do not carry the ID, because an ID is not a metric attribute.
+
+### Measurement validity
+
+The existing tools gate only the Core Web Vitals on the lifecycle. The confounders are many. Hidden pages throttle timers, and rAF stops. The back/forward cache freezes JavaScript, prerendered documents are hidden, and sleep stops `performance.now()` on most systems. The library has an explicit gate for each sample ([`measurement-conditions.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/measurement-conditions.ts)):
+
+- The lifecycle states `hidden` and `frozen` open intervals that are not valid. The timer, rAF, idle, message and worker probes pause during them.
+- A worker timer that is late by 5 s or more is evidence of a suspend. A forward jump of the wall clock of 1 s or more is evidence too.
+- A sample of 5 s or more waits 2 s for late evidence. Then the library records it as a `hang`, or discards it as a `suspend`. The stall samples of one block count as one stall episode.
+- A counter records each discarded sample with its reason.
+- `ClockDriftMonitor`, `ClockReliabilityChecker` and `TimerThrottleDetector` show the state of the clocks and of the timers.
+
+The page [measurement validity](/docs/concepts/measurement-validity) explains the rules.
+
+### Blocking in all engines
+
+LoAF and Long Tasks exist only in Chromium, and LoAF was not in Interop 2026. Firefox 144 and later and Safari 26.2 and later report INP and LCP. Thus teams find INP regressions in Safari, but no attribution of the blocking. The calibrated DriftLag operates in all three engines. The experiment [E3](/research/local-experiments) measured its idle lag at less than 0.5 ms in Chromium, Firefox and WebKit.
+
+### Compatible events
+
+The library emits `browser.web_vital` events with the attribute names of the OpenTelemetry conventions v1.44, and with the rules of web-vitals ([Web Vitals algorithms](/research/web-vitals-algorithms)). Thus it can operate next to a vendor SDK.
+
+## Gaps that the library does not fill
+
+The research also names gaps that the library does not fill at this time:
+
+- **Error bars.** The research proposes a calibration of the portable blocking estimate against the LoAF `blockingDuration` in Chromium. The library does not do this.
+- **Slow and dead clicks.** Dead-click heuristics use time windows: 100 ms in Faro, 2 s in New Relic and 7 s in Sentry. A blocked main thread delays the response and makes more dead and rage clicks. The library does not tag clicks with the blocking at the same time.
+- **Jank outside interactions.** INP ignores scroll, drag, hover and animation jank. The frame and idle monitors measure some of this jank, but no metric of the library combines it with the interactions.
+- **Overhead.** Only boomerang (10 ms to 35 ms of CPU for each load) and New Relic (less than 15 ms for each load) publish CPU figures. The library does not publish overhead measurements at this time.
+- **Soft navigations outside Chromium.** The research proposes a heuristic with the Navigation API, which is an Interop 2026 focus area. The library does not have it.

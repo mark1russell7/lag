@@ -1,0 +1,227 @@
+---
+title: Thesis
+description: The argument of the project, from the problem to the evidence and its limits.
+order: 1
+status: final
+---
+
+## Summary
+
+- **Problem:** The usual measurements of main-thread lag in browsers are incorrect in the field. Timer probes measure the timer granularity of the operating system. Clocks stop and jump. Hidden and frozen pages give samples that are not valid. The worst sessions report least.
+- **Claim:** A monitor can measure main-thread lag accurately in real browsers. It must calibrate each probe against its environment, validate each sample against the page lifecycle and the clocks, and measure from outside the main thread.
+- **Method:** We built `@lag/core` and tested each part. We used unit tests, property tests, real-browser tests in three engines, a comparison with web-vitals, mutation testing and experiments on a real machine.
+- **Result:** On an idle page, the old timer probe reported 16 ms of lag for each 100 ms window in Chromium and 211 ms in Firefox and WebKit. The calibrated probe reports 0.1 ms, −0.3 ms and −0.4 ms. It measures a 300 ms block as 283 ms to 297 ms.
+
+This page gives the argument. The [concepts](/docs/concepts/event-loop) explain each mechanism, and the [research](/research) gives the sources.
+
+## The problem
+
+### What lag is
+
+A browser page has one main thread. The main thread does the JavaScript of the page, the style and layout calculations, the paint steps, and the input handlers. When one task continues for a long time, all other work waits. A click waits for its handler. A frame waits for its paint. The user sees a page that does not respond.
+
+"Lag" is not one quantity. This project measures four different quantities:
+
+| Quantity | Question | Monitor |
+|---|---|---|
+| Blocked time in a window | How much of the last 100 ms was the main thread busy? | [DriftLag](/docs/monitors/drift-lag) |
+| Queueing delay | How long does a task that arrives at a random time wait? | [Worker heartbeat](/docs/monitors/worker-lag) |
+| Frame delay | How late are the frames, and which script blocked them? | [Frame timing](/docs/monitors/frame-timing), [LoAF](/docs/monitors/long-animation-frames) |
+| Input latency | How long does an interaction wait for the next paint? | [Event Timing](/docs/monitors/event-timing), [Web Vitals](/docs/monitors/page-view-vitals) |
+
+### Why the usual measurements are not sufficient
+
+The Interaction to Next Paint (INP) metric measures input latency. It shows nothing when the page blocks and nobody interacts. Long Animation Frames (LoAF) give accurate attribution, but only Chromium has them ([browser support](/research/browser-support)).
+
+The classic "event-loop lag" probe is a chain of short timers. The probe measures how late the chain ends. This probe has five problems in the field:
+
+1. **Timer granularity.** A timer does not fire at the requested time. We measured a chained 5 ms timer on an idle page on Windows. It took 5.7 ms in Chromium and 16 ms in Firefox and WebKit. Those engines use the 15.6 ms timer tick of the system ([experiment E2](/research/local-experiments)). A probe that thinks that each step takes 5 ms reports lag that does not exist.
+2. **Clocks.** `performance.now()` stops while the device sleeps, except on Windows. Safari calculates `performance.timeOrigin` again from the wall clock at each read. `Date.now()` can jump in the two directions ([clocks and timers](/research/clocks-and-timers)).
+3. **Page state.** Browsers throttle timers in hidden pages and stop all work in frozen pages. A sample that includes such an interval measures the browser policy, not the page.
+4. **Coordinated omission.** A chain of timers takes one sample for each block, also for a very long block. A 30 s block becomes one sample among hundreds, but it covers half of the time ([statistics](/docs/concepts/statistics)).
+5. **Survivorship.** A page that closes or crashes during a hang does not report the hang. Thus the worst hangs are the ones that a monitor loses ([survivorship](/docs/concepts/survivorship)).
+
+The export of the data also has a problem. Many browsers that write the same metric series without a writer identity break the metric store silently. The store rejects samples, or it mixes the totals of different browsers ([OpenTelemetry metrics in the browser](/research/otel-browser-metrics)).
+
+## Claims
+
+1. **Calibration.** A timer probe is accurate only when it subtracts the idle behavior of its environment. The environment is the browser, the operating system and the power state.
+2. **Validation.** Each sample must agree with the page lifecycle and with the clocks. A monitor must discard each sample that overlaps a hidden, frozen or suspended interval, and it must say why.
+3. **An outside observer.** A heartbeat from a Web Worker is the most robust estimator of the queueing delay in all engines. It is open-loop. It does not use the timers of the main thread. It can detect a hang while the hang continues. In Chromium and Firefox, it can also report the hang during the hang.
+4. **The page view as the unit.** Lag must have the same unit of analysis as the Core Web Vitals: the page view. Each event carries the ID of its page view.
+5. **Correct aggregation.** Field metrics must be counters and histograms with one writer identity for each SDK instance. Details with many values (selectors, URLs, IDs) go into events, not into metric attributes.
+6. **Less survivorship bias.** A monitor can report hangs that the page did not survive, from a journal that the worker keeps. This claim is true in Chromium and Firefox, but not in WebKit (refer to [E4](#e4-the-input-and-output-of-a-worker-during-a-hang)).
+
+## Method
+
+### Design
+
+The library has one rule for each part: a part gets its dependencies from outside, and it uses only the dependencies that it needs. Each monitor is a class with duck-typed dependencies, for example a `setTimeoutFn` or a `PerformanceObserver` constructor. Each monitor has one factory that connects it to the metric catalog. The measurement conditions are one shared service. Refer to the [architecture](/docs/architecture).
+
+This design makes each part testable with fake time and fake browser APIs. It also makes the browser adapter (`createBrowserDeps`) the only place that reads the browser globals.
+
+### Evidence
+
+We used eight types of evidence:
+
+| Evidence | What it shows | Where |
+|---|---|---|
+| Unit tests with fake time | The rules of each part, with exact values | `packages/lag/src/*.test.ts` |
+| Property tests | The INP and CLS calculators for all sequences of entries | `InpCalculator.test.ts`, `ClsCalculator.test.ts` |
+| Real-browser tests | The behavior in Chromium, Firefox, WebKit and Chrome, with real timers, real workers and real input | `packages/lag-integration-tests` |
+| Oracle tests | The agreement of the vitals with web-vitals 6 on the same page | `web-vitals-oracle.test.ts` |
+| CDP tests | Hidden and frozen pages, CPU throttling and compute pressure | `packages/lag-integration-tests/src/cdp` |
+| Mutation testing | The changes to the code that no test finds | `pnpm mutation` |
+| Experiments | Facts about the engines that no document gives | [Local experiments](/research/local-experiments) |
+| Research | The specifications, the engine source code and the field data of others | [Research](/research) |
+
+The [test strategy](/docs/testing/strategy) lists each test type. The [results](/results) show the latest run.
+
+## Evidence
+
+### E1: listeners that run first
+
+An exporter flushes when the page becomes hidden. The monitors must record their final values before that flush. At the target of an event, the DOM standard puts the capture listeners before the other listeners. We measured this in three engines.
+
+Firefox and WebKit start the capture listeners first on `document` and on `window`. Chromium starts them first on `document`, but not on `window`. There, Chromium starts the listener that the page added first. `pagehide` has `window` as its target.
+
+**Result:** the order of listeners cannot protect the final values. The library has an explicit hook, `AllMonitorHandles.flush()`. The OpenTelemetry setup uses it before each flush, through `onBeforeFlush`. Refer to [page lifecycle](/docs/concepts/page-lifecycle).
+
+### E2: the timer granularity
+
+We measured a chain of `setTimeout(5)` on an idle page, in the three engines from Playwright on Windows 11.
+
+| Measurement | Chromium 145 | Firefox 146 | WebKit |
+|---|---|---|---|
+| Median step | 5.7 ms | 16 ms | 15 ms |
+| Lag of the old probe, idle page, median | 15.8 ms | 211 ms | 211 ms |
+| `setTimeout(0)` from the eighth repeat of `setInterval` | 5 ms | 16 ms | 16 ms |
+| `setTimeout(0)` from a message task | 0 ms | 0 ms | 15 ms |
+
+**Result:** the old probe was incorrect by 16 ms to 211 ms on each window of an idle page. Also, a `setTimeout(0)` from a timer callback measures the clamp of nested timers, not the queue.
+
+### E3: the calibrated probe
+
+DriftLag measures each step. It calculates the idle duration of one step (the baseline) from the recent steps. The baseline is the mean of the steps that are not longer than the median plus max(4 ms, half of the median). The lag of a window is its duration minus the number of steps multiplied by the baseline.
+
+| Measurement | Chromium 145 | Firefox 146 | WebKit |
+|---|---|---|---|
+| Baseline step | 5.7 ms | 15.5 ms | 15.6 ms |
+| Lag on an idle page, median | 0.1 ms | −0.3 ms | −0.4 ms |
+| Lag after a 300 ms block | 297.4 ms | 282.7 ms | 294.6 ms |
+
+**Result:** the idle error went from 16–211 ms to less than 0.5 ms. A block is measured within one step of its duration. A browser test (`drift-accuracy.test.ts`) checks the two properties. The probes that use `setTimeout(0)` start from a message task at this time.
+
+### The clocks
+
+The research on the engine source code ([clocks and timers](/research/clocks-and-timers)) gave four rules. The library obeys them:
+
+- Each context reads `performance.timeOrigin` one time (`createAbsoluteClock`). With one read, the absolute time of each context moves only with its monotonic clock, also in Safari.
+- The clock-drift monitor compares the wall clock with the absolute clock each second, with paired reads. It flags a change above max(50 ms, 3% of the interval). It classifies a forward change of 1 s or more as a suspend, and all other changes as a step. The lateness of its timer does not change the classification, because a hidden page can delay the timer by a minute.
+- The worker clock sync uses 8 exchanges. It keeps the exchange with the shortest round trip of all synchronizations, because the offset is constant when each context reads its origin one time.
+- A sample that overlaps a suspend is not valid. The worker gives the evidence: when its own timer is late by 5 s or more, the whole system stopped.
+
+### The worker observer
+
+The worker sends a heartbeat from its own timer. The main thread acknowledges it. The delay until the main thread handles a heartbeat is the time that the main thread could not handle messages. In the browser tests, a 500 ms block gives heartbeat delays of more than 300 ms, while the timer of the worker stays on time.
+
+When the main thread does not acknowledge heartbeats for 5 s, the worker reports a hang itself, through `fetch` with `keepalive`. It also writes the hang to a journal in IndexedDB, and writes it again each second.
+
+A browser test blocks the main thread for 6.5 s. It stops the worker with `terminate()` before the hang ends, and it finds the record of the hang in IndexedDB. The next page of the origin reports such a record as a hang with the outcome `abandoned`. Two pages of the origin can start at the same time. Only one of them gets the record, because the journal removes it in one IndexedDB transaction.
+
+### E4: the input and output of a worker during a hang
+
+The hang report and the journal need a worker that can send and write while the main thread is blocked. A browser test measures this in each engine. The worker starts an IndexedDB write or a `fetch` with `keepalive`, and the main thread blocks for 2 s. The table gives the time of the completion after the start of the block, measured on 7 October 2026:
+
+| Operation | Chromium | Firefox | WebKit |
+|---|---|---|---|
+| IndexedDB write of a dedicated worker | 7 ms | 36 ms | 2015 ms |
+| `fetch` of a dedicated worker | 19 ms | 14 ms | 2013 ms |
+| Operations of a shared worker that complete during the block | 18 of 28 | 16 of 26 | 0 of 26 |
+
+**Result:** WebKit completes the IndexedDB requests and the network requests of workers on the main thread of the page. A shared worker does not help. Thus in WebKit the worker detects a hang, but it can send and write only after the hang. A page that does not survive the hang leaves no record. The test of the journal skips itself in WebKit, after the same measurement. We measured the WebKit build of Playwright for Windows, not Safari.
+
+### The Web Vitals
+
+The [page-view vitals](/docs/monitors/page-view-vitals) obey the rules of web-vitals 6.2. A browser test clicks a button. For 120 ms, the click handler blocks the main thread. The monitor gives an INP of 120 ms or more and a processing phase of 110 ms or more. It gives the target `#slow-button` and the type `pointer`.
+
+That test found an error in the first version of the attribution. In a real click, `pointerdown` is the longest entry, but the handler of `click` does the work. At this time, the attribution uses the frame groups of web-vitals. The processing phase spans all the events that the browser presented in the frame of the longest entry.
+
+### The oracle: agreement with web-vitals
+
+A browser test operates web-vitals 6.2.3 and the page-view vitals on the same page, in Chromium, Firefox, WebKit and Chrome. The two libraries read the same entries. Thus the values must be the same, with no tolerance. This table gives one run, on 7 October 2026:
+
+| Engine | FCP | LCP | TTFB | INP | CLS |
+|---|---|---|---|---|---|
+| Chromium | 108 = 108 ms | 108 = 108 ms | 3.5 = 3.5 ms | 184 = 184 ms | 0.018435 = 0.018435 |
+| Chrome | 148 = 148 ms | 148 = 148 ms | 4 = 4 ms | 192 = 192 ms | 0.018435 = 0.018435 |
+| Firefox | 312 = 312 ms | 312 = 312 ms | 9 = 9 ms | 184 = 184 ms | No value in the two libraries |
+| WebKit | 433 = 433 ms | 433 = 433 ms | 4 = 4 ms | 184 = 184 ms | No value in the two libraries |
+
+The three phases of the INP attribution also agree exactly in the four browsers. The first version of the oracle found two differences. The library reported a CLS of 0 where the browser has no layout-shift entries. Also, its attribution used only the entries of the interaction, not all the events of the frame. Both differences are fixed.
+
+### Defects that the tests found
+
+The tests found defects that the unit tests with fake time did not show:
+
+- **An adversarial review.** A review of the code wrote one proof test for each defect that it found, 29 tests in total. Examples are a second report of a page view after `pagehide` and a hang that two tabs reported two times. Another example is a hang that a stop lost. Each test failed first. At this time, the unit tests include all of them.
+- **CLS in Firefox and WebKit.** The oracle found false CLS values of 0 (refer to the oracle above).
+- **A change of the timer granularity.** In Chromium on Windows, the 5 ms steps changed from 5.5 ms to 15.6 ms after a page was shown again. DriftLag then reported windows of 160 ms of lag on an idle page, while the worker saw less than 2 ms. After the fix, DriftLag follows such a change. A CDP test found this defect.
+
+### The cost
+
+The overhead benchmark measures an idle page in Chromium through CDP, with all monitors and without them:
+
+| Measurement | Value |
+|---|---|
+| CPU time of all monitors | 24.4 ms to 25.9 ms each second: 2.4% to 2.6% of one core |
+| Script time | 10.4 ms to 11.3 ms each second |
+| Timer callbacks | 177 to 179 each second |
+| Wake-ups (timers, animation frames, idle callbacks, messages) | Approximately 298 each second |
+| DriftLag alone | 11.3 ms each second |
+| Frame timing alone | 13.6 ms each second. Its animation-frame loop makes an idle page render each frame. |
+
+The budgets are 3% of one core, 210 timer callbacks and 340 wake-ups each second. All runs of the test agent were in the budgets.
+
+The cost depends on the state of the machine. Later on the same day, the same benchmark measured 7.2% of one core, with the old code and with the new code. Then Chromium had the 15.6 ms timer tick of Windows. Each callback took approximately 4 times longer, possibly because of the power management of Windows. When the machine was in its usual state again, the final code measured 2.3% of one core and 179 timer callbacks each second.
+
+A soak test of 10 minutes kept the heap after garbage collection at 9.50 MB to 9.58 MB. The growth was 10 kB each minute, and the limit for a leak is 100 kB each minute. After `stop()`, no timer, animation frame, idle callback or worker heartbeat stayed.
+
+### The quality of the tests
+
+| Measurement | First measurement | After the new tests |
+|---|---|---|
+| Unit tests of `@lag/core` | 458 | 752 |
+| Statement coverage of `@lag/core` | 96.1% | 99.2% |
+| Branch coverage of `@lag/core` | 89.0% | 97.8% |
+| Mutation score of `@lag/core` | 77.8% of 4095 mutants | 96.6% of 4118 mutants |
+
+The export works from end to end. On 8 October 2026, the E2E tests (20 tests) found the metrics of the test pages in Mimir, as native histograms. The pipeline check of grafana-infra passed 297 of 297 checks with its sample data.
+
+A surviving mutant is a change of the code that no test finds. The first mutation run showed weak tests, for example for the sign of the `delta` of a web-vital event. The new tests find those mutants, and they found two more defects. The event catalog did not list `lag.page_view.id` for four events. Of two layout shifts with the same score, the library named a different shift than web-vitals.
+
+Each of the 139 mutants that survive has no effect that a user of the metrics can see. Examples are a second guard that repeats a first one, and code that a browser cannot reach. The [test strategy](/docs/testing/strategy) describes each kind of test, and the [results](/results) give the newest run.
+
+## Limits
+
+- **Engines.** LoAF, CLS, `visibility-state` entries, the `freeze` event and Compute Pressure exist only in Chromium. Safari has no `requestIdleCallback`. The library uses each API only where it exists.
+- **Test environment.** The WebKit tests use the WebKit build of Playwright for Windows. That build is not Safari on macOS. We did not test Safari in Low Power Mode, which aligns nested timers to 30 ms.
+- **Sustained load.** DriftLag calculates its baseline from the recent steps. When the thread is busy during more than half of the steps, the baseline increases and DriftLag reports less lag. The worker heartbeat measures that case correctly.
+- **Resolution.** The resolution of DriftLag is one step: 5.7 ms in Chromium and 16 ms in Firefox and WebKit on Windows.
+- **Sampling.** The worker sends one heartbeat each second by default. A block of B milliseconds delays a heartbeat with a probability of approximately min(1, B / 1000).
+- **Hidden pages.** The library discards samples from hidden pages. Thus it has no data on background work.
+- **Clock steps.** A forward step of the system clock of 1 s or more looks like a suspend.
+- **Abandoned hangs.** The journal works only for pages of the same origin, only where IndexedDB is available, and only after 30 s without updates. In WebKit, the journal and the hang report of the worker do not work for a page that does not survive its hang (E4).
+- **A busy machine.** The timing tests measure the page and the machine together. In one run of all browsers at the same time, on a busy machine, an idle Chromium page had a median lag of 5.0 ms. The same test alone gave less than 0.3 ms three times.
+- **Cost.** The monitors use approximately 2.5% of one core on an idle page, with approximately 300 wake-ups each second. The DriftLag chain and the animation-frame loop of the frame timing cost the most. This cost is real, especially on battery power.
+- **Granularity or load.** DriftLag accepts a row of 10 steps that agree with each other as a new timer granularity. A busy thread with tasks of the same length, shorter than 40 ms, looks the same. The worker measures that case.
+- **CDP tests.** The tests of hidden pages need Chromium in the new headless mode and an internal API of Playwright.
+
+## Future work
+
+- Duty cycles for the probes, so that the high-frequency probes run only some of the time.
+- An adaptive step size for DriftLag where the timer granularity is coarse.
+- Soft navigations in browsers other than Chromium, through the Navigation API.
+- A hang journal for WebKit. A service worker operates outside the page, thus it could write the record when the heartbeats of the page stop. Nobody tested this.
+- Metrics from events at the collector (for example the `signaltometrics` component of Alloy), so that the histograms of each page view can change after the first report.
+- Segments by device class, for example from `navigator.deviceMemory` and `navigator.cpuPerformance` as resource attributes.

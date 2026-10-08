@@ -1,0 +1,94 @@
+---
+title: Garbage collection signal
+description: Counts the garbage collections that collect a canary object of a FinalizationRegistry, one canary at a time.
+order: 34
+status: final
+---
+
+import { gcMetrics } from "./metrics.data";
+
+`GCSignalDetector` counts garbage collections with a canary object. It registers one object in a `FinalizationRegistry` and keeps no reference to it. When the engine collects the object, the detector counts one garbage collection and registers the next canary.
+
+## What it measures
+
+The signal is the number of garbage collections that collected the canary (`lag_gc_events`). The rate of the counter is the rate of these collections.
+
+The detector answers this question: does the page allocate so much memory that the engine collects frequently? A high rate shows allocation pressure. A lag at the time of a collection can come from the collection. `didGCRecently(withinMs)` and `getRecentGCEvents(windowMs)` let you connect a lag with a recent collection.
+
+## How it works
+
+1. The detector registers an empty object `{}` in a `FinalizationRegistry`. Nothing keeps a reference to it, thus the next garbage collection can collect it.
+2. When the engine collects the object, it starts the cleanup callback of the registry in a separate task (the ECMAScript rules that the comment of the code gives).
+3. The callback records the time of the collection, adds 1 to the count, and registers the next canary.
+
+Only one canary is in flight at a time. Thus one collection gives one event. A detector that registers canaries on a timer can count many events for one collection: one for each canary. The detector keeps the times of the last 200 collections (`getEventTimestamps()`).
+
+## Browser support
+
+| Feature | Chromium | Firefox | Safari |
+|---|---|---|---|
+| `WeakRef` and `FinalizationRegistry` | 84 | 79 | 14.1 |
+
+The API also works in workers. The engine decides when it starts a cleanup callback, and it can decide not to start it. Thus use the callbacks only for heuristics, not for correctness ([browser support](/research/browser-support)).
+
+## Measurement validity
+
+The detector does not pause while the page is hidden, and it uses no `SampleValidator`. It counts events, not durations, and it uses no timers.
+
+## Metrics
+
+<MetricTable metrics={gcMetrics} />
+
+The detector sends no events.
+
+## Configuration
+
+```ts
+function createInstrumentedGCSignal(
+    deps : CoreDeps & GCDeps,
+) : MonitorHandle<GCSignalDetector>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `GCDeps` (`FinalizationRegistry`). It has no options. The class takes the size of the time history (default 200) as its last argument.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedGCSignal } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+if (deps.FinalizationRegistry) {
+    const gc = createInstrumentedGCSignal({ ...deps, FinalizationRegistry : deps.FinalizationRegistry });
+    // Did the detector see a garbage collection in the last second?
+    console.log(gc.monitor?.didGCRecently(1_000), gc.monitor?.getTotalGCEvents());
+}
+```
+
+## Cost
+
+- **Memory:** one canary object, and the times of at most 200 collections.
+- **Callbacks:** one cleanup callback for each counted collection. No timers.
+- **Records:** one counter value for each counted collection.
+
+## Limits
+
+- **Some collections are not counted.** The comment of the code gives the cause: an engine can leave young objects for a later collection. Then a minor collection does not collect the canary. Thus the detector counts too few minor collections. It does not count too many.
+- **The callback comes later.** The engine starts the cleanup callback in a separate task, after the collection. The time of the event is the time of the callback.
+- **The engine decides.** The engine can delay or batch the callbacks, or not start them, for example when the page closes.
+- **No duration.** The detector counts collections. It does not measure how long a collection blocked the main thread.
+
+## Tests
+
+Unit tests:
+
+- `GCSignalDetector.test.ts`, the events: one canary at the start. Each collection gives one event and a new canary, also after long gaps. `didGCRecently()` and `getRecentGCEvents()` use the window. The history keeps at most its size.
+- `GCSignalDetector.test.ts`, stop and errors: after `stop()`, a collection gives no event and no new canary. A restart does not add a second canary while the old one is in flight. An error in the callback goes to the logger, and the detector continues.
+- `setup-all-monitors.test.ts`: when the `FinalizationRegistry` constructor fails, the handle has no monitor, the logger gets a warning, and the other monitors start.
+
+Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
+
+- `lag-monitors.test.ts`: under allocation pressure, the count does not decrease, and the number of counter values is equal to the count. The engine decides when it collects, thus the test does not expect a specified count of collections.
+
+## Source
+
+- [`GCSignalDetector.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/GCSignalDetector.ts): the detector.
+- [`instrumented/gc-signal.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/gc-signal.ts): the factory.

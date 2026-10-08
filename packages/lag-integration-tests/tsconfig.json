@@ -3,5 +3,16 @@
   "extends": "../../ts/config/vite.json",
   "compilerOptions": {
     "noEmit": true
-  }
+  },
+  "references": [
+    {
+      "path": "../lag"
+    },
+    {
+      "path": "../lag-worker"
+    },
+    {
+      "path": "../load"
+    }
+  ]
 }

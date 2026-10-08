@@ -1,0 +1,114 @@
+---
+title: Frame timing
+description: Measures the time between animation frame callbacks and counts the delivered and the dropped frames, with a frame interval that agrees with the real refresh rate.
+order: 30
+status: final
+---
+
+import { frameTimingMetrics } from "./metrics.data";
+
+`FrameTimingMonitor` measures the time between two `requestAnimationFrame` callbacks. From each gap, it calculates the number of frames that the page dropped. The expected frame interval comes from the recent frames, thus the interval agrees with a 120 Hz display and with a 30 fps limit.
+
+## What it measures
+
+The monitor gives two signals:
+
+- **The frame delta** (`lag_frame_delta_histogram`): the time between two animation frame callbacks.
+- **The frames** (`lag_frames`): one delivered frame for each callback, and the approximate number of dropped frames of each gap.
+
+The monitor answers this question: are the frames of the page late? A frame delta of more than one frame interval shows a frame that the browser did not deliver in time.
+
+Compare it with [Long animation frames](/docs/monitors/long-animation-frames) in Chromium. LoAF measures the blocking during the production of a frame. This monitor measures the delivery of frames. If LoAF shows no blocking but this monitor shows dropped frames, the cause is outside the main thread, for example the compositor or the GPU. If the two show problems, the main thread blocks the frames.
+
+## How it works
+
+1. The monitor asks for an animation frame. In the callback, it reads the clock (`performance.now()`) and asks for the next frame.
+2. From the second callback, it calculates the delta: the time since the previous callback.
+3. It calculates the dropped frames: `max(1, round(delta / interval)) − 1`. At 60 Hz, a gap of 33 ms is 1 dropped frame, and a gap of 100 ms is 5.
+4. It reports the delta, the frame rate (`1000 / delta`), the dropped frames and the interval that it used.
+
+The default frame interval is automatic. It is the shortest delta of the last 600 frames (approximately 10 s at 60 Hz). The monitor ignores a delta of less than 4 ms, because two callbacks in one frame are noise, not a refresh rate. Before the first frames, the interval is 16.67 ms (60 Hz). A burst of jank does not raise the interval, because the shortest delta stays in the window.
+
+The factory records each delta in `lag_frame_delta_histogram`. It adds 1 to `lag_frames` with `outcome="delivered"`, and the dropped frames to `lag_frames` with `outcome="dropped"`. The class also gives `getDroppedFrameRate()`: the dropped frames divided by the expected frames (delivered plus dropped).
+
+## Browser support
+
+The monitor uses `requestAnimationFrame` and `cancelAnimationFrame`. The research gives no versions for them. It gives these facts about the frame rate ([clocks and timers](/research/clocks-and-timers)):
+
+- Most browsers pause animation frames in background tabs and in hidden iframes.
+- Safari on iOS limits animation frames to 30 fps in Low Power Mode. On ProMotion displays, Safari limits them to approximately 60 fps by default.
+- The Energy Saver mode of Chrome also limits the frame rate.
+- Safari throttles animation frames in cross-origin iframes that the user did not interact with ([browser support](/research/browser-support)).
+
+The automatic interval agrees with these limits, thus a 30 fps limit does not count as dropped frames.
+
+## Measurement validity
+
+With measurement conditions, the monitor pauses while the page is hidden or frozen, because the browser does not deliver animation frames there. At the restart, the first callback has no previous frame, thus no gap spans the pause.
+
+Each frame goes to a `SampleValidator` with a window of the length of the delta. The validator discards a frame whose gap overlaps a hidden, frozen or suspend interval. A delta of 5000 ms or more waits 2000 ms for late evidence of a suspend.
+
+## Metrics
+
+<MetricTable metrics={frameTimingMetrics} />
+
+The dropped-frame rate of a fleet is the rate of `lag_frames{outcome="dropped"}` divided by the rate of all `lag_frames`. The monitor sends no events of its own. The measurement conditions send a `lag.stall` event for each stall episode.
+
+## Configuration
+
+```ts
+function createInstrumentedFrameTiming(
+    deps : CoreDeps & FrameDeps,
+    conditions? : MeasurementConditions,
+) : MonitorHandle<FrameTimingMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `FrameDeps` (`requestAnimationFrame`, `cancelAnimationFrame`). Give `conditions` to pause the monitor while the page is hidden. The factory uses the automatic interval. The class also takes a fixed `targetFps`, which sets the interval to `1000 / targetFps`.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedFrameTiming } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+if (deps.requestAnimationFrame && deps.cancelAnimationFrame) {
+    const frames = createInstrumentedFrameTiming({
+        ...deps,
+        requestAnimationFrame : deps.requestAnimationFrame,
+        cancelAnimationFrame : deps.cancelAnimationFrame,
+    });
+    console.log(frames.monitor?.getFrameIntervalMs(), frames.monitor?.getDroppedFrameRate());
+}
+```
+
+## Cost
+
+- **Callbacks:** one animation frame callback for each frame: approximately 60 each second at 60 Hz, and 120 at 120 Hz.
+- **CPU:** the overhead benchmark measured approximately 14 ms of main-thread time each second for the loop alone, because the page then renders each frame. It used Chromium in the new headless mode on a desktop computer (the comment of `overhead/overhead.test.ts`).
+- **Records:** one histogram value and one or two counter values for each frame.
+- **Memory:** a window of at most 600 deltas for the shortest delta.
+- **Side effects:** a loop of animation frames keeps the render steps of the browser active in each frame. It also makes the idle periods of the main thread shorter ([clocks and timers](/research/clocks-and-timers)).
+
+## Limits
+
+- **Callbacks, not presentation.** The delta is the time between two callbacks on the main thread. It does not measure when the frame was on the screen.
+- **The dropped frames are estimates.** The monitor divides each gap by the interval. A frame interval that changes in less than 600 frames, for example a variable refresh rate, makes the estimate less accurate.
+- **The first frame gives no value.** The first frame has no previous frame.
+- **The monitor changes the page.** The loop of animation frames keeps the render steps active and makes the idle periods shorter. The [idle availability](/docs/monitors/idle-availability) monitor shows this effect.
+
+## Tests
+
+Unit tests:
+
+- `FrameTimingMonitor.test.ts`: the first frame gives no report, an on-time frame has 0 dropped frames, and a 100 ms gap at 60 Hz has 5 dropped frames. A slightly late frame (17 ms) is on time. The monitor counts the dropped frames and the dropped-frame rate, and `stop()` cancels the pending frame. A fixed `targetFps` sets the interval. One chain of frames after `stop()` and `start()` in the report function, and no gap across the pause.
+- `FrameTimingMonitor.test.ts`, the automatic interval: it agrees with a 120 Hz display. It does not count a 30 fps limit as dropped frames. It keeps its value through a burst of jank, and it ignores deltas of less than 4 ms.
+- `setup-all-monitors.test.ts`: the monitor pauses while the page is hidden.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
+
+- `lag-monitors.test.ts`: on the test page, the monitor records more than 5 frame deltas.
+- `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no frame delta while the page is hidden or frozen.
+
+## Source
+
+- [`FrameTimingMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/FrameTimingMonitor.ts): the monitor and the automatic interval.
+- [`instrumented/frame-timing.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/frame-timing.ts): the factory.

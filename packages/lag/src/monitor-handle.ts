@@ -1,14 +1,14 @@
 /**
- * A handle to a monitor that was (or tried to be) created.
+ * A handle to a monitor that a factory made, or tried to make.
  *
- * `monitor` is `T | undefined` because monitor construction can fail — e.g.
- * the browser may not support PressureObserver, FinalizationRegistry, or
- * requestIdleCallback. In those cases a factory returns a handle with
- * `monitor: undefined` and a no-op `stop()`, allowing the caller to continue
- * without branching.
+ * The type of `monitor` is `T | undefined`, because the construction of a
+ * monitor can fail. For example, the browser can have no `PressureObserver`,
+ * `FinalizationRegistry` or `requestIdleCallback`. In that case, the factory
+ * gives a handle with `monitor: undefined` and a `stop()` that does nothing.
+ * Thus, the caller can continue without a branch.
  *
- * `name` is a stable identifier that consumers can use to look the handle up
- * in a MonitorRegistry.
+ * `name` is a stable identifier. A consumer can use it to find the handle in
+ * a `MonitorRegistry`.
  */
 export type MonitorHandle<T = unknown> = {
     readonly name : string;

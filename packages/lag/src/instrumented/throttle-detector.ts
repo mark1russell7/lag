@@ -1,53 +1,42 @@
-import type { Logger, Clock, SetTimeoutFn } from "../types.js";
+import type { CoreDeps, TimerDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import type { Meter } from "../meter.js";
 import {
     TimerThrottleDetector,
     type TimerThrottleConfig,
 } from "../TimerThrottleDetector.js";
+import { METRICS, createCounter } from "../metric-catalog.js";
+import { createHandle } from "./shared.js";
 
-/**
- * Constructs a TimerThrottleDetector wired to a throttle-state gauge.
- *
- * Metric:
- * - `lag_timer_throttled_gauge` — 1 if timers are being throttled, 0 otherwise
- *
- * No histogram — throttle detection is a calibration-based boolean, not a
- * per-sample measurement.
- */
-export type ThrottleDetectorDeps = {
-    logger : Logger;
-    clock : Clock;
-    meter : Meter;
-    setTimeoutFn : SetTimeoutFn;
-    config? : TimerThrottleConfig;
+export type ThrottleDetectorDeps = CoreDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & {
+    throttleConfig? : TimerThrottleConfig;
 };
 
+/**
+ * This factory makes a `TimerThrottleDetector` that records into the
+ * `lag_timer_calibrations` counter, with the attribute `throttled`. The
+ * fraction of throttled rounds is
+ * `rate(lag_timer_calibrations{throttled="true"})` divided by the rate of
+ * all rounds.
+ *
+ * The detector does not pause while the page is hidden, because its function
+ * is to find the throttling of background pages.
+ */
 export function createInstrumentedThrottleDetector(
     deps : ThrottleDetectorDeps,
 ) : MonitorHandle<TimerThrottleDetector> {
-    try {
-        const throttledGauge = deps.meter.createObservableGauge<Record<string, never>>(
-            "lag_timer_throttled_gauge", { unit : "1" });
+    return createHandle("throttle-detector", deps.logger, () => {
+        const calibrations = createCounter<{ throttled : "true" | "false" }>(deps.meter, METRICS.timerCalibrations);
 
         const monitor = new TimerThrottleDetector(
+            ({ throttled }) => calibrations.add(1, { throttled : throttled ? "true" : "false" }),
             deps.setTimeoutFn,
+            deps.clearTimeoutFn,
             deps.clock,
             deps.logger,
-            deps.config ?? {},
+            deps.throttleConfig,
         );
         monitor.start();
 
-        throttledGauge.addCallback((result) => {
-            result.observe(monitor.isThrottled() ? 1 : 0);
-        });
-
-        return { name : "throttle-detector", monitor, stop : () => monitor.stop() };
-    } catch (error) {
-        deps.logger.log("warn", "Failed to create TimerThrottleDetector.", {
-            error,
-            type : "createInstrumentedThrottleDetector",
-        });
-        return { name : "throttle-detector", monitor : undefined, stop : () => {} };
-    }
+        return { monitor, stop : () => monitor.stop() };
+    });
 }

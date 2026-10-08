@@ -1,184 +1,355 @@
-import { vi, expect } from "vitest";
-import { WorkerLagMonitor, type WorkerLike } from "./WorkerLagMonitor.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WorkerLagMonitor, type WorkerLike, type WorkerLagMeasurement, type WorkerLagEvents } from "./WorkerLagMonitor.js";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "./worker-protocol.js";
+import { createAbsoluteClock } from "./absolute-clock.js";
 
 function createMockWorker() {
-    const listeners = new Map<string, ((event : { data : WorkerToMainMessage }) => void)[]>();
-    const postMessageSpy = vi.fn();
+    const listeners : Array<(event : { data : WorkerToMainMessage }) => void> = [];
+    const postMessage = vi.fn<(message : MainToWorkerMessage) => void>();
 
     const worker : WorkerLike = {
-        postMessage : postMessageSpy,
-        addEventListener(type : string, handler : (event : { data : WorkerToMainMessage }) => void) {
-            if (!listeners.has(type)) listeners.set(type, []);
-            listeners.get(type)!.push(handler);
+        postMessage,
+        addEventListener(type, handler) {
+            if (type === "message") listeners.push(handler);
         },
-        removeEventListener(type : string, handler : (event : { data : WorkerToMainMessage }) => void) {
-            const arr = listeners.get(type);
-            if (arr) {
-                const idx = arr.indexOf(handler);
-                if (idx >= 0) arr.splice(idx, 1);
-            }
+        removeEventListener(type, handler) {
+            const idx = listeners.indexOf(handler);
+            if (type === "message" && idx >= 0) listeners.splice(idx, 1);
         },
     };
 
     return {
         worker,
-        postMessageSpy,
-        simulatePong(pong : WorkerToMainMessage) {
-            listeners.get("message")?.forEach(h => h({ data : pong }));
+        postMessage,
+        deliver(message : WorkerToMainMessage) {
+            for (const listener of [...listeners]) listener({ data : message });
         },
         get listenerCount() {
-            return listeners.get("message")?.length ?? 0;
+            return listeners.length;
         },
+        sent : (type : MainToWorkerMessage["type"]) => postMessage.mock.calls.map(c => c[0]).filter(m => m.type === type),
     };
 }
 
+function createMonitor(intervalMs = 1000, events : WorkerLagEvents = {}) {
+    const mock = createMockWorker();
+    const report = vi.fn<(m : WorkerLagMeasurement) => void>();
+    const logger = { log : vi.fn() };
+    // Main thread: timeOrigin 10_000, so absolute time = 10_000 + now
+    const performance = { timeOrigin : 10_000, now : vi.fn(() => 0) };
+    const monitor = new WorkerLagMonitor(mock.worker, report, logger, createAbsoluteClock(performance), {
+        heartbeatIntervalMs : intervalMs,
+        setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+        clearTimeoutFn : (id) => clearTimeout(id),
+        hang : { thresholdMs : 5_000 },
+        events,
+    });
+    // Not spread: that would freeze the `listenerCount` getter's value
+    return Object.assign(mock, { report, logger, performance, monitor });
+}
+
 describe("WorkerLagMonitor", () => {
-    beforeEach(() => {
-        vi.useFakeTimers();
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("starts the worker's heartbeat loop with hang options and listens on construction", () => {
+        const m = createMonitor(500);
+
+        expect(m.sent("start")).toEqual([{ type : "start", intervalMs : 500, hang : { thresholdMs : 5_000 } }]);
+        expect(m.listenerCount).toBe(1);
     });
 
-    afterEach(() => {
-        vi.useRealTimers();
+    it("reports how long each heartbeat waited for the main thread, and acknowledges it", () => {
+        const m = createMonitor();
+
+        // Sent at absolute 10_100; main thread got to it at 10_000 + 350
+        m.performance.now.mockReturnValue(350);
+        m.deliver({ type : "heartbeat", seq : 7, sentAt : 10_100, workerSelfLagMs : 2 });
+
+        expect(m.report).toHaveBeenCalledWith({ deliveryDelayMs : 250, workerSelfLagMs : 2, seq : 7 });
+        expect(m.sent("ack")).toEqual([{ type : "ack", seq : 7 }]);
     });
 
-    it("sends config and registers message listener on start", () => {
+    it("reports each queued heartbeat's wait after a block", () => {
+        const m = createMonitor(100);
+
+        m.performance.now.mockReturnValue(500);
+        for (const [seq, sentAt] of [[1, 10_200], [2, 10_300], [3, 10_400]] as const) {
+            m.deliver({ type : "heartbeat", seq, sentAt, workerSelfLagMs : 0 });
+        }
+
+        expect(m.report.mock.calls.map(c => c[0].deliveryDelayMs)).toEqual([300, 200, 100]);
+    });
+
+    it("clamps tiny negative delays from clock rounding to zero", () => {
+        const m = createMonitor();
+
+        m.performance.now.mockReturnValue(100);
+        m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_100.02, workerSelfLagMs : 0 });
+
+        expect(m.report.mock.calls[0]![0].deliveryDelayMs).toBe(0);
+    });
+
+    it("synchronizes the clocks and corrects the delay by the measured offset", () => {
+        const onClockSync = vi.fn();
+        const m = createMonitor(1000, { onClockSync });
+
+        // Answer each of the 8 sync requests at once; the worker clock is 40 ms ahead
+        for (let i = 0; i < 8; i++) {
+            const request = m.sent("sync").at(-1)!;
+            m.deliver({ type : "sync-reply", id : (request as { id : number }).id, workerTime : 10_000 + 40 });
+        }
+        expect(onClockSync).toHaveBeenCalledWith({ offsetMs : 40, roundTripMs : 0 });
+
+        // A heartbeat stamped by the fast worker clock
+        m.performance.now.mockReturnValue(100);
+        m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000 + 60 + 40, workerSelfLagMs : 0 });
+        expect(m.report.mock.calls[0]![0].deliveryDelayMs).toBeCloseTo(40);
+    });
+
+    it("synchronizes the clocks again after the interval", () => {
+        const m = createMonitor();
+        const before = m.sent("sync").length;
+        vi.advanceTimersByTime(60_000);
+        expect(m.sent("sync").length).toBe(before + 1);
+    });
+
+    it("reports a system stall when the worker itself was late by 5 s or more", () => {
+        const onSystemStall = vi.fn();
+        const m = createMonitor(1000, { onSystemStall });
+
+        m.performance.now.mockReturnValue(70_000);
+        m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000 + 70_000, workerSelfLagMs : 60_000 });
+        m.deliver({ type : "heartbeat", seq : 2, sentAt : 10_000 + 70_000, workerSelfLagMs : 20 });
+
+        expect(onSystemStall).toHaveBeenCalledTimes(1);
+        expect(onSystemStall).toHaveBeenCalledWith({ start : 10_000, end : 70_000, durationMs : 60_000 });
+    });
+
+    it("ends the system stall when the worker sent the heartbeat, not when the main thread got it", () => {
+        const onSystemStall = vi.fn();
+        const m = createMonitor(1000, { onSystemStall });
+
+        // A Windows sleep from 10 s to 70 s. The worker sends at 70 s, and the main thread gets the heartbeat
+        // 3 s later, after the work that waited during the sleep.
+        m.performance.now.mockReturnValue(73_000);
+        m.deliver({ type : "heartbeat", seq : 11, sentAt : 10_000 + 70_000, workerSelfLagMs : 60_000 });
+
+        expect(onSystemStall).toHaveBeenCalledWith({ start : 10_000, end : 70_000, durationMs : 60_000 });
+    });
+
+    it("passes hang-ended messages on", () => {
+        const onHangEnded = vi.fn();
+        const m = createMonitor(1000, { onHangEnded });
+        m.deliver({ type : "hang-ended", startedAt : 1, durationMs : 7_500 });
+        expect(onHangEnded).toHaveBeenCalledWith(7_500);
+    });
+
+    it("stops the worker loop and the sync timer on stop, keeps one listener, and can restart", () => {
+        const m = createMonitor(250);
+
+        m.monitor.stop();
+        expect(m.listenerCount).toBe(1);
+        expect(m.postMessage).toHaveBeenLastCalledWith({ type : "stop" });
+        expect(vi.getTimerCount()).toBe(0);
+
+        const stops = m.sent("stop").length;
+        m.monitor.stop(); // idempotent
+        expect(m.sent("stop").length).toBe(stops);
+
+        m.monitor.start();
+        expect(m.listenerCount).toBe(1);
+        expect(m.sent("start").at(-1)).toEqual({ type : "start", intervalMs : 250, hang : { thresholdMs : 5_000 } });
+    });
+
+    it("passes on the end of a hang while it is stopped, but ignores heartbeats", () => {
+        const onHangEnded = vi.fn();
+        const m = createMonitor(1000, { onHangEnded });
+        m.monitor.stop();
+        const acks = m.sent("ack").length;
+
+        // The worker ends the hang that was in progress at the stop
+        m.deliver({ type : "hang-ended", startedAt : 1, durationMs : 8_000 });
+        m.deliver({ type : "heartbeat", seq : 9, sentAt : 10_000, workerSelfLagMs : 0 });
+
+        expect(onHangEnded).toHaveBeenCalledWith(8_000);
+        expect(m.report).not.toHaveBeenCalled();
+        expect(m.sent("ack").length).toBe(acks);
+    });
+
+    it("removes its listener on dispose()", () => {
+        const m = createMonitor();
+        m.monitor.dispose();
+        expect(m.listenerCount).toBe(0);
+        expect(m.sent("stop")).toHaveLength(1);
+        m.monitor.dispose();
+        expect(m.sent("stop")).toHaveLength(1);
+    });
+
+    it("ignores unknown messages", () => {
+        const m = createMonitor();
+
+        m.deliver({ type : "something-else" } as unknown as WorkerToMainMessage);
+
+        expect(m.report).not.toHaveBeenCalled();
+    });
+
+    it("logs instead of throwing when report throws", () => {
+        const m = createMonitor();
+        m.report.mockImplementation(() => { throw new Error("boom"); });
+
+        m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000, workerSelfLagMs : 0 });
+
+        expect(m.logger.log).toHaveBeenCalledWith(
+            "error",
+            "Error processing worker message.",
+            expect.objectContaining({ type : "WorkerLagMonitor" }),
+        );
+    });
+
+    it("sends its page ID with start, and the page context to the worker", () => {
         const mock = createMockWorker();
-        const logger = { log : vi.fn() };
-        let currentTime = 0;
-
-        new WorkerLagMonitor(
-            mock.worker, vi.fn(), logger,
-            setInterval, clearInterval,
-            { now : () => currentTime },
-            1000,
-        );
-
-        // Should have sent a config message
-        expect(mock.postMessageSpy).toHaveBeenCalledWith(
-            expect.objectContaining({ type : "config", intervalMs : 1000 }),
-        );
-        expect(mock.listenerCount).toBe(1);
-    });
-
-    it("sends pings at the configured interval", () => {
-        const { worker, postMessageSpy } = createMockWorker();
-        const logger = { log : vi.fn() };
-        let currentTime = 0;
-
-        new WorkerLagMonitor(
-            worker, vi.fn(), logger,
-            setInterval, clearInterval,
-            { now : () => currentTime },
-            500,
-        );
-
-        // Initial config message
-        expect(postMessageSpy).toHaveBeenCalledTimes(1);
-
-        // Advance past first ping
-        currentTime = 500;
-        vi.advanceTimersByTime(500);
-
-        // Should have sent config + ping
-        expect(postMessageSpy).toHaveBeenCalledTimes(2);
-        const pingMsg = postMessageSpy.mock.calls[1]![0] as MainToWorkerMessage;
-        expect(pingMsg.type).toBe("ping");
-    });
-
-    it("reports measurements from pong responses", () => {
-        const { worker, simulatePong } = createMockWorker();
-        const report = vi.fn();
-        const logger = { log : vi.fn() };
-        let currentTime = 0;
-
-        new WorkerLagMonitor(
-            worker, report, logger,
-            setInterval, clearInterval,
-            { now : () => currentTime },
-            1000,
-        );
-
-        // Simulate pong arriving 20ms after ping
-        currentTime = 20;
-        simulatePong({
-            type : "pong",
-            mainSendTime : 0,
-            workerReceiveTime : 5,
-            workerSendTime : 6,
-            workerSelfLag : 2,
-            seq : 1,
+        const monitor = new WorkerLagMonitor(mock.worker, vi.fn(), { log : vi.fn() }, createAbsoluteClock({ timeOrigin : 0, now : () => 0 }), {
+            heartbeatIntervalMs : 1000,
+            setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+            clearTimeoutFn : (id) => clearTimeout(id),
+            pageId : "page-a",
         });
+        monitor.setContext({ "lag.page_view.id" : "view-1" });
 
-        expect(report).toHaveBeenCalledWith({
-            roundTripMs : 20,      // mainReceiveTime(20) - mainSendTime(0)
-            workerSelfLagMs : 2,
-            estimatedMainBlockMs : 18,  // max(0, 20 - 2)
-            seq : 1,
-        });
-    });
+        expect(mock.sent("start")).toEqual([{ type : "start", intervalMs : 1000, pageId : "page-a" }]);
+        expect(mock.sent("context")).toEqual([{ type : "context", attributes : { "lag.page_view.id" : "view-1" } }]);
 
-    it("clamps estimated main block to zero", () => {
-        const { worker, simulatePong } = createMockWorker();
-        const report = vi.fn();
-        const logger = { log : vi.fn() };
-        let currentTime = 0;
-
-        new WorkerLagMonitor(
-            worker, report, logger,
-            setInterval, clearInterval,
-            { now : () => currentTime },
-            1000,
-        );
-
-        // Pong with workerSelfLag > roundTrip (shouldn't happen, but handle it)
-        currentTime = 5;
-        simulatePong({
-            type : "pong",
-            mainSendTime : 0,
-            workerReceiveTime : 1,
-            workerSendTime : 2,
-            workerSelfLag : 100,
-            seq : 1,
-        });
-
-        expect(report.mock.calls[0]![0].estimatedMainBlockMs).toBe(0);
-    });
-
-    it("cleans up on stop", () => {
-        const mock = createMockWorker();
-        const logger = { log : vi.fn() };
-
-        const monitor = new WorkerLagMonitor(
-            mock.worker, vi.fn(), logger,
-            setInterval, clearInterval,
-            { now : () => 0 },
-            1000,
-        );
-
-        expect(mock.listenerCount).toBe(1);
+        // The context goes again to the worker after a restart
         monitor.stop();
-        expect(mock.listenerCount).toBe(0);
-
-        // Should have sent a stop message
-        expect(mock.postMessageSpy).toHaveBeenCalledWith({ type : "stop" });
+        monitor.start();
+        expect(mock.sent("context")).toHaveLength(2);
+        monitor.stop();
     });
 
-    it("ignores non-pong messages", () => {
-        const { worker, simulatePong } = createMockWorker();
-        const report = vi.fn();
-        const logger = { log : vi.fn() };
+    describe("watchdog", () => {
+        it("warns when the worker sends no heartbeat in two checks", () => {
+            const m = createMonitor(1000);
+            vi.advanceTimersByTime(5_000);
+            expect(m.logger.log).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(5_000);
+            expect(m.logger.log).toHaveBeenCalledWith("warn", expect.stringContaining("The worker sent no heartbeat"), expect.objectContaining({ waitedMs : 10_000 }));
+            m.monitor.stop();
+        });
 
-        new WorkerLagMonitor(
-            worker, report, logger,
-            setInterval, clearInterval,
-            { now : () => 0 },
-            1000,
-        );
+        it("does not warn after a heartbeat, also when the heartbeat comes after the first check", () => {
+            const m = createMonitor(1000);
+            vi.advanceTimersByTime(5_000);
+            m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000, workerSelfLagMs : 0 });
+            vi.advanceTimersByTime(10_000);
+            expect(m.logger.log).not.toHaveBeenCalledWith("warn", expect.anything(), expect.anything());
+            m.monitor.stop();
+        });
 
-        // Send a message with wrong type (cast to bypass type check)
-        simulatePong({ type : "config", intervalMs : 100 } as any);
+        it("stops with the monitor", () => {
+            const m = createMonitor(1000);
+            m.monitor.stop();
+            vi.advanceTimersByTime(20_000);
+            expect(m.logger.log).not.toHaveBeenCalled();
+        });
+    });
 
-        expect(report).not.toHaveBeenCalled();
+    describe("rules of the messages and of the lifecycle of the monitor", () => {
+        /** A monitor with the events `events`, or without events. */
+        function createBare(events? : WorkerLagEvents, heartbeatIntervalMs = 1000) {
+            const mock = createMockWorker();
+            const report = vi.fn<(m : WorkerLagMeasurement) => void>();
+            const logger = { log : vi.fn() };
+            const performance = { timeOrigin : 10_000, now : vi.fn(() => 0) };
+            const monitor = new WorkerLagMonitor(mock.worker, report, logger, createAbsoluteClock(performance), {
+                heartbeatIntervalMs,
+                setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+                clearTimeoutFn : (id) => clearTimeout(id),
+                ...(events ? { events } : {}),
+            });
+            return Object.assign(mock, { report, logger, performance, monitor });
+        }
+
+        it("handles a clock synchronization, the end of a hang and a system stall without event listeners, and logs no error", () => {
+            for (const events of [undefined, {}]) {
+                const m = createBare(events);
+                for (let i = 0; i < 8; i++) {
+                    const request = m.sent("sync").at(-1) as { id : number };
+                    m.deliver({ type : "sync-reply", id : request.id, workerTime : 10_000 });
+                }
+                m.deliver({ type : "hang-ended", startedAt : 1, durationMs : 7_500 });
+                m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000, workerSelfLagMs : 60_000 });
+
+                expect(m.monitor.getClockSync()).toEqual({ offsetMs : 0, roundTripMs : 0 });
+                expect(m.logger.log).not.toHaveBeenCalled();
+                m.monitor.dispose();
+            }
+        });
+
+        it("reports a system stall at a self lag of exactly 5 s", () => {
+            const onSystemStall = vi.fn();
+            const m = createBare({ onSystemStall });
+            m.performance.now.mockReturnValue(20_000);
+
+            m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000 + 20_000, workerSelfLagMs : 5_000 });
+
+            expect(onSystemStall).toHaveBeenCalledWith({ start : 15_000, end : 20_000, durationMs : 5_000 });
+            m.monitor.dispose();
+        });
+
+        it("ignores a message without data, also while it is stopped", () => {
+            const m = createBare({});
+            m.deliver(undefined as unknown as WorkerToMainMessage);
+            m.monitor.stop();
+            m.deliver(undefined as unknown as WorkerToMainMessage);
+
+            expect(m.report).not.toHaveBeenCalled();
+            expect(m.logger.log).not.toHaveBeenCalled();
+            m.monitor.dispose();
+        });
+
+        it("start() while the monitor operates sends nothing", () => {
+            const m = createBare({});
+            m.monitor.start();
+
+            expect(m.sent("start")).toHaveLength(1);
+            expect(m.sent("sync")).toHaveLength(1);
+            m.monitor.dispose();
+        });
+
+        it("keeps the context while it is stopped and sends it at the next start", () => {
+            const m = createBare({});
+            m.monitor.stop();
+
+            m.monitor.setContext({ "lag.page_view.id" : "view-2" });
+            expect(m.sent("context")).toEqual([]);
+            m.monitor.start();
+
+            expect(m.sent("context")).toEqual([{ type : "context", attributes : { "lag.page_view.id" : "view-2" } }]);
+            m.monitor.dispose();
+        });
+
+        it("listens again at start() after dispose()", () => {
+            const m = createBare({});
+            m.monitor.dispose();
+            m.monitor.start();
+
+            m.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000, workerSelfLagMs : 0 });
+
+            expect(m.listenerCount).toBe(1);
+            expect(m.report).toHaveBeenCalledTimes(1);
+            m.monitor.dispose();
+        });
+
+        it("waits five heartbeat intervals for each watchdog check when that is longer than 5 s", () => {
+            const m = createBare({}, 2_000);
+            vi.advanceTimersByTime(19_999);
+            expect(m.logger.log).not.toHaveBeenCalled();
+
+            vi.advanceTimersByTime(1);
+
+            expect(m.logger.log).toHaveBeenCalledWith("warn", expect.stringContaining("The worker sent no heartbeat"), { type : "WorkerLagMonitor", waitedMs : 20_000 });
+            m.monitor.dispose();
+        });
     });
 });

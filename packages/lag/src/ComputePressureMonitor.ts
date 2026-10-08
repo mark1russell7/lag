@@ -1,14 +1,15 @@
 import type { Logger } from "./types.js";
 
 /**
- * Compute Pressure API — Chrome 125+
- * https://developer.chrome.com/docs/web-platform/compute-pressure
+ * The Compute Pressure API, in Chrome 125 and later. Refer to
+ * https://developer.chrome.com/docs/web-platform/compute-pressure.
  *
- * Reports CPU/system pressure on a 4-state scale:
- * - nominal:  baseline, no perceptible impact
- * - fair:     moderate load, still safe to run discretionary work
- * - serious:  heavy load, defer non-essential work
- * - critical: maximum, system may throttle/skip frames
+ * The API reports the pressure on the CPU or on the system, on a scale of 4
+ * states:
+ * - `nominal`: the baseline, with no perceptible effect.
+ * - `fair`: a moderate load. It is safe to do optional work.
+ * - `serious`: a heavy load. Postpone the work that is not necessary.
+ * - `critical`: the maximum. The system can throttle or skip frames.
  */
 export type PressureState = "nominal" | "fair" | "serious" | "critical";
 export type PressureSource = "cpu" | "thermals" | "power" | "memory";
@@ -26,9 +27,9 @@ export type PressureObserverInstance = {
     takeRecords() : PressureRecord[];
 };
 
+/** The constructor takes only the callback. `sampleInterval` is an option of `observe()`, as in the current specification. */
 export type PressureObserverInit = new (
     callback : (records : PressureRecord[], observer : PressureObserverInstance) => void,
-    options? : { sampleInterval? : number },
 ) => PressureObserverInstance;
 
 export type PressureMeasurement = {
@@ -46,14 +47,17 @@ const STATE_ORDINALS : Record<PressureState, number> = {
 };
 
 /**
- * Subscribes to CPU compute pressure changes via the PressureObserver API.
+ * This monitor subscribes to the changes of the compute pressure through
+ * the `PressureObserver` API.
  *
- * Per spec, the observer fires:
- * - On every pressure state change
- * - At most once per sampleInterval (default 1s, max ~30s)
+ * As the specification tells, the observer fires:
+ * - at each change of the pressure state
+ * - no more than one time in each `sampleInterval`. The default of this
+ *   monitor is 1 s.
  *
- * Critical state means the OS/browser may already be throttling — this is the
- * "ground truth" for system-level overload, complementing our timer-based lag.
+ * The `critical` state means that the operating system or the browser can
+ * throttle already. This state is the "ground truth" for an overload of the
+ * system. It adds information to the timer-based lag of this package.
  */
 export class ComputePressureMonitor {
     private observer : PressureObserverInstance | undefined;
@@ -75,10 +79,7 @@ export class ComputePressureMonitor {
         this.started = true;
 
         try {
-            this.observer = new this.PressureObserverCtor(
-                (records) => this.handleRecords(records),
-                { sampleInterval : this.sampleIntervalMs },
-            );
+            this.observer = new this.PressureObserverCtor((records) => this.handleRecords(records));
 
             for (const source of this.sources) {
                 this.observer.observe(source, { sampleInterval : this.sampleIntervalMs })
@@ -104,12 +105,15 @@ export class ComputePressureMonitor {
         this.currentStates.clear();
     }
 
-    /** Get the most recently observed state for a source, or undefined if not yet sampled. */
+    /** The most recently observed state of a source, or `undefined` if the source has no record yet. */
     getCurrentState(source : PressureSource) : PressureState | undefined {
         return this.currentStates.get(source);
     }
 
-    /** Get the maximum (most severe) state across all observed sources. */
+    /**
+     * The ordinal of the maximum (most severe) state of all observed sources,
+     * or -1 if no source has a state.
+     */
     getWorstStateOrdinal() : number {
         let max = -1;
         for (const state of this.currentStates.values()) {

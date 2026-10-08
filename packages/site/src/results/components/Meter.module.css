@@ -1,0 +1,33 @@
+.meter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    min-width: 8.5rem;
+}
+
+.value {
+    min-width: 3.4rem;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.track {
+    display: block;
+    width: 4.5rem;
+    height: 0.4rem;
+    border-radius: 999px;
+    background: var(--color-surface-sunken);
+    overflow: hidden;
+}
+
+.fill {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+    background: var(--series-1);
+}
+
+.none {
+    color: var(--color-ink-muted);
+}

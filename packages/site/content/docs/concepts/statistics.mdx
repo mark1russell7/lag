@@ -1,0 +1,144 @@
+---
+title: Lag statistics
+description: Closed-loop and open-loop probes, coordinated omission, the cost and the resolution of the probes, and how to read quantiles and rates from the lag histograms.
+order: 15
+status: final
+---
+
+A histogram of lag samples is correct only if the samples represent the quantity that you want to know. A probe that waits for the main thread takes fewer samples while the main thread is blocked. Thus its samples do not show the blocks correctly. This page tells you which statistic each monitor gives, and how to read it. The research note [clocks and timers](/research/clocks-and-timers) gives the sources.
+
+## Closed-loop and open-loop probes
+
+A **closed-loop** probe waits for the main thread before it takes its next sample. DriftLag, the frame-timing monitor and the idle-availability monitor are closed-loop probes. One long task gives one sample, also if the task is very long.
+
+An **open-loop** probe takes samples on a schedule that does not depend on the main thread. The worker heartbeat is an open-loop probe: the worker sends a heartbeat each second from its own timer. H is the interval between two heartbeats. During a block of length L, approximately L / H heartbeats wait in the queue. After the block, the main thread processes them, with the delays L, L − H, and so on.
+
+Gil Tene called the error of the closed-loop probe "coordinated omission". A probe that waits for the system before its next sample "coordinates" with the system, and it omits the slow periods. In a Node.js report, a synchronous block of 30 s in a window of 60 s gave 1 sample of 30 000 ms against approximately 600 usual samples. The block was 0.17% of the samples, but 50% of the time.
+
+## A worked example
+
+A page is visible for 60 s. From 15 s to 45 s, one task blocks the main thread. In the other 30 s, the main thread is idle. The two probes give these samples:
+
+- **[DriftLag](/docs/monitors/drift-lag)** measures windows of approximately 100 ms. The 30 s of idle time give approximately 300 windows with a lag near 0. The block delays one window, which gets a lag of approximately 30 000 ms.
+- **The [worker](/docs/monitors/worker-lag)** sends one heartbeat each second, at 0 s, 1 s and so on to 59 s. The heartbeats from 15 s to 44 s wait until 45 s, thus their delays are 30 s, 29 s and so on to 1 s. The other 30 heartbeats have a delay near 0.
+
+| Statistic | DriftLag (closed loop) | Worker heartbeat (open loop) |
+|---|---|---|
+| Number of samples | 301 | 60 |
+| Samples of 1 s or more | 1 (0.3%) | 30 (50%) |
+| 95th percentile | 0 ms | 27 s |
+| Mean | Approximately 100 ms | 7.75 s |
+| Sum | Approximately 30 000 ms | Not applicable |
+
+An event that comes at a random time in the 60 s waits 15 s on average if it comes during the block, and 0 s if not. Thus its mean delay is 30² / 2 / 60 = 7.5 s. The mean of the heartbeats, 7.75 s, is near this value. The quantiles of DriftLag say that the page had no lag.
+
+But the DriftLag samples are correct as a sum: 30 000 ms of lag in 60 s is a blocked time of 50%. Each probe answers a different question:
+
+- The **quantiles of the worker heartbeat** estimate the delay that an event at a random time sees.
+- The **sum of DriftLag** gives the blocked time. Its quantiles are statistics of windows, not of events.
+
+The research gives two corrections for a closed-loop probe:
+
+- The back-fill of the omitted samples, as HdrHistogram does it.
+- Statistics that use the time as the weight, for example the blocked fraction of the time.
+
+The library does not add samples to the DriftLag histogram at this time. It uses the worker heartbeat for the delay, and the sum of DriftLag for the blocked time.
+
+## Why the worker heartbeat is the primary estimator
+
+The research recommends the open-loop stream of worker heartbeats as the primary estimator of the lag that a random event sees. The worker heartbeat has these properties:
+
+- **Open loop.** The worker sends on its own schedule. The samples do not coordinate with the main thread.
+- **A message, not a timer of the main thread.** The heartbeat waits in the task queue as a message does. The nesting clamp and the timer granularity of the main thread do not change it. In Chromium, a message from a worker to its page is a posted message, which the scheduler can pause but does not throttle.
+- **All engines.** The heartbeat needs only a Web Worker. Firefox and Safari have no Long Animation Frames, but they have workers.
+
+The heartbeat also has limits:
+
+- **The sampling rate.** With one heartbeat each second, a block of B milliseconds delays a heartbeat with a probability of approximately min(1, B / 1000). Thus a block of 50 ms delays a heartbeat with a probability of 5%. One page gives a small number of samples, but the samples of many pages give the distribution. To change the interval, set `workerHeartbeatIntervalMs` in `createBrowserDeps()`.
+- **The send time.** The worker stamps the time when it sends the heartbeat, not the time when it planned to send it. If the timer of the worker is late, the heartbeat starts late, and its delay does not contain the lateness. The worker reports the lateness in `lag_worker_self_lag_histogram`. The research recommends the planned time as the stamp.
+- **The priority.** Chromium can do input and rendering work before a message task. Thus the heartbeat measures the delay of messages, which can be different from the delay of input. The research marks this point as an inference.
+- **Hidden pages.** The worker monitor pauses while the page is hidden. Refer to [measurement validity](/docs/concepts/measurement-validity).
+
+## How to read DriftLag
+
+DriftLag reports, for each window of approximately 100 ms, its duration minus the idle duration of its steps. Each block in the window adds approximately its duration to the lag. Thus the sum of all samples is approximately the blocked time.
+
+The rate of the sum is the blocked time in milliseconds for each second. Divide it by 1000 to get the fraction of the time that the main thread was blocked. With native histograms, this query gives the fraction for each page:
+
+```promql
+histogram_sum(rate(lag_drift_histogram[5m])) / 1000
+```
+
+This rate uses the wall time of the range. A page that was hidden in a part of the range has no samples for that part. Thus the query gives a fraction that is too low for the visible time. The count of the windows gives the measured time. Each window has an idle part of approximately 100 ms, and its blocked part is its lag. This query gives the blocked fraction of the measured time for all pages:
+
+```promql
+sum(histogram_sum(rate(lag_drift_histogram[5m])))
+/
+(
+  100 * sum(histogram_count(rate(lag_drift_histogram[5m])))
+  + sum(histogram_sum(rate(lag_drift_histogram[5m])))
+)
+```
+
+With explicit-bucket histograms, use `rate(lag_drift_histogram_sum[5m])` and `rate(lag_drift_histogram_count[5m])` in the same way. Refer to [metrics model](/docs/concepts/metrics-model).
+
+Two effects change this fraction:
+
+- **Jitter.** The metric records 0 for a negative lag, thus the jitter above the baseline adds to the sum and the jitter below it does not. An idle page shows a small blocked fraction. In experiment E3, the 90th percentile of the idle lag was 3.1 ms in Chromium ([local experiments](/research/local-experiments)).
+- **Sustained load.** DriftLag calculates its baseline from the recent steps. If the main thread is busy during more than half of the steps, the baseline increases and DriftLag reports less lag. Also, 10 equal steps of 40 ms or less in a row look like a new timer granularity. Tasks of the same length can give such steps ([DriftLag](/docs/monitors/drift-lag)). The worker heartbeat measures these cases correctly.
+
+## The observer effect and the cost of the probes
+
+Each probe uses the main thread, and some probes change what the other probes measure ([clocks and timers](/research/clocks-and-timers)):
+
+- **Timer chains.** A chain of 5 ms timeouts wakes the main thread up to 200 times each second. On Windows, it keeps the system timer at 1 ms on AC power or 8 ms on battery power, and it prevents idle periods. Bruce Dawson measured the cost of a timer of 1 kHz: 0.3 W, approximately 10% of the idle power of the package. It also cost 2.5% to 5% of throughput.
+- **Animation frame loops.** A `requestAnimationFrame` loop keeps the rendering pipeline active in each frame, and it makes the idle deadlines shorter.
+- **Idle deadlines.** The research infers that the timer chain and the frame loop shorten the idle deadlines to 5 ms or less, or to the next frame. Thus the idle time that the idle-availability monitor records is lower while the other probes operate.
+- **Message loops.** A loop of messages, in which each message sends the next one, can measure the event loop at intervals of approximately 25 µs. But such a loop uses most of one CPU core. The scheduling-fairness monitor sends its messages only each 5 s.
+- **The heartbeat backlog.** After a block, the main thread processes each heartbeat that waited, and it sends an acknowledgement for each one.
+
+The library decreases these costs in these ways. The timer-driven monitors pause while the page is hidden. DriftLag subtracts its idle baseline, which also contains the cost of its own timer. MacrotaskLag and the scheduling-fairness monitor take one sample each 5 s. The clock-reliability monitor reads the clock in a tight loop only one time, 5 s after the start. We did not measure the total cost of the monitors at this time.
+
+## Clock resolution limits
+
+Each read of a clock with the resolution r is incorrect by less than r. A difference of two reads is incorrect by less than 2r ([clocks and timers](/research/clocks-and-timers)):
+
+| Browser | Resolution of `performance.now()` | Error of a difference | With cross-origin isolation |
+|---|---|---|---|
+| Chrome | 100 µs, with jitter | Up to ±0.2 ms | 5 µs |
+| Firefox | 1 ms | Up to ±2 ms | 20 µs |
+| Safari | 1 ms | Up to ±2 ms | 20 µs |
+
+Thus, in Firefox and Safari without isolation, each lag sample has an error of up to ±2 ms. This error is large for a sample of less than 10 ms. Use histograms whose buckets are at least 2r wide, and use the median of many samples for a threshold. The [clock-reliability monitor](/docs/monitors/clock-reliability) records r for each page.
+
+The browser also rounds some values. Event Timing rounds each `duration` to 8 ms ([browser support](/research/browser-support)). The resolution of DriftLag is one timer step: up to 16 ms in Firefox and WebKit on Windows.
+
+## Quantiles from histograms
+
+A histogram keeps the number of samples in each bucket. `histogram_quantile()` finds the bucket of the quantile and interpolates in it. Thus the error of a quantile is at most the width of its bucket. A native (exponential) histogram has buckets whose width grows with the value, thus the relative error stays almost the same for each value.
+
+Sum the histograms of all pages first, and then calculate the quantile. Do not calculate the mean of the quantiles of each page. Refer to [metrics model](/docs/concepts/metrics-model).
+
+A quantile is a statistic of the units of its histogram:
+
+| Metric | One sample is | Thus a quantile is a statistic of |
+|---|---|---|
+| DriftLag | One window of approximately 100 ms | Windows of visible time |
+| Worker lag | One heartbeat, each second of visible time | The delay of an event at a random time |
+| Event Timing | One interaction event of 16 ms or more | Slow interaction events |
+| Page-view vitals | One page view | Page views |
+
+The time-based metrics weight each page by its visible time. A page that is visible for one hour gives 3600 heartbeats, and a page that is visible for 10 s gives 10.
+
+## Sampling bias by hidden pages
+
+The library discards the samples of hidden and frozen periods, and the timer-driven monitors pause in these periods. Thus the data is only about visible time, and it has no data about the work of a page in the background.
+
+This rule has effects on the statistics:
+
+- Users who switch tabs frequently give fewer samples to the time-based metrics.
+- The research recommends that a monitor keeps the worker heartbeats of hidden pages, with a visibility attribute. The library does not do this at this time: the worker monitor pauses while the page is hidden.
+- The state of the device changes the baselines. For example, battery power, Low Power Mode and EcoQoS change the timers. DriftLag calibrates its baseline continuously, but the library does not record the power state.
+- The clock drift grows with the age of the page. Thus long sessions have more clock effects. Refer to [clocks and time](/docs/concepts/clocks-and-time).
+
+The page-view vitals have their own rule: the load metrics count only before the page is hidden for the first time. Refer to [page views](/docs/concepts/page-views).

@@ -149,4 +149,18 @@ describe("LayoutShiftMonitor", () => {
         monitor.stop();
         expect(monitor.getCLS()).toBe(0);
     });
+
+    it("reports the sources of each shift, and no sources for a shift without them", () => {
+        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+        const report = vi.fn();
+        new LayoutShiftMonitor(report, { log : vi.fn() }, MockCtor);
+        const sources = [{ node : { id : "banner" } }];
+
+        triggerEntries([makeShiftEntry({ startTime : 100, value : 0.1, sources } as Partial<LayoutShiftEntry>)]);
+        const withoutSources = makeShiftEntry({ startTime : 200, value : 0.1 });
+        delete (withoutSources as Partial<LayoutShiftEntry>).sources;
+        triggerEntries([withoutSources]);
+
+        expect(report.mock.calls.map(([shift]) => (shift as { sources : unknown }).sources)).toEqual([sources, []]);
+    });
 });

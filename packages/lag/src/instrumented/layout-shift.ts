@@ -1,42 +1,29 @@
 import type { CoreDeps, ObserverDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import { LayoutShiftMonitor, type LayoutShiftReport } from "../LayoutShiftMonitor.js";
+import { LayoutShiftMonitor } from "../LayoutShiftMonitor.js";
+import { METRICS, createHistogram } from "../metric-catalog.js";
+import { createHandle } from "./shared.js";
 
 /**
- * Constructs a LayoutShiftMonitor wired to a shift histogram and a
- * session-worst CLS gauge.
+ * This factory makes a `LayoutShiftMonitor` that records into
+ * `lag_layout_shift_histogram` (the score of each shift that did not follow
+ * user input).
  *
- * Metrics:
- * - `lag_cls_shift_histogram` — per-shift value (unitless score)
- * - `lag_cls_worst_session_gauge` — running worst session CLS value
+ * CLS for each page view comes from the page-view vitals
+ * (`createInstrumentedPageViewVitals`), not from this factory.
  */
 export function createInstrumentedLayoutShift(
     deps : CoreDeps & ObserverDeps,
 ) : MonitorHandle<LayoutShiftMonitor> {
-    try {
-        const shiftHist = deps.meter.createHistogram<LayoutShiftReport>(
-            "lag_cls_shift_histogram", { unit : "score" });
-        const worstGauge = deps.meter.createObservableGauge<Record<string, never>>(
-            "lag_cls_worst_session_gauge", { unit : "score" });
+    return createHandle("layout-shift", deps.logger, () => {
+        const shiftHist = createHistogram(deps.meter, METRICS.layoutShift);
 
         const monitor = new LayoutShiftMonitor(
-            (entry) => {
-                shiftHist.record(entry.value, entry);
-            },
+            (entry) => { shiftHist.record(entry.value); },
             deps.logger,
             deps.PerformanceObserver,
         );
 
-        worstGauge.addCallback((result) => {
-            result.observe(monitor.getCLS());
-        });
-
-        return { name : "layout-shift", monitor, stop : () => monitor.stop() };
-    } catch (error) {
-        deps.logger.log("warn", "Failed to create LayoutShiftMonitor.", {
-            error,
-            type : "createInstrumentedLayoutShift",
-        });
-        return { name : "layout-shift", monitor : undefined, stop : () => {} };
-    }
+        return { monitor, stop : () => monitor.stop() };
+    });
 }

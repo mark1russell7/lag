@@ -1,4 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
-  "extends": "../../ts/config/node.json"
+  "extends": "../../ts/config/node.json",
+  "references": [
+    {
+      "path": "../report"
+    },
+    {
+      "path": "../lag"
+    }
+  ]
 }

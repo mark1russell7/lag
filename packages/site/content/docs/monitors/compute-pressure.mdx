@@ -1,0 +1,123 @@
+---
+title: Compute pressure
+description: Records the CPU pressure state of the device from the Compute Pressure API, as an ordinal from 0 (nominal) to 3 (critical).
+order: 33
+status: final
+---
+
+import { pressureMetrics } from "./metrics.data";
+
+`ComputePressureMonitor` records the pressure state of the device from the Compute Pressure API (`PressureObserver`). The state is an ordinal value from 0 (`nominal`) to 3 (`critical`). Only Chromium on desktop has this API.
+
+## What it measures
+
+The signal is the state of each pressure record:
+
+| State | Ordinal | Meaning |
+|---|---|---|
+| `nominal` | 0 | No perceptible load. |
+| `fair` | 1 | Moderate load. |
+| `serious` | 2 | Heavy load. |
+| `critical` | 3 | Maximum load. The system can throttle. |
+
+The meanings come from the comments of the code.
+
+The monitor answers this question: was the device itself busy while the page was slow? A high state at the time of a lag shows a cause outside the page. The timer monitors measure the lag of the page, and this monitor gives the context of the system.
+
+## How it works
+
+1. The monitor makes a `PressureObserver`. As in the current [specification](https://www.w3.org/TR/compute-pressure/), the constructor gets only the callback.
+2. It uses `observe(source, { sampleInterval: 1000 })` for each source of its list. The default list is `["cpu"]`.
+3. For each record, it keeps the latest state of the source, and the factory records the ordinal in `lag_pressure_state_histogram` with the attribute `source`.
+
+When `observe()` rejects a source, the monitor logs a warning for that source. When the constructor fails, it logs a warning and gets no records. `getCurrentState(source)` gives the latest state of a source. `getWorstStateOrdinal()` gives the highest ordinal of all sources, or −1 before the first record.
+
+## Browser support
+
+| Browser | `PressureObserver` |
+|---|---|
+| Chromium | 125 on desktop (Windows, macOS, Linux, ChromeOS). Not on Android. |
+| Firefox | Not available. |
+| Safari | Not available. WebKit opposes the API. |
+
+These facts come from [browser support](/research/browser-support):
+
+- The only source is `cpu`. The source `thermals` is at risk in the specification.
+- The browser sends updates only to a document that is focused, visible or capturing.
+- The specification limits the rate of changes: after 50 to 100 changes in a window, a penalty of 5 s to 10 s follows.
+- The Permissions Policy `compute-pressure` controls the API. Its default is `self`.
+- `ownContributionEstimate` (the part of the pressure that the page causes) did not ship.
+
+The specification is a W3C Candidate Recommendation Draft of 14 May 2026.
+
+## Measurement validity
+
+The monitor does not pause while the page is hidden, and it uses no `SampleValidator`. The browser gives no updates to a hidden page that does not capture, thus the monitor gets no records there.
+
+## Metrics
+
+<MetricTable metrics={pressureMetrics} />
+
+The monitor sends no events.
+
+## Configuration
+
+```ts
+function createInstrumentedComputePressure(
+    deps : CoreDeps & PressureDeps,
+) : MonitorHandle<ComputePressureMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `PressureDeps`:
+
+| Option | Default | What it does |
+|---|---|---|
+| `PressureObserver` | necessary | The constructor of the browser. |
+| `pressureSources` | `["cpu"]` | The sources that the monitor asks for. `createBrowserDeps()` passes the option of the same name. |
+| `pressureSampleIntervalMs` | 1000 | The sample interval that the monitor asks for, in the options of `observe()`. |
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedComputePressure } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag"), pressureSources : ["cpu"] });
+if (deps.PressureObserver) {
+    const pressure = createInstrumentedComputePressure({
+        ...deps,
+        PressureObserver : deps.PressureObserver,
+        pressureSampleIntervalMs : 2_000,
+    });
+    console.log(pressure.monitor?.getCurrentState("cpu"));
+}
+```
+
+## Cost
+
+- **Observers:** one `PressureObserver`. No timers.
+- **Records:** one histogram value for each record of the browser.
+
+## Limits
+
+- **Only Chromium on desktop.** Android, Firefox and Safari give no values.
+- **Records, not time.** The histogram counts the records of the browser, not the time. Thus it does not give the time in each state.
+- **Only when the page is focused, visible or capturing.** The browser gives no records to a hidden page that does not capture.
+- **Only the cpu source.** The catalog has the values `thermals`, `power` and `memory`, but browsers do not have these sources. The monitor logs a warning for each source that `observe()` rejects.
+- **The whole device.** The state is the pressure of the device, not of the page.
+
+## Tests
+
+Unit tests:
+
+- `ComputePressureMonitor.test.ts`: the monitor makes one observer and asks for the configured sources, with a `sampleInterval` of 1000 ms. It reports each record with its ordinal, and keeps the latest state of each source. `getWorstStateOrdinal()` gives the highest state, or −1 before the first record. A rejected source and a failed constructor give a warning. `stop()` disconnects the observer and clears the state.
+- `browser/browser-deps.test.ts`: the adapter uses the `cpu` source by default.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy)):
+
+- `cdp/compute-pressure.test.ts` (Chromium in the new headless mode): a virtual CPU source of CDP goes through the states `nominal`, `serious`, `critical` and `fair`. The monitor records each state with the ordinals 0, 2, 3 and 1, and it logs no warning. At the end, `getCurrentState("cpu")` is `fair`, and `getWorstStateOrdinal()` is 1.
+- `browser-apis.test.ts` (in Chromium, Firefox, WebKit and Chrome, only where the browser has `PressureObserver`): the monitor observes the real `cpu` source for up to 2 s. Each record has the source `cpu` and an ordinal from 0 to 3, and each warning names `PressureObserver`. The browser sends records only to a focused, visible page, and only at a change. Thus the test can get no record.
+- `lag-monitors.test.ts` (in Chromium, Firefox, WebKit and Chrome): the setup starts the monitor only where the browser has `PressureObserver`.
+
+## Source
+
+- [`ComputePressureMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ComputePressureMonitor.ts): the monitor.
+- [`instrumented/compute-pressure.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/compute-pressure.ts): the factory.

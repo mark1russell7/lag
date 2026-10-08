@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../ts/config/react.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "isolatedDeclarations": false,
+    "declaration": false,
+    "declarationMap": false,
+    "types": ["vite/client"],
+    "noPropertyAccessFromIndexSignature": false,
+    "rootDir": ".",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo"
+  },
+  "include": ["src/**/*", "content/**/*"],
+  "exclude": ["node_modules", "dist"],
+  "references": [
+    {
+      "path": "../lag"
+    },
+    {
+      "path": "../lag-worker"
+    },
+    {
+      "path": "../load"
+    },
+    {
+      "path": "../report"
+    }
+  ]
+}

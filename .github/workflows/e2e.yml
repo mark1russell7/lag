@@ -1,0 +1,57 @@
+name: E2E
+
+# The integration tests with the Grafana stack: OTLP export to Alloy and the
+# Mimir checks, which are required in the e2e project.
+on:
+  workflow_dispatch:
+  schedule:
+    # Every Monday at 04:17 UTC
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E tests with the Grafana stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      STACK_DIR: packages/lag-integration-tests/node_modules/@mark1russell7/grafana-infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Install Chromium and its system dependencies
+        working-directory: packages/lag-integration-tests
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Start the Grafana stack
+        working-directory: ${{ env.STACK_DIR }}
+        run: docker compose up -d
+      - name: Wait for Mimir and Alloy
+        shell: bash
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:9009/ready && curl -fsS http://localhost:12345/-/ready; then exit 0; fi
+            sleep 5
+          done
+          echo "The Grafana stack did not become ready in 5 minutes" >&2
+          exit 1
+      - name: E2E tests
+        working-directory: packages/lag-integration-tests
+        run: pnpm exec vitest run --project e2e
+      - name: Logs of the Grafana stack
+        if: failure()
+        working-directory: ${{ env.STACK_DIR }}
+        run: docker compose logs --tail 200
+      - name: Stop the Grafana stack
+        if: always()
+        working-directory: ${{ env.STACK_DIR }}
+        run: docker compose down -v

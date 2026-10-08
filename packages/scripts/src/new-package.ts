@@ -16,32 +16,60 @@ const configs = [
 
 type Config = (typeof configs)[number]["value"];
 
-async function main(): Promise<void> {
-  p.intro("New @lag package");
+function validateName(v: string | undefined): string | undefined {
+  if (!v) return "Required";
+  if (!/^[a-z][a-z0-9-]*$/.test(v)) return "Lowercase alphanumeric with hyphens";
+  return undefined;
+}
 
-  const name = await p.text({
-    message: "Package name (without @lag/)",
-    validate: (v) => {
-      if (!v) return "Required";
-      if (!/^[a-z][a-z0-9-]*$/.test(v)) return "Lowercase alphanumeric with hyphens";
-      return undefined;
-    },
-  });
+function isConfig(v: string | undefined): v is Config {
+  return configs.some((c) => c.value === v);
+}
 
+/**
+ * This function reads the value of a flag, for example `--name <name>` or
+ * `--config <config>`. If the value is missing, the caller asks for it
+ * interactively.
+ */
+function readArg(flag: string): string | undefined {
+  const index = process.argv.indexOf(flag);
+  return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
+async function askName(): Promise<string> {
+  const fromArgs = readArg("--name");
+  if (fromArgs !== undefined) {
+    const error = validateName(fromArgs);
+    if (error) throw new Error(`--name: ${error}`);
+    return fromArgs;
+  }
+  const name = await p.text({ message: "Package name (without @lag/)", validate: validateName });
   if (p.isCancel(name)) {
     p.cancel();
     process.exit(0);
   }
+  return name;
+}
 
-  const config = (await p.select({
-    message: "TypeScript config",
-    options: [...configs],
-  })) as Config;
-
+async function askConfig(): Promise<Config> {
+  const fromArgs = readArg("--config");
+  if (fromArgs !== undefined) {
+    if (!isConfig(fromArgs)) throw new Error(`--config: one of ${configs.map((c) => c.value).join(", ")}`);
+    return fromArgs;
+  }
+  const config = await p.select({ message: "TypeScript config", options: [...configs] });
   if (p.isCancel(config)) {
     p.cancel();
     process.exit(0);
   }
+  return config;
+}
+
+async function main(): Promise<void> {
+  p.intro("New @lag package");
+
+  const name = await askName();
+  const config = await askConfig();
 
   const pkgDir = join(packagesDir, name);
   const srcDir = join(pkgDir, "src");
@@ -104,4 +132,7 @@ async function main(): Promise<void> {
   p.outro(`@lag/${name} is ready`);
 }
 
-main();
+main().catch((error: unknown) => {
+  p.cancel(String(error));
+  process.exit(1);
+});

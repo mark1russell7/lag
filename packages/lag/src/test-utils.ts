@@ -1,122 +1,13 @@
 import { vi, expect, type Mock } from 'vitest';
 import type { LagMonitor, LagMonitorConstructor } from "./LagMonitor.js";
+import type { Meter } from "./meter.js";
+import { EVENT_CATALOG, METRIC_CATALOG } from "./metric-catalog.js";
 
 /**
- * Helper class for testing lag monitors with fake timers.
- * Simplifies the common pattern of advancing both actual time (currentTime)
- * and vitest's fake timers in sync and automatically create the monitor.
- *
- */
-export class LagMonitorTestDriver<T extends LagMonitor = LagMonitor> {
-    public monitor?: T;
-    public mockLogger = { log : vi.fn() };
-
-    /**
-     * @param getCurrentTime - Function that returns the current mocked time
-     * @param setCurrentTime - Function to update the mocked time
-     * @param interval - The base measurement interval in milliseconds
-     * @param mockReport - The mock report function to track calls
-     */
-    constructor(
-        private getCurrentTime : () => number,
-        private setCurrentTime : (time: number) => void,
-        private readonly interval : number,
-        private readonly mockReport : Mock,
-    ){}
-
-    /**
-     * Creates a lag monitor instance and stores it on the driver.
-     * Passes vitest-faked globals as DI'd timer functions, and wraps
-     * getCurrentTime as the clock.
-     *
-     * @param MonitorClass - The monitor class constructor
-     * @returns The created monitor instance
-     *
-     * @example
-     * const monitor = driver.createMonitor(ContinuousLag);
-     */
-    createMonitor(MonitorClass : LagMonitorConstructor<T>) : T {
-        this.monitor = new MonitorClass(
-            this.interval,
-            this.mockReport,
-            this.mockLogger,
-            setInterval,
-            clearInterval,
-            setTimeout,
-            clearTimeout,
-            { now : () => this.getCurrentTime() },
-        );
-        return this.monitor;
-    }
-
-    /**
-     * Advances one measurement cycle with the specified lag.
-     * Advances actual time by (interval + lagMs) and timers by interval.
-     *
-     * @param lagMs - The amount of lag to simulate (positive = behind, negative = ahead)
-     *
-     * @example
-     * driver.tick(5); // Simulate 5ms of lag
-     * driver.tick(-2); // Simulate being 2ms ahead of schedule
-     * driver.tick(0); // Perfect timing, no lag
-     */
-    tick(lagMs : number) : void {
-        this.setCurrentTime(this.getCurrentTime() + this.interval + lagMs);
-        vi.advanceTimersByTime(this.interval);
-    }
-
-    /**
-     * Advances multiple measurement cycles, each with the specified lag.
-     *
-     * @param count - Number of cycles to advance
-     * @param lagMs - The amount of lag per cycle
-     *
-     * @example
-     * driver.tickMany(3, 5); // Simulate 3 cycles, each with 5ms lag
-     */
-    tickMany(count : number, lagMs : number) : void {
-        for(let i = 0; i < count; i++) {
-            this.tick(lagMs);
-        }
-    }
-
-    /**
-     * Advances multiple cycles with different lag values for each cycle.
-     *
-     * @param lagValues - Array of lag values, one per cycle
-     * @returns The lag values array (for chaining with expectations)
-     *
-     * @example
-     * const lags = driver.tickSequence([5, -2, 10]);
-     * lags.forEach((lag, i) => expect(mockReport).toHaveBeenNthCalledWith(i + 1, lag));
-     */
-    tickSequence(lagValues : number[]) : number[] {
-        lagValues.forEach(lag => this.tick(lag));
-        return lagValues;
-    }
-
-    /**
-     * Asserts that the mock report was called with the expected lag values in sequence.
-     *
-     * @param expectedLags - Array of expected lag values
-     *
-     * @example
-     * driver.tickSequence([5, -2, 10]);
-     * driver.expectReportedLags([5, -2, 10]);
-     */
-    expectReportedLags(expectedLags : number[]) : void {
-        expectedLags.forEach((lag, i) => {
-            expect(this.mockReport).toHaveBeenNthCalledWith(i + 1, lag);
-         });
-        expect(this.mockReport).toHaveBeenCalledTimes(expectedLags.length);
-    }
-}
-
-/**
- * Test utility for MacrotaskLag that handles the async callback coordination
- * between setInterval and setTimeout(0) calls.
- * Uses vi.fn() mocks rather than global spies since MacrotaskLag
- * receives its timer functions via DI.
+ * A test utility for `MacrotaskLag`. It controls the order of the
+ * asynchronous callbacks of `setInterval` and `setTimeout(0)`. It uses
+ * `vi.fn()` mocks, not global spies, because `MacrotaskLag` gets its timer
+ * functions through dependency injection.
  */
 export class MacrotaskLagTestDriver {
     public mockSetInterval = vi.fn().mockReturnValue(123);
@@ -134,7 +25,7 @@ export class MacrotaskLagTestDriver {
     ) {}
 
     /**
-     * Creates a MacrotaskLag monitor instance
+     * This method makes a monitor of `MonitorClass` with the mocks of the driver.
     */
    createMonitor<M extends LagMonitor>(MonitorClass : LagMonitorConstructor<M>) : M {
         return new MonitorClass(
@@ -150,21 +41,21 @@ export class MacrotaskLagTestDriver {
    }
 
    /**
-    * Mock clock.now() to return a sequence of values.
-    * Useful for simulating the passage of time in tests.
+    * This method makes `clock.now()` give a sequence of values. Use it to
+    * simulate the passage of time in tests.
     */
     mockPerformanceTimes(...times : number[]) : void {
         times.forEach((time) => this.mockClock.now.mockReturnValueOnce(time));
     }
 
     /**
-     * Executes one complete interval cycle: calls the interval callback,
-     * executes the setTimeout(0) callback, and awaits the results.
+     * This method does one full interval cycle. It starts the interval
+     * callback, then the `setTimeout(0)` callback, and waits for the results.
      */
     async executeIntervalCycle():Promise<void> {
-        const intervalCallback = this.mockSetInterval.mock.calls[0][0];
+        const intervalCallback = this.mockSetInterval.mock.calls[0]![0];
         const promise = intervalCallback();
-        const timeoutCallback = this.mockSetTimeout.mock.calls[this.timeoutCallCount][0];
+        const timeoutCallback = this.mockSetTimeout.mock.calls[this.timeoutCallCount]![0];
         this.timeoutCallCount++;
         timeoutCallback();
         await promise;
@@ -174,21 +65,22 @@ export class MacrotaskLagTestDriver {
     }
 
     /**
-     * Gets the interval callback function for manual execution.
+     * This method gives the interval callback, so that a test can start it.
      */
     getIntervalCallback() : () => Promise<void> {
-        return this.mockSetInterval.mock.calls[0][0];
+        return this.mockSetInterval.mock.calls[0]![0];
     }
 
     /**
-     * Gets a specific setTimeout callback by index
+     * This method gives the `setTimeout` callback at `index`.
      */
     getTimeoutCallback(index : number = 0) : () => void {
-        return this.mockSetTimeout.mock.calls[index][0];
+        return this.mockSetTimeout.mock.calls[index]![0];
     }
 
     /**
-     * Asserts that setInterval was called with the correct interval.
+     * This method asserts that the monitor used `setInterval` one time, with
+     * the correct interval.
      */
     expectIntervalSetup(): void {
         expect(this.mockSetInterval).toHaveBeenCalledWith(expect.any(Function), this.intervalMs);
@@ -197,9 +89,92 @@ export class MacrotaskLagTestDriver {
     }
 
     /**
-     * Asserts that setTimeout was called with the specified delay.
+     * This method asserts that the monitor used `setTimeout` with the
+     * specified delay.
      */
     expectTimeoutScheduled(delay: number = 0): void {
         expect(this.mockSetTimeout).toHaveBeenCalledWith(expect.any(Function), delay);
+    }
+}
+
+export type RecordedValue = { value : number; attributes : Record<string, unknown> | undefined };
+
+export type RecordedInstrument = {
+    name : string;
+    kind : "histogram" | "counter";
+    unit : string;
+    values : RecordedValue[];
+};
+
+/**
+ * This function makes a `Meter` that records each histogram and counter
+ * value, with the `kind` and the `unit` of its instrument.
+ */
+export function createRecordingMeter() {
+    const instruments = new Map<string, RecordedInstrument>();
+
+    const recorder = (name : string, kind : RecordedInstrument["kind"], unit : string) => {
+        const instrument : RecordedInstrument = { name, kind, unit, values : [] };
+        instruments.set(name, instrument);
+        return (value : number, attributes? : unknown) => {
+            instrument.values.push({ value, attributes : attributes as Record<string, unknown> | undefined });
+        };
+    };
+
+    const meter : Meter = {
+        createHistogram : (name, options) => ({ record : recorder(name, "histogram", options.unit) }),
+        createCounter : (name, options) => ({ add : recorder(name, "counter", options.unit) }),
+    };
+
+    return {
+        meter,
+        /** All values that the named histogram or counter recorded. */
+        values : (name : string) : number[] => (instruments.get(name)?.values ?? []).map(r => r.value),
+        /** The sum of the values of the named counter. */
+        sum : (name : string) : number => (instruments.get(name)?.values ?? []).reduce((n, r) => n + r.value, 0),
+        /** All records, by instrument name. */
+        records : () : ReadonlyMap<string, readonly RecordedValue[]> =>
+            new Map([...instruments].map(([name, i]) => [name, i.values])),
+        /** All instruments that the meter made. */
+        instruments : () : readonly RecordedInstrument[] => [...instruments.values()],
+    };
+}
+
+/**
+ * This function makes sure that the meter made only instruments of the metric
+ * catalog, with the kind and the unit of the catalog. It also makes sure
+ * that each recorded attribute has a value that the catalog permits.
+ */
+export function expectCatalogInstruments(recording : ReturnType<typeof createRecordingMeter>) : void {
+    const byName = new Map(METRIC_CATALOG.map(m => [m.name, m]));
+    for (const instrument of recording.instruments()) {
+        const definition = byName.get(instrument.name);
+        expect(definition, instrument.name).toBeDefined();
+        expect(instrument.kind, instrument.name).toBe(definition!.kind);
+        expect(instrument.unit, instrument.name).toBe(definition!.unit);
+        for (const { attributes } of instrument.values) {
+            for (const [key, value] of Object.entries(attributes ?? {})) {
+                expect(definition!.attributes[key], `${instrument.name}.${key}=${String(value)}`).toContain(value);
+            }
+        }
+    }
+}
+
+/**
+ * This function makes sure that each event that `emit` got has a name of the
+ * event catalog. Each attribute name of the event must be in its catalog
+ * entry. A catalog name that ends with `.*` permits each name with that
+ * prefix. The names in `contextAttributes` are permitted for each event.
+ */
+export function expectCatalogEvents(emit : Mock, contextAttributes : readonly string[] = []) : void {
+    const byName = new Map(EVENT_CATALOG.map(e => [e.name, e]));
+    for (const [name, attributes] of emit.mock.calls as Array<[string, Record<string, unknown>]>) {
+        const definition = byName.get(name);
+        expect(definition, name).toBeDefined();
+        for (const key of Object.keys(attributes)) {
+            const listed = contextAttributes.includes(key)
+                || definition!.attributes.some(a => a === key || (a.endsWith(".*") && key.startsWith(a.slice(0, -1))));
+            expect(listed, `${name}: ${key}`).toBe(true);
+        }
     }
 }

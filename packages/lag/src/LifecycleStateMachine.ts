@@ -1,36 +1,31 @@
-import type { Logger } from "./types.js";
+import type { Clock, Logger } from "./types.js";
 
 /**
- * Page lifecycle states per the W3C/WICG Page Lifecycle spec.
- * See: https://developer.chrome.com/docs/web-platform/page-lifecycle-api
+ * The page lifecycle states of the Page Lifecycle API. Refer to
+ * https://developer.chrome.com/docs/web-platform/page-lifecycle-api.
  *
- * State diagram:
- *   ┌──────────┐  blur     ┌──────────┐
- *   │  ACTIVE  │ ────────> │ PASSIVE  │
- *   │          │ <──────── │          │
- *   └─────┬────┘  focus    └─────┬────┘
- *         │                       │
- *         │       visibilitychange (hidden)
- *         │                       │
- *         v                       v
- *   ┌─────────────────────────────────┐  freeze   ┌─────────┐
- *   │             HIDDEN              │ ────────> │ FROZEN  │
- *   │                                 │ <──────── │         │
- *   └────┬────────────────────────────┘  resume   └────┬────┘
- *        │                                              │
- *        │ pagehide(persisted=false)                    │
- *        v                                              v
- *   ┌──────────────┐                              ┌────────────┐
- *   │  TERMINATED  │                              │ DISCARDED  │
- *   └──────────────┘                              └────────────┘
+ * The transitions and the events that cause them:
+ *
+ * ```text
+ * active         ⇄ passive          focus / blur
+ * active|passive → hidden           visibilitychange
+ * hidden         → active|passive   visibilitychange
+ * hidden         ⇄ frozen           freeze / resume
+ * any            → frozen           pagehide (persisted: into the back/forward cache)
+ * frozen         → active|passive   pageshow (persisted: from the back/forward cache)
+ * any            → terminated       pagehide (not persisted)
+ * ```
+ *
+ * The machine does not model the "discarded" state. No script operates in a
+ * discarded page. Thus, the page can find a discard only after the reload,
+ * through `document.wasDiscarded`.
  */
 export type LifecycleState =
     | "active"
     | "passive"
     | "hidden"
     | "frozen"
-    | "terminated"
-    | "discarded";
+    | "terminated";
 
 export type LifecycleTrigger =
     | "focus"
@@ -39,10 +34,7 @@ export type LifecycleTrigger =
     | "freeze"
     | "resume"
     | "pagehide"
-    | "pageshow"
-    | "beforeunload"
-    | "discard"
-    | "init";
+    | "pageshow";
 
 export type StateTransition = {
     from : LifecycleState;
@@ -55,60 +47,88 @@ export type LifecycleMark = {
     readonly id : symbol;
 };
 
+/**
+ * The machine reads only two properties of an event object: `persisted` (of
+ * `pagehide` and `pageshow`) and `timeStamp`.
+ */
+export type LifecycleListener = (event : unknown) => void;
+
+export type LifecycleListenerOptions = { capture? : boolean };
+
 export type LifecycleEventTarget = {
-    addEventListener(event : string, callback : (event? : { persisted? : boolean }) => void) : void;
+    addEventListener(type : string, listener : LifecycleListener, options? : LifecycleListenerOptions) : void;
+    removeEventListener(type : string, listener : LifecycleListener, options? : LifecycleListenerOptions) : void;
 };
 
 export type LifecycleDocument = LifecycleEventTarget & {
     visibilityState : string;
     hasFocus? : () => boolean;
-    wasDiscarded? : boolean;
 };
 
 export type LifecycleWindow = LifecycleEventTarget;
 
+/** True for the states in which the page is visible and timers operate without throttling. */
+export function isVisibleState(state : LifecycleState) : boolean {
+    return state === "active" || state === "passive";
+}
+
+function isPersisted(event : unknown) : boolean {
+    return (event as { persisted? : unknown } | undefined)?.persisted === true;
+}
+
 /**
- * Tracks page lifecycle state transitions and provides a mark/resolve API
- * for consumers to ask "what state changes happened between point A and now?".
+ * The time of the event (`event.timeStamp`, in `performance.now()` time) if
+ * it is applicable, or `now`. A timestamp after `now` is not applicable: old
+ * browsers give `timeStamp` in Unix time.
+ */
+function eventTime(event : unknown, now : number) : number {
+    const timeStamp = (event as { timeStamp? : unknown } | undefined)?.timeStamp;
+    return typeof timeStamp === "number" && timeStamp > 0 && timeStamp <= now ? timeStamp : now;
+}
+
+/**
+ * This class follows the transitions of the page lifecycle state. It gives:
+ * - a mark and resolve API, to ask "which state changes occurred between
+ *   point A and this time?"
+ * - change subscriptions, for example to pause the monitors while the page
+ *   is hidden (refer to `createMeasurementConditions`)
  *
- * Memory is bounded: transitions older than the earliest unresolved mark are
- * compacted away on each resolve(). If no marks are outstanding, the buffer
- * is cleared completely.
- *
- * Multiple consumers can hold marks simultaneously without interfering.
+ * The machine keeps the transitions only while a mark is open. On each
+ * `resolve()` and `cancel()`, it removes the transitions that are older than
+ * the earliest open mark. Thus, resolve or cancel each mark. Subscriptions
+ * do not use marks.
  */
 export class LifecycleStateMachine {
     private currentState : LifecycleState;
     private transitions : StateTransition[] = [];
-    private marks = new Map<symbol, number>(); // mark id -> index into transitions
+    private readonly marks = new Map<symbol, number>(); // mark id -> index into transitions
+    private readonly subscribers = new Set<(transition : StateTransition) => void>();
+    private readonly attached : Array<{
+        target : LifecycleEventTarget;
+        type : string;
+        listener : LifecycleListener;
+        options : LifecycleListenerOptions;
+    }> = [];
+    private totalTransitions = 0;
 
     constructor(
         private readonly document : LifecycleDocument,
         private readonly window : LifecycleWindow,
-        private readonly clock : { now : () => number },
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        _logger : Logger,
+        private readonly clock : Clock,
+        private readonly logger : Logger,
     ) {
-        this.currentState = this.computeInitialState();
-        // Record an initial transition so marks can capture the starting state
-        this.transitions.push({
-            from : this.currentState,
-            to : this.currentState,
-            trigger : "init",
-            timestamp : this.clock.now(),
-        });
+        this.currentState = this.document.visibilityState === "hidden" ? "hidden" : this.visibleState();
         this.attachListeners();
     }
 
     /**
-     * Returns the current lifecycle state.
+     * This method gives the current lifecycle state.
      *
-     * **Race condition handling (from PageHiddenTracker):**
-     * `document.visibilityState` is updated synchronously per the spec,
-     * but `visibilitychange` fires asynchronously. A macrotask could read
-     * the state between the synchronous update and the async event, missing
-     * a hidden period. We re-read `visibilityState` directly here to catch
-     * that case.
+     * `document.visibilityState` changes synchronously, but the browser
+     * dispatches `visibilitychange` as a separate task. Thus, a timer
+     * callback can start between the two. Each read synchronizes the state
+     * from `visibilityState` again, so that such a callback also sees the
+     * page as hidden.
      */
     getState() : LifecycleState {
         this.syncFromDocument();
@@ -116,27 +136,24 @@ export class LifecycleStateMachine {
     }
 
     /**
-     * Place a mark at the current point in the transition stream.
-     * Call resolve(mark) later to get all transitions that occurred after.
+     * This method puts a mark at the current point of the transition stream.
+     * Use `resolve(mark)` later to get all transitions that occurred after
+     * the mark.
      */
     mark() : LifecycleMark {
-        this.syncFromDocument(); // catch any pending sync-only visibility change
+        this.syncFromDocument();
         const id = Symbol();
         this.marks.set(id, this.transitions.length);
         return { id };
     }
 
     /**
-     * Get all transitions that have occurred since the mark, then drop the mark.
-     * Triggers buffer compaction. Returns an empty array if the mark is unknown
-     * (e.g., already resolved).
-     *
-     * **Race condition handling:** we sync from `document.visibilityState`
-     * both before collecting results AND after resetting, mirroring the
-     * original PageHiddenTracker.getAndReset() pattern.
+     * This method gives all transitions that occurred after the mark, and
+     * then removes the mark. It gives an empty array if the mark is unknown,
+     * for example if it is already resolved.
      */
     resolve(mark : LifecycleMark) : StateTransition[] {
-        this.syncFromDocument(); // capture any pending state change
+        this.syncFromDocument();
 
         const startIdx = this.marks.get(mark.id);
         if (startIdx === undefined) return [];
@@ -144,32 +161,13 @@ export class LifecycleStateMachine {
         const result = this.transitions.slice(startIdx);
         this.marks.delete(mark.id);
         this.compact();
-
-        this.syncFromDocument(); // re-check after compaction
         return result;
     }
 
     /**
-     * Returns true if the page was hidden (or frozen/terminated) at any point
-     * since the last call, then resets. Useful for any code that needs a
-     * simple boolean gate — e.g., to decide whether a measurement taken
-     * during this period is reliable or should be discarded.
-     *
-     * Uses the sync-from-document race condition fix internally.
-     */
-    private hiddenSinceLastCheck = false;
-
-    getAndResetHidden() : boolean {
-        this.syncFromDocument();
-        const was = this.hiddenSinceLastCheck || this.currentState === "hidden";
-        this.hiddenSinceLastCheck = false;
-        this.syncFromDocument();
-        return was;
-    }
-
-    /**
-     * Drop a mark without retrieving its transitions. Use to abandon a mark
-     * (e.g., the tracking session ended without needing the data).
+     * This method removes a mark, but it does not get its transitions. Use it
+     * to abandon a mark, for example when a measurement ended and its data is
+     * not necessary.
      */
     cancel(mark : LifecycleMark) : void {
         if (this.marks.delete(mark.id)) {
@@ -177,154 +175,142 @@ export class LifecycleStateMachine {
         }
     }
 
-    /**
-     * Number of transitions currently buffered (for debugging/testing).
-     */
+    /** This method sends each transition to `listener`. It gives a function that removes the subscription. */
+    subscribe(listener : (transition : StateTransition) => void) : () => void {
+        this.subscribers.add(listener);
+        return () => { this.subscribers.delete(listener); };
+    }
+
+    /** This method removes all DOM listeners, all marks, all subscribers and the buffered transitions. */
+    dispose() : void {
+        for (const { target, type, listener, options } of this.attached) {
+            target.removeEventListener(type, listener, options);
+        }
+        this.attached.length = 0;
+        this.subscribers.clear();
+        this.marks.clear();
+        this.transitions = [];
+    }
+
+    /** The number of transitions in the buffer at this time, for tests and debug. */
     getBufferedCount() : number {
         return this.transitions.length;
     }
 
-    /**
-     * Number of outstanding (unresolved) marks.
-     */
+    /** The number of open (unresolved) marks. */
     getMarkCount() : number {
         return this.marks.size;
     }
 
-    /** Total number of transitions seen since startup (lifetime counter). */
-    private totalTransitions = 0;
+    /** The total number of transitions since the construction of the machine (a lifetime counter). */
     getTotalTransitions() : number {
         return this.totalTransitions;
     }
 
     private compact() : void {
         if (this.marks.size === 0) {
-            // No marks holding the buffer alive — drop everything
             this.transitions = [];
             return;
         }
 
-        // Find the earliest mark and shift the buffer to start there
         let earliest = Infinity;
         for (const idx of this.marks.values()) {
             if (idx < earliest) earliest = idx;
         }
 
-        if (earliest > 0 && earliest <= this.transitions.length) {
+        if (earliest > 0) {
             this.transitions = this.transitions.slice(earliest);
-            // Re-index all marks
             for (const [id, idx] of this.marks) {
                 this.marks.set(id, idx - earliest);
             }
         }
     }
 
-    /**
-     * Re-read document.visibilityState directly (synchronously) and fire a
-     * transition if the state machine is out of sync.
-     *
-     * This prevents a race condition: document.visibilityState is updated
-     * synchronously per the spec
-     * https://html.spec.whatwg.org/multipage/interaction.html#page-visibility
-     * but the visibilitychange event is dispatched asynchronously. Thus if a
-     * macrotask is enqueued to report lag ahead of the visibilitychange event,
-     * we could miss this and our metrics would be skewed.
-     */
-    private syncFromDocument() : void {
+    private syncFromDocument(event? : unknown) : void {
         if (this.document.visibilityState === "hidden") {
-            if (this.currentState !== "hidden" && this.currentState !== "frozen" && this.currentState !== "terminated") {
-                this.transition("hidden", "visibilitychange");
+            if (isVisibleState(this.currentState)) {
+                this.transition("hidden", "visibilitychange", event);
             }
         } else if (this.currentState === "hidden") {
-            const focused = this.document.hasFocus ? this.document.hasFocus() : true;
-            this.transition(focused ? "active" : "passive", "visibilitychange");
+            this.transition(this.visibleState(), "visibilitychange", event);
         }
     }
 
-    private computeInitialState() : LifecycleState {
-        if (this.document.visibilityState === "hidden") return "hidden";
+    private visibleState() : LifecycleState {
         const focused = this.document.hasFocus ? this.document.hasFocus() : true;
         return focused ? "active" : "passive";
     }
 
-    private transition(to : LifecycleState, trigger : LifecycleTrigger) : void {
-        if (to === this.currentState) return;
-        const from = this.currentState;
-        this.currentState = to;
-        if (to === "hidden" || to === "frozen" || to === "terminated") {
-            this.hiddenSinceLastCheck = true;
-        }
-        this.transitions.push({
-            from,
+    private transition(to : LifecycleState, trigger : LifecycleTrigger, event? : unknown, always : boolean = false) : void {
+        if (to === this.currentState && !always) return;
+        const transition : StateTransition = {
+            from : this.currentState,
             to,
             trigger,
-            timestamp : this.clock.now(),
-        });
+            timestamp : eventTime(event, this.clock.now()),
+        };
+        this.currentState = to;
         this.totalTransitions++;
+        // Nobody can resolve these later; don't buffer them
+        if (this.marks.size > 0) {
+            this.transitions.push(transition);
+        }
+        for (const subscriber of this.subscribers) {
+            try {
+                subscriber(transition);
+            } catch (error) {
+                this.logger.log("error", "Error in lifecycle subscriber.", {
+                    error,
+                    type : "LifecycleStateMachine",
+                });
+            }
+        }
+    }
+
+    private listen(
+        target : LifecycleEventTarget,
+        type : string,
+        listener : LifecycleListener,
+        options : LifecycleListenerOptions = {},
+    ) : void {
+        target.addEventListener(type, listener, options);
+        this.attached.push({ target, type, listener, options });
     }
 
     private attachListeners() : void {
-        // Active <-> Passive
-        this.window.addEventListener("focus", () => {
-            if (this.currentState === "passive") this.transition("active", "focus");
+        // Not in the capture phase: a capture listener on the window also
+        // gets the focus and blur events of each element in the page
+        this.listen(this.window, "focus", (event) => {
+            if (this.currentState === "passive") this.transition("active", "focus", event);
         });
-        this.window.addEventListener("blur", () => {
-            if (this.currentState === "active") this.transition("passive", "blur");
-        });
-
-        // Hidden <-> Active/Passive
-        this.document.addEventListener("visibilitychange", () => {
-            if (this.document.visibilityState === "hidden") {
-                if (this.currentState !== "frozen") {
-                    this.transition("hidden", "visibilitychange");
-                }
-            } else {
-                // Going from hidden back to visible
-                if (this.currentState === "hidden") {
-                    const focused = this.document.hasFocus ? this.document.hasFocus() : true;
-                    this.transition(focused ? "active" : "passive", "visibilitychange");
-                }
-            }
+        this.listen(this.window, "blur", (event) => {
+            if (this.currentState === "active") this.transition("passive", "blur", event);
         });
 
-        // Hidden -> Frozen / Frozen -> Hidden
-        this.document.addEventListener("freeze", () => {
-            this.transition("frozen", "freeze");
-        });
-        this.document.addEventListener("resume", () => {
-            // Browser restored a frozen page
-            this.transition("hidden", "resume");
-        });
+        // In the capture phase: at the target, capture listeners go before
+        // the other listeners. Thus the subscribers (for example the final
+        // Web Vitals of a page view) record their values before an exporter
+        // that listens to the same event flushes.
+        const capture = { capture : true };
+        this.listen(this.document, "visibilitychange", (event) => this.syncFromDocument(event), capture);
 
-        // Hidden -> Terminated
-        this.window.addEventListener("pagehide", (event) => {
-            if (event?.persisted) {
-                // BFCache eviction path — page goes frozen
-                this.transition("frozen", "pagehide");
-            } else {
-                this.transition("terminated", "pagehide");
-            }
-        });
+        this.listen(this.document, "freeze", (event) => this.transition("frozen", "freeze", event), capture);
+        this.listen(this.document, "resume", (event) => this.transition("hidden", "resume", event), capture);
 
-        // BFCache restoration: pageshow with persisted=true
-        this.window.addEventListener("pageshow", (event) => {
-            if (event?.persisted) {
-                // Restored from BFCache — return to active/passive based on focus
-                const focused = this.document.hasFocus ? this.document.hasFocus() : true;
-                this.transition(focused ? "active" : "passive", "pageshow");
-            }
-        });
-
-        this.window.addEventListener("beforeunload", () => {
-            // Defensive: page is about to terminate
-            if (this.currentState !== "terminated") {
-                this.transition("terminated", "beforeunload");
-            }
-        });
+        this.listen(this.window, "pagehide", (event) => {
+            this.transition(isPersisted(event) ? "frozen" : "terminated", "pagehide", event);
+        }, capture);
+        this.listen(this.window, "pageshow", (event) => {
+            // Chromium fires resume and visibilitychange before pageshow, thus the state can be
+            // visible already. A restore is always a transition, so that subscribers know about it.
+            if (isPersisted(event)) this.transition(this.visibleState(), "pageshow", event, true);
+        }, capture);
+        // No beforeunload listener: it can be cancelled (leaving a live page
+        // marked terminated) and it makes the page ineligible for the BFCache.
     }
 }
 
-/** Helper: extract a summary of state changes between two transition snapshots. */
+/** A summary of the state changes in a list of transitions, from `summarizeTransitions`. */
 export type LifecycleSummary = {
     wasHidden : boolean;
     wasFrozen : boolean;
@@ -336,29 +322,13 @@ export type LifecycleSummary = {
 };
 
 export function summarizeTransitions(transitions : StateTransition[]) : LifecycleSummary {
-    let wasHidden = false;
-    let wasFrozen = false;
-    let wasTerminated = false;
-    let wasRestoredFromBFCache = false;
-    let wasFocused = false;
-    let wasBlurred = false;
-
-    for (const t of transitions) {
-        if (t.to === "hidden") wasHidden = true;
-        if (t.to === "frozen") wasFrozen = true;
-        if (t.to === "terminated") wasTerminated = true;
-        if (t.trigger === "pageshow") wasRestoredFromBFCache = true;
-        if (t.trigger === "focus") wasFocused = true;
-        if (t.trigger === "blur") wasBlurred = true;
-    }
-
     return {
-        wasHidden,
-        wasFrozen,
-        wasTerminated,
-        wasRestoredFromBFCache,
-        wasFocused,
-        wasBlurred,
-        transitionCount : transitions.filter(t => t.trigger !== "init").length,
+        wasHidden : transitions.some(t => t.to === "hidden"),
+        wasFrozen : transitions.some(t => t.to === "frozen"),
+        wasTerminated : transitions.some(t => t.to === "terminated"),
+        wasRestoredFromBFCache : transitions.some(t => t.trigger === "pageshow"),
+        wasFocused : transitions.some(t => t.trigger === "focus"),
+        wasBlurred : transitions.some(t => t.trigger === "blur"),
+        transitionCount : transitions.length,
     };
 }

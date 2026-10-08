@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build, typecheck, unit tests, coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm coverage
+      - name: Upload the coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-core
+          path: packages/lag/coverage/
+          if-no-files-found: ignore
+      # The writing rules (ASD-STE100) of the README, the site and the comments
+      - name: STE lint
+        run: pnpm lint:ste
+      # The metric table of the README must agree with the metric catalog
+      - name: README metric table
+        run: pnpm readme:metrics:check
+
+  browser:
+    name: Browser tests (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Chrome stable is on the runner image: the "chrome" channel uses it
+          - engine: chromium
+            playwright: chromium
+            projects: '["browser (chromium)", "browser (chrome)", "cdp", "coi (chromium)"]'
+          - engine: firefox
+            playwright: firefox
+            projects: '["browser (firefox)", "coi (firefox)"]'
+          - engine: webkit
+            playwright: webkit
+            projects: '["browser (webkit)", "coi (webkit)"]'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Install the Playwright browser and its system dependencies
+        working-directory: packages/lag-integration-tests
+        run: pnpm exec playwright install --with-deps ${{ matrix.playwright }}
+      # One project at a time: the timing tests measure milliseconds, and the runner has few CPUs
+      - name: Browser tests
+        working-directory: packages/lag-integration-tests
+        env:
+          PROJECTS: ${{ matrix.projects }}
+        shell: bash
+        run: |
+          mapfile -t projects < <(node -e 'for (const p of JSON.parse(process.env.PROJECTS)) console.log(p)')
+          status=0
+          for project in "${projects[@]}"; do
+            echo "::group::$project"
+            pnpm exec vitest run --project "$project" || status=1
+            echo "::endgroup::"
+          done
+          exit $status
+      - name: Upload the failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.engine }}
+          path: packages/lag-integration-tests/src/**/__screenshots__/
+          if-no-files-found: ignore
+
+  site:
+    name: Site typecheck, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Install Chromium for the browser tests of the site
+        working-directory: packages/site
+        run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm --filter @lag/site typecheck
+      - run: pnpm --filter @lag/site test
+      - run: pnpm --filter @lag/site build

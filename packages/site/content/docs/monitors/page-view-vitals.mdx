@@ -1,0 +1,298 @@
+---
+title: Page-view vitals
+description: Measures INP, CLS, LCP, FCP and TTFB for each page view with the rules of web-vitals, also for back/forward cache restores, prerendered pages and soft navigations.
+order: 29
+status: final
+---
+
+import { vitalsMetrics } from "./metrics.data";
+
+`PageViewVitals` measures five metrics for each page view. The Core Web Vitals are Interaction to Next Paint (INP), Cumulative Layout Shift (CLS) and Largest Contentful Paint (LCP). The two load metrics are First Contentful Paint (FCP) and Time to First Byte (TTFB). The monitor applies the rules of the web-vitals library (version 6.2.3), with the differences in the limits section. The factory records one histogram value for each vital and page view, and sends `browser.web_vital` events with the names of the OpenTelemetry semantic conventions.
+
+## What it measures
+
+A page view is one load of the page, one restore from the back/forward cache, or one soft navigation. [Page views](/docs/concepts/page-views) explains the unit. For each page view, the monitor gives these values:
+
+| Vital | Value |
+|---|---|
+| INP | The longest interaction, with one outlier ignored for each 50 interactions. |
+| CLS | The score of the worst session window of layout shifts without recent input. |
+| LCP | The render time of the largest contentful paint before the page was hidden for the first time. |
+| FCP | The time of the first contentful paint before the page was hidden for the first time. |
+| TTFB | The time from the start of the navigation to the first byte of the response. |
+
+The monitor answers this question: how did each page view feel to its user, in the same units as CrUX and web-vitals? Each value also has an attribution, for example the CSS selector of the INP target. The events of the other monitors get the ID of the same page view. Thus you can connect a hang or a long frame with the vitals of its page view.
+
+## How it works
+
+### Observers
+
+At its start, the monitor makes one `PerformanceObserver`, with `buffered: true`, for each of these entry types:
+
+- `event` with `durationThreshold: 16`, and `first-input`, for INP. The browser delivers `first-input` for all durations.
+- `layout-shift`, for CLS.
+- `paint` and `largest-contentful-paint`, for FCP and LCP.
+- `soft-navigation` and `interaction-contentful-paint`, only with `softNavigations: true` and only if the browser has the two types.
+
+The monitor makes no observer, and logs no warning, for a type that is not in `PerformanceObserver.supportedEntryTypes`. A vital whose entry type the browser does not have gets no value, as in web-vitals. INP needs `event`, CLS needs `layout-shift`, LCP needs `largest-contentful-paint`, and FCP needs `paint`. This rule also applies after a restore from the back/forward cache. TTFB needs the navigation entry instead.
+
+`ViewCollector` calculates the values of one page view. `InpCalculator` and `ClsCalculator` give INP and CLS, with the rules of the [Event Timing](/docs/monitors/event-timing) and [layout shift](/docs/monitors/layout-shift) monitors.
+
+### The rules of each vital
+
+- **INP:** the candidates are the `event` and `first-input` entries with an interaction ID, from the start of the page view. The calculator keeps the 10 longest interactions. The count comes from `performance.interactionCount`. The load counts from the start of the page, also when the monitor starts later. A later page view counts from its start.
+- **INP of 0 and of 8 ms:** a candidate of 0 ms gives an INP of 0. An example is a first input that the browser rounds to 0. After a restore or a soft navigation, the INP is 8 ms if interactions occurred but none gave an entry (`SHORT_INTERACTION_ESTIMATE_MS`).
+- **INP attribution:** the longest entry gives the latency and the start of the interaction. The processing phase spans all events of the frame of that entry, as in web-vitals. A frame is a group of `event` entries whose render times (`startTime + duration`) are within 8 ms of the first entry of the group. The events of the frame can belong to other interactions, or to no interaction, for example `pointerover`. The processing starts at the earliest `processingStart` of the frame, but not before the interaction. It ends at the latest `processingEnd` of the frame, but not after the next paint, also after a synchronous dialog, for example `alert()`.
+- **CLS:** layout shifts without `hadRecentInput`, from the start of the page view. A new session window starts at a gap of 1 s or more, or when the window is 5 s long, as in web-vitals. For a load, the value comes only after FCP, as in CrUX, and it includes the shifts from before FCP. A restore and a soft navigation report CLS from their start, at 0.
+- **LCP:** the latest `largest-contentful-paint` entry whose `startTime` is before the first hidden time, minus `activationStart`. The latest entry is the last entry that the browser gave, also when its `startTime` (the load time) is earlier. The first `keydown` or `click` entry after the start of the page view makes the LCP final at its start time. Then a candidate that renders after that time does not count. web-vitals also makes LCP final at the first input. The attribution is the selector of the element and the URL of the resource, without the query string and the fragment.
+- **FCP:** the first `first-contentful-paint` entry before the first hidden time, minus `activationStart`.
+- **TTFB:** `responseStart` minus `activationStart`, from the Navigation Timing entry. The page source ignores an entry whose `responseStart` is 0, or not before `performance.now()`, as web-vitals does.
+
+The monitor records no value below 0. The first hidden time comes from the `visibility-state` entries with the name `hidden`, at or after `activationStart`. Without such entries, a page that is hidden at the start of the monitor was hidden from the start (time 0).
+
+### Load, prerender and discard
+
+The navigation type of the first page view comes from these rules, in the sequence of web-vitals:
+
+1. `prerender`, if `document.prerendering` is true or `activationStart` is more than 0.
+2. `restore`, if `document.wasDiscarded` is true.
+3. The type of the Navigation Timing entry: `navigate`, `reload` or `back-forward`.
+4. `navigate`, if there is no applicable navigation entry.
+
+For a prerendered page, the monitor waits for the `prerenderingchange` event. Then it makes its observers, and the observers get the earlier entries from the buffer. The load metrics count from `activationStart`.
+
+### Back/forward cache restores
+
+A `pageshow` event with `persisted` ends the current page view and starts a new one with the type `back-forward-cache`. The start time is the `timeStamp` of the event. TTFB is 0 when the load had a navigation entry, as in web-vitals. FCP and LCP are the time from the `pageshow` event to the second animation frame after it. At that time, the browser painted the restored page.
+
+Chromium restores a page with `resume`, `visibilitychange` and then `pageshow`. Thus the page is visible before `pageshow`. The [lifecycle](/docs/monitors/lifecycle) state machine gives a transition for each `pageshow` with `persisted`, also from a visible state. Thus the monitor starts the new page view in Chromium too. The entries from before the `timeStamp` of `pageshow` go to the page view that ends.
+
+### Soft navigations
+
+Soft navigations are off by default (`softNavigations: false`). Then the values agree with CrUX, which does not divide a load at soft navigations. With `softNavigations: true`, each `soft-navigation` entry (Chromium 151 and later) ends the current page view and starts a new one:
+
+- The start time is the `startTime` of the entry: the start of the interaction that caused the navigation.
+- The URL is the URL of the entry, without the query string and the fragment.
+- TTFB is 0. FCP is `presentationTime`, or `paintTime`, minus the start time.
+- LCP comes from the `interaction-contentful-paint` entries of the same interaction: the render time of the largest paint minus the start time of the entry. The largest paint before the soft navigation (`getLargestInteractionContentfulPaint()`) counts at the start. The `interaction-contentful-paint` entries that the browser did not deliver yet come after it.
+- A `keydown` or `click` entry after the start of the page view makes the LCP final, as for a load.
+- The interaction that caused the navigation is not a candidate of the new page view. Its entries that come before the `soft-navigation` entry in the sequence count in the page view that ends. The new page view ignores each entry with its `interactionId`, also when the browser delivers the entry after the `soft-navigation` entry. As in web-vitals, the INP of the new page view counts only the interactions after the soft navigation.
+- An entry that starts after the start of the navigation goes to the new page view, also when its observer did not deliver it yet.
+
+### Checkpoints
+
+At each checkpoint, the monitor gives the current values of the page view to the factory. These are the checkpoints:
+
+- The page changes to `hidden`, `frozen` or `terminated`. At `terminated`, the checkpoint is final.
+- A new page view starts. The checkpoint of the earlier page view is final.
+- `stop()` makes a final checkpoint, if the page view did not end yet.
+- `flush()` makes a checkpoint that is not final.
+
+After its final checkpoint, a page view has ended. No report for it comes after that. For example, a `flush()` or a `stop()` after `pagehide` sends no second report. A checkpoint that is not final and has no values sends no report.
+
+<Mermaid
+  title="The checkpoint at a page hide"
+  caption="The lifecycle uses capture listeners on document, thus the checkpoint comes before the listener of the exporter. The flush hook makes the order unimportant, also for pagehide on window."
+  chart={`
+sequenceDiagram
+    participant B as Browser
+    participant L as Lifecycle
+    participant V as PageViewVitals
+    participant E as OTel SDK and exporter
+    B->>L: visibilitychange (capture listener)
+    L->>V: transition to hidden
+    V->>V: process the entries that wait
+    V->>E: record histogram values and events
+    B->>E: visibilitychange (listener of the exporter)
+    E->>V: onBeforeFlush: flush()
+    E->>E: export
+`}
+/>
+
+### The sequence of the entries
+
+The monitor processes the entries of all its observers in one sequence. At each delivery of the browser, it also takes the entries that the other observers did not deliver yet (`takeRecords()`). It does the same before each checkpoint. Then it merges the lists by `startTime`, with these rules:
+
+- The sequence of the browser stays in the list of each observer. For example, the last LCP candidate stays last, also when its `startTime` is earlier.
+- At equal start times, the observer that the monitor made first comes first: `event`, `first-input`, `layout-shift`, `paint`, `largest-contentful-paint`, `soft-navigation`, then `interaction-contentful-paint`.
+- A `soft-navigation` entry starts a new page view. The entries after it in the sequence go to the new page view.
+
+Thus each entry goes to the correct page view, also when the browser gives the entries to the observers in a different sequence.
+
+### The factory
+
+The factory records the first value of each vital of each page view in the histogram of the vital, with the attribute `navigation_type`. A histogram cannot remove a value, thus later changes go only into events. The factory sends a `browser.web_vital` event for each value that is new or that changed since the previous report of the same page view. At a final checkpoint, it forgets the values of the page view. No report comes after the final checkpoint, thus the histogram records each vital of a page view one time.
+
+## Browser support
+
+| Vital or feature | API | Chromium | Firefox | Safari |
+|---|---|---|---|---|
+| INP | Event Timing with `interactionId` | 96 | 144 | 26.2 |
+| | `performance.interactionCount` | 144 | 144 | 26.2 |
+| | `first-input` | 77 | 89 | 26.2 |
+| CLS | Layout Instability | 77 | not available | not available |
+| LCP | `largest-contentful-paint` | 77 | 122 | 26.2 |
+| FCP | `paint` | 60 | 84 | 14.1 |
+| TTFB | Navigation Timing | yes | yes | yes |
+| First hidden time | `visibility-state` entries | 115 | not available | not available |
+| Prerender | `activationStart`, `document.prerendering`, `prerenderingchange` | 108 | not available | not available |
+| Soft navigations | `soft-navigation`, `interaction-contentful-paint` | 151 | not available | not available |
+| Back/forward cache | `pageshow` with `persisted` | yes | yes | yes |
+
+The versions come from [browser support](/research/browser-support). The research gives no versions for Navigation Timing and `pageshow`. We found `performance.interactionCount` in Chromium 145, Firefox 146 and the WebKit build of Playwright ([experiment E2](/research/local-experiments)).
+
+The engines measure differently ([browser support](/research/browser-support)):
+
+- Chromium measures INP and LCP to the presentation of the frame. Firefox and Safari measure to the end of the render update, thus their values are slightly lower for the same work.
+- Safari gives high INP values in the tail. One cause is real: after an interaction, WebKit does not prioritize the render over tasks that are already in the queue (WebKit bug 319911).
+- Safari does not report LCP candidates in shadow DOM (WebKit bug 310264).
+- For a cross-origin image without `Timing-Allow-Origin`, the browsers give a coarsened render time: Chrome from 133, Firefox from 141 and Safari from 26.2.
+
+## Measurement validity
+
+The monitor does not pause while the page is hidden, and it uses no `SampleValidator`. It applies the visibility rules of web-vitals instead:
+
+- The `paint` and `largest-contentful-paint` entries count only before the first hidden time, and only for the first page view. A page that loads in a background tab has no FCP and no LCP.
+- A restore and a soft navigation get FCP and LCP through their own rules.
+- INP and CLS ignore the entries from before the start of the page view.
+- For a prerendered page, the measurement starts at the activation.
+
+## Metrics
+
+<MetricTable metrics={vitalsMetrics} />
+
+The count of a vital histogram is the number of page views with that vital. Thus a quantile of the histogram is a quantile over page views.
+
+### The web vital event
+
+Each `browser.web_vital` event has these attributes. The names of the first six attributes agree with the OpenTelemetry semantic conventions v1.44, in which this event has the status Development ([OpenTelemetry metrics in the browser](/research/otel-browser-metrics)). The conventions do not define the page view and the attribution, thus those attributes have the prefix `lag.`.
+
+| Attribute | Value |
+|---|---|
+| `browser.web_vital.name` | `inp`, `cls`, `lcp`, `fcp` or `ttfb` |
+| `browser.web_vital.value` | The current value of the vital. |
+| `browser.web_vital.delta` | The change since the previous event of this vital in this page view. |
+| `browser.web_vital.id` | The page-view ID and the name, for example `lag-1760000000000-4821733201941-inp`. |
+| `browser.web_vital.rating` | `good`, `needs-improvement` or `poor` |
+| `browser.web_vital.navigation_type` | The navigation type of the page view. |
+| `lag.page_view.id` | The ID of the page view. |
+| `lag.page_view.url` | The URL at the start of the page view, without the query string and the fragment. |
+| `lag.web_vital.*` | The attribution. INP: `interaction_target`, `interaction_type`, `input_delay_ms`, `processing_duration_ms`, `presentation_delay_ms`. CLS: `largest_shift_target`. LCP: `target`, `url`. |
+
+The latest event for each `browser.web_vital.id` has the final value. An unchanged value sends no event. The rating uses the thresholds of web-vitals:
+
+| Vital | `good` up to | `poor` above |
+|---|---|---|
+| INP | 200 ms | 500 ms |
+| CLS | 0.1 | 0.25 |
+| LCP | 2500 ms | 4000 ms |
+| FCP | 1800 ms | 3000 ms |
+| TTFB | 800 ms | 1800 ms |
+
+## Configuration
+
+```ts
+function createInstrumentedPageViewVitals(
+    deps : CoreDeps & ObserverDeps & Partial<PerformanceDeps> & Partial<EventDeps>
+        & Partial<Pick<FrameDeps, "requestAnimationFrame">> & Partial<PageDeps>,
+    lifecycle : LifecycleStateMachine,
+) : MonitorHandle<PageViewVitals>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`), `ObserverDeps` (`PerformanceObserver`) and a [lifecycle](/docs/monitors/lifecycle) state machine. The other groups are optional:
+
+| Dependency | Default | What it does |
+|---|---|---|
+| `performance` | none | Gives `performance.interactionCount` to the INP calculator. |
+| `events` | none | The event sink of the `browser.web_vital` events. |
+| `requestAnimationFrame` | none | Measures FCP and LCP after a restore. Without it, a restored page view has no FCP and LCP. |
+| `page` | none | The navigation entry, the prerender and discard state and the hidden times (`createPageSource(document, performance)`). Without it, the first page view has the type `navigate` and no TTFB. |
+| `describeNode` | the selector of web-vitals | Makes the CSS selector of a DOM node for the attribution. |
+| `softNavigations` | `false` | When true, each soft navigation starts a new page view. |
+
+`setupAllMonitors()` starts the monitor when it has `PerformanceObserver` and the lifecycle. `createBrowserDeps()` gives `page` and the option `softNavigations`.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { logs } from "@opentelemetry/api-logs";
+import {
+    createBrowserDeps,
+    createInstrumentedLifecycle,
+    createInstrumentedPageViewVitals,
+    createOtelEventSink,
+} from "@lag/core";
+
+const deps = createBrowserDeps(window, {
+    logger : console,
+    meter : metrics.getMeter("lag"),
+    events : createOtelEventSink(logs.getLogger("lag-events")),
+    softNavigations : true,
+});
+const lifecycle = createInstrumentedLifecycle(deps);
+if (lifecycle.monitor && deps.PerformanceObserver) {
+    const vitals = createInstrumentedPageViewVitals(
+        { ...deps, PerformanceObserver : deps.PerformanceObserver },
+        lifecycle.monitor,
+    );
+    vitals.monitor?.subscribe((view) => console.log(`A new page view: ${view.id} (${view.navigationType})`));
+    // Before an exporter flushes: record the current values
+    vitals.monitor?.flush();
+}
+```
+
+### The flush hook
+
+Connect `flush()` to the exporter, so that the last export of a page has the final values. With `setupAllMonitors()`, use `AllMonitorHandles.flush()`, which uses `PageViewVitals.flush()`. With otel-ts, write `otel.onBeforeFlush(() => monitors.flush())`.
+
+<Callout type="warning" title="Listener order">
+  Chromium does not start the capture listeners of `window` first. For `pagehide` on `window`, it starts the listener that the page added first. An exporter that added its `pagehide` listener before the monitors can flush before the final checkpoint. The flush hook prevents this. Refer to [page lifecycle](/docs/concepts/page-lifecycle).
+</Callout>
+
+## Cost
+
+- **Observers:** five `PerformanceObserver` instances, or seven with soft navigations. Only the types that the browser has get an observer.
+- **Records:** at most five histogram values for each page view.
+- **Events:** one event for each change of a vital at a checkpoint.
+- **Memory:** for each page view, the 10 longest interactions with at most 16 entries each. The collector keeps the CSS selector of each target, not the DOM node. It also keeps the groups of the last 50 frames, with three times each.
+- **Restores:** two animation frame callbacks for each restore.
+
+## Limits
+
+- **The histogram has the first value.** Usually the first report comes when the page becomes hidden for the first time. A later change, for example a slower interaction after the user comes back, goes only into the events.
+- **The frames of the INP attribution.** The monitor asks for events of 16 ms or more, and web-vitals asks for 40 ms or more by default. Thus a frame here can also contain shorter events. With a `durationThreshold` of 16 ms, web-vitals gives the same three phases (`web-vitals-oracle.test.ts`). The attribution has no LoAF fields.
+- **More INP candidates than web-vitals.** The monitor asks for events of 16 ms or more. web-vitals uses 40 ms. Thus INP can differ from web-vitals when the INP interaction is shorter than 40 ms.
+- **The LCP becomes final only through an entry.** A `click` or `keydown` makes the LCP final only when it gives an Event Timing entry. The browser gives an `event` entry only for 16 ms or more. web-vitals listens to the `keydown` and `click` events instead. Thus a later paint of a soft navigation can still change the LCP here after a fast click.
+- **No CLS in Firefox and Safari.** These browsers have no `layout-shift` entries, thus the monitor gives no CLS there, as web-vitals does. The CLS histogram has only the page views of browsers with `layout-shift` entries.
+- **TTFB of 0 for restores and soft navigations.** These page views record a TTFB of 0, as in web-vitals. Use the attribute `navigation_type` to separate them from loads. A page without a navigation entry gets no TTFB.
+- **The count without `interactionCount`.** Fast interactions give no entry, thus the count is too low, and INP can be slightly too high on a page with many fast interactions.
+- **Soft navigations only in Chromium 151 and later.** In other browsers, the option has no effect.
+- **A late entry of the navigation interaction.** The browser can deliver an entry of the interaction that caused a soft navigation after the `soft-navigation` entry. Then the earlier page view has its final report already, and the new page view ignores the entry. Thus the entry counts in no page view.
+
+## Tests
+
+Unit tests:
+
+- `vitals/PageViewVitals.test.ts`, a load: the five vitals at the first hide, and the event threshold of 16 ms. The last LCP candidate of the browser stays, also when its start time is earlier. A click or a key press makes the LCP final. The interactions of the load count from the start of the page. The final values at `terminated`, and no paints after the first hide. The first hidden time from the `visibility-state` entries, and the types `restore` and `navigate`.
+- `vitals/PageViewVitals.test.ts`, prerender and restores: a prerendered page starts at the activation and measures from it. A restore ends the page view and starts a new one, with TTFB 0 and the paint times from two animation frames. The new page view also starts with the event sequence of Chromium. Without entries, the INP of a restore is 8 ms.
+- `vitals/PageViewVitals.test.ts`, soft navigations: they are off by default, start a new page view, and operate only when the browser has the two entry types. The paints and the interactions that the browser did not deliver yet go to the correct page view. A click makes the LCP of the navigation final.
+- `vitals/PageViewVitals.test.ts`, checkpoints: the checkpoint processes the entries that wait, and divides them at a soft navigation in the sequence of their start times. `flush()` makes a checkpoint that is not final. `stop()` makes a final checkpoint and stops the observers. A vital whose entry type the browser does not have gets no value, also after a restore.
+- `vitals/ViewCollector.test.ts`: the rules of INP, with an INP of 0 for a first input of 0 ms, and the count of the load from 0. The interaction that started a soft navigation stays out of the new page view, also when its entry comes late. The attribution: the target, the type, the three phases, the cap at the next paint, and the events of the frame, also of other events. The processing starts at the interaction at the earliest. CLS after FCP, and no value below 0.
+- `instrumented/page-view-vitals.test.ts`: the histograms record each vital of a page view one time. This is also true when a `flush()` or a `stop()` comes after the final report. The deltas of the events add up to the value.
+- `vitals/selector.test.ts` and `browser/page-source.test.ts`: the selector of web-vitals, and the navigation entry, the hidden times and the prerender state.
+- `setup-all-monitors.test.ts`: `flush()` records the vitals that wait. Each vital records one time for each page view, and the events have the names of the semantic conventions. An unchanged value sends no second event.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
+
+- `lag-monitors.test.ts` (only where the browser has Event Timing with `interactionId`): on the test page, TTFB is 0 or more, and FCP is more than 0. LCP is not less than FCP. A real click on a button whose handler blocks for 120 ms gives an INP of 120 ms or more. Its attribution has the target `#slow-button`, the type `pointer` and a processing phase of 110 ms or more.
+- `web-vitals-oracle.test.ts`: web-vitals 6.2.3 and the monitor observe the same page, both with a `durationThreshold` of 16 ms. FCP, LCP and TTFB are exactly the same. CLS is exactly the same where the browser has `layout-shift` entries, and the two libraries give no CLS elsewhere.
+- `web-vitals-oracle.test.ts`, INP (only with Event Timing and `interactionId`): real clicks on buttons that block for 40, 100 and 180 ms give exactly the same INP in the two libraries. The target, the type and the three phases of the attribution also agree.
+- `browser-apis.test.ts` (only where the browser has `visibility-state` entries: Chromium and Chrome): the first entry is `visible` at the time 0. The page source of a page that was not hidden gives no hidden times.
+- `cdp/vitals-checkpoint.test.ts` (Chromium in the new headless mode): when the page becomes hidden, TTFB, FCP, LCP and CLS each record one histogram value, with the type `navigate` or `reload`. Each `browser.web_vital` event has the ID of the page view. A second hide records no second FCP value and sends no new event.
+
+## Source
+
+- [`vitals/PageViewVitals.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/vitals/PageViewVitals.ts): the page views, the observers and the checkpoints.
+- [`vitals/ViewCollector.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/vitals/ViewCollector.ts): the vitals of one page view and the INP attribution.
+- [`vitals/selector.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/vitals/selector.ts) and [`vitals/types.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/vitals/types.ts): the selector, the navigation types and the thresholds.
+- [`browser/page-source.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/browser/page-source.ts): the page source of a browser document.
+- [`instrumented/page-view-vitals.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/page-view-vitals.ts): the factory, the histograms and the events.

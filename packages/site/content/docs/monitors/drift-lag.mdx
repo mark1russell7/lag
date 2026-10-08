@@ -1,0 +1,183 @@
+---
+title: DriftLag
+description: Measures the time that other tasks block the main thread in each window of approximately 100 ms, with a timer baseline that the monitor calibrates.
+order: 21
+status: final
+---
+
+import { driftLagMetrics } from "./metrics.data";
+
+`DriftLag` sets a chain of short timers and measures how late each window of approximately 100 ms ends. It subtracts the idle duration of each timer step, which it calibrates from the recent steps. The result is the time in the window in which other tasks blocked the main thread.
+
+## What it measures
+
+The signal is the lag of one window: the duration of the window minus the idle duration of its timer steps. Each block of the main thread in the window adds its length to the lag.
+
+DriftLag answers this question: how much of the last 100 ms was the main thread busy? It gives approximately 10 samples each second, thus it is the high-frequency lag signal of the library. It works in all browsers, also where Long Animation Frames are not available.
+
+## How it works
+
+1. The monitor sets a timeout of 5 ms (`driftStepMs`). When the callback starts, the monitor records the duration of the step and sets the next timeout.
+2. A window has at most 20 steps (100 ms divided by 5 ms), or up to 10 more steps during a possible change of the timer granularity. After the last step of the window, the monitor calculates the lag and starts the next window.
+3. The lag of the window is its duration minus the number of its steps multiplied by the baseline.
+4. The monitor calculates the number of steps for the next window again: 100 ms divided by the baseline, rounded, from 1 to 20. Thus a window stays near 100 ms.
+
+The baseline is the idle duration of one step. A timer step takes longer than its requested delay, also on an idle thread. The cause is the timer granularity of the browser and the operating system. The monitor keeps the durations of the last 100 steps. The baseline is the mean of the steps that are not longer than the median plus max(4 ms, half of the median). Before the first step, the baseline is the requested delay (5 ms).
+
+The monitor uses the mean, not the median. Timer jitter is skewed to the right. A first version used the median, and it gave an idle median lag of 3.3 ms in Chromium ([experiment E3](/research/local-experiments)).
+
+A long step is a block, not jitter. It is longer than the limit, thus it does not change the baseline.
+
+### A change of the timer granularity
+
+The timer granularity can change while the page is open. For example, Windows can change the timer resolution of the browser on battery power, or when a window is hidden and shown again. Then all steps change by the same quantity, also on an idle thread. A block makes one step long, and the next steps are normal again. The monitor uses these rules:
+
+- It compares each step with the baseline at the end of the last window. A step is outside the baseline when it differs from it by more than max(4 ms, half of the baseline).
+- A row of 10 steps that are outside the baseline, but agree with each other, is a new granularity. The steps agree when the longest minus the shortest is not more than max(2 ms, 20% of the mean of the two).
+- At a new granularity, the baseline comes only from the steps of the row.
+- A window that ends during such a row continues until the row ends or the monitor accepts the new granularity. It continues for at most 10 more steps. Thus the change gives no lag.
+- A step of more than 40 ms is not a granularity, thus it ends the row. Two ticks of the Windows timer (31.25 ms) and the 30 ms grid of WebKit in Low Power Mode are shorter.
+
+The CDP tests found this case. In Chromium on Windows, the steps changed from 5.5 ms to 15.6 ms after the page was hidden and shown again. Before this rule, DriftLag reported windows of 160 ms of lag on an idle page ([testing strategy](/docs/testing/strategy)).
+
+A window has a whole number of steps. Thus its length is 100 ms only when the baseline divides 100 ms. In Firefox and WebKit on Windows, a window has 6 steps of 15.6 ms, thus approximately 93 ms. The first window has 20 steps, thus approximately 310 ms there. `getLastWindowMs()` gives the measured length of the last window, with its lag.
+
+For each window, the factory gives the lag and the measured window length to the sample validator. For a valid sample, the factory records the lag in `lag_drift_histogram` and the current baseline in `lag_drift_baseline_histogram`. A negative lag is jitter around the baseline, thus the factory records it as 0.
+
+`LagLogger` gets each lag that the validator records, with its interval: the window length minus the lag. The logger examines the most recent 2 s and 5 s of measurements, by time. The lag of a period is the sum of the lags divided by the sum of the intervals. A period goes above its threshold at more than 100% (2 s) or more than 50% (5 s). After each 30 s of measurement intervals, it logs a warning for each period that went above its threshold.
+
+## Browser support
+
+DriftLag uses only `setTimeout`, thus it starts in all browsers. The timer granularity is different in each engine. We measured it on an idle page on Windows 11, with the engines of Playwright ([experiments E2 and E3](/research/local-experiments)):
+
+| Measurement | Chromium 145 | Firefox 146 | WebKit (Safari 26.0 build) |
+|---|---|---|---|
+| Median step of `setTimeout(5)` | 5.7 ms | 16 ms | 15 ms |
+| Baseline step after calibration | 5.7 ms | 15.5 ms | 15.6 ms |
+| Steps in a window after calibration | 18 | 6 | 6 |
+| Old probe (20 steps, lag = elapsed − 100 ms), idle median lag | 15.8 ms | 211 ms | 211 ms |
+| Calibrated DriftLag, idle median lag (approximately 30 windows) | 0.1 ms | −0.3 ms | −0.4 ms |
+| Calibrated DriftLag, idle p90 lag | 3.1 ms | 1.3 ms | 1.6 ms |
+| Calibrated DriftLag, lag after a 300 ms block | 297.4 ms | 282.7 ms | 294.6 ms |
+
+The number of steps in a window comes from the rule of step 4 and the measured baselines. Firefox and WebKit on Windows use the 15.6 ms timer tick of the system for a 5 ms timeout. Chromium asks for a 1 ms tick (experiment E2).
+
+Other platforms have other granularities ([clocks and timers](/research/clocks-and-timers)):
+
+- Safari on macOS aligns nested timers to a grid of 4 ms, and to 30 ms in Low Power Mode.
+- Chromium on Windows uses a timer resolution of 1 ms on AC power and 8 ms on battery power.
+
+The calibration measures these granularities too, but we did not measure Safari on macOS. The WebKit build for Windows is not Safari on macOS.
+
+## Measurement validity
+
+With measurement conditions, DriftLag pauses while the page is hidden or frozen. Browsers throttle the timers of hidden pages, thus a window there measures the throttling. When the page is visible again, the first window starts at the restart, and the monitor keeps it.
+
+Each window goes to a `SampleValidator` with its measured length (`getLastWindowMs()`). The validator discards a window that overlaps a hidden, frozen or suspend interval. A discarded window with a lag of 5000 ms or more that overlaps a suspend interval is a stall of the type `suspend`. A lag of 5000 ms or more waits 2000 ms for late evidence:
+
+- If the worker or the clock-drift monitor reports a suspend in that time, the validator discards the window. It is a stall of the type `suspend`.
+- If no evidence comes, the validator records the window. It is a stall of the type `hang`.
+
+The conditions of `setupAllMonitors()` count the discarded windows in `lag_samples_discarded`. They join the stall samples of all monitors whose windows overlap into one stall episode, and they count the episodes in `lag_stalls`.
+
+The validator reads `document.visibilityState` again for each window. Thus it also discards a window that ends after the page became hidden, but before the `visibilitychange` event. Refer to [measurement validity](/docs/concepts/measurement-validity).
+
+## Metrics
+
+<MetricTable metrics={driftLagMetrics} />
+
+DriftLag sends no events of its own. The measurement conditions send a `lag.stall` event for each stall episode, with the attributes `kind` (`hang` or `suspend`) and `duration_ms`. `LagLogger` writes its warning ("Average event loop lag exceeded threshold") to the logger, not to the event sink.
+
+## Configuration
+
+```ts
+function createInstrumentedDriftLag(
+    deps : CoreDeps & TimerDeps,
+    conditions? : MeasurementConditions,
+) : MonitorHandle<DriftLag>;
+```
+
+The factory uses these dependency groups:
+
+- `CoreDeps`: `logger`, `clock` (`performance.now()`) and `meter`.
+- `TimerDeps`: `setTimeoutFn`, `clearTimeoutFn`, `setIntervalFn` and `clearIntervalFn`.
+
+Give `conditions` to pause the monitor while the page is hidden and to validate each window. The factory uses a window of 100 ms (`highFrequencyLagIntervalMs`) and a step of 5 ms. The class has two options:
+
+| Option | Default | What it does |
+|---|---|---|
+| `stepMs` | 5 | The requested delay of each timer step. |
+| `baselineSteps` | 100 | The number of recent steps that give the baseline. |
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import {
+    createBrowserDeps,
+    createInstrumentedDriftLag,
+    createInstrumentedLifecycle,
+    createMeasurementConditions,
+} from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+const lifecycle = createInstrumentedLifecycle(deps);
+const conditions = createMeasurementConditions({
+    clock : deps.clock,
+    setTimeoutFn : deps.setTimeoutFn,
+    clearTimeoutFn : deps.clearTimeoutFn,
+    ...(lifecycle.monitor ? { lifecycle : lifecycle.monitor } : {}),
+});
+const driftLag = createInstrumentedDriftLag(deps, conditions);
+
+// Stop in the reverse sequence of the start
+driftLag.stop();
+conditions.dispose();
+lifecycle.stop();
+```
+
+`setupAllMonitors()` does these steps for you. In a cross-origin-isolated page with a worker, it also gives DriftLag a `setTimeoutFn` that beats the counter of the [shared-memory liveness](/docs/monitors/shared-liveness) watcher.
+
+## Cost
+
+- **Timers:** one chain of timeouts. At the measured idle steps, the chain has approximately 175 callbacks each second in Chromium (5.7 ms). In Firefox and WebKit on Windows (15.6 ms), it has approximately 64. These are estimates, calculated from experiment E3.
+- **Records:** two histogram values for each valid window, thus approximately 20 values each second.
+- **CPU:** the overhead benchmark measured approximately 11 ms of main-thread time each second for the chain alone. It used Chromium in the new headless mode on a desktop computer (the comment of `overhead/overhead.test.ts`).
+- **Memory:** the durations of 100 steps. Each calculation of the baseline sorts them, three times for each window.
+- **Power:** short timers keep a fine timer resolution of the operating system. While short timers wait, Chromium on Windows asks for a 1 ms tick on AC power, and 8 ms on battery power. A published measurement gives approximately 0.3 W for a 1 ms tick, approximately 10% of the idle power of the processor package ([clocks and timers](/research/clocks-and-timers)). We did not measure this for DriftLag.
+
+The callbacks of the monitor are also tasks on the main thread. Thus the monitor measures a small part of its own cost.
+
+## Limits
+
+- **A busy thread changes the baseline.** If the thread is busy during more than half of the steps, the median increases. Then the baseline increases, and the monitor reports less lag. The [worker monitor](/docs/monitors/worker-lag) measures that case correctly.
+- **The resolution is one step.** A block can start immediately after a step. Thus the lag of a block can be less than its duration by up to one step: 16 ms in Firefox on Windows (experiment E3).
+- **One sample for each block.** The chain is closed-loop: a long block gives one long window, not many samples. In a histogram of windows, a 30 s block is one value among hundreds of normal windows ([clocks and timers](/research/clocks-and-timers), coordinated omission). The sum of the histogram contains the full length of the block. Thus use the sum for the blocked time, and the quantiles only for the typical window.
+- **Idle noise.** The factory records a negative lag as 0. Thus an idle page gives small positive values, for example a p90 of 3.1 ms in Chromium (experiment E3).
+- **A change of the timer granularity.** A row of 10 steps that agree with each other starts a new baseline. Thus the baseline follows a change, for example to battery power, after 10 steps of the new granularity: approximately 160 ms with steps of 16 ms.
+- **Equal tasks look like a granularity.** On a busy thread with tasks of the same length, each step is longer by the same quantity. If these steps are 40 ms or shorter, the monitor accepts them as a new granularity after 10 steps, and it reports less lag. The [worker monitor](/docs/monitors/worker-lag) measures that case correctly.
+- **No samples from hidden pages.** The monitor pauses there, and so does the worker monitor. The [timer throttling](/docs/monitors/timer-throttle) detector and the [clock drift](/docs/monitors/clock-drift) monitor continue in hidden pages.
+
+## Tests
+
+Unit tests (Vitest, fake timers):
+
+- `DriftLag.test.ts`, the calibration: no lag with exact timers. No lag with 16 ms steps, and a baseline of 16 ms. A window of 20 steps, then of 6 steps of 16 ms. A 300 ms block gives a lag of 300 ms. A long step does not change the baseline.
+- `DriftLag.test.ts`, the timer chain: one chain after `stop()` and `start()`, also from inside the report function. A window of 103 ms has 20 steps of 5 ms.
+- `DriftLag.granularity.test.ts`, a change of the granularity: steps that change from 6 ms to 16 ms on an idle thread give a lag of less than 20 ms. The baseline follows the change, also when the change comes at the end of a window. After a change to a finer granularity, a 300 ms block gives a lag of 300 ms. A row of steps of more than 40 ms, and a row of steps that do not agree, stay lag.
+- `DriftLag.granularity.test.ts`, the baseline: the mean of the steps that are not longer than the median plus max(4 ms, half of the median). A block does not count, also when it comes before shorter steps.
+- `LagLogger.test.ts`: the thresholds of the 2 s and 5 s periods, the reset after each report, and no log for a hidden tab. The logger uses the interval of each measurement, for example windows of 93 ms.
+- `setup-all-monitors.test.ts`: a 250 ms lag goes into `lag_drift_histogram`. The validator discards a window that overlaps a system suspend. The monitor pauses while the page is hidden, and it keeps the first window after the page is visible again.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
+
+- `drift-accuracy.test.ts`: on an idle page, the median lag is between −5 ms and 5 ms. After a 300 ms block, the largest lag is more than 300 ms minus the baseline minus 10 ms, and less than 340 ms.
+- `lag-monitors.test.ts`: a 300 ms block gives a lag of more than 200 ms.
+- `stress.test.ts`: with the light profile of `@lag/load`, the largest lag is less than 150 ms. With the heavy profile, it is more than 100 ms.
+- `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no window while the page is hidden or frozen. It records more than 5 windows after the page is visible again. After a freeze of 2 s, each lag after the resume is less than half of the freeze, and no stall occurs.
+- `cdp/cpu-throttling.test.ts` (Chromium in the new headless mode): with 4× CPU throttling, the same work gives a median lag of more than 2.5 times the lag without throttling.
+- `overhead/overhead.test.ts` (Chromium in the new headless mode): all monitors together make more than 40 and not more than 210 timer callbacks each second on an idle page. The lower limit is also true with the 15.6 ms timer tick of Windows. The comment of the test gives approximately 175 callbacks each second for DriftLag with a 1 ms tick.
+
+## Source
+
+- [`DriftLag.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/DriftLag.ts): the monitor, the calibration and the change of the granularity.
+- [`instrumented/drift-lag.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/drift-lag.ts): the factory.
+- [`LagLogger.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/LagLogger.ts) and [`constants.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/constants.ts): the warnings and the constants.

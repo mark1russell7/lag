@@ -1,41 +1,43 @@
 import type { CoreDeps, TimerDeps, SchedulingDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import {
-    SchedulingFairnessMonitor,
-    type SchedulingMeasurement,
-} from "../SchedulingFairnessMonitor.js";
+import { SchedulingFairnessMonitor, type SchedulingMeasurement } from "../SchedulingFairnessMonitor.js";
+import type { MeasurementConditions } from "../measurement-conditions.js";
+import { METRICS, createHistogram } from "../metric-catalog.js";
+import { createHandle } from "./shared.js";
 
 const DEFAULT_INTERVAL_MS = 5_000;
 
 /**
- * Constructs a SchedulingFairnessMonitor wired to three histograms.
- *
- * Metrics (all ms):
- * - `lag_scheduling_microtask_histogram` — queueMicrotask() latency
- * - `lag_scheduling_macrotask_histogram` — setTimeout(0) latency
- * - `lag_scheduling_message_channel_histogram` — MessageChannel postMessage latency
- *
- * Comparing these three reveals scheduling bias — e.g., if microtask >> macrotask,
- * the engine is starving the macrotask queue.
+ * This factory makes a `SchedulingFairnessMonitor` that records into three
+ * histograms: the latency of `queueMicrotask` (a near-zero baseline), of
+ * `setTimeout(0)` and of `MessageChannel`. To read them together, refer to
+ * `SchedulingFairnessMonitor`. With `conditions`, the monitor pauses while
+ * the page is hidden. Also, it does not record a cycle that overlaps an
+ * unreliable interval.
  */
 export function createInstrumentedSchedulingFairness(
     deps : CoreDeps & TimerDeps & SchedulingDeps,
+    conditions? : MeasurementConditions,
     intervalMs : number = DEFAULT_INTERVAL_MS,
 ) : MonitorHandle<SchedulingFairnessMonitor> {
-    try {
-        const microHist = deps.meter.createHistogram<SchedulingMeasurement>(
-            "lag_scheduling_microtask_histogram", { unit : "ms" });
-        const macroHist = deps.meter.createHistogram<SchedulingMeasurement>(
-            "lag_scheduling_macrotask_histogram", { unit : "ms" });
-        const channelHist = deps.meter.createHistogram<SchedulingMeasurement>(
-            "lag_scheduling_message_channel_histogram", { unit : "ms" });
+    return createHandle("scheduling-fairness", deps.logger, () => {
+        const microHist = createHistogram(deps.meter, METRICS.schedulingMicrotask);
+        const macroHist = createHistogram(deps.meter, METRICS.schedulingMacrotask);
+        const channelHist = createHistogram(deps.meter, METRICS.schedulingMessageChannel);
+        const validator = conditions?.createValidator();
+
+        const record = (m : SchedulingMeasurement) : void => {
+            microHist.record(m.microtaskMs);
+            macroHist.record(m.macrotaskMs);
+            channelHist.record(m.messageChannelMs);
+        };
 
         const monitor = new SchedulingFairnessMonitor(
             intervalMs,
             (m) => {
-                microHist.record(m.microtaskMs, m);
-                macroHist.record(m.macrotaskMs, m);
-                channelHist.record(m.messageChannelMs, m);
+                const windowMs = Math.max(m.macrotaskMs, m.messageChannelMs, m.microtaskMs);
+                if (validator) validator.submit(windowMs, windowMs, () => record(m));
+                else record(m);
             },
             deps.logger,
             deps.setIntervalFn,
@@ -45,13 +47,15 @@ export function createInstrumentedSchedulingFairness(
             deps.MessageChannel,
             deps.clock,
         );
+        const unpause = conditions?.pauseWhileHidden(monitor);
 
-        return { name : "scheduling-fairness", monitor, stop : () => monitor.stop() };
-    } catch (error) {
-        deps.logger.log("warn", "Failed to create SchedulingFairnessMonitor.", {
-            error,
-            type : "createInstrumentedSchedulingFairness",
-        });
-        return { name : "scheduling-fairness", monitor : undefined, stop : () => {} };
-    }
+        return {
+            monitor,
+            stop : () => {
+                unpause?.();
+                monitor.stop();
+                validator?.dispose();
+            },
+        };
+    });
 }

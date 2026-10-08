@@ -4,50 +4,70 @@ export type RequestAnimationFrameFn = (callback : (time : number) => void) => nu
 export type CancelAnimationFrameFn = (handle : number) => void;
 
 export type FrameMeasurement = {
-    /** Wall-clock time since the previous frame. */
+    /** The time since the previous frame, from the monotonic clock (`clock.now()`). */
     frameDeltaMs : number;
-    /** Instantaneous frame rate computed from this delta (1000 / frameDeltaMs). */
+    /** The instantaneous frame rate from this delta: `1000 / frameDeltaMs`. */
     fps : number;
     /**
-     * Number of frames the engine *missed* between this callback and the
-     * previous one. Computed as `max(0, round(delta / target) - 1)`.
+     * The number of frames that the engine *missed* between this callback
+     * and the previous one: `max(0, round(delta / target) - 1)`.
      *
-     * Examples (target = 16.67ms):
-     *   delta = 16ms  → 0 dropped (one frame as expected)
-     *   delta = 17ms  → 0 dropped (within tolerance, just slightly late)
-     *   delta = 33ms  → 1 dropped (a full frame was skipped)
-     *   delta = 50ms  → 2 dropped
-     *   delta = 100ms → 5 dropped
+     * Examples, with a target of 16.67 ms:
+     *
+     * - A delta of 16 ms gives 0 dropped frames. One frame came, as expected.
+     * - A delta of 17 ms gives 0 dropped frames. The frame is a little late,
+     *   but in the tolerance.
+     * - A delta of 33 ms gives 1 dropped frame. The engine skipped a full
+     *   frame.
+     * - A delta of 50 ms gives 2 dropped frames.
+     * - A delta of 100 ms gives 5 dropped frames.
      */
     droppedFrames : number;
-    /** True iff `droppedFrames > 0`. */
+    /** True if `droppedFrames > 0`. */
     isDropped : boolean;
-    /** Expected frame interval in ms (1000 / targetFps). */
+    /** The expected frame interval, in ms, that the estimate used. */
     targetFrameTimeMs : number;
 };
 
-const DEFAULT_TARGET_FPS = 60;
+/** The frame interval comes from the recent frames (refer to the class description). */
+export const AUTO_FRAME_RATE = "auto";
 
 /**
- * Measures frame delivery rate via requestAnimationFrame.
+ * The window for the estimate of the frame interval: approximately 10
+ * seconds at 60 Hz. The window is long enough that a burst of jank does not
+ * increase the estimate. It is short enough to follow a change of the
+ * refresh rate.
+ */
+const ESTIMATE_WINDOW_FRAMES = 600;
+/** A shorter delta is timing noise (two callbacks in one frame), not a refresh rate. */
+const MIN_PLAUSIBLE_FRAME_MS = 4;
+/** The estimate before the first frames arrive. */
+const INITIAL_FRAME_MS = 1000 / 60;
+
+/**
+ * This monitor measures the frame delivery rate through
+ * `requestAnimationFrame`.
  *
- * **Drop detection is exact, not heuristic.** We compute how many frames
- * *should* have fit in the observed gap and subtract one (the frame that
- * actually fired). For target = 16.67ms:
+ * The monitor estimates the dropped frames from the gap between two
+ * consecutive callbacks: `round(delta / frameInterval) - 1`. At 60 Hz, a
+ * gap of 50 ms counts as 2 dropped frames.
  *
- *   round(50 / 16.67) - 1 = round(3) - 1 = 2 dropped
+ * By default (`targetFps = "auto"`), the frame interval is the shortest gap
+ * of the last 600 frames. The estimate ignores gaps of less than 4 ms. Thus,
+ * the interval follows the real refresh rate, for example of a 120 Hz
+ * screen, or the 30 fps limit of a power-saving mode. A fixed `targetFps`
+ * uses `1000 / targetFps`.
  *
- * `Math.round` (rather than `Math.floor`) is used so that a delta of 16.7ms
- * counts as one frame (not zero), and a delta of 25ms counts as one frame
- * (not zero). This matches how Chrome's frame timing reports work.
+ * **The difference from `LongAnimationFrameMonitor`:**
+ * - LoAF measures the *blocking* during the production of a frame (script
+ *   and render time).
+ * - This monitor measures the *frame delivery*: the gap between two
+ *   consecutive `requestAnimationFrame` callbacks.
  *
- * **Different from LongAnimationFrameMonitor:**
- * - LoAF measures *blocking* during frame production (script + render time)
- * - This measures *frame delivery* — the gap between successive rAF callbacks
- *
- * If LoAF says "no blocking" but FrameTimingMonitor sees dropped frames, the
- * issue is upstream (compositor, GPU, vsync misalignment). If both report
- * issues, the main thread is blocking frame production.
+ * If LoAF shows no blocking but this monitor sees dropped frames, the
+ * problem is upstream. For example, the problem is in the compositor, the
+ * GPU or the vsync alignment. If both monitors report problems, the main
+ * thread blocks the production of frames.
  */
 export class FrameTimingMonitor {
     private handle : number | undefined;
@@ -55,7 +75,10 @@ export class FrameTimingMonitor {
     private started = false;
     private observedFrames = 0;
     private droppedTotal = 0;
-    private readonly targetFrameTimeMs : number;
+    private readonly fixedFrameTimeMs : number | undefined;
+    /** Recent deltas for the sliding-window minimum: a deque of [frame index, delta] with increasing deltas. */
+    private readonly minimumDeque : Array<[number, number]> = [];
+    private frameIndex = 0;
 
     constructor(
         private readonly report : (measurement : FrameMeasurement) => void,
@@ -63,10 +86,26 @@ export class FrameTimingMonitor {
         private readonly requestAnimationFrameFn : RequestAnimationFrameFn,
         private readonly cancelAnimationFrameFn : CancelAnimationFrameFn,
         private readonly clock : Clock,
-        targetFps : number = DEFAULT_TARGET_FPS,
+        targetFps : number | typeof AUTO_FRAME_RATE = AUTO_FRAME_RATE,
     ) {
-        this.targetFrameTimeMs = 1000 / targetFps;
+        this.fixedFrameTimeMs = targetFps === AUTO_FRAME_RATE ? undefined : 1000 / targetFps;
         this.start();
+    }
+
+    /** The frame interval that the next drop estimate uses. */
+    getFrameIntervalMs() : number {
+        if (this.fixedFrameTimeMs !== undefined) return this.fixedFrameTimeMs;
+        return this.minimumDeque[0]?.[1] ?? INITIAL_FRAME_MS;
+    }
+
+    private observeDelta(deltaMs : number) : void {
+        if (deltaMs < MIN_PLAUSIBLE_FRAME_MS) return;
+        const index = this.frameIndex++;
+        while (this.minimumDeque.length > 0 && this.minimumDeque[this.minimumDeque.length - 1]![1] >= deltaMs) {
+            this.minimumDeque.pop();
+        }
+        this.minimumDeque.push([index, deltaMs]);
+        while (this.minimumDeque[0]![0] <= index - ESTIMATE_WINDOW_FRAMES) this.minimumDeque.shift();
     }
 
     start() : void {
@@ -85,11 +124,12 @@ export class FrameTimingMonitor {
     }
 
     /**
-     * Ratio of dropped frames to expected frames since startup or last reset.
+     * The ratio of dropped frames to expected frames, since the construction
+     * of the monitor or the last `resetCounters()`.
      *
-     * Computed as `droppedTotal / (observedFrames + droppedTotal)`. This is
-     * the fraction of *intended* frames the engine failed to deliver — a
-     * 50% rate means half of the expected frames were skipped.
+     * The value is `droppedTotal / (observedFrames + droppedTotal)`. It is the
+     * fraction of *intended* frames that the engine did not deliver. At a
+     * rate of 50%, the engine skipped half of the expected frames.
      */
     getDroppedFrameRate() : number {
         const expected = this.observedFrames + this.droppedTotal;
@@ -97,12 +137,12 @@ export class FrameTimingMonitor {
         return this.droppedTotal / expected;
     }
 
-    /** Total dropped frames since startup or last reset. */
+    /** The total number of dropped frames since the construction or the last `resetCounters()`. */
     getDroppedTotal() : number {
         return this.droppedTotal;
     }
 
-    /** Total observed frames since startup or last reset. */
+    /** The total number of observed frames since the construction or the last `resetCounters()`. */
     getObservedTotal() : number {
         return this.observedFrames;
     }
@@ -114,20 +154,27 @@ export class FrameTimingMonitor {
 
     private scheduleNextFrame() : void {
         if (!this.started) return;
-        this.handle = this.requestAnimationFrameFn(() => this.onFrame());
+        const handle : number = this.requestAnimationFrameFn(() => this.onFrame(handle));
+        this.handle = handle;
     }
 
-    private onFrame() : void {
-        if (!this.started) return;
+    /** `handle` identifies the chain of this callback, because `report()` can stop or restart the monitor. */
+    private onFrame(handle : number) : void {
+        if (!this.started || this.handle !== handle) return;
 
         try {
             const now = this.clock.now();
+            const lastFrameTime = this.lastFrameTime;
+            // Before report(), so a stop() inside it can reset the baseline
+            this.lastFrameTime = now;
 
-            if (this.lastFrameTime >= 0) {
-                const frameDeltaMs = now - this.lastFrameTime;
-                // Compute how many target-frame intervals this gap covers,
+            if (lastFrameTime >= 0) {
+                const frameDeltaMs = now - lastFrameTime;
+                this.observeDelta(frameDeltaMs);
+                const targetFrameTimeMs = this.getFrameIntervalMs();
+                // Compute how many frame intervals this gap covers,
                 // then subtract one for the frame that actually fired.
-                const expectedSlots = Math.max(1, Math.round(frameDeltaMs / this.targetFrameTimeMs));
+                const expectedSlots = Math.max(1, Math.round(frameDeltaMs / targetFrameTimeMs));
                 const droppedFrames = expectedSlots - 1;
 
                 this.observedFrames++;
@@ -138,11 +185,9 @@ export class FrameTimingMonitor {
                     fps : 1000 / frameDeltaMs,
                     droppedFrames,
                     isDropped : droppedFrames > 0,
-                    targetFrameTimeMs : this.targetFrameTimeMs,
+                    targetFrameTimeMs,
                 });
             }
-
-            this.lastFrameTime = now;
         } catch (error) {
             this.logger.log("error", "Error in frame timing measurement.", {
                 error,
@@ -150,6 +195,6 @@ export class FrameTimingMonitor {
             });
         }
 
-        this.scheduleNextFrame();
+        if (this.handle === handle) this.scheduleNextFrame();
     }
 }

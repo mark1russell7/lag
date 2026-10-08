@@ -1,0 +1,46 @@
+.table {
+    font-size: var(--text-sm);
+}
+
+.table [data-align="right"] {
+    text-align: right;
+}
+
+.table th[scope="row"] {
+    font-weight: 400;
+}
+
+.sortButton {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.table th[data-align="right"] .sortButton {
+    flex-direction: row-reverse;
+}
+
+.sortButton:hover {
+    color: var(--color-accent-strong);
+}
+
+.mark {
+    width: 0.75em;
+    height: 0.75em;
+    color: var(--color-ink-muted);
+}
+
+.mark[data-direction="ascending"] .down,
+.mark[data-direction="descending"] .up {
+    opacity: 0.2;
+}
+
+.mark[data-direction] {
+    color: var(--color-ink);
+}

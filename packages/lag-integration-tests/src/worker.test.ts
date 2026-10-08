@@ -1,94 +1,82 @@
 import { expect, vi } from "vitest";
-import { createLagWorker } from "@lag/worker";
-import { WorkerLagMonitor, type WorkerLagMeasurement } from "@lag/core";
-
-function wait(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
+import { createLagWorker, type LagWorker } from "@lag/worker";
+import { WorkerLagMonitor, createAbsoluteClock, type WorkerLagMeasurement } from "@lag/core";
+import { blockMainThread, wait } from "./harness.js";
+import { recordMeasurement } from "./commands.js";
 
 describe("Worker Lag Monitor Integration", () => {
-    it("receives real pong measurements from a Web Worker", async () => {
-        const measurements: WorkerLagMeasurement[] = [];
-        const logger = { log: vi.fn() };
+    const workers : LagWorker[] = [];
 
+    function createMonitor(intervalMs : number) {
+        const measurements : WorkerLagMeasurement[] = [];
         const worker = createLagWorker();
-
+        workers.push(worker);
         const monitor = new WorkerLagMonitor(
             worker,
             (m) => measurements.push(m),
-            logger,
-            (fn, ms) => window.setInterval(fn, ms),
-            (id) => window.clearInterval(id),
-            { now: () => performance.now() },
-            500, // ping every 500ms
+            { log : vi.fn() },
+            createAbsoluteClock(window.performance),
+            {
+                heartbeatIntervalMs : intervalMs,
+                setTimeoutFn : (fn, ms) => window.setTimeout(fn, ms),
+                clearTimeoutFn : (id) => window.clearTimeout(id),
+                hang : { thresholdMs : 5_000 },
+            },
         );
+        return { monitor, measurements };
+    }
 
-        // Wait for a few ping/pong cycles
-        await wait(3000);
-
-        monitor.stop();
-
-        console.log(`Received ${measurements.length} worker measurements`);
-        if (measurements.length > 0) {
-            console.log("Sample:", JSON.stringify(measurements[0]));
-        }
-
-        // Should have received at least a few measurements
-        expect(measurements.length).toBeGreaterThan(0);
-
-        // Round-trip should be reasonable (< 100ms in a non-throttled environment)
-        const avgRoundTrip = measurements.reduce((s, m) => s + m.roundTripMs, 0) / measurements.length;
-        console.log(`Average round-trip: ${avgRoundTrip.toFixed(2)}ms`);
-        expect(avgRoundTrip).toBeLessThan(100);
-
-        // Estimated main block should be non-negative
-        for (const m of measurements) {
-            expect(m.estimatedMainBlockMs).toBeGreaterThanOrEqual(0);
-        }
+    afterAll(() => {
+        for (const worker of workers) worker.terminate();
     });
 
-    it("detects main thread blocking via worker comparison", async () => {
-        const measurements: WorkerLagMeasurement[] = [];
-        const logger = { log: vi.fn() };
-
-        const worker = createLagWorker();
-
-        const monitor = new WorkerLagMonitor(
-            worker,
-            (m) => measurements.push(m),
-            logger,
-            (fn, ms) => window.setInterval(fn, ms),
-            (id) => window.clearInterval(id),
-            { now: () => performance.now() },
-            50, // ping every 50ms — tight interval to catch blocks
-        );
-
-        // Wait for baseline measurements
-        await wait(1000);
-        const baselineCount = measurements.length;
-
-        // Block main thread for 800ms — at least one ping will overlap
-        const start = performance.now();
-        while (performance.now() - start < 800) {
-            // busy wait
-        }
-
-        // Wait for blocked pongs to arrive
-        await wait(2000);
-
+    it("receives heartbeats from a real Web Worker", async () => {
+        const { monitor, measurements } = createMonitor(100);
+        await wait(1_500);
         monitor.stop();
 
-        // Measurements after baseline should show elevated round-trip
-        const postBlockMeasurements = measurements.slice(baselineCount);
-        console.log(`Post-block measurements: ${postBlockMeasurements.length}`);
+        console.log(`Received ${measurements.length} heartbeats; sample: ${JSON.stringify(measurements[0])}`);
+        expect(measurements.length).toBeGreaterThanOrEqual(8);
+        expect(measurements.map(m => m.seq)).toEqual(measurements.map((_, i) => i + 1));
 
-        if (postBlockMeasurements.length > 0) {
-            const maxRoundTrip = Math.max(...postBlockMeasurements.map(m => m.roundTripMs));
-            console.log(`Max round-trip after block: ${maxRoundTrip.toFixed(2)}ms`);
+        // An idle main thread handles heartbeats promptly
+        const delays = measurements.map(m => m.deliveryDelayMs);
+        const avgDelay = delays.reduce((s, d) => s + d, 0) / delays.length;
+        console.log(`Average delivery delay: ${avgDelay.toFixed(2)}ms`);
+        await recordMeasurement("worker/idle/lag_worker_main_block_histogram", "ms", delays, { scenario : "idle" });
+        expect(avgDelay).toBeLessThan(20);
+    });
 
-            // During the 800ms block, pings queued on main thread can't be sent/received
-            // so at least one round-trip should be notably elevated
-            expect(maxRoundTrip).toBeGreaterThan(5);
-        }
+    it("detects main thread blocking", async () => {
+        const { monitor, measurements } = createMonitor(50);
+        await wait(500);
+        const baselineCount = measurements.length;
+
+        blockMainThread(800);
+        await wait(300);
+        monitor.stop();
+
+        const afterBlock = measurements.slice(baselineCount).map(m => m.deliveryDelayMs);
+        console.log(`Delivery delays after an 800ms block: ${afterBlock.map(d => d.toFixed(0)).join(", ")}`);
+        await recordMeasurement("worker/block-800ms/lag_worker_main_block_histogram", "ms", afterBlock, { scenario : "block-800ms" });
+        // ~16 heartbeats queued during the block; the first waited for most of it
+        expect(afterBlock.length).toBeGreaterThanOrEqual(10);
+        expect(Math.max(...afterBlock)).toBeGreaterThan(600);
+    });
+
+    it("stops and restarts the worker's heartbeat loop", async () => {
+        const { monitor, measurements } = createMonitor(50);
+        await wait(300);
+        monitor.stop();
+        await wait(100); // already-posted heartbeats drain
+        const stoppedAt = measurements.length;
+
+        await wait(500);
+        expect(measurements.length).toBe(stoppedAt);
+
+        monitor.start();
+        await wait(300);
+        monitor.stop();
+        expect(measurements.length).toBeGreaterThan(stoppedAt);
     });
 });

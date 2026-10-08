@@ -21,14 +21,34 @@
     "./worker-protocol.js": {
       "types": "./dist/worker-protocol.d.ts",
       "import": "./dist/worker-protocol.js"
+    },
+    "./otlp-json.js": {
+      "types": "./dist/otlp-json.d.ts",
+      "import": "./dist/otlp-json.js"
+    },
+    "./event-line.js": {
+      "types": "./dist/event-line.d.ts",
+      "import": "./dist/event-line.js"
+    },
+    "./browser/indexeddb-journal.js": {
+      "types": "./dist/browser/indexeddb-journal.d.ts",
+      "import": "./dist/browser/indexeddb-journal.js"
     }
   },
   "scripts": {
     "build": "tsc -b",
+    "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "mutation": "stryker run",
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "vitest": "^4.0.18"
+    "@stryker-mutator/core": "^10.0.0",
+    "@stryker-mutator/vitest-runner": "^10.0.0",
+    "@vitest/coverage-v8": "4.1.2",
+    "fake-indexeddb": "^6.2.5",
+    "fast-check": "^4.7.0",
+    "vitest": "^4.1.2"
   }
 }

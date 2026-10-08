@@ -119,4 +119,74 @@ describe("ObserverMonitor", () => {
 
         expect(mock.constructCount).toBe(1);
     });
+
+    it("skips observing types missing from supportedEntryTypes", () => {
+        const mock = createMockPerformanceObserver();
+        const logger = { log : vi.fn() };
+        const Ctor = Object.assign(mock.MockCtor, { supportedEntryTypes : ["paint"] });
+
+        new TestObserverMonitor("long-animation-frame", logger, Ctor);
+
+        expect(mock.constructCount).toBe(0);
+        expect(logger.log).toHaveBeenCalledWith(
+            "warn",
+            expect.stringContaining("not supported"),
+            expect.objectContaining({ entryType : "long-animation-frame" }),
+        );
+    });
+
+    it("can retry start() after observe threw", () => {
+        const logger = { log : vi.fn() };
+        let fail = true;
+        let constructed = 0;
+
+        class FlakyObserver {
+            constructor(_callback : unknown) { constructed++; }
+            observe() { if (fail) throw new Error("not yet"); }
+            disconnect() {}
+        }
+
+        const monitor = new TestObserverMonitor("longtask", logger, FlakyObserver as unknown as PerformanceObserverInit);
+        fail = false;
+        monitor.start();
+
+        expect(constructed).toBe(2);
+    });
+
+    it("takeRecords() processes the entries that the browser has not delivered yet", () => {
+        const pending : PerformanceEntryLike[] = [{ entryType : "event", name : "click", startTime : 5, duration : 40 }];
+        class QueueingObserver {
+            observe() {}
+            disconnect() {}
+            takeRecords() { return pending.splice(0); }
+        }
+        const monitor = new TestObserverMonitor("event", { log : vi.fn() }, QueueingObserver as unknown as PerformanceObserverInit);
+
+        monitor.takeRecords();
+        monitor.takeRecords();
+
+        expect(monitor.entries).toEqual([{ entryType : "event", name : "click", startTime : 5, duration : 40 }]);
+    });
+
+    it("takeRecords() does nothing without an observer or without browser support", () => {
+        const mock = createMockPerformanceObserver();
+        const monitor = new TestObserverMonitor("event", { log : vi.fn() }, mock.MockCtor);
+        monitor.takeRecords();
+        monitor.stop();
+        monitor.takeRecords();
+
+        expect(monitor.entries).toEqual([]);
+    });
+
+    it("stop() works after a start that failed, and the warning names the entry type and the error", () => {
+        const logger = { log : vi.fn() };
+        const Throwing = class {
+            observe() { throw new Error("unsupported"); }
+            disconnect() {}
+        } as unknown as PerformanceObserverInit;
+        const monitor = new TestObserverMonitor("test-entry", logger, Throwing);
+
+        expect(() => monitor.stop()).not.toThrow();
+        expect(logger.log).toHaveBeenCalledWith("warn", 'PerformanceObserver type "test-entry" not supported.', { error : expect.any(Error), entryType : "test-entry" });
+    });
 });

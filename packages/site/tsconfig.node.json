@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../ts/config/node.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "isolatedDeclarations": false,
+    "declaration": false,
+    "declarationMap": false,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "rootDir": ".",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
+  },
+  "include": ["vite.config.ts", "vitest.config.ts", "build/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,16 @@
+.table {
+    font-size: var(--text-sm);
+}
+
+.table th[scope="row"] {
+    font-weight: 400;
+    white-space: nowrap;
+}
+
+.table code {
+    font-size: 0.95em;
+}
+
+.description {
+    min-width: 16rem;
+}

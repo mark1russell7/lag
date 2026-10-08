@@ -1,41 +1,35 @@
-import type { CoreDeps, ClockReliabilityDeps } from "../dep-groups.js";
+import type { CoreDeps, PerformanceDeps, TimerDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { ClockReliabilityChecker } from "../ClockReliabilityChecker.js";
+import { METRICS, createHistogram } from "../metric-catalog.js";
+import { createHandle } from "./shared.js";
 
 /**
- * Constructs a ClockReliabilityChecker wired to one gauge.
- *
- * Metric:
- * - `lag_clock_resolution_gauge` — detected `performance.now()` resolution (ms)
- *
- * The resolution is measured once at construction (100 samples in a tight
- * loop, ~1ms of work) and cached via the gauge callback re-reading it.
- * Cross-origin-isolated contexts report ≤5μs; non-isolated contexts
- * typically report ~100μs (the Spectre mitigation clamp).
+ * The factory waits this time before it measures, so that the work of the
+ * page load is usually complete. The measurement reads the clock in a tight
+ * loop.
+ */
+const MEASURE_DELAY_MS = 5_000;
+
+/**
+ * This factory makes a `ClockReliabilityChecker` that records into
+ * `lag_clock_resolution_histogram`: one sample for each page, 5 seconds
+ * after the setup. Cross-origin-isolated contexts report 20 μs or less.
+ * Other contexts report 100 μs to 1 ms, because of the mitigation of
+ * Spectre.
  */
 export function createInstrumentedClockReliability(
-    deps : CoreDeps & ClockReliabilityDeps,
+    deps : CoreDeps & PerformanceDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn">,
 ) : MonitorHandle<ClockReliabilityChecker> {
-    try {
-        const resolutionGauge = deps.meter.createObservableGauge<Record<string, never>>(
-            "lag_clock_resolution_gauge", { unit : "ms" });
-
+    return createHandle("clock-reliability", deps.logger, () => {
+        const resolutionHist = createHistogram(deps.meter, METRICS.clockResolution);
         const checker = new ClockReliabilityChecker(deps.performance);
 
-        resolutionGauge.addCallback((result) => {
-            result.observe(checker.getResolutionMs());
-        });
+        const handle = deps.setTimeoutFn(() => {
+            const resolution = checker.getResolutionMs();
+            if (resolution > 0) resolutionHist.record(resolution);
+        }, MEASURE_DELAY_MS);
 
-        return {
-            name : "clock-reliability",
-            monitor : checker,
-            stop : () => { /* no resources to release */ },
-        };
-    } catch (error) {
-        deps.logger.log("warn", "Failed to create ClockReliabilityChecker.", {
-            error,
-            type : "createInstrumentedClockReliability",
-        });
-        return { name : "clock-reliability", monitor : undefined, stop : () => {} };
-    }
+        return { monitor : checker, stop : () => deps.clearTimeoutFn(handle) };
+    });
 }

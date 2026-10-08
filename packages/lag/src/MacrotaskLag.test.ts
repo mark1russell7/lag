@@ -90,4 +90,64 @@ describe('MacrotaskLag', () => {
             expect(mockReport).toHaveBeenCalledTimes(2);
         });
     })
-})
+
+    describe('stop()', () => {
+        it('clears the interval it created in the constructor', () => {
+            const monitor = driver.createMonitor(MacrotaskLag);
+            monitor.stop();
+            expect(driver.mockClearInterval).toHaveBeenCalledWith(123);
+        });
+
+        it('drops a sample that was in flight when stop() was called', async () => {
+            driver.mockPerformanceTimes(1000, 1010);
+            const monitor = driver.createMonitor(MacrotaskLag);
+
+            driver.getIntervalCallback()();
+            monitor.stop();
+            driver.getTimeoutCallback(0)();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(mockReport).not.toHaveBeenCalled();
+        });
+
+        it('start() while the monitor operates adds no second interval', () => {
+            driver.createMonitor(MacrotaskLag).start();
+
+            driver.expectIntervalSetup();
+        });
+
+        it('can be restarted', () => {
+            const monitor = driver.createMonitor(MacrotaskLag);
+            monitor.stop();
+            monitor.start();
+            expect(driver.mockSetInterval).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    describe('postTask', () => {
+        it('starts the measurement in the posted task, so that the timer nesting clamp does not apply', async () => {
+            const posted : Array<() => void> = [];
+            const clock = { now : vi.fn() };
+            clock.now.mockReturnValueOnce(2_000).mockReturnValueOnce(2_003);
+            const setTimeoutFn = vi.fn().mockReturnValue(7);
+            const setIntervalFn = vi.fn().mockReturnValue(1);
+            new MacrotaskLag(
+                INTERVAL, mockReport, { log : vi.fn() },
+                setIntervalFn, vi.fn(), setTimeoutFn, vi.fn(), clock,
+                (callback) => posted.push(callback),
+            );
+
+            void setIntervalFn.mock.calls[0]![0]();
+            // The interval callback only posts the task
+            expect(setTimeoutFn).not.toHaveBeenCalled();
+            posted[0]!();
+            expect(setTimeoutFn).toHaveBeenCalledWith(expect.any(Function), 0);
+            setTimeoutFn.mock.calls[0]![0]();
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(mockReport).toHaveBeenCalledWith(3);
+        });
+    });
+});

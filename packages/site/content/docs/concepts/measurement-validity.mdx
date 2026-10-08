@@ -1,0 +1,237 @@
+---
+title: Measurement validity
+description: Why a sample can be incorrect, how the monitors find and discard such samples, and how they classify a very long sample as a hang or a suspend.
+order: 14
+status: final
+---
+
+import { validatorChart } from "./diagrams.data";
+import { conditionsMetrics } from "../monitors/metrics.data";
+
+A sample shows the behavior of the app only if the browser and the system operated the page as usual during its measurement window. This page gives the causes of incorrect samples, and the two parts of the library that find them: the `ReliabilityTracker` and the `SampleValidator`. `setupAllMonitors()` makes one set of measurement conditions, and all the timer-driven monitors share it.
+
+<Callout type="warning" title="Hidden pages">
+  Do not compare values from a hidden page with values from a visible page. The monitors pause while the page is hidden, and they discard each sample whose window overlaps a hidden period.
+</Callout>
+
+## Causes of incorrect samples
+
+### A hidden page
+
+Browsers throttle the timers of a hidden page. Chrome aligns the delayed timers of a hidden page to one wake-up each second. After a grace period, a silent page with a chain of 5 or more timers gets one wake-up each minute. The grace period is 60 s for a page that was loaded when it became hidden, and 300 s for a page whose load was not completed. Firefox has a minimum of 1 s for the timers of an inactive tab, and WebKit aligns the timers of a hidden page to 1 s. Most browsers also pause `requestAnimationFrame` in a background tab ([clocks and timers](/research/clocks-and-timers)).
+
+Thus a [DriftLag](/docs/monitors/drift-lag) window in a hidden page measures the throttling policy of the browser, not the app.
+
+### A frozen page
+
+A frozen page does no tasks. Chromium freezes a page in the back/forward cache, in a collapsed tab group, for Energy Saver, and in the background on Android ([browser support](/research/browser-support)). A sample whose window contains a freeze contains the frozen time. Only Chromium sends the `freeze` and `resume` events. In the other engines, the library finds a frozen page only through `pagehide` with `persisted` set to `true`.
+
+### A system suspend
+
+`performance.now()` stops during a system sleep on macOS, Linux, Android and iOS. On Windows, it continues ([clocks and timers](/research/clocks-and-timers)). Thus a suspend has a different effect on each platform:
+
+- On a platform where the clock stops, a timer continues after the wake-up with its remaining delay. The sample does not contain the sleep, thus its value is correct. The library still discards the samples that overlap the evidence of the [clock-drift monitor](/docs/monitors/clock-drift).
+- On Windows, each timer that came due during the sleep starts late by approximately the duration of the sleep. A DriftLag window that contains a sleep of one hour gives a lag of one hour.
+
+No browser event tells a page about a suspend. Refer to [clocks and time](/docs/concepts/clocks-and-time).
+
+### A clock step
+
+The wall clock (`Date.now()`) can jump forward or backward, for example when NTP or a user changes the system clock. The monitors measure durations with the monotonic clock (`performance.now()`). Thus a clock step does not change their samples. But the timestamps of the OpenTelemetry SDK come from the wall clock, and they move with each step. Refer to [clocks and time](/docs/concepts/clocks-and-time).
+
+### The observer effect
+
+The probes of the monitors use the main thread too. A chain of 5 ms timeouts wakes the thread up to 200 times each second, and a `requestAnimationFrame` loop keeps the rendering pipeline active. The research infers that these probes also shorten the idle periods that the idle-availability monitor measures. Refer to [statistics](/docs/concepts/statistics).
+
+## The reliability tracker
+
+The `ReliabilityTracker` collects the intervals in which measurements are not correct. Each interval has a `start`, an `end` and a cause (`reason`):
+
+| Cause | Source of the interval |
+|---|---|
+| `hidden` | The lifecycle state is `hidden` or `terminated`. |
+| `frozen` | The lifecycle state is `frozen`. |
+| `suspend` | The worker reports that its own timer was 5 s or more late. The clock-drift monitor finds a forward jump of the wall clock of 1 s or more. |
+
+The times are in the monotonic time of the main thread (`performance.now()`).
+
+### Open and closed intervals
+
+The tracker has two types of intervals:
+
+- `open(reason)` starts an interval at the current time. The `end` of the interval is `Infinity` until the caller closes it. `open()` gives the function that closes the interval. A second call of that function has no effect. The measurement conditions open an interval at each change to a state that is not visible, and they close it at the change back.
+- `add(start, end, reason)` adds a closed interval after the fact. The worker monitor and the clock-drift monitor add a suspend in this way, because the evidence comes after the system wakes up. The tracker ignores an interval whose end is before its start.
+
+Evidence can come after the sample that it invalidates. Thus the tracker keeps each closed interval for 120 s after its end. It keeps an open interval until the interval closes.
+
+### The overlap rule
+
+`findOverlap(start, end, reason?)` gives the first interval that overlaps the window from `start` to `end`. With `reason`, only the intervals of that cause count. These rules apply:
+
+- A closed interval overlaps a window if it starts before the end of the window. It must also stop after the start of the window. An interval that only touches the window at one point does not overlap it. Thus the first window after the page becomes visible again is correct: the monitor starts it at the end of the hidden interval.
+- An open interval overlaps each window whose end is at the start of the interval or later.
+
+The unit tests of the tracker use these examples:
+
+| Interval | Window | Overlap? |
+|---|---|---|
+| Closed, from 100 to 200 | From 150 to 300 | Yes |
+| Closed, from 100 to 200 | From 0 to 150 | Yes |
+| Closed, from 100 to 200 | From 200 to 300 | No |
+| Closed, from 100 to 200 | From 0 to 100 | No |
+| Open, from 500 | From 400 to 500 | Yes |
+| Open, from 500 | From 100 to 499 | No |
+
+The measurement conditions look for a `suspend` interval first, and then for an interval of each cause. Thus a suspend has priority when a window overlaps a suspend interval and a hidden or frozen interval. The cause of the discard is then `suspend`, and a very long sample is a stall sample of the type `suspend`.
+
+## The sample validator
+
+A timer-driven monitor gives each sample to a `SampleValidator`, with `submit(value, windowMs, record)`. The window of the sample is the last `windowMs` milliseconds before the submission. The validator uses `record(value)` only for a correct sample.
+
+<Mermaid
+  chart={validatorChart}
+  title="The decisions of the sample validator"
+  caption="A sample of 5000 ms or more waits 2000 ms for late evidence of a suspend. The stall samples whose windows overlap are one stall episode."
+/>
+
+The validator does these steps:
+
+1. It reads the lifecycle state. This read changes the state immediately if `document.visibilityState` changed and the event did not come yet. Refer to [page lifecycle](/docs/concepts/page-lifecycle).
+2. It discards the sample if the window overlaps an interval. The measurement conditions add 1 to `lag_samples_discarded`, with the cause of the interval. If the cause is `suspend` and the sample is 5000 ms or more, the sample is also a stall sample of the type `suspend`.
+3. It records a sample of less than 5000 ms immediately.
+4. It holds a sample of 5000 ms or more for 2000 ms, because the evidence of a suspend can come after the sample. Then it examines the same window again:
+    - With an interval of the cause `suspend`, it discards the sample. The sample is a stall sample of the type `suspend`.
+    - With an interval of the cause `hidden` or `frozen` only, it discards the sample. The sample is not a stall.
+    - With no interval, it records the sample. The sample is a stall sample of the type `hang`.
+
+Thus the evidence of a suspend can come before the sample or after it, and the result is the same. A unit test gives the evidence before the sample and after it, and it makes sure that the two results agree.
+
+`dispose()` cancels the samples that wait. The monitors use it when they stop.
+
+Each monitor gives its own value and window:
+
+| Monitor | Value | Window |
+|---|---|---|
+| DriftLag | The lag of the window, 0 or more | The measured duration of the window, with the lag (`getLastWindowMs()`) |
+| MacrotaskLag | The wait of the zero-delay timeout | The same as the value |
+| Scheduling fairness | The largest of the three latencies | The same as the value |
+| Frame timing | The time between two frames | The same as the value |
+| Idle availability | The time since the previous idle callback | The same as the value |
+| Worker lag | The delay of one heartbeat | The same as the value |
+| Shared-memory liveness | The duration of one block | The same as the value |
+
+The monitors that read `PerformanceObserver` entries do not use the validator: long animation frames, Event Timing, layout shift and the page-view vitals. The browser makes these entries. The page-view vitals have their own rules for hidden pages. Refer to [page views](/docs/concepts/page-views).
+
+## Stalls: hang and suspend
+
+A stall sample is a sample of 5000 ms or more. The library classifies each stall sample:
+
+- A `hang` has no evidence of a suspend. The main thread was blocked.
+- A `suspend` overlaps evidence that the whole system stopped.
+
+### The evidence of a suspend
+
+The evidence comes from two monitors:
+
+- **The [worker monitor](/docs/monitors/worker-lag).** Each heartbeat has the property `workerSelfLagMs`: the time by which the timer of the worker was late. If this value is 5000 ms or more, the worker itself did not operate. The worker monitor then adds a closed interval with the cause `suspend`. The interval ends when the worker sent the heartbeat (the receive time minus the delivery delay), and it starts at that end minus the lateness. Thus the wait of the heartbeat for the main thread is not part of the interval.
+- **The [clock-drift monitor](/docs/monitors/clock-drift).** A forward jump of the wall clock of 1 s or more is a suspend. The monitor then adds a closed interval with the cause `suspend`, over the monotonic time since its previous sample.
+
+The worker is a good observer for this case. It does not depend on the main thread. Also, Chrome and WebKit do not throttle the timers of a dedicated worker in a hidden page ([clocks and timers](/research/clocks-and-timers)). If the worker also did not operate, the whole browser process or the system stopped.
+
+The worker uses the same rule for its own hang detector. When its own timer is late by the hang threshold or more, the worker does not blame the main thread. It resets the time of the last acknowledgement, thus a suspend does not start a hang. During a hang, it also moves the start of the hang forward by that lateness. Thus a sleep on Windows does not count as time of the hang.
+
+Without a worker, only the clock-drift monitor gives evidence. It finds no sleep on Windows, thus a sleep on Windows in a visible page then gives a stall of the type `hang`.
+
+### Stall episodes
+
+A block or a suspend of 5 s or more gives a stall sample in each validated monitor whose window contains it. It also gives one in each worker heartbeat that waited 5 s or more. The measurement conditions join these samples into one stall episode:
+
+- A stall sample whose window overlaps the window of an episode goes into the episode. The window of the episode grows to include the window of the sample.
+- The conditions report an episode 2000 ms after its first stall sample, so that the samples of the other monitors can arrive.
+- The value of an episode is its longest sample. The type is `suspend` if one of its samples had evidence of a suspend. Else the type is `hang`.
+- `dispose()` reports the episodes that wait, because no later report can come.
+
+`lag_stalls` counts the episodes, and `lag_stall_duration_histogram` records the longest sample of each episode. The `lag.stall` event comes one time for each episode. A unit test of `setupAllMonitors()` makes sure that a hang and a suspend of the system each give one episode. The worker also counts each hang one time, in the [hang metrics of the worker](/docs/monitors/worker-lag).
+
+## Pause while hidden
+
+`pauseWhileHidden(monitor)` stops a monitor while the page is not visible:
+
+- At the start, it stops the monitor if the state is not visible.
+- At each change from a visible state to a state that is not visible, it stops the monitor (`stop()`).
+- At each change back to a visible state, it starts the monitor again (`start()`).
+- It gives the function that removes this behavior. Use that function before you stop the monitor permanently.
+
+The visible states are `active` and `passive`. The [lifecycle monitor](/docs/monitors/lifecycle) gives the state. The paused monitors are DriftLag, MacrotaskLag, scheduling fairness, frame timing, idle availability, worker lag and shared-memory liveness. The timer-throttle detector and the clock-drift monitor do not pause.
+
+The pause and the discard rule have different functions. The pause stops the cost of the probes and the stream of throttled samples. The discard rule removes each sample whose window still contains such a period. For example, a timer callback can give a sample after the change of `visibilityState` and before the event. A unit test of `setupAllMonitors()` hides the page for 60 s, and it makes sure that the paused monitors record no sample. After the page becomes visible, the monitors record samples again, and the first window after the change is correct.
+
+The CDP tests do the same with a real page in Chromium in the new headless mode ([testing strategy](/docs/testing/strategy)). `cdp/visibility.test.ts` puts a second page in front, and `cdp/freeze.test.ts` freezes the page for 2 s. In both cases, the paused monitors record no sample while the page is hidden or frozen, and they record samples again after it. The freeze gives no stall, and each discarded sample has the reason `hidden` or `frozen`.
+
+## Metrics and events
+
+<MetricTable metrics={conditionsMetrics} />
+
+For each stall episode, the measurement conditions also send the event `lag.stall`, with the attributes `kind` and `duration_ms` (the longest sample). When the page-view vitals operate, the event also has `lag.page_view.id`. Refer to [page views](/docs/concepts/page-views).
+
+These queries give the discarded samples and the stalls for all pages:
+
+```promql
+sum by (reason) (rate(lag_samples_discarded[5m]))
+sum by (kind) (increase(lag_stalls[1h]))
+histogram_quantile(0.95, sum by (kind) (rate(lag_stall_duration_histogram[1h])))
+```
+
+The third query reads a native histogram. Refer to [metrics model](/docs/concepts/metrics-model).
+
+## The stall classification matrix
+
+The research on clocks gives five conditions that a monitor must separate ([clocks and timers](/research/clocks-and-timers)). L is the length of the stall. Δd is the change of the difference between the wall clock and the monotonic clock.
+
+| Condition | Delay of the heartbeats | Lateness of the worker timer | Δd | Probable cause |
+|---|---|---|---|---|
+| A | Approximately L, then less for each queued heartbeat | Approximately 0 | Approximately 0 | A hang of the main thread |
+| B | Approximately 0, but no heartbeats come during the stall | Approximately 0 | Approximately +L | A suspend on macOS, Linux, Android or iOS |
+| C | Approximately 0, but no heartbeats come during the stall | Approximately L | Approximately 0 | A pause of all threads: a suspend on Windows, a freeze, the back/forward cache, a debugger, a pause of the virtual machine, or no CPU time |
+| D | Approximately 0 | Approximately 0 | A jump, forward or backward | A step of the wall clock |
+| E | Approximately 0, or small | Approximately L | Approximately 0 | Only the worker did not operate, for example because of its garbage collection |
+
+## What the library separates at this time
+
+- **A hang or a pause (conditions A and C).** The library separates them through the lateness of the worker timer. Lateness of 5 s or more gives a `suspend` interval. The validator waits 2 s for this evidence, and evidence from before the sample counts too. A long sample without the evidence is a `hang`. In condition A, the worker also reports the hang after 5 s without an acknowledgement.
+- **A suspend that stops the clock (condition B).** The monotonic clock stopped, thus the samples do not contain the sleep. The [clock-drift monitor](/docs/monitors/clock-drift) counts a jump of the type `suspend`. It also adds a `suspend` interval over the time since its previous sample, and the validators discard the samples that overlap it.
+- **A step of the wall clock (condition D).** The samples use the monotonic clock, thus they are correct. The clock-drift monitor counts a jump of the type `step`, and it adds no interval. A forward step of 1 s or more looks like condition B. The monitor counts it as a `suspend` and adds a `suspend` interval.
+- **The causes of a pause (condition C).** In Chromium, a `freeze` event gives a `frozen` interval. In all engines, `pagehide` with `persisted` set to `true` gives a `frozen` interval for the back/forward cache. The library does not separate a suspend on Windows, a debugger, a pause of the virtual machine and a lack of CPU time.
+- **A worker that does not operate (condition E).** The library cannot separate it from a pause of all threads (condition C). If the lateness is 5 s or more, the library discards the samples of the main thread in that interval. It does this also if the main thread operated correctly. A smaller lateness goes only into `lag_worker_self_lag_histogram`.
+
+## Limits
+
+- A suspend of less than 5 s on Windows gives no evidence. The samples of that period are recorded as lag.
+- Evidence that comes after a sample must come in the 2 s wait of the validator. The tracker keeps closed intervals for 120 s, but a sample that the validator already recorded stays recorded.
+- The worker monitor pauses while the page is hidden. Thus the worker gives no evidence of a suspend while the page is hidden. The clock-drift monitor does not pause, and it can give evidence then. In all cases, the hidden interval discards those samples.
+- From Chrome 86 on Windows, Chrome treats the tabs of each window as background tabs while the screen is locked. Thus a page usually becomes hidden before a sleep. The research rates this as likely, but not sure on each platform ([clocks and timers](/research/clocks-and-timers)).
+
+## Use the validator in your own probe
+
+A probe of your app can use the same conditions as the monitors. Then its samples get the same hidden, frozen and suspend intervals, and the same stall rules:
+
+```ts
+import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@lag/core";
+
+const monitors = setupAllMonitors(createBrowserDeps(window, {
+    logger : { log : (level, message) => console.log(level, message) },
+    meter : createNoopMeter(),
+}));
+
+// A validator that shares the intervals of the monitors
+const validator = monitors.conditions?.createValidator();
+
+const startedAt = performance.now();
+setTimeout(() => {
+    // The window of this sample is the wait itself
+    const waitMs = performance.now() - startedAt;
+    validator?.submit(waitMs, waitMs, (value) => console.log("recorded", value));
+}, 0);
+```
+
+Use `validator?.dispose()` when the probe stops, so that no sample waits after the stop.

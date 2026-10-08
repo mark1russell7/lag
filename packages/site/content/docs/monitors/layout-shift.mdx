@@ -1,0 +1,111 @@
+---
+title: Layout shift
+description: Records the score of each layout shift without recent input from the Layout Instability API, and calculates the CLS of the page.
+order: 28
+status: final
+---
+
+import { layoutShiftMetrics } from "./metrics.data";
+
+`LayoutShiftMonitor` records each layout shift that did not follow user input, from the Layout Instability API. It also calculates the Cumulative Layout Shift (CLS) of the page since its start: the score of the worst session window. Only Chromium has this API.
+
+## What it measures
+
+The signal is the score of each layout shift (`value`), without a unit. A shift moves visible content that the user did not move.
+
+The monitor answers this question: does the page move its content, and how much? The histogram shows the distribution of the single shifts. The CLS of each page view, with the selector of the largest shift, comes from the [page-view vitals](/docs/monitors/page-view-vitals).
+
+## How it works
+
+The monitor makes a `PerformanceObserver` for the entry type `layout-shift`, with `buffered: true`. For each entry, it does these steps:
+
+1. It ignores a shift with `hadRecentInput`. The browser sets this flag for 500 ms after an input ([browser support](/research/browser-support)).
+2. It adds the shift to the session windows of `ClsCalculator`.
+3. It reports the score of the shift, the score of its session window, the current CLS and the sources of the shift.
+
+The factory records the score of each shift in `lag_layout_shift_histogram`.
+
+### Session windows
+
+`ClsCalculator` groups the shifts into session windows:
+
+- A shift starts a new window when it comes 1 s or more after the previous shift.
+- A shift also starts a new window when it comes 5 s or more after the first shift of the window.
+- CLS is the sum of the scores of the worst window.
+
+These are the rules of web-vitals, also at the exact limits of 1000 ms and 5000 ms.
+
+The calculator also keeps the sources of the largest shift in the worst window, for the attribution. Of two shifts with the same score in one window, the later one is the largest, as in web-vitals. Of two windows with the same score, the first one stays the worst window. `getCLS()` gives the current CLS. `stop()` clears the calculator, because a restart gets the buffered entries of the browser again.
+
+## Browser support
+
+| Browser | Layout Instability |
+|---|---|
+| Chromium | 77 (September 2019). `sources` from 84. From 145, the rectangles of the sources are in CSS pixels, and Chromium sorts the sources by their area of impact. |
+| Firefox | Not available. Mozilla has a positive position (bug 1651528). |
+| Safari | Not available. |
+
+CLS is the one Core Web Vital that has no cross-browser API. The specification is a WICG community group draft of 17 December 2025 ([browser support](/research/browser-support)). If your code scales the rectangles by `devicePixelRatio`, examine the Chromium version: the unit changed in 145.
+
+## Measurement validity
+
+The monitor does not pause while the page is hidden, and it uses no `SampleValidator`. The browser measures each shift, and the monitor uses no timers.
+
+## Metrics
+
+<MetricTable metrics={layoutShiftMetrics} />
+
+The monitor sends no events. The `browser.web_vital` event of the [page-view vitals](/docs/monitors/page-view-vitals) has the CLS attribution.
+
+## Configuration
+
+```ts
+function createInstrumentedLayoutShift(
+    deps : CoreDeps & ObserverDeps,
+) : MonitorHandle<LayoutShiftMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `ObserverDeps` (`PerformanceObserver`). It has no options.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedLayoutShift } from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+if (deps.PerformanceObserver) {
+    const layoutShift = createInstrumentedLayoutShift({ ...deps, PerformanceObserver : deps.PerformanceObserver });
+    // The CLS of the page since the start of the monitor
+    console.log(layoutShift.monitor?.getCLS());
+}
+```
+
+## Cost
+
+- **Observers:** one `PerformanceObserver`. No timers.
+- **Records:** one histogram value for each shift without recent input.
+- **Memory:** the current window and the largest shift of the worst window.
+
+## Limits
+
+- **Only Chromium.** In Firefox and Safari, the monitor logs a warning and gets no entries.
+- **Shifts, not CLS.** The histogram counts single shifts. For the CLS of each page view, use `lag_web_vital_cls_histogram`.
+- **The page, not the page view.** `getCLS()` covers the time since the start of the monitor, also across back/forward cache restores.
+
+## Tests
+
+Unit tests:
+
+- `LayoutShiftMonitor.test.ts`: the monitor records the score of each shift, and it ignores a shift with `hadRecentInput`. A window continues across a gap of 500 ms. A new window starts after a gap of 1.5 s, or after more than 5 s. CLS is the worst window. `stop()` clears the state.
+- `ClsCalculator.test.ts`: the sum of one window, the two rules for a new window, the sources of the largest shift in the worst window, and `reset()`. At equal scores, the later shift and the first window win. A gap of exactly 1000 ms and a length of exactly 5000 ms start a new window, as in web-vitals. A property test (fast-check) compares the calculator with the definition of web-vitals for all sequences of shifts.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
+
+- `lag-monitors.test.ts`: the setup starts the monitor in each browser. Without `layout-shift` entries, the monitor only logs a warning.
+- `browser-apis.test.ts` (only where the browser has `layout-shift` entries: Chromium and Chrome): a paragraph moves down on the page. The scores of the monitor are equal to the scores of a raw observer, and `getCLS()` is their sum.
+- `web-vitals-oracle.test.ts`: the page has two shifts in one session window and one shift in a second window. The CLS of the page-view vitals is exactly the CLS of web-vitals 6.2.3. Without `layout-shift` entries, the two libraries give no CLS.
+
+## Source
+
+- [`LayoutShiftMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/LayoutShiftMonitor.ts): the monitor.
+- [`ClsCalculator.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ClsCalculator.ts): the session windows.
+- [`instrumented/layout-shift.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/layout-shift.ts): the factory.

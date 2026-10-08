@@ -1,14 +1,17 @@
 /**
- * Instrumented factories — each function constructs a monitor and wires it
- * to OTel instruments (histograms, gauges). Returns a MonitorHandle with
- * error boundary and stop() teardown.
+ * The instrumented factories. Each function makes a monitor and connects it
+ * to the OTel instruments of the metric catalog. Each function gives a
+ * `MonitorHandle` with an error boundary, and a `stop()` that releases the
+ * timers, listeners and observers.
  *
- * Each factory takes ONLY the dep groups it actually uses, enforcing
- * Interface Segregation. Adding a new monitor = adding a new file here + one
- * line in setup-all-monitors.ts.
+ * Each factory takes *only* the dependency groups that it uses. The
+ * timer-driven factories also take optional `MeasurementConditions`. With
+ * them, the monitor pauses while the page is hidden, and it discards the
+ * samples that are not valid. To add a monitor, add a file here, one line in
+ * `setup-all-monitors.ts`, and its metrics in the catalog.
  */
 
-// Timer-based lag monitors (need shared LifecycleStateMachine param)
+// Timer-based lag monitors
 export { createInstrumentedDriftLag } from "./drift-lag.js";
 export { createInstrumentedMacrotaskLag } from "./macrotask-lag.js";
 
@@ -16,17 +19,23 @@ export { createInstrumentedMacrotaskLag } from "./macrotask-lag.js";
 export { createInstrumentedLoaf } from "./loaf.js";
 export { createInstrumentedEventTiming } from "./event-timing.js";
 export { createInstrumentedLayoutShift } from "./layout-shift.js";
-export { createInstrumentedPaintTiming } from "./paint-timing.js";
-export { createInstrumentedLcp } from "./lcp.js";
+export { createInstrumentedPageViewVitals } from "./page-view-vitals.js";
+export {
+    createInstrumentedPageViewContext,
+    type PageContextReceiver,
+    type PageViewContext,
+} from "./page-view-context.js";
 
 // Browser-API monitors
 export { createInstrumentedFrameTiming } from "./frame-timing.js";
 export { createInstrumentedIdleAvailability } from "./idle-availability.js";
 export { createInstrumentedSchedulingFairness } from "./scheduling-fairness.js";
 export { createInstrumentedMemory } from "./memory.js";
+export { createInstrumentedBrowserReports } from "./browser-reports.js";
 
 // Ground truth + system signal
 export { createInstrumentedWorkerLag } from "./worker-lag.js";
+export { createInstrumentedSharedLiveness } from "./shared-liveness.js";
 export { createInstrumentedComputePressure } from "./compute-pressure.js";
 export { createInstrumentedGCSignal } from "./gc-signal.js";
 
@@ -37,3 +46,7 @@ export {
     type ThrottleDetectorDeps,
 } from "./throttle-detector.js";
 export { createInstrumentedClockReliability } from "./clock-reliability.js";
+export { createInstrumentedClockDrift } from "./clock-drift.js";
+
+// Building blocks for custom factories
+export { createHandle, validatedRecorder } from "./shared.js";

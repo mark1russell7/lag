@@ -1,0 +1,35 @@
+.tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+    gap: var(--space-3);
+    margin: 0 0 var(--space-6);
+}
+
+.tile {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+}
+
+.tile[data-kind="failed"] {
+    border-left: 3px solid var(--status-critical);
+}
+
+.label {
+    color: var(--color-ink-secondary);
+    font-size: var(--text-sm);
+}
+
+.value {
+    margin: 0;
+    font-size: var(--text-2xl);
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.detail {
+    margin: 0;
+    color: var(--color-ink-muted);
+    font-size: var(--text-xs);
+}
