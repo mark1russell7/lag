@@ -137,6 +137,17 @@ describe("PageViewVitals", () => {
             expect(valuesOf(t.reports.at(-1))).toMatchObject({ LCP : 700 });
         });
 
+        it("makes the LCP final at a key press that gives no Event Timing entry", () => {
+            const t = setup();
+            t.observer.deliver("largest-contentful-paint", lcpEntry(700, { id : "headline" }));
+            t.setNow(1_100);
+            t.window.dispatch("keydown", { isTrusted : true, timeStamp : 1_000 });
+            t.observer.deliver("largest-contentful-paint", lcpEntry(1_600, { id : "late" }));
+            t.setVisibility("hidden", 5_000);
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ LCP : 700 });
+        });
+
         it("ignores a synthetic click (isTrusted false), and removes its listeners at stop()", () => {
             const t = setup();
             t.observer.deliver("largest-contentful-paint", lcpEntry(700));
@@ -761,6 +772,17 @@ describe("PageViewVitals", () => {
             t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9", presentationTime : 3_100 }));
             // The click of the navigation arrives after the soft-navigation entry
             t.observer.deliver("event", eventEntry({ interactionId : 77, startTime : 3_000, duration : 48, name : "click" }));
+            t.observer.deliver("interaction-contentful-paint", contentfulPaint(77, 3_000, 3_400, "photo"));
+            t.setVisibility("hidden", 8_000);
+
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ LCP : 400 });
+        });
+
+        it("does not make the LCP of a soft navigation final at an input at the start time of the navigation", () => {
+            const t = setup({ softNavigations : true });
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9", presentationTime : 3_100 }));
+            t.setNow(3_200);
+            t.window.dispatch("click", { isTrusted : true, timeStamp : 3_000 });
             t.observer.deliver("interaction-contentful-paint", contentfulPaint(77, 3_000, 3_400, "photo"));
             t.setVisibility("hidden", 8_000);
 
