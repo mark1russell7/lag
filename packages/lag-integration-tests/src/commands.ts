@@ -21,6 +21,7 @@ declare module "vitest/browser" {
         recordMeasurement : (measurement : MeasurementPayload) => Promise<void>;
         recordBudget : (budget : BudgetPayload) => Promise<void>;
         queryMimirValue : (query : string) => Promise<number>;
+        clickInTopLevelPage : (path : string, selector : string, waitMs : number, resultExpression : string) => Promise<unknown>;
     }
 }
 
@@ -51,6 +52,16 @@ export const cdp = {
  */
 export function recordMeasurement(name : string, unit : string, values : readonly number[], labels : Record<string, string> = {}) : Promise<void> {
     return commands.recordMeasurement({ name, unit, values : [...values], labels });
+}
+
+/**
+ * This function opens `path` of the Vitest server in a new top-level page
+ * (Playwright only). It clicks `selector`, waits `waitMs`, and gives the value
+ * of `resultExpression` in that page. A test in the frame of Vitest uses it
+ * for the behavior of a top-level page, for example a soft navigation.
+ */
+export function clickInTopLevelPage<T>(path : string, selector : string, waitMs : number, resultExpression : string) : Promise<T> {
+    return commands.clickInTopLevelPage(path, selector, waitMs, resultExpression) as Promise<T>;
 }
 
 /** This function sends a PromQL query to Mimir from Node, because Mimir sends no CORS headers. It gives the first value, or 0. */
