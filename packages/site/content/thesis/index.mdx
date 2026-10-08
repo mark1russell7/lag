@@ -242,10 +242,10 @@ A soak test of 10 minutes kept the heap after garbage collection at 9.50 MB to 9
 
 | Measurement | First measurement | After the new tests |
 |---|---|---|
-| Unit tests of `@lag/core` | 458 | 827 |
-| Statement coverage of `@lag/core` | 96.1% | 99.2% |
-| Branch coverage of `@lag/core` | 89.0% | 98.0% |
-| Mutation score of `@lag/core` | 77.8% of 4095 mutants | 96.8% of 4366 mutants |
+| Unit tests of `@lag/core` | 458 | 890 |
+| Statement coverage of `@lag/core` | 96.1% | 99.3% |
+| Branch coverage of `@lag/core` | 89.0% | 98.2% |
+| Mutation score of `@lag/core` | 77.8% of 4095 mutants | 96.9% of 4657 mutants |
 
 The export works from end to end. On 8 October 2026, the E2E tests (20 tests) found the metrics of the test pages in Mimir, as native histograms. The pipeline check of grafana-infra passed 297 of 297 checks with its sample data.
 
@@ -253,7 +253,7 @@ A surviving mutant is a change of the code that no test finds. The first mutatio
 
 A later run found five surviving mutants in the listener that makes the LCP final at a key press or a click. They were gaps in the tests, and new tests find them.
 
-Each of the 140 mutants that survive has no effect that a user of the metrics can see (the mutation run of CI, 8 October 2026). Examples are a second guard that repeats a first one, and code that a browser cannot reach. The [test strategy](/docs/testing/strategy) describes each kind of test, and the [results](/results) give the newest run.
+Each of the 141 mutants that survive has no effect that a user of the metrics can see (the mutation run of CI, 8 October 2026). Examples are a second guard that repeats a first one, and code that a browser cannot reach. The [test strategy](/docs/testing/strategy) describes each kind of test, and the [results](/results) give the newest run.
 
 ## Limits
 
