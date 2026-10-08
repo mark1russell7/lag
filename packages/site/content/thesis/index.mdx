@@ -45,7 +45,7 @@ The export of the data also has a problem. Many browsers that write the same met
 
 ## Claims
 
-1. **Calibration.** A timer probe is accurate only when it subtracts the idle behavior of its environment. The environment is the browser, the operating system and the power state.
+1. **Calibration.** A timer probe is accurate only when it subtracts the idle behavior of its environment. The environment is the browser, the operating system and the power state. A sustained load must not change the calibration (refer to [E5](#e5-a-sustained-load)).
 2. **Validation.** Each sample must agree with the page lifecycle and with the clocks. A monitor must discard each sample that overlaps a hidden, frozen or suspended interval, and it must say why.
 3. **An outside observer.** A heartbeat from a Web Worker is the most robust estimator of the queueing delay in all engines. It is open-loop. It does not use the timers of the main thread. It can detect a hang while the hang continues. In Chromium and Firefox, it can also report the hang during the hang.
 4. **The page view as the unit.** Lag must have the same unit of analysis as the Core Web Vitals: the page view. Each event carries the ID of its page view.
@@ -142,6 +142,23 @@ The hang report and the journal need a worker that can send and write while the 
 
 **Result:** WebKit and Safari complete the IndexedDB requests and the network requests of workers on the main thread of the page. A shared worker and a service worker do not help. Thus in WebKit and Safari the worker detects a hang, but it can send and write only after the hang. A page that does not survive the hang leaves no record. The test of the journal skips itself in these browsers, after the same measurement.
 
+### E5: a sustained load
+
+A load can make all timer steps longer. On a thread that is busy with tasks of the same length, the steps agree with each other. Thus they look like a new timer granularity. With a load of 100% for 4 s, the calibrated probe of E3 reported less than 15% lag in each engine. In three of six cases, it reported approximately 0.
+
+Thus the probe accepts a longer baseline only after a probe of message tasks shows an idle thread. On an idle thread, a message starts at once. On a busy thread, it waits for the current task.
+
+The tests of this change found three behaviors of the engines. A probe changes the timing of the step and of the next step in Chromium. A message waits for the timer tick in the WebKit build for Windows. The steps of Firefox are irregular for some seconds after a load.
+
+| Load of 3 s, lag in the second half | Chromium 145 | Firefox 146 |
+|---|---|---|
+| Message tasks of 20 ms, before the change | Approximately 0 after 2.5 s | 0 after 2 s |
+| Message tasks of 20 ms, after the change | 80% to 86% | 24% to 29% |
+| Timer tasks of 30 ms, before the change | Approximately 0 | 12% after 3.5 s |
+| Timer tasks of 30 ms, after the change | 78% to 85% | 53% to 72% |
+
+**Result:** the calibration follows the timer granularity, but not a sustained load. In CI, the change also works in Safari 26.6.2 on macOS (62% and 77%) and in WebKit on Linux (60% and 79%). In the WebKit build for Windows, the probe cannot see an idle thread, thus the probe there operates as before the change. A browser test (`drift-load.test.ts`) checks the result.
+
 ### The Web Vitals
 
 The [page-view vitals](/docs/monitors/page-view-vitals) obey the rules of web-vitals 6.2. A browser test clicks a button. For 120 ms, the click handler blocks the main thread. The monitor gives an INP of 120 ms or more and a processing phase of 110 ms or more. It gives the target `#slow-button` and the type `pointer`.
@@ -169,6 +186,7 @@ The tests found defects that the unit tests with fake time did not show:
 - **An adversarial review.** A review of the code wrote one proof test for each defect that it found, 29 tests in total. Examples are a second report of a page view after `pagehide` and a hang that two tabs reported two times. Another example is a hang that a stop lost. Each test failed first. At this time, the unit tests include all of them.
 - **CLS in Firefox and WebKit.** The oracle found false CLS values of 0 (refer to the oracle above).
 - **A change of the timer granularity.** In Chromium on Windows, the 5 ms steps changed from 5.5 ms to 15.6 ms after a page was shown again. DriftLag then reported windows of 160 ms of lag on an idle page, while the worker saw less than 2 ms. After the fix, DriftLag follows such a change. A CDP test found this defect.
+- **A sustained load.** A browser test found that DriftLag accepted a load of equal tasks as a new timer granularity (E5). The first version of the fix used the duration of a probed step as an idle duration. In Chrome, this gave 48 ms of lag in each window of an idle page. A second version lowered the confirmed value after one short window. In Firefox, this gave 6 ms to 10 ms of lag in each window.
 
 ### The cost
 
@@ -193,22 +211,22 @@ A soak test of 10 minutes kept the heap after garbage collection at 9.50 MB to 9
 
 | Measurement | First measurement | After the new tests |
 |---|---|---|
-| Unit tests of `@lag/core` | 458 | 752 |
+| Unit tests of `@lag/core` | 458 | 824 |
 | Statement coverage of `@lag/core` | 96.1% | 99.2% |
-| Branch coverage of `@lag/core` | 89.0% | 97.8% |
-| Mutation score of `@lag/core` | 77.8% of 4095 mutants | 96.6% of 4118 mutants |
+| Branch coverage of `@lag/core` | 89.0% | 97.9% |
+| Mutation score of `@lag/core` | 77.8% of 4095 mutants | 96.8% of 4331 mutants |
 
 The export works from end to end. On 8 October 2026, the E2E tests (20 tests) found the metrics of the test pages in Mimir, as native histograms. The pipeline check of grafana-infra passed 297 of 297 checks with its sample data.
 
 A surviving mutant is a change of the code that no test finds. The first mutation run showed weak tests, for example for the sign of the `delta` of a web-vital event. The new tests find those mutants, and they found two more defects. The event catalog did not list `lag.page_view.id` for four events. Of two layout shifts with the same score, the library named a different shift than web-vitals.
 
-Each of the 139 mutants that survive has no effect that a user of the metrics can see. Examples are a second guard that repeats a first one, and code that a browser cannot reach. The [test strategy](/docs/testing/strategy) describes each kind of test, and the [results](/results) give the newest run.
+Each of the 140 mutants that survive has no effect that a user of the metrics can see (local run, 8 October 2026). Examples are a second guard that repeats a first one, and code that a browser cannot reach. The [test strategy](/docs/testing/strategy) describes each kind of test, and the [results](/results) give the newest run.
 
 ## Limits
 
 - **Engines.** LoAF, CLS, `visibility-state` entries, the `freeze` event and Compute Pressure exist only in Chromium. Safari has no `requestIdleCallback`. The library uses each API only where it exists.
 - **Test environment.** The browser tests operate in Safari 26.6.2 on a macOS runner of GitHub, and in the WebKit build of Playwright. We did not test Safari on iOS, or Safari in Low Power Mode, which aligns nested timers to 30 ms.
-- **Sustained load.** DriftLag calculates its baseline from the recent steps. When the thread is busy during more than half of the steps, the baseline increases and DriftLag reports less lag. The worker heartbeat measures that case correctly.
+- **Sustained load.** DriftLag needs a probe of message tasks to keep its baseline during a sustained load. Before the first check of the probe, a sustained load increases the baseline. This is also true in a browser in which a message waits on an idle thread. Then DriftLag reports less lag. The worker heartbeat measures that case correctly.
 - **Resolution.** The resolution of DriftLag is one step: 5.7 ms in Chromium and 16 ms in Firefox and WebKit on Windows.
 - **Sampling.** The worker sends one heartbeat each second by default. A block of B milliseconds delays a heartbeat with a probability of approximately min(1, B / 1000).
 - **Hidden pages.** The library discards samples from hidden pages. Thus it has no data on background work.
@@ -216,7 +234,6 @@ Each of the 139 mutants that survive has no effect that a user of the metrics ca
 - **Abandoned hangs.** The journal works only for pages of the same origin, only where IndexedDB is available, and only after 30 s without updates. In WebKit, the journal and the hang report of the worker do not work for a page that does not survive its hang (E4).
 - **A busy machine.** The timing tests measure the page and the machine together. In one run of all browsers at the same time, on a busy machine, an idle Chromium page had a median lag of 5.0 ms. The same test alone gave less than 0.3 ms three times.
 - **Cost.** The monitors use approximately 2.5% of one core on an idle page, with approximately 300 wake-ups each second. The DriftLag chain and the animation-frame loop of the frame timing cost the most. This cost is real, especially on battery power.
-- **Granularity or load.** DriftLag accepts a row of 10 steps that agree with each other as a new timer granularity. A busy thread with tasks of the same length, shorter than 40 ms, looks the same. The worker measures that case.
 - **CDP tests.** The tests of hidden pages need Chromium in the new headless mode and an internal API of Playwright.
 
 ## Future work

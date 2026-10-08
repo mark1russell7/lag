@@ -93,6 +93,10 @@ CDP hides a page before it freezes it. Thus the monitors pause at the hidden tra
 
 The CDP tests found a second bug. In Chromium on Windows, the 5 ms timer steps changed from 5.5 ms to 15.6 ms after a page was shown again. DriftLag then reported windows of 160 ms of lag on an idle page, and the worker saw less than 2 ms. After the fix, DriftLag follows a change of the timer granularity (refer to [DriftLag](/docs/monitors/drift-lag)).
 
+A browser test found a third bug. DriftLag accepted a sustained load of equal tasks as a new timer granularity. Thus the lag of the load decreased to less than 15% within 4 s (experiment E5). The fix uses a probe of message tasks.
+
+The browser test `drift-load.test.ts` then found two defects of the fix, with all four browsers at the same time. In Chrome, a probed step was shorter than an idle step. In Firefox, the steps were irregular after a load. The unit tests of `DriftLag.load.test.ts` simulate these behaviors on a simulated thread.
+
 ## Overhead and soak
 
 The overhead benchmark measures an idle page with all monitors and without them. It uses `Performance.getMetrics` of CDP, in 3 rounds of 10 s. The budgets come from these measurements and from the research:
