@@ -21,7 +21,37 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The browser tests in the real Safari. Only macOS has Safari. The job
+  # exports its reports, and the build job adds them to the run of the site.
+  safari:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Enable safaridriver
+        run: sudo safaridriver --enable
+      - name: Test in Safari
+        continue-on-error: true
+        run: pnpm results --skip-unit --skip-browser --skip-overhead --skip-site --no-mutation --safari --export-reports=safari-reports
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safari-reports
+          path: safari-reports/
+          if-no-files-found: ignore
+
   build:
+    # The site also builds when the Safari job fails
+    needs: safari
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,9 +84,16 @@ jobs:
             gh run download "$run_id" --name mutation-report --dir packages/lag/reports/mutation
           fi
 
+      - name: Download the Safari reports
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: safari-reports
+          path: safari-reports
+
       # The results viewer of the site reads packages/site/public/data/results
       - name: Make the test results
-        run: pnpm results
+        run: pnpm results --import-reports=safari-reports
         continue-on-error: true
 
       - name: Build the site
