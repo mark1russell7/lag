@@ -128,7 +128,10 @@ jobs:
           defaults write NSGlobalDomain NSAppSleepDisabled -bool YES
       - name: Browser tests in Safari
         working-directory: packages/lag-integration-tests
-        run: pnpm run test:safari
+        # caffeinate keeps the display awake: WebKit slows the timers of a window that it does not show
+        run: |
+          caffeinate -dimsu -t 3600 &
+          pnpm run test:safari
 
   site:
     name: Site typecheck, tests, build
