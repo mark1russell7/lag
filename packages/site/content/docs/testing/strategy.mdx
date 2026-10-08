@@ -150,4 +150,4 @@ The results page reads this folder. It shows the tests of each engine, the skips
 - **The E2E tests need a free port.** The Grafana stack uses port 3000 by default. Set `GRAFANA_PORT` when another program uses that port.
 - **Mimir labels.** Mimir puts `service.name` into the `job` label. The E2E query accepts `job` or `service_name`, and a native or a classic histogram.
 - **Mimir and CORS.** Mimir sends no CORS headers, thus a test page cannot read the answer of a query. A Vitest command sends the query from Node (`commands/mimir.ts`).
-- **The CI workflows have not operated on GitHub.** Their first operation comes with the first push of this branch.
+- **Shared machines.** The CI runners of GitHub are shared machines. In the first CI operation, on 8 October 2026, a runner stopped a page for 490 ms. Thus a test of an idle page or of a light load examines a median or a percentile, not the largest single window.
