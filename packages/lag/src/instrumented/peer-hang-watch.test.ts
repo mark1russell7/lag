@@ -85,15 +85,18 @@ describe("createInstrumentedPeerHangWatch", () => {
         await vi.advanceTimersByTimeAsync(10);
         expect(origin.heldBy(a.page)).toEqual([]);
 
-        // A page that goes into the back/forward cache releases its lock, and takes it again after the restore
+        // A page that goes into the back/forward cache releases its lock and closes its channel.
+        // After the restore, it opens the channel and takes the lock again.
         a.fake.setVisibility("visible");
         await vi.advanceTimersByTimeAsync(10);
         a.fake.pagehide(true);
         await vi.advanceTimersByTimeAsync(10);
         expect(origin.heldBy(a.page)).toEqual([]);
+        expect(origin.openChannels(a.page)).toBe(0);
         a.fake.pageshow(true);
         await vi.advanceTimersByTimeAsync(10);
         expect(origin.heldBy(a.page)).toEqual([peerLockName("a")]);
+        expect(origin.openChannels(a.page)).toBe(1);
 
         a.handle.stop();
         await vi.advanceTimersByTimeAsync(10);

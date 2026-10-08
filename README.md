@@ -142,9 +142,10 @@ pnpm --filter @lag/integration-tests exec playwright install chromium firefox we
 | Unit tests | `pnpm test` | The logic of each monitor in Node, with fake timers. These tests also cover `@lag/load`, `@lag/report` and `@lag/scripts`. |
 | Coverage | `pnpm coverage` | The unit-test coverage of `@lag/core`. The script writes `packages/lag/coverage/coverage-summary.json`. It fails below the thresholds. |
 | Mutation tests | `pnpm mutation` | Stryker changes the code of `@lag/core` and starts the unit tests again. A change that no test finds is a surviving mutant. |
-| Browser tests | `pnpm test:browser` | The monitors in Chromium, Firefox, WebKit and Chrome. The script also starts the CDP tests and the cross-origin-isolated tests. |
+| Browser tests | `pnpm test:browser` | The monitors in Chromium, Firefox, WebKit and Chrome. The script also starts the CDP tests, the back/forward cache tests and the cross-origin-isolated tests. |
 | Chromium tests | `pnpm test:chromium` | The browser tests in Chromium only. This script is the fast check. |
 | CDP tests | `pnpm --filter @lag/integration-tests test:cdp` | Frozen pages, hidden pages, CPU throttling and compute pressure, through the Chrome DevTools Protocol. |
+| Back/forward cache tests | `pnpm --filter @lag/integration-tests test:bfcache` | A page with the library stays in the back/forward cache of Chromium while another page of the origin sends messages. |
 | Cross-origin-isolated tests | `pnpm --filter @lag/integration-tests test:coi` | Shared memory, the fine clock and `measureUserAgentSpecificMemory()` on a cross-origin-isolated page. |
 | Overhead benchmark | `pnpm test:overhead` | The main-thread CPU time and the callbacks of all monitors on an idle page, against their budgets. |
 | Soak test | `pnpm test:soak` | All monitors for 3 minutes under a mixed workload. The heap must not grow without limit. `stop()` must release each timer. |

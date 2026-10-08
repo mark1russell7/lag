@@ -431,6 +431,89 @@ describe("PeerHangWatch", () => {
     });
 });
 
+describe("PeerHangWatch in the back/forward cache", () => {
+    it("closes its channel while it is suspended, and gets no message then", async () => {
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        a.watch.suspend();
+        a.watch.suspend();
+        expect(origin.openChannels(a.page)).toBe(0);
+        // The lock comes free when the promise of its callback settles
+        await advance(10);
+        expect(origin.heldBy(a.page)).toEqual([]);
+        // b hangs and ends while a is in the cache. a forgot b, thus a lock that comes free then does not count.
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        a.watch.resume();
+        await advance(2_000);
+        expect(a.hangs).toEqual([]);
+    });
+
+    it("reports no hang for a page that closed normally while it was suspended", async () => {
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        a.watch.suspend();
+        // a misses the "away" of b, and gets the lock of b
+        await advance(8_000);
+        b.watch.stop();
+        await advance(10);
+        a.watch.resume();
+        a.watch.show();
+        await advance(3_000);
+        expect(a.hangs).toEqual([]);
+    });
+
+    it("opens its channel again when it resumes, and watches again", async () => {
+        const a = open("a");
+        await advance(10);
+        a.watch.suspend();
+        a.watch.resume();
+        a.watch.resume();
+        expect(origin.openChannels(a.page)).toBe(1);
+        a.watch.show();
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+    });
+
+    it("opens no channel after a stop, and logs a channel that it cannot open", async () => {
+        const a = open("a");
+        a.watch.suspend();
+        a.watch.stop();
+        a.watch.resume();
+        expect(origin.openChannels(a.page)).toBe(0);
+
+        const page = origin.page();
+        const deps = page.deps();
+        let opened = 0;
+        const watch = new PeerHangWatch({
+            ...deps,
+            BroadcastChannel : class extends deps.BroadcastChannel {
+                constructor(name : string) {
+                    if (++opened > 1) throw new Error("no channel");
+                    super(name);
+                }
+            },
+        }, { pageId : "c", visible : true, onAbandonedHang : () => {} });
+        watch.suspend();
+        watch.resume();
+        // Without a channel, the page sends nothing, and nothing fails
+        watch.show();
+        await advance(1_500);
+        expect(page.logs).toEqual(["debug: Could not open the channel to the other pages."]);
+        expect(page.logAttributes).toEqual([{ error : expect.any(Error), type : "PeerHangWatch" }]);
+        watch.stop();
+    });
+});
+
 describe("PeerHangWatch, the own page at its close", () => {
     it("reports its own hang when it closes at the end of a hang, as in Safari", async () => {
         const a = open("a");
