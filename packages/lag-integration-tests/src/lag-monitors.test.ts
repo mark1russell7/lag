@@ -181,11 +181,13 @@ describe("Lag Monitor Integration", () => {
         expect(vitals["TTFB"]!.value).toBeGreaterThanOrEqual(0);
         expect(vitals["FCP"]!.value).toBeGreaterThan(0);
         expect(vitals["LCP"]!.value).toBeGreaterThanOrEqual(vitals["FCP"]!.value);
-        expect(vitals["INP"]!.value).toBeGreaterThanOrEqual(120);
+        // WebKit gave 119.99999999999955 ms one time: its clock moves in steps of 1 ms, and a duration is a
+        // difference of two times. Thus the limits have a margin of 1 ms.
+        expect(vitals["INP"]!.value).toBeGreaterThanOrEqual(119);
         expect(vitals["INP"]!.attribution).toMatchObject({ interaction_target : "#slow-button", interaction_type : "pointer" });
         expect(Number(vitals["INP"]!.attribution["processing_duration_ms"])).toBeGreaterThanOrEqual(110);
         // The Event Timing monitor sees the same interaction
-        expect(tee.max("lag_event_duration_histogram")).toBeGreaterThanOrEqual(120);
+        expect(tee.max("lag_event_duration_histogram")).toBeGreaterThanOrEqual(119);
     });
 
     it("MacrotaskLag, SchedulingFairness and idle monitors sample within one 5s cycle", async () => {
