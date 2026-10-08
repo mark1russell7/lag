@@ -24,6 +24,7 @@ function setup(options : {
     softNavigations? : boolean;
     requestAnimationFrame? : RequestAnimationFrameFn;
     withoutEvents? : boolean;
+    window? : boolean;
 } = {}) {
     const fake = createFakeLifecycle();
     const observer = createFakePerformanceObserver([...LOAD_TYPES, "soft-navigation", "interaction-contentful-paint"]);
@@ -41,6 +42,7 @@ function setup(options : {
         ...(options.describeNode ? { describeNode : options.describeNode } : {}),
         ...(options.softNavigations !== undefined ? { softNavigations : options.softNavigations } : {}),
         ...(options.requestAnimationFrame ? { requestAnimationFrame : options.requestAnimationFrame } : {}),
+        ...(options.window ? { window : fake.window } : {}),
     }, fake.lifecycle);
     return { fake, observer, recording, events, vitals : handle.monitor!, handle };
 }
@@ -130,6 +132,20 @@ describe("createInstrumentedPageViewVitals", () => {
         });
         expect(Object.keys(lcp!)).not.toContain("lag.page_view.url");
         expectCatalogEvents(t.events.emit);
+    });
+
+    it("makes the LCP final at a trusted click on the window of the dependencies", () => {
+        for (const window of [true, false]) {
+            const t = setup({ window });
+            t.observer.deliver("largest-contentful-paint", lcpEntry(700, { id : "headline" }));
+            t.fake.setNow(1_100);
+            t.fake.window.dispatch("click", { isTrusted : true, timeStamp : 1_000 });
+            t.observer.deliver("largest-contentful-paint", lcpEntry(1_600, { id : "late" }));
+            t.fake.setVisibility("hidden");
+
+            // Without the window, the monitor does not see the click
+            expect(t.recording.values("lag_web_vital_lcp_histogram")).toEqual([window ? 700 : 1_600]);
+        }
     });
 
     it("records the vitals without an event sink", () => {

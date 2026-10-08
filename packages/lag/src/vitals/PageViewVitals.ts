@@ -267,7 +267,7 @@ export class PageViewVitals {
         const target = this.deps.inputTarget;
         if (!target) return;
         const onInput = (event : unknown) : void => {
-            if (this.stopped || (event as { isTrusted? : unknown } | undefined)?.isTrusted === false) return;
+            if (this.stopped || (event as { isTrusted? : unknown }).isTrusted === false) return;
             const time = eventTime(event, this.deps.clock.now());
             if (time > this.collector.view.startTime) this.collector.finalizeLcpAt(time);
         };
