@@ -157,7 +157,7 @@ The tests of this change found three behaviors of the engines. A probe changes t
 | Timer tasks of 30 ms, before the change | Approximately 0 | 12% after 3.5 s |
 | Timer tasks of 30 ms, after the change | 78% to 85% | 53% to 72% |
 
-**Result:** the calibration follows the timer granularity, but not a sustained load. In the WebKit build for Windows, the probe cannot see an idle thread, thus the probe there operates as before the change. A browser test (`drift-load.test.ts`) checks the result.
+**Result:** the calibration follows the timer granularity, but not a sustained load. In CI, the change also works in Safari 26.6.2 on macOS (62% and 77%) and in WebKit on Linux (60% and 79%). In the WebKit build for Windows, the probe cannot see an idle thread, thus the probe there operates as before the change. A browser test (`drift-load.test.ts`) checks the result.
 
 ### The Web Vitals
 

@@ -59,14 +59,20 @@ A probe keeps the thread awake, thus it changes the timing. In Chromium, the pro
 
 Before the first confirmed value, the monitor accepts a longer baseline without a probe, as before the change. The probe needs `MessageChannel`. Without it, the monitor always operates as before the change. In the WebKit build of Playwright for Windows, a message waits for the next timer tick of the system after an idle period. Thus the probe finds no idle step there, and no check confirms a value.
 
-The browser test `drift-load.test.ts` measured the result with a load of 100% for 3 s. The table gives the lag in the second half of the load, as a part of the time of the windows (8 October 2026, Windows 11):
+The browser test `drift-load.test.ts` measured the result with a load of 100% for 3 s. The table gives the lag in the second half of the load, as a part of the time of the windows (8 October 2026). The rows of GitHub runners come from the logs of one CI run:
 
-| Load | Chromium 145 | Chrome 153 | Firefox 146 | WebKit (Playwright) |
-|---|---|---|---|---|
-| Message tasks of 20 ms | 80% to 86% | 80% to 86% | 24% to 29% | The test skips itself |
-| Timer tasks of 30 ms, 4 ms apart | 78% to 85% | 79% to 85% | 53% to 72% | The test skips itself |
+| Browser | Platform | Message tasks of 20 ms | Timer tasks of 30 ms, 4 ms apart |
+|---|---|---|---|
+| Chromium 145 | Windows 11, three runs | 80% to 86% | 78% to 85% |
+| Chrome 153 | Windows 11, three runs | 80% to 86% | 79% to 85% |
+| Firefox 146 | Windows 11, three runs | 24% to 29% | 53% to 72% |
+| WebKit (Playwright) | Windows 11 | The test skips itself | The test skips itself |
+| Chromium 145 | Linux, GitHub runner | 87% | 85% |
+| Firefox 146 | Linux, GitHub runner | 75% | 84% |
+| WebKit (Playwright) | Linux, GitHub runner | 60% | 79% |
+| Safari 26.6.2 | macOS, GitHub runner | 62% | 77% |
 
-Before the change, the lag of each case decreased to less than 15% within 4 s. In Firefox on Windows, an idle step already takes 15.6 ms. A step that waits for a task of 20 ms takes 20 ms, thus it gives only 4.4 ms of lag. This is the resolution of one step (refer to the limits).
+Before the change, the lag of each case decreased to less than 15% within 4 s. In WebKit on Linux and in Safari on macOS, the probe found an idle page (0 ms of busy time). Only the WebKit build for Windows makes a message wait. In Firefox on Windows, an idle step already takes 15.6 ms. A step that waits for a task of 20 ms takes 20 ms, thus it gives only 4.4 ms of lag. This is the resolution of one step (refer to the limits).
 
 ### Windows and records
 
