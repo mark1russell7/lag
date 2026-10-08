@@ -1,15 +1,15 @@
 ---
 title: Local experiments
-description: Four experiments in this repository on 2026-10-07, on the order of event listeners, the timers of an idle page, the calibrated DriftLag and the input and output of workers during a main-thread block.
+description: Four experiments in this repository on 2026-10-07 and 2026-10-08, on the order of event listeners, the timers of an idle page, the calibrated DriftLag and the input and output of workers during a main-thread block.
 order: 4
 status: final
 ---
 
 import { idleLagChart, idleLagTable } from "./local-experiments.data";
 
-We did four experiments in this repository on 2026-10-07. They measured facts that no document gives. E1 measured the order of the event listeners at the target of an event. E2 measured the timers of an idle page in three engines. E3 measured the calibrated DriftLag on the same machine. E4 measured when the IndexedDB writes and the fetches of a worker complete while the main thread is blocked.
+We did four experiments in this repository on 2026-10-07 and 2026-10-08. They measured facts that no document gives. E1 measured the order of the event listeners at the target of an event. E2 measured the timers of an idle page in three engines. E3 measured the calibrated DriftLag on the same machine. E4 measured when the IndexedDB writes and the fetches of a worker complete while the main thread is blocked, also in Safari.
 
-The results changed the library in three ways. An explicit hook, not the order of the listeners, records the final values before each flush. DriftLag subtracts a calibrated baseline. The probes that use `setTimeout(0)` start in a message task. E4 changed no code, but it found a limit of the hang reports and of the hang journal in WebKit.
+The results changed the library in three ways. An explicit hook, not the order of the listeners, records the final values before each flush. DriftLag subtracts a calibrated baseline. The probes that use `setTimeout(0)` start in a message task. E4 changed no code, but it found a limit of the hang reports and of the hang journal in WebKit and Safari.
 
 ## E1: the order of listeners at the target
 
@@ -94,30 +94,36 @@ A first version used the median as the baseline. It gave an idle median lag of 3
 - A dedicated worker writes one record to IndexedDB.
 - A dedicated worker sends a `fetch` with `keepalive`.
 - A shared worker writes to IndexedDB and then sends a `fetch` each 100 ms, on its own timer. The probe counts the operations that complete during the block, with a margin of 100 ms at the start and at the end. The shared worker uses its own timer, because a message from the page can also wait.
+- A service worker (`public/lag-sw-probe.js`) does the same as the shared worker, on its own timer of 100 ms (2026-10-08). A service worker operates outside the page, thus it could possibly keep the hang journal where a dedicated worker cannot.
 
-| Measurement | Chromium | Firefox | WebKit |
-|---|---|---|---|
-| IndexedDB write of a dedicated worker, complete after | 7 ms | 36 ms (58 ms in a second run) | 2015 ms (2008 ms in a second run) |
-| `fetch` with `keepalive` of a dedicated worker, complete after | 19 ms | 14 ms | 2013 ms |
-| Operations of a shared worker that completed during the block, of all its completed operations | 18 of 28 | 16 of 26 | 0 of 26 |
+A CI job operated the same probes in Safari 26.6.2 on a GitHub macOS runner, through safaridriver (2026-10-08). The Safari column comes from the log of that job. The log gives the count of the service worker. For the other probes, the log shows that the tests passed with the expectations of WebKit.
+
+| Measurement | Chromium | Firefox | WebKit | Safari 26.6.2, macOS (CI log) |
+|---|---|---|---|---|
+| IndexedDB write of a dedicated worker, complete after | 7 ms | 36 ms (58 ms in a second run) | 2015 ms (2008 ms in a second run) | After the block |
+| `fetch` with `keepalive` of a dedicated worker, complete after | 19 ms | 14 ms | 2013 ms | After the block |
+| Operations of a shared worker that completed during the block, of all its completed operations | 18 of 28 | 16 of 26 | 0 of 26 | 0 |
+| Operations of a service worker that completed during the block, of all its completed operations | 18 of 28 | 17 of 27 | 0 of 29 | 0 of 27 |
 
 In WebKit, a message that the page posted to a shared worker immediately before the block also arrived only after the block, at 2003 ms.
 
-**Meaning.** Chromium and Firefox complete the IndexedDB requests and the network requests of a worker during the block. WebKit completes them on the main thread of the page, after the block, also for a shared worker. In WebKit, the timer of the worker continues, thus the worker detects a hang. But it cannot send its hang report or write the hang journal until the main thread operates again. Thus in WebKit, a page that does not survive its hang leaves no record and no report.
+**Meaning.** Chromium and Firefox complete the IndexedDB requests and the network requests of a worker during the block. WebKit completes them on the main thread of the page, after the block. This is also true for a shared worker and for a service worker. Safari 26.6.2 on macOS behaves the same as the WebKit build of Playwright for Windows.
 
-The WebKit build of Playwright for Windows is not Safari. The IndexedDB code and the loader code of workers are shared code of WebCore. Thus Safari on macOS probably behaves the same, but this is not verified.
+In WebKit and Safari, the timer of the worker continues, thus the worker detects a hang. But it cannot send its hang report or write the hang journal until the main thread operates again. Thus there, a page that does not survive its hang leaves no record and no report. A service worker is no way out: its writes and fetches also wait for the main thread of the page.
 
 **Change in the library.** The code does not change. The pages [worker lag](/docs/monitors/worker-lag) and [survivorship bias](/docs/concepts/survivorship) give the limit.
 
-**Check in the repository.** The browser test [`worker-io.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/worker-io.test.ts) operates the three probes in Chromium, Firefox, WebKit and Chrome. In WebKit, it expects that the write and the fetch complete after the block, and that the shared worker completes no operation during it. In the other browsers, it expects the write and the fetch in the first half of the block. It also expects more than 5 operations of the shared worker during the block. Thus the test fails if an engine changes its behavior.
+**Check in the repository.** The browser test [`worker-io.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/worker-io.test.ts) operates the four probes in Chromium, Firefox, WebKit and Chrome, and in the CI job in Safari. In WebKit and Safari, it expects that the write and the fetch complete after the block. It also expects that the shared worker and the service worker complete no operation during the block there.
 
-The browser test `hang-journal.test.ts` skips itself where a probe finds that the IndexedDB requests of a worker wait for the main thread. The probe uses a block of 500 ms. Thus the skip comes from a measurement, not from the name of the browser.
+In the other browsers, it expects the write and the fetch in the first half of the block. It also expects more than 5 operations of the shared worker and of the service worker there. Thus the test fails if an engine changes its behavior.
+
+The browser test `hang-journal.test.ts` skips itself where a probe finds that the IndexedDB requests of a worker wait for the main thread. The probe uses a block of 500 ms. Thus the skip comes from a measurement, not from the name of the browser. In the CI log, the test skips itself in Safari.
 
 ## Limits of the experiments
 
-- The experiments used one machine with Windows 11.
-- The engines were the headless builds of Playwright. The WebKit build for Windows is not Safari on macOS.
+- The experiments used one machine with Windows 11. Only the Safari column of E4 comes from a GitHub macOS runner.
+- The engines were the headless builds of Playwright, except Safari in E4. The WebKit build for Windows is not Safari on macOS.
 - The experiments did not test Safari in Low Power Mode, or Chromium on battery power. On battery, Chromium uses a timer tick of 8 ms on Windows ([Bruce Dawson](https://randomascii.wordpress.com/2020/10/04/windows-timer-resolution-the-great-rule-change/)).
 - E3 used approximately 30 idle windows for each engine.
 - E4 used a block of 2 s. The fetch probes send their requests to the test server of Vitest on the same machine, not to a remote collector.
-- The browser tests of the repository operate in Chromium, Firefox, WebKit and Chrome ([testing strategy](/docs/testing/strategy)). Thus they check the `document` case of E1, the two properties of E3 and the behavior of E4 in the four browsers. No test checks the `window` case of E1.
+- The browser tests of the repository operate in Chromium, Firefox, WebKit and Chrome ([testing strategy](/docs/testing/strategy)). Thus they check the `document` case of E1, the two properties of E3 and the behavior of E4 in the four browsers. A CI job also operates them in Safari on macOS. No test checks the `window` case of E1.
