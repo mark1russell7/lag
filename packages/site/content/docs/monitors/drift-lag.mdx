@@ -67,7 +67,7 @@ Other platforms have other granularities ([clocks and timers](/research/clocks-a
 - Safari on macOS aligns nested timers to a grid of 4 ms, and to 30 ms in Low Power Mode.
 - Chromium on Windows uses a timer resolution of 1 ms on AC power and 8 ms on battery power.
 
-The calibration measures these granularities too, but we did not measure Safari on macOS. The WebKit build for Windows is not Safari on macOS.
+The calibration measures these granularities too. A CI job operates `drift-accuracy.test.ts` in Safari 26.6.2 on a GitHub macOS runner, and the test passes there. This site does not give the step of Safari. The WebKit build for Windows is not Safari on macOS.
 
 ## Measurement validity
 

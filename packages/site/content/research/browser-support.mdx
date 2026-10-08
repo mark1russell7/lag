@@ -25,7 +25,7 @@ The research used these sources:
 - The standards positions of [Mozilla](https://mozilla.github.io/standards-positions/) and [WebKit](https://github.com/WebKit/standards-positions), and the bug trackers of WebKit and Mozilla.
 - A probe in Google Chrome 153 stable on Windows, with Playwright, on 2026-10-07. The probe examined each feature in a page and in a dedicated worker.
 
-Nobody tested Firefox and Safari by hand. Their cells come from BCD, from the release notes and from the bug trackers. The release dates come from [Chromium Dash](https://chromiumdash.appspot.com/fetch_milestone_schedule?mstone=151), the [Firefox calendar](https://whattrainisitnow.com/calendar/) and the [WebKit notes for Safari 27](https://webkit.org/blog/18325/webkit-features-for-safari-27-0/).
+Nobody tested the cells of Firefox and Safari by hand. They come from BCD, from the release notes and from the bug trackers. The browser tests of the repository also operate in Firefox and, in a CI job, in Safari 26.6.2 on macOS. This page names the facts that those tests confirm. The release dates come from [Chromium Dash](https://chromiumdash.appspot.com/fetch_milestone_schedule?mstone=151), the [Firefox calendar](https://whattrainisitnow.com/calendar/) and the [WebKit notes for Safari 27](https://webkit.org/blog/18325/webkit-features-for-safari-27-0/).
 
 ### Release cadence
 
@@ -67,6 +67,8 @@ The [Event Timing Working Draft](https://www.w3.org/TR/event-timing/) of 2026-03
 - The browser buffers an entry only if its duration is 104 ms or more. The event buffer holds 150 entries, and the `first-input` buffer holds 1 entry. Thus an observer that starts late does not get the shorter interactions.
 - Only `pointerdown`, `pointerup`, `click`, `keydown` and `keyup` get an `interactionId`. Continuous events, for example `pointermove`, `wheel` and `touchmove`, do not get one.
 - Without `performance.interactionCount`, a monitor can count the distinct values of `interactionId`. The web-vitals library did this before Chrome 144.
+
+The CI job confirmed Event Timing with `interactionId` in Safari 26.6.2 on macOS (the log of a GitHub macOS runner, 2026-10-08). There, the web-vitals oracle of the repository gave exactly the same INP in web-vitals 6.2.3 and in the library: 184 ms. The three phases were also the same: an input delay of 0 ms, a processing duration of 180 ms and a presentation delay of 4 ms.
 
 The [Chromium INP changelog](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/speed/metrics_changelog/inp.md) gives these recent changes:
 
@@ -181,7 +183,7 @@ The list of `PerformanceObserver.supportedEntryTypes` is different in each globa
 - In a page: `element`, `event`, `first-input`, `interaction-contentful-paint`, `largest-contentful-paint`, `layout-shift`, `long-animation-frame`, `longtask`, `mark`, `measure`, `navigation`, `paint`, `resource`, `soft-navigation` and `visibility-state`.
 - In a dedicated worker: `mark`, `measure` and `resource`.
 
-From BCD, the research infers this list for Firefox and for Safari 26.2 and later: `event`, `first-input`, `largest-contentful-paint`, `mark`, `measure`, `navigation`, `paint` and `resource`. Nobody tested this list.
+From BCD, the research infers this list for Firefox and for Safari 26.2 and later: `event`, `first-input`, `largest-contentful-paint`, `mark`, `measure`, `navigation`, `paint` and `resource`. In the CI job, Safari 26.6.2 gave `event`, `largest-contentful-paint` and `paint` entries, and no `layout-shift` entries. Nobody tested the other parts of the list.
 
 The time origin of a window is its navigation start. The time origin of a worker is the start of the worker. In the probe, the `timeOrigin` of the worker was approximately 20.9 s after the `timeOrigin` of the page. Thus a monitor must convert each time with `timeOrigin + now()` before it compares the times of two threads. The note [clocks and timers](/research/clocks-and-timers) gives the behavior of each engine.
 
@@ -266,13 +268,14 @@ The background throttling of worker timers has no standard. The research found t
 - For Safari, the research found no authoritative document. It is not verified that iOS suspends background tabs and their workers.
 - In Low Power Mode, Safari halves `requestAnimationFrame` to 30 fps, and it throttles rAF in cross-origin iframes without interaction ([Motion](https://motion.dev/magazine/when-browsers-throttle-requestanimationframe), 2020). This affects a lag probe that uses rAF heartbeats.
 
-A block of the main thread also stops the input and output of the workers in WebKit. Experiment E4 measured this in the Playwright builds on Windows 11 ([local experiments](/research/local-experiments)):
+A block of the main thread also stops the input and output of the workers in WebKit and Safari. Experiment E4 measured this in the Playwright builds on Windows 11, and in Safari 26.6.2 on a GitHub macOS runner ([local experiments](/research/local-experiments)):
 
-- Chromium and Firefox complete the IndexedDB writes and the `fetch` requests of a dedicated worker during a block of 2 s, after 7 ms to 58 ms. A shared worker that writes and sends each 100 ms also completes operations during the block: 18 in Chromium and 16 in Firefox.
-- WebKit completes them on the main thread, after the block: the IndexedDB write after 2015 ms and the `fetch` after 2013 ms. A shared worker completes none of its operations during the block.
+- Chromium and Firefox complete the IndexedDB writes and the `fetch` requests of a dedicated worker during a block of 2 s, after 7 ms to 58 ms. A shared worker and a service worker that write and send each 100 ms also complete 16 to 18 operations during the block.
+- WebKit completes them on the main thread, after the block: the IndexedDB write after 2015 ms and the `fetch` after 2013 ms. A shared worker and a service worker complete none of their operations during the block.
+- Safari 26.6.2 on macOS behaves the same as the WebKit build, in the log of the CI job. The write and the fetch complete after the block. The shared worker and the service worker complete no operation during it.
 - In WebKit, a message from the page to a shared worker that the page posts immediately before the block arrives only after the block.
 
-Thus in WebKit, a worker can detect a hang with its own timer. But it cannot send a report or write a record until the main thread operates again. The WebKit build for Windows is not Safari. The IndexedDB and loader code of workers is shared code of WebCore, thus Safari probably behaves the same. This is not verified.
+Thus in WebKit and Safari, a worker can detect a hang with its own timer. But it cannot send a report or write a record until the main thread operates again. Also a service worker cannot do this, although it operates outside the page.
 
 The note [clocks and timers](/research/clocks-and-timers) gives the timer rules of each engine from the source code.
 
@@ -352,7 +355,7 @@ The research gives seven implications. This table shows the response of the libr
 | INP from `interactionId` and `performance.interactionCount`, or from a count of the distinct IDs, with the engine on each value | `InpCalculator` uses the native count, or else the count of the interactions that it saw. The metrics have no engine attribute. |
 | Page views of single-page apps from soft navigations in Chrome 151 and later, and from the Navigation API in other browsers | `PageViewVitals` starts a new page view at each soft navigation when the option `softNavigations` is true. The library does not use the Navigation API. |
 | No samples from hidden time, prerender before `activationStart`, the back/forward cache, `freeze` to `resume`, or sleep | The measurement conditions discard samples that overlap hidden, frozen and suspend intervals. The page-view vitals start at the activation. |
-| Delivery at `pagehide` and `visibilitychange` with `fetchLater()` or `sendBeacon()`, and no `unload` | otel-ts flushes when the page becomes hidden and at `pagehide`. The worker sends hang reports with `fetch` and `keepalive`, but in WebKit the request completes only after a block of the main thread. Nothing uses `unload`. |
+| Delivery at `pagehide` and `visibilitychange` with `fetchLater()` or `sendBeacon()`, and no `unload` | otel-ts flushes when the page becomes hidden and at `pagehide`. The worker sends hang reports with `fetch` and `keepalive`, but in WebKit and Safari the request completes only after a block of the main thread. Nothing uses `unload`. |
 | The Chromium extras where they help: Compute Pressure, crash reports and `window.crashReport` | `ComputePressureMonitor` observes the `"cpu"` source. The page-view ID goes into `window.crashReport`. The library does not use `deviceMemory`, `cpuPerformance` or JS Self-Profiling. |
 
 The code is in [`browser/browser-deps.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/browser/browser-deps.ts), [`ObserverMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ObserverMonitor.ts), [`InpCalculator.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/InpCalculator.ts) and [`measurement-conditions.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/measurement-conditions.ts). The page [measurement validity](/docs/concepts/measurement-validity) explains the discarded samples.
