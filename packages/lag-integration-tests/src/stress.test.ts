@@ -89,15 +89,21 @@ async function logResult(profile : string, result : WorkloadResult, tee : TeeMet
 
 /**
  * A browser can slow the timers of a page that it does not show, for example
- * Safari on a CI runner whose display sleeps. Then a profile cannot operate
- * in its time, and its assertions say nothing about the workload. This
- * function skips the test in that case, and the skip gives the reason.
+ * Safari on a CI runner (its window had no focus). Then a profile cannot
+ * operate in its time, and its assertions say nothing about the workload.
+ * The monitors find this case: DriftLag sees a long timer delay, and the
+ * worker sees that the main thread was free. This function skips the test
+ * in that case, and the skip gives the reason.
  */
-function skipIfThrottled(test : TestContext, result : WorkloadResult) : void {
-    if (result.durationMs <= PROFILE_DURATION_MS * 1.5) return;
+function skipIfThrottled(test : TestContext, result : WorkloadResult, tee : TeeMeter) : void {
+    const timerDelay = tee.max("lag_drift_histogram");
+    const blocked = tee.max("lag_worker_main_block_histogram");
+    const slow = result.durationMs > PROFILE_DURATION_MS * 1.5 || (timerDelay > 5_000 && blocked < 100);
+    if (!slow) return;
     const state = `visibilityState "${document.visibilityState}", hasFocus ${document.hasFocus()}, window ${window.innerWidth}x${window.innerHeight}`;
     console.log(`The browser slowed the timers of the page (${state})`);
-    test.skip(true, `The browser slowed the timers of the page: the profile took ${Math.round(result.durationMs)} ms, not ${PROFILE_DURATION_MS} ms (${state}).`);
+    test.skip(true, `The browser slowed the timers of the page: the profile took ${Math.round(result.durationMs)} ms for ${PROFILE_DURATION_MS} ms, ` +
+        `with a timer delay of ${Math.round(timerDelay)} ms while the main thread was free (${state}).`);
 }
 
 describe("Lag Monitor Stress Tests", () => {
@@ -106,7 +112,7 @@ describe("Lag Monitor Stress Tests", () => {
         try {
             const result = await runWorkload(lightLoad(PROFILE_DURATION_MS, 11));
             await logResult("light", result, ctx.tee);
-            skipIfThrottled(test, result);
+            skipIfThrottled(test, result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(0);
             expect(result.totalLagMs).toBeGreaterThan(0);
             // Light load should accumulate < 25% of wall time as lag
@@ -127,7 +133,7 @@ describe("Lag Monitor Stress Tests", () => {
         try {
             const result = await runWorkload(moderateLoad(PROFILE_DURATION_MS, 22));
             await logResult("moderate", result, ctx.tee);
-            skipIfThrottled(test, result);
+            skipIfThrottled(test, result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(10);
             // Moderate covers cpu, macrotask, layout, loaf — at least 3 of 4
             expect(Object.keys(result.eventsByName).length).toBeGreaterThanOrEqual(3);
@@ -142,7 +148,7 @@ describe("Lag Monitor Stress Tests", () => {
         try {
             const result = await runWorkload(heavyLoad(PROFILE_DURATION_MS, 33));
             await logResult("heavy", result, ctx.tee);
-            skipIfThrottled(test, result);
+            skipIfThrottled(test, result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(5);
             // Heavy load should consume substantial wall-time as lag
             expect(result.totalLagMs).toBeGreaterThan(PROFILE_DURATION_MS * 0.3);
@@ -162,7 +168,7 @@ describe("Lag Monitor Stress Tests", () => {
             opts.onEvent = (e) => events.push(e.durationMs);
             const result = await runWorkload(opts);
             await logResult("bursty", result, ctx.tee);
-            skipIfThrottled(test, result);
+            skipIfThrottled(test, result, ctx.tee);
 
             const smalls = events.filter((d) => d < 30).length;
             const larges = events.filter((d) => d > 100).length;
@@ -187,7 +193,7 @@ describe("Lag Monitor Stress Tests", () => {
             opts.onEvent = (e) => events.push({ elapsedMs : e.elapsedMs, durationMs : e.durationMs });
             const result = await runWorkload(opts);
             await logResult("evolutionary", result, ctx.tee);
-            skipIfThrottled(test, result);
+            skipIfThrottled(test, result, ctx.tee);
 
             expect(events.length).toBeGreaterThan(5);
             const half = Math.floor(events.length / 2);
@@ -209,7 +215,7 @@ describe("Lag Monitor Stress Tests", () => {
         try {
             const result = await runWorkload(kitchenSink(PROFILE_DURATION_MS, 66));
             await logResult("kitchen-sink", result, ctx.tee);
-            skipIfThrottled(test, result);
+            skipIfThrottled(test, result, ctx.tee);
 
             // The seeded sequence reaches more of the 8 spec types when more events fit in the time:
             // 6 or more types from 40 events. Safari 26 made 28 events in 10 s (5 types).
