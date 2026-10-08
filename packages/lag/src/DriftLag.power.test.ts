@@ -1,0 +1,83 @@
+import { describe, expect, it } from "vitest";
+import { highFrequencyLagIntervalMs } from "./constants.js";
+import { DriftLag } from "./DriftLag.js";
+import { SimulatedThread } from "./test-thread.js";
+
+type Window = { endAt : number; lag : number };
+
+/**
+ * DriftLag with the timer alignment of WebKit. WebKit aligns each one-shot
+ * timer of the nesting level 10 or more to the next boundary of an
+ * interval: 4 ms normally, and 30 ms in Low Power Mode or with thermal
+ * mitigation (`DOMTimer.cpp`, `Document::domTimerAlignmentInterval`,
+ * `Page::updateDOMTimerAlignmentInterval`). The chain of 5 ms steps of
+ * DriftLag is such a chain of nested timers. A
+ * GitHub macOS runner cannot turn on Low Power Mode ("LowPowerMode not
+ * supported on AC Power"), thus these tests use the rule of the source.
+ */
+function createDriftLag(alignmentMs : number, alignmentOffset : number) {
+    const thread = new SimulatedThread(1 / 64);
+    thread.nestedTimerAlignmentMs = alignmentMs;
+    thread.alignmentOffset = alignmentOffset;
+    const windows : Window[] = [];
+    const monitor = new DriftLag(
+        highFrequencyLagIntervalMs,
+        (lag) => windows.push({ endAt : thread.now, lag }),
+        { log : () => {} },
+        thread.setInterval,
+        thread.clearInterval,
+        thread.setTimeout,
+        thread.clearTimeout,
+        thread.clock,
+        { postTask : thread.post },
+    );
+    return { thread, monitor, windows };
+}
+
+const lagsBetween = (windows : readonly Window[], from : number, to : number) : number[] =>
+    windows.filter(w => w.endAt >= from && w.endAt < to).map(w => w.lag);
+
+const median = (values : readonly number[]) : number => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
+
+describe("DriftLag with the timer alignment of WebKit", () => {
+    for (const offset of [0, 0.37, 0.9]) {
+        it(`gives steps of 8 ms with the normal alignment of 4 ms (offset ${offset})`, () => {
+            const d = createDriftLag(4, offset);
+            d.thread.advance(3_000);
+            // The CI job measured a baseline of 8.4 ms in Safari 26.6.2
+            expect(d.monitor.getBaselineMs()).toBeCloseTo(8, 0);
+            expect(Math.max(...lagsBetween(d.windows, 1_000, 3_000).map(Math.abs))).toBeLessThan(2);
+            d.monitor.stop();
+        });
+
+        it(`follows the alignment of 30 ms of Low Power Mode, and still measures a block (offset ${offset})`, () => {
+            const d = createDriftLag(30, offset);
+            d.thread.advance(3_000);
+            expect(d.monitor.getBaselineMs()).toBeCloseTo(30, 0);
+            expect(Math.abs(median(lagsBetween(d.windows, 1_500, 3_000)))).toBeLessThan(2);
+
+            // A block of 300 ms in a task: the next step comes at the first boundary after the block
+            d.thread.post(() => d.thread.busy(300));
+            d.thread.advance(1_000);
+            const largest = Math.max(...lagsBetween(d.windows, 3_000, 4_000));
+            expect(largest).toBeGreaterThan(300 - 30 - 10);
+            expect(largest).toBeLessThan(300 + 30);
+            expect(Math.abs(median(lagsBetween(d.windows, 3_500, 4_000)))).toBeLessThan(2);
+            d.monitor.stop();
+        });
+    }
+
+    it("follows a change into Low Power Mode and out of it", () => {
+        const d = createDriftLag(4, 0.37);
+        d.thread.advance(3_000);
+        d.thread.nestedTimerAlignmentMs = 30;
+        d.thread.advance(3_000);
+        expect(d.monitor.getBaselineMs()).toBeCloseTo(30, 0);
+        expect(Math.abs(median(lagsBetween(d.windows, 4_500, 6_000)))).toBeLessThan(2);
+        d.thread.nestedTimerAlignmentMs = 4;
+        d.thread.advance(3_000);
+        expect(d.monitor.getBaselineMs()).toBeCloseTo(8, 0);
+        expect(Math.abs(median(lagsBetween(d.windows, 7_500, 9_000)))).toBeLessThan(2);
+        d.monitor.stop();
+    });
+});

@@ -1,5 +1,14 @@
-/** A task of the simulated thread. */
-type Task = { readyAt : number; order : number; run : () => void };
+/** A task of the simulated thread. A timer task has the nesting level of its timer. */
+type Task = { readyAt : number; order : number; run : () => void; nesting? : number };
+
+/**
+ * The nesting levels of WebKit (`DOMTimer.cpp`). A one-shot timer reached
+ * the maximum at level 10, and a repeating timer at level 5. The level of a
+ * timer is the level of the timer task that made it, plus 1, and 0 outside
+ * a timer task.
+ */
+const MAX_NESTING_LEVEL = 10;
+const MAX_NESTING_LEVEL_FOR_REPEATING_TIMERS = 5;
 
 /**
  * A simulated main thread for the tests of the timer monitors. It has a
@@ -32,6 +41,15 @@ export class SimulatedThread {
     lateWakeAfterAwakeMs = 0;
     /** The delay of each message after it was posted, also on an idle thread, as in WebKit for Windows. */
     messageDelayMs = 0;
+    /**
+     * The alignment of the timers that reached the maximum nesting level, as
+     * in WebKit (`ScriptExecutionContext::alignedFireTime`). WebKit aligns
+     * them to 4 ms, and to 30 ms in Low Power Mode or with thermal
+     * mitigation. The value 0 aligns nothing.
+     */
+    nestedTimerAlignmentMs = 0;
+    /** The random offset of the alignment, as a part of the alignment interval (WebKit: `randomizedProportion`). */
+    alignmentOffset = 0.37;
     /** The number of messages that the thread got since it started. */
     postedMessages = 0;
     readonly clock = { now : () : number => this.now };
@@ -42,14 +60,31 @@ export class SimulatedThread {
     private busySince = 0;
     private readonly timers = new Map<number, Task>();
     private readonly messages : Task[] = [];
+    /** The nesting level of the context: for a timer task, the level of its timer plus 1. Otherwise 0. */
+    private nesting = 0;
 
     constructor(private readonly taskCostMs = 0.01) {}
 
     readonly setTimeout = (run : () => void, ms : number) : number => {
         const id = this.nextId++;
-        this.timers.set(id, { readyAt : this.now + Math.max(0, ms) + this.timerExtraMs, order : this.order++, run });
+        const nesting = this.nesting;
+        const readyAt = this.now + Math.max(0, ms) + this.timerExtraMs;
+        this.timers.set(id, { readyAt : this.aligned(readyAt, nesting >= MAX_NESTING_LEVEL), order : this.order++, run, nesting });
         return id;
     };
+
+    /**
+     * The fire time of WebKit for a timer: the next boundary of the
+     * alignment interval after the time. A time on a boundary also moves to
+     * the next boundary. The boundaries have a random offset.
+     */
+    private aligned(fireTime : number, reachedMaxNesting : boolean) : number {
+        const interval = this.nestedTimerAlignmentMs;
+        if (interval === 0 || !reachedMaxNesting) return fireTime;
+        const offset = interval * this.alignmentOffset;
+        const adjusted = fireTime - offset;
+        return adjusted - (adjusted % interval) + interval + offset;
+    }
 
     readonly clearTimeout = (id : number) : void => {
         this.timers.delete(id);
@@ -57,8 +92,11 @@ export class SimulatedThread {
 
     readonly setInterval = (run : () => void, ms : number) : number => {
         const id = this.nextId++;
+        // Each repeat increases the nesting level of the interval
+        let nesting = this.nesting;
         const repeat = () : void => {
-            this.timers.set(id, { readyAt : this.now + Math.max(1, ms), order : this.order++, run : () => { repeat(); run(); } });
+            const readyAt = this.aligned(this.now + Math.max(1, ms), nesting >= MAX_NESTING_LEVEL_FOR_REPEATING_TIMERS);
+            this.timers.set(id, { readyAt, order : this.order++, run : () => { nesting = Math.min(nesting + 1, MAX_NESTING_LEVEL); repeat(); run(); }, nesting });
         };
         repeat();
         return id;
@@ -101,7 +139,9 @@ export class SimulatedThread {
             if (next.timerId === undefined) this.messages.shift();
             else this.timers.delete(next.timerId);
             this.now = startAt;
+            this.nesting = next.task.nesting === undefined ? 0 : Math.min(next.task.nesting + 1, MAX_NESTING_LEVEL);
             next.task.run();
+            this.nesting = 0;
             this.now += this.taskCostMs;
         }
         this.now = Math.max(this.now, time);
