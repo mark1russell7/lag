@@ -22,9 +22,6 @@
     },
     {
       "path": "packages/site"
-    },
-    {
-      "path": "packages/ste-lint"
     }
   ]
 }

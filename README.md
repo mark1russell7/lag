@@ -14,7 +14,6 @@ The website in `packages/site` has the documentation, the thesis, the research a
 | `@lag/worker` | `packages/lag-worker` | The Web Worker of the worker-lag monitor. It sends heartbeats, detects hangs and keeps the hang journal in IndexedDB. |
 | `@lag/load` | `packages/load` | Synthetic main-thread load for the tests and the playground. |
 | `@lag/report` | `packages/report` | The data format of the test reports, and the converters from Vitest, Istanbul and Stryker. |
-| `@lag/ste-lint` | `packages/ste-lint` | A linter for the writing rules of ASD-STE100 Simplified Technical English. |
 | `@lag/site` | `packages/site` | The website. |
 | Integration tests | `packages/lag-integration-tests` | The browser tests in Chromium, Firefox, WebKit and Chrome (Vitest browser mode and Playwright): stress profiles, CDP tests, a cross-origin-isolated project, the web-vitals oracle, the overhead benchmark and the soak test. |
 | Scripts | `packages/scripts` | `pnpm new`, `pnpm results`, `pnpm readme:metrics` and the other scripts of the repository. |
@@ -120,6 +119,8 @@ pnpm test               # unit tests (fake timers)
 pnpm test:browser       # browser tests in all engines, without Docker
 pnpm lint:ste           # the writing rules of the README, the site and the TSDoc comments
 ```
+
+`pnpm lint:ste` starts [`@mark1russell7/ste-lint`](https://github.com/mark1russell7/ste-lint), a linter for the writing rules of ASD-STE100 Simplified Technical English. It has its own repository, because other repositories use it too.
 
 To add a package, use `pnpm new --name <name> --config <config>`. Do not write `package.json` files yourself.
 

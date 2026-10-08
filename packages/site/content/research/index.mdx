@@ -30,7 +30,7 @@ A monitor of main-thread lag uses browser APIs that behave differently in each e
 | Many browsers without a writer identity break Mimir, and neither delta temporality nor a collector fixes it. | otel-ts gives each SDK instance a random `service.instance.id` and cumulative temporality. The library makes only counters and histograms. | [OpenTelemetry metrics in the browser](/research/otel-browser-metrics) |
 | In Chromium, the order of the `pagehide` listeners cannot protect the final values. | `AllMonitorHandles.flush()` records the final values in the `onBeforeFlush` hook of otel-ts. | [Local experiments](/research/local-experiments) |
 | The web-vitals library gives the rules of the Core Web Vitals. | `PageViewVitals` uses the same rules for each page view. | [Web Vitals algorithms](/research/web-vitals-algorithms) |
-| A controlled language gives rules that a person and a tool can check. | The site uses ASD-STE100 as a style target, with the checker `@lag/ste-lint`. | [Writing standard](/research/writing-standard) |
+| A controlled language gives rules that a person and a tool can check. | The site uses ASD-STE100 as a style target, with the checker `@mark1russell7/ste-lint`. | [Writing standard](/research/writing-standard) |
 
 ## The notes
 

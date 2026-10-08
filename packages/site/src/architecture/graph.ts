@@ -79,7 +79,7 @@ export const architectureNodes : readonly ArchNodeSpec[] = [
     },
     {
         id : "ste-lint",
-        label : "@lag/ste-lint",
+        label : "@mark1russell7/ste-lint",
         layer : "package",
         description : "Examines the text of the site, the READMEs and the TSDoc comments against the writing rules of ASD-STE100. It is an automated approximation, not a certification.",
         docs : "/docs/contributing/writing-style",

@@ -93,7 +93,7 @@ The page [writing style](/docs/contributing/writing-style) gives the rules for a
 
 ### The project word list and the linter
 
-The package `@lag/ste-lint` checks the text of the repository ([README](https://github.com/mark1russell7/lag/blob/main/packages/ste-lint/README.md)). The command `pnpm lint:ste` at the root of the repository starts it. It reads Markdown and MDX files, and the doc comments of TypeScript and JavaScript files. It has these rules:
+The package `@mark1russell7/ste-lint` checks the text of the repository ([README](https://github.com/mark1russell7/ste-lint/blob/main/README.md)). The command `pnpm lint:ste` at the root of the repository starts it. It reads Markdown and MDX files, and the doc comments of TypeScript and JavaScript files. It has these rules:
 
 - sentence length, paragraph length and noun clusters
 - modal verbs, semicolons, Latin abbreviations, and "about" before a quantity
@@ -101,7 +101,7 @@ The package `@lag/ste-lint` checks the text of the repository ([README](https://
 - the passive voice in instructions, a missing subject in doc comments, and `-ing` verbs
 - unknown words, but only with a local dictionary.
 
-The project word list (`packages/ste-lint/src/word-list.ts`) is the style guide of the project, written for it. It is not a copy of the dictionary of the standard. It has plain-language substitutions, for example "use" for "utilize" and "before" for "prior to".
+The project word list ([`src/word-list.ts`](https://github.com/mark1russell7/ste-lint/blob/main/src/word-list.ts) of `ste-lint`) is the style guide of the project, written for it. It is not a copy of the dictionary of the standard. It has plain-language substitutions, for example "use" for "utilize" and "before" for "prior to".
 
 ## Limits
 
