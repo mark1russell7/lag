@@ -105,6 +105,7 @@ export function createInstrumentedWorkerLag(
                         phase : "abandoned",
                         duration_ms : durationMs,
                         "lag.hang.page_id" : record.pageId,
+                        "lag.hang.source" : "journal",
                     });
                 }
             }).catch((error : unknown) => {
