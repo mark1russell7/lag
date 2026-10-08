@@ -132,6 +132,31 @@ describe("createBrowserDeps", () => {
         expect(indexedDB.open).not.toHaveBeenCalled();
     });
 
+    it("uses BroadcastChannel and the Web Locks API for the peer hang watch, if the option permits it", async () => {
+        class BroadcastChannel {
+            onmessage = null;
+            postMessage() : void {}
+            close() : void {}
+        }
+        const request = vi.fn(function (this : unknown) {
+            if (this !== locks) throw new TypeError("Illegal invocation");
+            return Promise.resolve();
+        });
+        const locks = { request };
+        const navigator = { locks };
+
+        const deps = createBrowserDeps(createGlobals({ BroadcastChannel, navigator }), options());
+        expect(deps.BroadcastChannel).toBe(BroadcastChannel);
+        await deps.locks!.request("name", {}, () => {});
+        expect(request).toHaveBeenCalledWith("name", {}, expect.any(Function));
+
+        expect(createBrowserDeps(createGlobals({ BroadcastChannel, navigator }), { ...options(), peerHangWatch : false }).locks).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ navigator }), options()).locks).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ BroadcastChannel }), options()).locks).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ BroadcastChannel, navigator : {} }), options()).BroadcastChannel).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ BroadcastChannel, navigator : { locks : {} } }), options()).BroadcastChannel).toBeUndefined();
+    });
+
     it("uses the crash-report context of the browser where it exists", () => {
         const crashReport = { initialize : vi.fn(), set : vi.fn(), delete : vi.fn() };
         expect(createBrowserDeps(createGlobals({ crashReport }), options()).crashReport).toBe(crashReport);

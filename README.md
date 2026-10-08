@@ -64,8 +64,8 @@ All durations are in milliseconds. All metrics are counters or histograms. The a
 | WorkerLagMonitor | `lag_worker_main_block_histogram` | histogram | `ms` |  | The time that a worker heartbeat waited for the main thread. This is main-thread blocking, measured from outside the main thread. |
 | WorkerLagMonitor | `lag_worker_self_lag_histogram` | histogram | `ms` |  | The lateness of the heartbeat timer of the worker. A high value shows that the worker itself did not operate. |
 | WorkerLagMonitor | `lag_worker_clock_offset_histogram` | histogram | `ms` |  | The absolute offset between the worker clock and the main-thread clock, from the clock synchronization exchange. |
-| WorkerLagMonitor | `lag_main_thread_hangs` | counter | `{hang}` | `outcome` | The number of main-thread hangs that the worker detected. In a hang, the main thread does not acknowledge heartbeats. The outcome `abandoned` means that the page closed or crashed during the hang. The next page of the origin reports it from the hang journal. |
-| WorkerLagMonitor | `lag_main_thread_hang_duration_histogram` | histogram | `ms` | `outcome` | The duration of each main-thread hang. For an abandoned hang, the duration until the worker saw the hang for the last time. |
+| WorkerLagMonitor | `lag_main_thread_hangs` | counter | `{hang}` | `outcome` | The number of main-thread hangs that the worker detected. In a hang, the main thread does not acknowledge heartbeats. The outcome `abandoned` means that the page closed or crashed during the hang. The next page of the origin reports it from the hang journal. Another open page of the origin, or the page itself at its close, can also report it (PeerHangWatch). |
+| WorkerLagMonitor | `lag_main_thread_hang_duration_histogram` | histogram | `ms` | `outcome` | The duration of each main-thread hang. For an abandoned hang, the duration until the worker saw the hang for the last time. Without a record of the worker, it is the duration from the last heartbeat of the page to its end. |
 | LongAnimationFrameMonitor | `lag_loaf_blocking_histogram` | histogram | `ms` |  | The blocking duration of each long animation frame. |
 | LongAnimationFrameMonitor | `lag_loaf_duration_histogram` | histogram | `ms` |  | The total duration of each long animation frame. |
 | EventTimingMonitor | `lag_event_duration_histogram` | histogram | `ms` | `interaction` | The duration of each interaction event of 16 ms or more, from input to the next paint. |
@@ -104,6 +104,7 @@ All durations are in milliseconds. All metrics are counters or histograms. The a
 - **Calibrated probes.** A timer step takes longer than its requested delay, also on an idle page. DriftLag subtracts the idle step duration of its environment. On an idle page, the old probe reported 16 ms of lag for each 100 ms window in Chromium and 211 ms in Firefox and WebKit. The calibrated probe reports less than 0.5 ms.
 - **Valid samples only.** Timer, frame and idle monitors pause while the page is hidden or frozen. A sample that overlaps a hidden, frozen or suspended interval is discarded and counted in `lag_samples_discarded`.
 - **An outside observer.** A Web Worker sends heartbeats from its own timer. During a main-thread hang, the worker reports the hang itself.
+- **No lost hangs.** A page that closes during a hang is reported as an abandoned hang. The report comes from the hang journal of the worker, from another open page of the origin, or from the page itself at its close. The last two ways also operate in WebKit and Safari, where a worker cannot write or send during a hang.
 - **The page view as the unit.** Each event has the ID of its page view.
 - **Low-cardinality attributes.** Each distinct set of attributes is a separate series. Measured values, timestamps and IDs are not attributes.
 - **Full teardown.** `stop()` releases each timer, listener, observer and worker loop. The tests make sure that no timer or listener stays.
@@ -148,6 +149,7 @@ pnpm --filter @lag/integration-tests exec playwright install chromium firefox we
 | Overhead benchmark | `pnpm test:overhead` | The main-thread CPU time and the callbacks of all monitors on an idle page, against their budgets. |
 | Soak test | `pnpm test:soak` | All monitors for 3 minutes under a mixed workload. The heap must not grow without limit. `stop()` must release each timer. |
 | Safari tests | `pnpm --filter @lag/integration-tests test:safari` | The browser tests in the real Safari, through safaridriver. Only on macOS: enable it one time with `sudo safaridriver --enable`. |
+| iOS tests | `pnpm --filter @lag/integration-tests test:ios` | The browser tests in Safari on iOS, in the iOS Simulator. Only on macOS with Xcode: boot a simulator, and set `LAG_IOS_UDID` to its UDID. |
 | E2E tests | `pnpm test:e2e` | The export to the Grafana stack. The script starts the stack with Docker Compose. |
 | Test results | `pnpm results` | All test kinds, without the soak test and the E2E tests. The results go to the site. |
 
@@ -173,7 +175,7 @@ To show the test results on the site, do these steps:
 
 `pnpm results` writes the results to `packages/site/public/data/results/`. Git ignores this folder. The script includes the latest Stryker report if it exists.
 
-To include the soak test, the E2E tests or Safari (on macOS), add `--soak`, `--e2e` or `--safari` to `pnpm results`.
+To include the soak test, the E2E tests, Safari or Safari on iOS (on macOS), add `--soak`, `--e2e`, `--safari` or `--ios` to `pnpm results`.
 
 GitHub Actions starts the build, the unit tests, the coverage, the browser tests and the site checks for each push and pull request (`ci.yml`). `e2e.yml` and `mutation.yml` start each week. You can also start them manually.
 

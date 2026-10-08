@@ -140,6 +140,9 @@ describe("PageViewVitals agrees with web-vitals", () => {
             // Event Timing rounds a duration to the nearest 8 ms: a 180 ms handler can give 176 ms
             return theirs >= 176 && theirs === core("INP")?.value;
         }, 10_000);
+        // In the iOS Simulator, the click of safaridriver gave no INP in the two libraries (CI, 2026-10-08)
+        ctx.skip(environment() === "ios" && !oracle.has("INP") && core("INP") === undefined,
+            "In the iOS Simulator, the click of safaridriver gives no INP in web-vitals and in the library.");
         await compare("INP");
 
         const ours = core("INP")!;

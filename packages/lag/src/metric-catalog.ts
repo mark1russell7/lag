@@ -87,10 +87,10 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
     workerClockOffset : metric("lag_worker_clock_offset_histogram", "histogram", "ms", "WorkerLagMonitor",
         "The absolute offset between the worker clock and the main-thread clock, from the clock synchronization exchange."),
     hangs : metric("lag_main_thread_hangs", "counter", "{hang}", "WorkerLagMonitor",
-        "The number of main-thread hangs that the worker detected. In a hang, the main thread does not acknowledge heartbeats. The outcome `abandoned` means that the page closed or crashed during the hang. The next page of the origin reports it from the hang journal.",
+        "The number of main-thread hangs that the worker detected. In a hang, the main thread does not acknowledge heartbeats. The outcome `abandoned` means that the page closed or crashed during the hang. The next page of the origin reports it from the hang journal. Another open page of the origin, or the page itself at its close, can also report it (PeerHangWatch).",
         { outcome : ["ended", "abandoned"] }),
     hangDuration : metric("lag_main_thread_hang_duration_histogram", "histogram", "ms", "WorkerLagMonitor",
-        "The duration of each main-thread hang. For an abandoned hang, the duration until the worker saw the hang for the last time.",
+        "The duration of each main-thread hang. For an abandoned hang, the duration until the worker saw the hang for the last time. Without a record of the worker, it is the duration from the last heartbeat of the page to its end.",
         { outcome : ["ended", "abandoned"] }),
 
     loafBlocking : metric("lag_loaf_blocking_histogram", "histogram", "ms", "LongAnimationFrameMonitor",
@@ -231,8 +231,8 @@ export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
     hang : {
         name : "lag.main_thread.hang",
         monitor : "WorkerLagMonitor",
-        description : "A main-thread hang that the worker detected. The worker sends the start itself, because the main thread cannot. The phase `abandoned` comes from the next page: the page closed or crashed during the hang.",
-        attributes : ["phase", "duration_ms", "lag.hang.page_id", "lag.page_view.id"],
+        description : "A main-thread hang that the worker detected. The worker sends the start itself, because the main thread cannot. The phase `abandoned` means that the page closed or crashed during the hang. It comes from the next page (`lag.hang.source: journal`), from another open page of the origin (`lag.hang.source: peer`), or from the page itself at its close (`lag.hang.source: self`).",
+        attributes : ["phase", "duration_ms", "lag.hang.page_id", "lag.hang.source", "lag.page_view.id"],
     },
     clockJump : {
         name : "lag.clock.jump",

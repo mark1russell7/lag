@@ -1,17 +1,21 @@
 ---
 title: Local experiments
-description: Four experiments in this repository on 2026-10-07 and 2026-10-08, on the order of event listeners, the timers of an idle page, the calibrated DriftLag and the input and output of workers during a main-thread block.
+description: Seven experiments in this repository on 2026-10-07 and 2026-10-08, on the order of event listeners, the timers of an idle page, the calibrated DriftLag, the input and output of workers during a main-thread block, a sustained load, and what another page sees of a hang.
 order: 4
 status: final
 ---
 
 import { idleLagChart, idleLagTable } from "./local-experiments.data";
 
-We did five experiments in this repository on 2026-10-07 and 2026-10-08. They measured facts that no document gives.
+We did seven experiments in this repository on 2026-10-07 and 2026-10-08. They measured facts that no document gives.
 
 E1 measured the order of the event listeners at the target of an event. E2 measured the timers of an idle page in three engines. E3 measured the calibrated DriftLag on the same machine. E4 measured when the IndexedDB writes and the fetches of a worker complete while the main thread is blocked, also in Safari. E5 measured DriftLag during a sustained load.
 
-The results changed the library in four ways. An explicit hook, not the order of the listeners, records the final values before each flush. DriftLag subtracts a calibrated baseline. The probes that use `setTimeout(0)` start in a message task. A probe of message tasks must show an idle thread before the baseline of DriftLag increases. E4 changed no code, but it found a limit of the hang reports and of the hang journal in WebKit and Safari.
+E6 measured the other output APIs of a worker during a block. E7 measured what another page of the origin sees of a hang, also in Safari on iOS.
+
+The results changed the library in five ways. An explicit hook, not the order of the listeners, records the final values before each flush. DriftLag subtracts a calibrated baseline. The probes that use `setTimeout(0)` start in a message task. A probe of message tasks must show an idle thread before the baseline of DriftLag increases.
+
+E4 and E6 found a limit of the hang reports and of the hang journal in WebKit and Safari. E7 found a way around it: the peer hang watch.
 
 ## E1: the order of listeners at the target
 
@@ -161,12 +165,73 @@ After the load, the median lag of a window was between −9 ms and 8 ms, in wind
 
 **Check in the repository.** `drift-load.test.ts` expects more than 10% lag in the second half of each load. After the load, it expects a median lag of less than 10% of a window. It skips itself if a probe on an idle page measures more than 10 ms of busy time in 100 ms. The unit tests of `DriftLag.load.test.ts` use a simulated thread with a timer queue and a message queue. They simulate the three behaviors above.
 
+## E6: the other output APIs of a worker during a block
+
+**Question.** E4 found that IndexedDB and `fetch` of a worker wait for the main thread in WebKit. Can a worker of a blocked page write or send through another API? Each one could keep the hang journal in WebKit and Safari.
+
+**Method.** The probes are in [`worker-io.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/worker-io.ts). The worker first prepares the operation, for example it opens the file. Then the page posts a message that starts the operation, and it blocks its main thread for 2 s. The worker records when the operation completes.
+
+For a WebSocket, a server in Node (`commands/probe-socket.ts`) records when the message arrives, with the wall clock of the machine. The page uses the same wall clock, through `performance.timeOrigin`.
+
+Three operations use the origin private file system (OPFS). They are a write and a flush through a `FileSystemSyncAccessHandle`, a write through a `FileSystemWritableFileStream`, and a file lookup. The other operations are `Cache.put()`, an asynchronous and a synchronous `XMLHttpRequest`, and a WebSocket message. The Playwright builds operated on Windows 11, in two runs (2026-10-08). Safari 26.6.2 operated in the CI job on a GitHub macOS runner, in two runs.
+
+| Operation of a dedicated worker, complete after | Chromium 145 and Chrome 153 | Firefox 146 | WebKit (Playwright, Windows) | Safari 26.6.2, macOS |
+|---|---|---|---|---|
+| IndexedDB write | 42 ms | 44 ms | 2005 ms to 2036 ms | 2023 ms |
+| OPFS: sync access handle write and flush | 6 ms to 45 ms | 2 ms to 40 ms | No OPFS in this build | 2001 ms to 2002 ms |
+| OPFS: writable stream write and close | 13 ms to 16 ms | 37 ms to 43 ms | No OPFS in this build | 2003 ms to 2008 ms |
+| OPFS: `getDirectory()` and `getFileHandle()` | 2 ms to 3 ms | 8 ms to 14 ms | No OPFS in this build | 2000 ms to 2002 ms |
+| `Cache.put()` | 29 ms to 98 ms | 28 ms to 75 ms | 2011 ms to 2023 ms | 2004 ms to 2009 ms |
+| `XMLHttpRequest` | 30 ms to 103 ms | 2073 ms | 2014 ms | 2005 ms |
+| Synchronous `XMLHttpRequest` | 16 ms to 315 ms | 2017 ms to 2065 ms | 2012 ms to 2176 ms | 2004 ms to 2058 ms |
+| WebSocket message, at the server | 0 ms to 3 ms | 2000 ms to 2002 ms | 2016 ms to 2048 ms | 2001 ms |
+
+**Meaning.** In WebKit and Safari, each output API of a worker waits for the main thread of the page. Thus no API of a worker can keep the hang journal there. In the source of WebKit, the worker side of each API posts its work to the main thread of the web process. Examples are `WorkerThreadableLoader`, `IDBConnectionProxy`, `WorkerFileSystemStorageConnection`, `CacheStorageConnection` and `WorkerThreadableWebSocketChannel`.
+
+In Firefox, the storage APIs of a worker complete during the block, but an `XMLHttpRequest` and a WebSocket message wait. Thus Firefox operates them through the main thread. The hang report of the worker uses `fetch`, which completes during the block in Firefox (E4). Chromium completes all of them during the block.
+
+**Change in the library.** The code of the journal does not change. The [peer hang watch](/docs/monitors/peer-hang-watch) uses another page of the origin instead of a worker (E7).
+
+**Check in the repository.** [`worker-io.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/worker-io.test.ts) operates each probe in Chromium, Firefox, WebKit and Chrome, and in the CI job in Safari. It expects each operation after the block in WebKit and Safari. In Firefox, it expects an `XMLHttpRequest` and a WebSocket message after the block. It expects all others during the block. A test skips itself where the worker does not have the API.
+
+## E7: what another page of the origin sees of a hang
+
+**Question.** E6 found no output API that a worker can use during a hang in WebKit. Another page of the origin has its own main thread. Can it see the hang of a page, and the end of a page that closes during its hang?
+
+**Method.** The test page watches a peer page ([`peer-tab.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/peer-tab.test.ts)). A command opens the peer page as a second top-level page: with Playwright, or as a new window with WebdriverIO in Safari. The peer page holds a Web Lock until it closes. Its main thread and a dedicated worker each send a heartbeat through a BroadcastChannel each 100 ms. It also sends a message in `pagehide`.
+
+The peer page then blocks its main thread for 4 s, and the test page records the heartbeats and examines the lock. In a second case, the peer page blocks for 20 s, and the test closes it after 2 s. The test page asks for the lock of the peer page, and it records when it gets the lock. The measurements use the times of events, not of timers, because the test page can be hidden.
+
+The Playwright builds operated on Windows 11 in three runs, and on Linux in CI. Safari 26.6.2 operated on a GitHub macOS runner, also with a block of 90 s. Safari 26.5 operated in the iOS Simulator of the same runner, with Xcode 26.6.
+
+| Measurement | Chromium 145 and Chrome 153 | Firefox 146 | WebKit (Playwright) | Safari 26.6.2, macOS | Safari 26.5, iOS Simulator |
+|---|---|---|---|---|---|
+| The test page operates during the block | Yes | Yes | Yes | Yes | Yes |
+| The lock of the blocked page stays held during the block | Yes | Yes | Yes | Yes | Yes |
+| Largest gap of the heartbeats of the worker | 114 ms to 210 ms | 115 ms to 123 ms | 3994 ms to 4088 ms (the block) | 4070 ms to 4088 ms (the block) | The block |
+| The test closes the blocked page: the lock comes free | 0.5 s to 8 s later | 14 ms to 2.8 s later | Windows: 12 ms to 52 ms later. Linux: 3 s later | At the end of the block, also after 90 s | 3.4 s to 5.3 s later |
+| `pagehide` of the closed page | No | Yes, 13 ms after the close | Windows: no. Linux: at the end of the block | Yes, at the end of the block | No |
+
+**Meaning.** In each engine, another page of the origin operates during the block, and the Web Lock of the blocked page stays held. Thus the other page sees the silence of the hung page, and it knows that the page still exists. The BroadcastChannel of a worker waits for the main thread in WebKit and Safari, as the other output of a worker (E6). Thus the hung page itself cannot send a message.
+
+The engines end a page that the user closes during a hang in three ways:
+
+- Chromium, Safari on iOS and the WebKit build for Windows stop the page. The lock comes free without `pagehide`. Then another page can report the hang.
+- Firefox stops the blocked script, and Safari on macOS lets the script continue until it ends. Then the page closes normally, with `pagehide`. Thus the page itself can report its hang at its close.
+- The WebKit build for Linux releases the lock after 3 s, but the page continues until the end of its script.
+
+**Change in the library.** The [peer hang watch](/docs/monitors/peer-hang-watch) uses both paths. A visible page holds a Web Lock and sends a heartbeat each second. Another page reports a page whose lock comes free after 5 s or more without a heartbeat (`lag.hang.source: "peer"`). A page that closes at the end of a hang reports its own hang (`lag.hang.source: "self"`).
+
+**Check in the repository.** `peer-tab.test.ts` keeps the measurements of each engine. It expects the silence, the held lock, the BroadcastChannel of a worker, and the way in which each engine ends a closed page. [`peer-hang-watch.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/peer-hang-watch.test.ts) operates the library in two pages, and expects the report of the right page in each engine. It skips itself in Safari on iOS, because Safari there operates only the visible tab.
+
 ## Limits of the experiments
 
-- The experiments used one machine with Windows 11. Only the Safari column of E4 comes from a GitHub macOS runner.
-- The engines were the headless builds of Playwright, except Safari in E4. The WebKit build for Windows is not Safari on macOS.
-- The experiments did not test Safari in Low Power Mode, or Chromium on battery power. On battery, Chromium uses a timer tick of 8 ms on Windows ([Bruce Dawson](https://randomascii.wordpress.com/2020/10/04/windows-timer-resolution-the-great-rule-change/)).
+- The local experiments used one machine with Windows 11. The Safari columns of E4, E6 and E7 come from GitHub macOS runners. The iOS column of E7 comes from the iOS Simulator of such a runner. A simulator operates on the CPU of the Mac, thus its timers and its power behavior are not those of a phone.
+- The engines were the headless builds of Playwright, except Safari. The WebKit build for Windows is not Safari on macOS.
+- The experiments did not test Safari in Low Power Mode, or Chromium on battery power. A GitHub macOS runner refuses Low Power Mode: `sudo pmset -a lowpowermode 1` gives "LowPowerMode not supported on AC Power". Thus the unit test `DriftLag.power.test.ts` uses the timer rule of the WebKit source instead ([DriftLag](/docs/monitors/drift-lag)). On battery, Chromium uses a timer tick of 8 ms on Windows ([Bruce Dawson](https://randomascii.wordpress.com/2020/10/04/windows-timer-resolution-the-great-rule-change/)).
 - E3 used approximately 30 idle windows for each engine.
 - E4 used a block of 2 s. The fetch probes send their requests to the test server of Vitest on the same machine, not to a remote collector.
 - E5 used one load of 4 s for each case before the change, on Windows 11. The results of the change come from three local runs, with the four browsers at the same time on the same machine. They also come from one CI run on Linux and macOS.
-- The browser tests of the repository operate in Chromium, Firefox, WebKit and Chrome ([testing strategy](/docs/testing/strategy)). Thus they check the two cases of E1, the two properties of E3 and the behavior of E4 in the four browsers. A CI job also operates them in Safari on macOS. `browser-facts.test.ts` checks the `window` case of E1.
+- E6 and E7 used blocks of 2 s to 90 s. A real hang can be longer. E7 closed the page through Playwright or WebDriver, not through the user interface of the browser.
+- The WebKit build for Windows makes a message wait on an idle thread (E5). In the source of WebKit, the event loop schedules each task with a timer of 0 ms (`WindowEventLoop::scheduleToRun`). On Windows, that timer can wait for the system timer tick (`MainThreadSharedTimerWin.cpp`). A newer WebKit build (Playwright 1.64) needs `libGLESv2.dll` from the system, and it did not start on the test machine. Thus nobody tested a newer build.
+- The browser tests of the repository operate in Chromium, Firefox, WebKit and Chrome ([testing strategy](/docs/testing/strategy)). Thus they check the two cases of E1, the two properties of E3 and the behavior of E4, E6 and E7 in the four browsers. A CI job also operates them in Safari on macOS, and another in Safari in the iOS Simulator. `browser-facts.test.ts` checks the `window` case of E1.

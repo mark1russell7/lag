@@ -36,6 +36,7 @@ export { createInstrumentedBrowserReports } from "./browser-reports.js";
 // Ground truth + system signal
 export { createInstrumentedWorkerLag } from "./worker-lag.js";
 export { createInstrumentedSharedLiveness } from "./shared-liveness.js";
+export { createInstrumentedPeerHangWatch } from "./peer-hang-watch.js";
 export { createInstrumentedComputePressure } from "./compute-pressure.js";
 export { createInstrumentedGCSignal } from "./gc-signal.js";
 

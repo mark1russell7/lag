@@ -17,6 +17,10 @@ import type { FinalizationRegistryConstructor } from "./GCSignalDetector.js";
 import type { PressureObserverInit, PressureRecord } from "./ComputePressureMonitor.js";
 import type { MessageChannelConstructor, MessagePortLike } from "./SchedulingFairnessMonitor.js";
 import type { ReportingObserverInit, ReportLike } from "./BrowserReportMonitor.js";
+import type { MainToWorkerMessage } from "./worker-protocol.js";
+import { SimulatedOrigin } from "./test-peers.js";
+import { PEER_CHANNEL_NAME, PeerHangWatch, peerLockName } from "./PeerHangWatch.js";
+import { createMemoryHangJournal } from "./hang-journal.js";
 
 type Listener = (event : unknown) => void;
 
@@ -746,3 +750,120 @@ describe("setupAllMonitors degradation", () => {
         handles.stop();
     });
 });
+
+describe("setupAllMonitors with BroadcastChannel and the Web Locks API", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    function setup(pageId? : string) {
+        const origin = new SimulatedOrigin();
+        const page = origin.page();
+        const { BroadcastChannel, locks } = page.deps();
+        const browser = createFakeBrowser();
+        const sent : MainToWorkerMessage[] = [];
+        const worker : WorkerLike = {
+            ...browser.deps.worker!,
+            postMessage : (message) => { sent.push(message); browser.deps.worker!.postMessage(message); },
+        };
+        const handles = setupAllMonitors({
+            ...browser.deps,
+            worker,
+            BroadcastChannel,
+            locks,
+            hangJournal : createMemoryHangJournal(),
+            ...(pageId ? { pageId } : {}),
+        });
+        // Another page of the origin listens
+        const heard : unknown[] = [];
+        const listener = new BroadcastChannel(PEER_CHANNEL_NAME);
+        listener.onmessage = (event) => heard.push(event.data);
+        return { origin, page, handles, heard, sent, listener };
+    }
+
+    it("adds the peer hang watch, which sends the ID of the current page view in its heartbeats", async () => {
+        const t = setup("page-1");
+        await advance(1_500);
+
+        expect(t.handles.registry.getAll().map(h => h.name)).toContain("peer-hang-watch");
+        expect(t.handles.peerHangWatch).toBe(t.handles.registry.get("peer-hang-watch")!.monitor);
+        expect(t.origin.heldBy(t.page)).toEqual([peerLockName("page-1")]);
+        expect(t.heard.at(-1)).toEqual({
+            type : "beat",
+            pageId : "page-1",
+            sentAt : expect.any(Number),
+            attributes : { "lag.page_view.id" : t.handles.vitals!.getView().id },
+        });
+
+        t.handles.stop();
+        await advance(10);
+        expect(t.origin.heldBy(t.page)).toEqual([]);
+        expect(t.heard.at(-1)).toMatchObject({ type : "away", pageId : "page-1" });
+        t.listener.close();
+    });
+
+    it("gives the worker and the watch one page ID", async () => {
+        const t = setup();
+        await advance(1_500);
+        const start = t.sent.find(message => message.type === "start");
+        expect(start).toMatchObject({ pageId : expect.stringMatching(/^[0-9a-f]{32}$/) });
+        expect(t.origin.heldBy(t.page)).toEqual([peerLockName((start as { pageId : string }).pageId)]);
+        t.handles.stop();
+        t.listener.close();
+    });
+
+    it("tells the watch about each hang that the worker monitor counts as ended, not about an abandoned hang of the journal", async () => {
+        const noteHangEnded = vi.spyOn(PeerHangWatch.prototype, "noteHangEnded");
+        const origin = new SimulatedOrigin();
+        const { BroadcastChannel, locks } = origin.page().deps();
+        const browser = createFakeBrowser();
+        // A hang that an earlier page did not survive: the worker monitor reports it as abandoned at its start
+        const hangJournal = createMemoryHangJournal();
+        await hangJournal.put({ pageId : "closed-page", startedAt : Date.now() - 100_000, lastSeenAt : Date.now() - 90_000, attributes : {} });
+        const handles = setupAllMonitors({ ...browser.deps, BroadcastChannel, locks, hangJournal });
+        await advance(10);
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ phase : "abandoned" }));
+        expect(noteHangEnded).not.toHaveBeenCalled();
+        await advance(1_000);
+        browser.blockMain();
+        await advance(8_000);
+        browser.unblockMain();
+        await advance(5_000);
+        // One abandoned hang from the journal and one ended hang
+        expect(browser.meter.sum("lag_main_thread_hangs")).toBe(2);
+        expect(noteHangEnded).toHaveBeenCalledTimes(1);
+        handles.stop();
+        noteHangEnded.mockRestore();
+    });
+
+    it("needs the wall clock, BroadcastChannel and the Web Locks API for the watch", () => {
+        const origin = new SimulatedOrigin();
+        const { BroadcastChannel, locks } = origin.page().deps();
+        const browser = createFakeBrowser();
+        const { wallClock : _wallClock, ...deps } = browser.deps;
+        for (const handles of [
+            setupAllMonitors({ ...deps, BroadcastChannel, locks }),
+            setupAllMonitors({ ...browser.deps, BroadcastChannel }),
+            setupAllMonitors({ ...browser.deps, locks }),
+        ]) {
+            expect(handles.registry.getAll().map(h => h.name)).not.toContain("peer-hang-watch");
+            handles.stop();
+        }
+    });
+
+    it("counts a hang of the worker monitor without an event sink, with the watch", async () => {
+        const origin = new SimulatedOrigin();
+        const { BroadcastChannel, locks } = origin.page().deps();
+        const browser = createFakeBrowser();
+        const { events : _events, ...deps } = browser.deps;
+        const handles = setupAllMonitors({ ...deps, BroadcastChannel, locks });
+        await advance(1_000);
+        browser.blockMain();
+        await advance(8_000);
+        browser.unblockMain();
+        await advance(5_000);
+        expect(browser.meter.sum("lag_main_thread_hangs")).toBe(1);
+        expect(browser.logger.log).not.toHaveBeenCalledWith("error", expect.anything(), expect.anything());
+        handles.stop();
+    });
+});
+

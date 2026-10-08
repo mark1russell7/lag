@@ -135,6 +135,6 @@ The worker and the browser can report while the main thread cannot operate. Thus
   caption="The worker and the crash-report context get the ID at each new page view, while the main thread can still operate."
 />
 
-`setupAllMonitors()` adds the page-view context only when the page-view vitals operate, and only with a worker monitor or a crash-report context. `createBrowserDeps()` gives `window.crashReport` only if it has a `set()` function, and only while `crashReportContext` is not `false`. If another script initialized the crash-report context first, `initialize()` fails, but `set()` still operates.
+`setupAllMonitors()` adds the page-view context only when the page-view vitals operate, and only with a worker monitor, a peer hang watch or a crash-report context. `createBrowserDeps()` gives `window.crashReport` only if it has a `set()` function, and only while `crashReportContext` is not `false`. If another script initialized the crash-report context first, `initialize()` fails, but `set()` still operates.
 
 Chromium sends a crash report, for example for an unresponsive page that the browser stopped, to the reporting endpoint of the page. The endpoint is the `crash-reporting` endpoint of the `Reporting-Endpoints` header, or the `default` endpoint. A script cannot read these reports with a `ReportingObserver` ([browser support](/research/browser-support)). Thus the report gets to your server, and the server can connect it with the events of the page view through `lag.page_view.id`.

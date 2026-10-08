@@ -14,6 +14,7 @@ const REQUIRED : Readonly<Record<string, readonly string[]>> = {
         "monitors/drift-lag",
         "monitors/macrotask-lag",
         "monitors/worker-lag",
+        "monitors/peer-hang-watch",
         "monitors/long-animation-frames",
         "monitors/event-timing",
         "monitors/layout-shift",

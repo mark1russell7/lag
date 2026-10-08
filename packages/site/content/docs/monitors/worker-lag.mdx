@@ -97,6 +97,8 @@ A page can close or crash during a hang. Then nobody reports the end of the hang
 
 The duration of an abandoned hang is the time from the start of the hang to the last write of the worker. The page ID is a random ID of 32 hexadecimal digits for each page instance (`createRandomId()`). The main thread sends the page ID to the worker only when it has a journal. Without a page ID, the worker writes no records. In WebKit and Safari, the writes of the worker complete only after the hang. Thus there, the journal does not keep a hang that the page does not survive.
 
+Another open page can also report a hang that the page did not survive, at once, through the [peer hang watch](/docs/monitors/peer-hang-watch). That page takes the journal record of the hung page. Thus the next page does not report the hang again.
+
 ### System stalls
 
 A worker timer that was 5000 ms late or more is evidence that the whole system stopped. An example is a sleep of the device. With measurement conditions, the factory gives this period to the reliability tracker as a `suspend` interval. The interval ends when the worker sent the heartbeat: the receive time minus the delivery delay. It starts at that end minus the lateness of the worker timer. Then the timer-driven monitors discard their samples that overlap it, also samples that wait for late evidence.
@@ -120,6 +122,7 @@ The research does not give versions for IndexedDB and `fetch` with `keepalive`. 
 - In Chromium, a message from a worker to its page is a posted-message task. The scheduler can pause it, but it does not throttle it.
 - The time origin of a worker is the start of the worker. In a probe of Chrome 153, the `timeOrigin` of the worker was approximately 20.9 s after the `timeOrigin` of the page. The absolute clock removes this difference.
 - In WebKit and in Safari 26.6.2 on macOS, a worker completes its IndexedDB requests and its `fetch` requests on the main thread of the page. Thus they wait for the end of a block. This is also true for a shared worker and for a service worker. Chromium and Firefox complete them during a block ([experiment E4](/research/local-experiments)).
+- In WebKit and Safari, all other output of a worker also waits: the origin private file system (OPFS), the Cache API, `XMLHttpRequest`, WebSocket and BroadcastChannel. In Firefox, an `XMLHttpRequest` and a WebSocket of a worker wait, but the storage APIs do not ([experiments E6 and E7](/research/local-experiments)).
 
 ## Measurement validity
 
@@ -143,7 +146,7 @@ Each hang gives a `lag.main_thread.hang` event, with the attribute `phase`:
 |---|---|---|
 | `started` | The worker, as an OTLP log record to `workerHangReport.url` | `phase`, `duration_ms` (the time since the last acknowledgement), the page context (`lag.page_view.id`) |
 | `ended` | The worker (OTLP), and the main thread through the event sink | `phase`, `duration_ms`, `lag.page_view.id` |
-| `abandoned` | A later page, through its event sink | `phase`, `duration_ms`, `lag.hang.page_id` (the page that hung), the page context of the hang (`lag.page_view.id`) |
+| `abandoned` | A later page, through its event sink (`lag.hang.source: "journal"`). Or the [peer hang watch](/docs/monitors/peer-hang-watch): another open page (`lag.hang.source: "peer"`), or the hung page itself at its close (`lag.hang.source: "self"`) | `phase`, `duration_ms`, `lag.hang.page_id` (the page that hung), `lag.hang.source`, the page context of the hang (`lag.page_view.id`) |
 
 The main thread counts each `ended` and `abandoned` hang in `lag_main_thread_hangs`, with the attribute `outcome`.
 
@@ -215,7 +218,9 @@ The collector must accept cross-origin `POST` requests with JSON from the page. 
 - **The clock uncertainty.** The offset has an uncertainty of half the round trip plus the clock resolution. The research gives approximately ±0.2 ms more in Chrome, and ±1–2 ms in Firefox and Safari ([clocks and timers](/research/clocks-and-timers)).
 - **No hang detection in hidden pages.** The heartbeats stop while the page is hidden. A hang that continues when the page becomes hidden ends at the `stop`.
 - **A hang that ends at the stop of the handle.** The `stop()` of the handle removes the listener. Thus the main thread does not count a hang that ends at that time. The worker still removes the record, and it sends its `ended` report when it has a report target.
-- **No report and no record during a hang in WebKit and Safari.** The timer of the worker continues, thus the worker detects the hang. But WebKit and Safari 26.6.2 complete the report (`fetch`) and the record (IndexedDB) only when the main thread operates again ([experiment E4](/research/local-experiments)). Thus there, a hang that the page does not survive leaves no report and no record. A service worker is no way out, because its writes and fetches also wait. In Chromium and Firefox, the two operations complete during the hang.
+- **No report and no record during a hang in WebKit and Safari.** The timer of the worker continues, thus the worker detects the hang. But WebKit and Safari 26.6.2 complete the report (`fetch`) and the record (IndexedDB) only when the main thread operates again ([experiment E4](/research/local-experiments)). The other storage and network APIs of a worker also wait: OPFS, the Cache API, `XMLHttpRequest`, WebSocket and BroadcastChannel ([experiments E6 and E7](/research/local-experiments)). Thus there, a hang that the page does not survive leaves no report and no record. A service worker is no way out, because its writes and fetches also wait.
+
+  In Chromium and Firefox, the two operations complete during the hang. Where a second page of the origin is open, the [peer hang watch](/docs/monitors/peer-hang-watch) reports such a hang.
 - **The start of a hang is only in the hang report.** Without `workerHangReport`, a hang that does not end is lost unless the journal has it.
 - **Late abandoned reports.** A record is abandoned only after 30 s without a write. A page that starts less than 30 s after the last write does not report the record. A page of the origin that starts later reports it. If no page of the origin starts again, nobody reports it.
 - **IndexedDB can be unavailable.** For example, some private windows do not let a page use it. Then the worker keeps no records, and the monitor logs "Could not read the hang journal."
@@ -239,6 +244,7 @@ Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in
 - `worker.test.ts`: a real Web Worker sends at least 8 heartbeats in 1.5 s, in sequence, with an average delay of less than 20 ms. After an 800 ms block, at least 10 heartbeats arrive, and the largest delay is more than 600 ms.
 - `hang-journal.test.ts`: a 6.5 s block, and a worker that stops before the main thread can operate again. IndexedDB keeps one record with a hang of 5 s or more and the page-view ID. The test skips itself where a probe finds that the IndexedDB requests of a worker wait for the main thread, as in WebKit and Safari. The skip comes from that measurement, not from the name of the browser.
 - `worker-io.test.ts`: the main thread blocks for 2 s. In Chromium, Firefox and Chrome, an IndexedDB write and a `fetch` with `keepalive` of a dedicated worker complete in the first half of the block. There, a shared worker and a service worker each complete more than 5 operations during the block. In WebKit and Safari, the test expects the write and the fetch after the block, and no operation of the other workers during it. Thus the test fails if an engine changes. A test skips itself without `SharedWorker`, or where the page cannot have a service worker.
+- `worker-io.test.ts`, experiment E6: three OPFS operations, `Cache.put()`, an `XMLHttpRequest` (asynchronous and synchronous) and a WebSocket message of a dedicated worker. A WebSocket server in Node records when the message arrives. The test expects each operation after the block in WebKit and Safari. In Firefox, it expects an `XMLHttpRequest` and a WebSocket message after the block. It expects all others during the block. A test skips itself where the worker does not have the API, as OPFS in the WebKit build for Windows.
 - `lag-monitors.test.ts`: a 500 ms block gives a delay of more than 300 ms, while the worker timer stays less than 100 ms late.
 - `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no delay while the page is hidden or frozen. After the page is visible again, each delay is less than 200 ms, also after a freeze of 2 s.
 - `cdp/cpu-throttling.test.ts` (Chromium in the new headless mode): the worker sends a heartbeat each 25 ms. With 4× CPU throttling, the same work gives a median delay of more than 2.5 times the delay without throttling.
