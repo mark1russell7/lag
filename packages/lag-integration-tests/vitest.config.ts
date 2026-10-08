@@ -155,9 +155,9 @@ export default defineConfig({
     test : {
         testTimeout : 60_000,
         globals : true,
-        // Vitest reads the connect timeout of the browser only from the root config. The iOS Simulator
-        // and Safari can need more than the default of 60 s to open the first page.
-        ...(process.env["LAG_IOS"] === "1" ? { browser : { connectTimeout : 300_000 } } : {}),
+        // Vitest reads the connect timeout of the browser only from the root config. In the iOS
+        // Simulator, safaridriver needed up to 131 s and more than one try to open the first session.
+        ...(process.env["LAG_IOS"] === "1" ? { browser : { connectTimeout : 600_000 } } : {}),
         projects : [
             // Every test in every engine. The Chromium-only tests skip themselves elsewhere (src/features.ts).
             // The files of one engine run one after another: the timing tests measure milliseconds, and 28

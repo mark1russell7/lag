@@ -45,7 +45,9 @@ jobs:
         run: |
           defaults write com.apple.Safari NSAppSleepDisabled -bool YES
           defaults write NSGlobalDomain NSAppSleepDisabled -bool YES
+      # Without a simulator, the iOS tests fail, but the Safari tests still give their reports
       - name: Boot an iPhone simulator
+        continue-on-error: true
         run: .github/scripts/boot-ios-simulator.sh
       - name: Test in Safari and in Safari on iOS
         continue-on-error: true

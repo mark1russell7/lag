@@ -20,7 +20,7 @@ import {
     type TeeMeter,
 } from "./harness.js";
 import { features } from "./features.js";
-import { recordMeasurement } from "./commands.js";
+import { environment, recordMeasurement } from "./commands.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
 const SERVICE_NAME = "lag-integration-test";
@@ -181,6 +181,8 @@ describe("Lag Monitor Integration", () => {
         expect(vitals["TTFB"]!.value).toBeGreaterThanOrEqual(0);
         expect(vitals["FCP"]!.value).toBeGreaterThan(0);
         expect(vitals["LCP"]!.value).toBeGreaterThanOrEqual(vitals["FCP"]!.value);
+        // web-vitals also gives no INP there (web-vitals-oracle.test.ts)
+        ctx.skip(environment() === "ios" && vitals["INP"] === undefined, "In the iOS Simulator, the click of safaridriver gives no INP.");
         // WebKit gave 119.99999999999955 ms one time: its clock moves in steps of 1 ms, and a duration is a
         // difference of two times. Thus the limits have a margin of 1 ms.
         expect(vitals["INP"]!.value).toBeGreaterThanOrEqual(119);
