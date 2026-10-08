@@ -16,7 +16,7 @@ export type EnvironmentMatrix = {
     rows : readonly MatrixRow[];
 };
 
-const KNOWN_ORDER = ["node", "chromium", "chrome", "edge", "firefox", "webkit", "safari"];
+const KNOWN_ORDER = ["node", "chromium", "chrome", "edge", "firefox", "webkit", "safari", "ios"];
 
 /** Node first, then the browser engines in a fixed order, then other names in alphabetical order. */
 export function compareEnvironments(a : string, b : string) : number {
