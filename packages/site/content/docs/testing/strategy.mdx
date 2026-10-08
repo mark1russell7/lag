@@ -53,7 +53,7 @@ The browser tests use Vitest browser mode with Playwright. Each test file operat
 
 - `browser-facts.test.ts`: the facts of the research about each engine. These are the supported entry types, and the order of the listeners at `window` (experiment E1). The test fails if an engine changes, and then the documents need an update.
 - `soft-navigation.test.ts` (Chrome): a real soft navigation in a top-level page. The command `clickInTopLevelPage` opens the page and clicks with Playwright, because Chrome detects soft navigations only in the top-level frame.
-- `drift-accuracy.test.ts`: the median lag of DriftLag on an idle page is less than 5 ms, or 10 ms in a window without focus. A 300 ms block gives more than 300 ms minus one step and 10 ms, and less than 340 ms.
+- `drift-accuracy.test.ts`: the median lag of DriftLag on an idle page is less than 5 ms, or 10 ms in a window without focus. A 300 ms block gives more than 300 ms minus one step and 10 ms (20 ms without focus), and less than 340 ms.
 - `lifecycle.test.ts`: the lifecycle machine notifies its subscribers before a listener that the page added earlier. It uses the time of the event, and it removes its listeners at the end.
 - `lag-monitors.test.ts`: the monitors on a real page, and the INP of a real click on a button that blocks for 120 ms.
 - `worker.test.ts` and `hang-journal.test.ts`: the worker heartbeat, a hang of 6.5 s, and the record of the hang in IndexedDB.
