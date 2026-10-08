@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@mark1russell7/ste-lint':
+        specifier: github:mark1russell7/ste-lint
+        version: https://codeload.github.com/mark1russell7/ste-lint/tar.gz/f597d6c1e09bcfcb487bb575825d6d5f29e9e0c7
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -225,19 +228,6 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
-
-  packages/ste-lint:
-    dependencies:
-      typescript:
-        specifier: ^5.9.3
-        version: 5.9.3
-    devDependencies:
-      '@types/node':
-        specifier: ^25.3.0
-        version: 25.3.0
-      vitest:
-        specifier: ^4.1.2
-        version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@25.3.0)(@vitest/browser-playwright@4.1.2)(@vitest/browser-webdriverio@4.1.2)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
 
 packages:
 
@@ -875,6 +865,12 @@ packages:
   '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/a4a77223b4bcec6c5ed62c9513c59263b0a224c0':
     resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/a4a77223b4bcec6c5ed62c9513c59263b0a224c0}
     version: 0.0.1
+
+  '@mark1russell7/ste-lint@https://codeload.github.com/mark1russell7/ste-lint/tar.gz/f597d6c1e09bcfcb487bb575825d6d5f29e9e0c7':
+    resolution: {tarball: https://codeload.github.com/mark1russell7/ste-lint/tar.gz/f597d6c1e09bcfcb487bb575825d6d5f29e9e0c7}
+    version: 0.1.0
+    engines: {node: '>=22'}
+    hasBin: true
 
   '@mdx-js/mdx@3.1.1':
     resolution: {integrity: sha512-f6ZO2ifpwAQIpzGWaBQT2TXxPv6z3RBzQKpVftEWN78Vl/YweF1uwussDx8ECAXVtr3Rs89fKyG9YlzUs9DyGQ==}
@@ -3408,6 +3404,11 @@ packages:
     engines: {node: '>=14.17'}
     hasBin: true
 
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
   ua-parser-js@1.0.41:
     resolution: {integrity: sha512-LbBDqdIC5s8iROCUjMbW1f5dJQTEFB1+KO9ogbvlb3nm9n4YHa5p4KTvFPWvh2Hs8gZMBuiB1/8+pdfe/tDPug==}
     hasBin: true
@@ -4366,6 +4367,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
       - zone.js
+
+  '@mark1russell7/ste-lint@https://codeload.github.com/mark1russell7/ste-lint/tar.gz/f597d6c1e09bcfcb487bb575825d6d5f29e9e0c7':
+    dependencies:
+      typescript: 6.0.3
 
   '@mdx-js/mdx@3.1.1':
     dependencies:
@@ -7544,6 +7549,8 @@ snapshots:
       underscore: 1.13.8
 
   typescript@5.9.3: {}
+
+  typescript@6.0.3: {}
 
   ua-parser-js@1.0.41: {}
 

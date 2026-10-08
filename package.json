@@ -16,11 +16,12 @@
     "coverage": "pnpm --filter @lag/core coverage",
     "mutation": "pnpm --filter @lag/core mutation",
     "results": "tsc -b && tsx packages/scripts/src/results/collect.ts",
-    "lint:ste": "tsx packages/ste-lint/src/cli.ts",
+    "lint:ste": "ste-lint",
     "readme:metrics": "tsx packages/scripts/src/readme-metrics.ts",
     "readme:metrics:check": "tsx packages/scripts/src/readme-metrics.ts --check"
   },
   "devDependencies": {
+    "@mark1russell7/ste-lint": "github:mark1russell7/ste-lint",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
