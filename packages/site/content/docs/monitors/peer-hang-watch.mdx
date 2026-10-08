@@ -1,0 +1,180 @@
+---
+title: Peer hang watch
+description: Reports the pages that closed during a hang, also in WebKit and Safari. Another open page of the origin sees the end of a hung page through its Web Lock, and a page that closes at the end of a hang reports the hang itself.
+order: 24.5
+status: final
+---
+
+import { hangMetrics } from "./metrics.data";
+
+`PeerHangWatch` counts the hangs that a page did not survive. The user closed the page, or the page crashed, while its main thread did not operate. It has two ways to see such a hang:
+
+- **Another page of the origin.** A visible page holds a Web Lock and sends a heartbeat each second through a `BroadcastChannel`. Each other page of the origin asks for that lock. When the browser stops a hung page, it releases the lock, and another page reports the hang.
+- **The page itself, at its close.** Firefox and Safari on macOS do not stop a hung page that the user closes. Then the page operates again for a short time before it closes, and it reports its own hang.
+
+The watch does not need a worker. In WebKit and Safari, it is the only way to keep a hang that the page does not survive. A worker there writes and sends only through the main thread ([experiments E4 and E6](/research/local-experiments)).
+
+## What it measures
+
+The signal is the count and the duration of the hangs that ended with the end of the page. The watch records each of them in the metrics of the [worker monitor](/docs/monitors/worker-lag), with the outcome `abandoned`. It also sends a `lag.main_thread.hang` event with the context of the hung page.
+
+The watch answers this question: did a page close during a hang, also in WebKit and Safari? The worker monitor detects a hang while it continues, and its journal keeps the hang in Chromium and Firefox. The watch adds the engines where the journal cannot operate ([experiment E7](/research/local-experiments)).
+
+## How it works
+
+<Mermaid
+  title="The peer hang watch"
+  caption="Page B hangs and the user closes it. Chromium stops B, thus the browser gives the lock of B to page A, and A reports the hang. Firefox and Safari let B operate again before it closes. Then B reports its own hang at its close, and says away."
+  chart={`
+sequenceDiagram
+    participant B as Page B (visible)
+    participant L as Lock manager of the browser
+    participant A as Page A (another tab)
+    B->>L: request lag-page:B (held)
+    loop each second
+        B-->>A: beat (page ID, time, page context)
+    end
+    A->>L: request lag-page:B (waits)
+    Note over B: The main thread hangs: no beats
+    Note over B: The user closes the page
+    alt Chromium: the browser stops B
+        L->>A: lag-page:B granted
+        Note over A: Wait 1 s for late messages, then report (source peer)
+    else Firefox and Safari: B operates again
+        Note over B: pagehide: report the own hang (source self)
+        B-->>A: away
+        L->>A: lag-page:B granted, A reports nothing
+    end
+`}
+/>
+
+### Another page sees the end of a hung page
+
+1. A page that becomes visible requests the lock `lag-page:<page ID>`. When it has the lock, it sends a `beat` message through the channel `lag-peer-hang-watch`, and then one each 1000 ms (`PEER_BEAT_INTERVAL_MS`). The beat has the page ID, the wall-clock time (`Date.now()`) and the page context, for example `lag.page_view.id`.
+2. A page that becomes hidden, goes into the back/forward cache or closes sends `away`. Then it releases its lock. Thus a hidden page holds no lock and sends no beats.
+3. Each page listens on the channel. For each page that it sees for the first time, it requests the lock of that page. The browser gives that lock when the other page releases it, or when the browser stops the other page. A hung page cannot release its lock.
+4. When the lock comes free, the watch waits 1000 ms (`PEER_GRACE_MS`) for the last messages of the page. A message and a lock take different paths through the browser, thus an `away` can arrive after the lock.
+5. If the page did not say `away`, and its last beat is 5000 ms old or older (`PEER_HANG_THRESHOLD_MS`), the browser stopped the page during a hang.
+6. The watch then requests `lag-page-claim:<page ID>` with `ifAvailable`. Only the first page gets it, and it keeps the claim until it stops. Thus one page only reports the hang, also when many pages watch.
+7. The page that has the claim takes the record of the hung page from the [hang journal](/docs/monitors/worker-lag), if the worker of that page wrote one. Then it reports the hang with the times of the record. Without a record, it uses its own times: from the last beat to the end of the page.
+
+### The page reports its own hang at its close
+
+The lifecycle state `terminated` (`pagehide` without the back/forward cache) means that the page closes. At that time, the watch examines the heartbeats of its own page, with the monotonic clock:
+
+- No heartbeat for 5000 ms or more until the close: the page closes at the end of a hang.
+- A heartbeat after a gap of 5000 ms or more, less than one interval before the close: the same. The heartbeat came between the hang and the close, because its timer was due during the hang.
+
+Then the page records the hang itself, with `lag.hang.source: "self"`. The recording comes before the last export of the page, because the lifecycle listeners operate in the capture phase ([page lifecycle](/docs/concepts/page-lifecycle)). The duration is from the last heartbeat before the gap to the close.
+
+The worker monitor can count the same hang as `ended`, if the main thread handles the messages of the worker before the close. `setupAllMonitors()` tells the watch about each hang that the worker monitor counts (`noteHangEnded()`). The page then does not report that hang again.
+
+## Browser support
+
+The watch uses `BroadcastChannel` and the Web Locks API (`navigator.locks`). Both are available in the current versions of Chromium, Firefox and Safari. The research did not verify the first versions. Web Locks need a secure context: in a probe of Safari on iOS, a `data:` page had no `navigator.locks`.
+
+Experiment E7 measured each part of the watch ([local experiments](/research/local-experiments)). The Playwright builds operated on Windows 11 and on Linux. Safari 26.6.2 operated on a GitHub macOS runner.
+
+| Measurement | Chromium | Firefox | WebKit (Playwright) | Safari 26.6.2 |
+|---|---|---|---|---|
+| The other page operates during a block of 4 s | Yes | Yes | Yes | Yes |
+| The lock of the blocked page stays held during the block | Yes | Yes | Yes | Yes |
+| A BroadcastChannel message of a worker of the blocked page arrives during the block | Yes | Yes | No, after the block | No, after the block |
+| The test closes the blocked page: what the browser does | It stops the page. The other page gets the lock 0.5 s to 8 s later. | It stops the blocked script. The page closes normally 13 ms to 38 ms later. | Windows: it stops the page, and the lock comes free less than 60 ms later. Linux: the lock comes free after 3 s, and the page continues. | It lets the script continue to its end, also for 90 s. Then the page closes normally. |
+| The report of the hang | The other page (`peer`) | The closed page (`self`) | Windows: `peer`. Linux: `peer` and `self` | The closed page (`self`) |
+
+Safari 26.5 in the iOS Simulator stopped a closed page during a block of 90 s. The other page got the lock 3.4 s to 5.3 s after the start of the close, and the page sent no `pagehide`. Thus on iOS, only another page can report the hang, as in Chromium.
+
+Safari on iOS operates only the visible tab. A hidden tab operates again when the user goes back to it. The research did not examine if that tab then gets the heartbeats of a page that hung while it was hidden. Thus the watch on iOS is not verified from end to end.
+
+## Measurement validity
+
+- **Only visible pages.** A page sends beats only while it is visible (the lifecycle states `active` and `passive`). Browsers slow or stop the timers of hidden pages. Thus a silent hidden page is not a hang, and a hidden page does not report its own hang at its close.
+- **Its own time.** Another page does not use its own timers to find a hang. It compares the time of the last beat with the time of the lock grant. Thus a hidden watching page, whose timers the browser slows, still reports correctly. Only the wait of 1000 ms for late messages uses a timer.
+- **A crash is not a hang.** A page that ends less than 5000 ms after its last beat closed or crashed without a hang. The watch reports nothing for it.
+- **A system sleep.** During a sleep, all pages stop. A page that continues after the sleep keeps its lock, thus another page reports nothing. The own report uses the monotonic clock, which stops during a sleep, except on Windows.
+
+## Metrics
+
+<MetricTable metrics={hangMetrics} />
+
+The watch records only the outcome `abandoned`. The `lag.main_thread.hang` event of the watch has the phase `abandoned`, `duration_ms`, `lag.hang.page_id` (the page that hung) and `lag.hang.source`. The source is `peer` for a report of another page, and `self` for the report of the hung page at its close. A report from the hang journal has `lag.hang.source: "journal"`. The event also has the page context of the hung page.
+
+## Configuration
+
+```ts
+function createInstrumentedPeerHangWatch(
+    deps : CoreDeps & PeerDeps & WallClockDeps & TimerDeps & Partial<EventDeps>
+        & Pick<WorkerMonitorDeps, "hangJournal" | "pageId">,
+    lifecycle : LifecycleStateMachine,
+) : MonitorHandle<PeerHangWatch>;
+```
+
+`PeerDeps` has `BroadcastChannel` and `locks` (the part of `navigator.locks` that the watch uses). `setupAllMonitors()` adds the watch when it has `BroadcastChannel`, `locks`, `wallClock` and the lifecycle. It gives the watch and the worker monitor one page ID, thus the watch can take the journal record of the worker. The [page-view context](/docs/monitors/page-view-context) gives the current page-view ID to the beats.
+
+`createBrowserDeps()` gives `BroadcastChannel` and `navigator.locks` when the browser has them. The option `peerHangWatch: false` turns the watch off:
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, setupAllMonitors } from "@lag/core";
+
+const handles = setupAllMonitors(createBrowserDeps(window, {
+    logger : console,
+    meter : metrics.getMeter("lag"),
+    // The default is true
+    peerHangWatch : true,
+}));
+console.log(handles.peerHangWatch !== undefined);
+```
+
+| Option of `PeerHangWatchOptions` | Default | What it does |
+|---|---|---|
+| `beatIntervalMs` | 1000 | The interval of the beats of a visible page. |
+| `thresholdMs` | 5000 | The silence that makes the end of a page an abandoned hang. It is the hang threshold of the worker monitor. |
+| `graceMs` | 1000 | The wait for the last messages of a page after its lock comes free. |
+
+The channel name and the lock names are a protocol between the pages of an origin, also between pages with different versions of the library. A test keeps them.
+
+## Cost
+
+- **A visible page:** one `BroadcastChannel` message each second, and one held Web Lock.
+- **Each page:** one waiting lock request for each visible page of the origin, and one message handler.
+- **For each page that ends:** one timeout of 1000 ms. For an abandoned hang, one claim lock until the watch stops, and one `take()` of the journal.
+
+A hidden page holds no lock. The page also releases its lock in `pagehide`, before it goes into the back/forward cache. The research did not examine if a held Web Lock stops that cache in an engine.
+
+## Limits
+
+- **An endless hang in Safari on macOS.** Safari on macOS lets the script of a closed page continue until it ends. A script that does not end keeps the page alive without a window. Then neither the page nor another page reports the hang.
+- **Another page is necessary in Chromium and on iOS.** Chromium and Safari on iOS stop a hung page that the user closes. Then only another open page of the origin can report the hang. In Chromium, the next page can also report it from the hang journal of the worker.
+- **One visible tab on iOS.** Safari on iOS operates only the visible tab, thus a hidden watching page operates only when the user goes back to it. The browser test cannot make a hung visible tab and a second tab that operates on iOS, thus it skips itself there.
+- **One process.** A browser can put two pages of one site in one process. Then they share one main thread, and a hang stops both of them. Chrome can do this for pages of the same site.
+- **A double count in WebKit for Linux.** The WebKit build of Playwright for Linux releases the lock of a closed page after approximately 3 s, but the page continues. When its script ends, the page reports its own hang too. Thus the hang counts two times there.
+- **The end of the hang.** For a report of another page, the end is the time of the lock grant. Chromium gave the lock up to 8 s after the close. Thus without a journal record, a hang can seem longer by that time.
+- **The start of the hang.** The last beat is the start. The hang started between that beat and the next beat, thus at most 1000 ms later.
+- **The last export.** The own report must go out in the last export of the page, at `pagehide`. Thus it depends on the exporter of the page ([survivorship](/docs/concepts/survivorship)).
+- **A browser crash or a quit.** When the browser stops all pages at the same time, no page is left to report. The watch keeps no record of its own.
+
+## Tests
+
+Unit tests:
+
+- `PeerHangWatch.test.ts`: the tests use a simulated origin (`test-peers.ts`). It has a `BroadcastChannel` hub, and a Web Lock manager with a queue for each lock name. The tests examine the lock of a visible page, and its release when the page becomes hidden. A page that the browser stops during a hang gives a report, with the time of its last beat.
+- `PeerHangWatch.test.ts`, no report of another page: the page survives, closes normally, becomes hidden, or ends less than 5 s after its last beat. One report only, also with four pages and after the reporter stops. The wait for a late `away`, with a delay of the messages.
+- `PeerHangWatch.test.ts`, the own page at its close: a close at the end of a hang, with and without a heartbeat before the close. The limits of exactly 5 s. No report for a normal close or for a close some time after a hang. No report for a hang that the worker monitor counted, or for a page that becomes hidden.
+- `PeerHangWatch.test.ts`, other cases: the record of the worker from the journal, and the own times when the journal fails. A hidden page watches. The protocol names. The checks of the messages.
+- `instrumented/peer-hang-watch.test.ts`: the metrics and the event in the catalog, the context of the hung page, and the record of the journal. The own report at `pagehide`, and no report when the page goes into the back/forward cache. The lock only while the page is visible.
+- `setup-all-monitors.test.ts`: the setup adds the watch, gives the page-view ID to its beats, and gives the worker and the watch one page ID. The watch learns of each hang that the worker monitor counts as ended, but not of an abandoned hang from the journal.
+- `browser-deps.test.ts`: `BroadcastChannel` and `navigator.locks`, bound to `navigator.locks`, and the option `peerHangWatch: false`.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), and the CI job in Safari):
+
+- `peer-hang-watch.test.ts`: a second top-level page operates all monitors and blocks its main thread for 12 s. The test closes it after 7 s. In Chromium, Chrome and WebKit for Windows, the monitors of the test page report the hang (`peer`). In Firefox and Safari on macOS, the closed page reports its own hang (`self`), and the test page reports nothing. The report has the page-view ID of the closed page and a duration of 5 s or more.
+- `peer-hang-watch.test.ts`, the other engines: in WebKit for Linux, the test expects both reports. The test skips itself in Safari on iOS (refer to the limits).
+- `peer-tab.test.ts` (experiment E7): the parts of the watch with the real APIs. The silence of the main thread, the lock during the block, and the BroadcastChannel of a worker. What each browser does when the test closes the blocked page.
+
+## Source
+
+- [`PeerHangWatch.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/PeerHangWatch.ts): the watch.
+- [`instrumented/peer-hang-watch.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/peer-hang-watch.ts): the factory.
+- [`test-peers.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/test-peers.ts): the simulated origin of the unit tests.

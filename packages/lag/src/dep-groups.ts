@@ -44,6 +44,7 @@ import type { FinalizationRegistryConstructor } from "./GCSignalDetector.js";
 import type { WorkerLike } from "./WorkerLagMonitor.js";
 import type { HangReportTarget } from "./worker-protocol.js";
 import type { HangJournal } from "./hang-journal.js";
+import type { BroadcastChannelConstructor, LockManagerLike } from "./PeerHangWatch.js";
 import type { ReportingObserverInit } from "./BrowserReportMonitor.js";
 import type { PageSource } from "./vitals/types.js";
 import type { AbsoluteClock } from "./absolute-clock.js";
@@ -131,6 +132,15 @@ export type WorkerMonitorDeps = {
     hangJournal? : HangJournal;
     /** The ID of this page instance. The default is a new random ID. */
     pageId? : string;
+};
+
+/**
+ * `BroadcastChannel` and the Web Locks API (`navigator.locks`), for the peer
+ * hang watch: the open pages of an origin watch each other for hangs.
+ */
+export type PeerDeps = {
+    BroadcastChannel : BroadcastChannelConstructor;
+    locks : LockManagerLike;
 };
 
 /** The crash-report context of Chromium (`window.crashReport`, Chrome 145). */

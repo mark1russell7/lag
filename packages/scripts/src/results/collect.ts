@@ -8,7 +8,8 @@
  *    browser, cdp and coi projects), then the overhead benchmark alone.
  * 3. The tests of @lag/site (Node and Chromium).
  * 4. With --soak and --e2e: the soak test and the e2e tests. With --safari:
- *    the browser tests in Safari (only on macOS, through safaridriver).
+ *    the browser tests in Safari (only on macOS, through safaridriver). With
+ *    --ios: the browser tests in Safari in the iOS Simulator.
  *
  * Each run uses `project-reporter.ts`, which writes one Vitest JSON report
  * for each project. The browser tests write their measurements and budgets
@@ -18,7 +19,7 @@
  * `packages/site/public/data/results/`.
  *
  * Options: --skip-unit, --skip-browser, --skip-overhead, --skip-site,
- * --soak, --e2e, --safari, --no-mutation, --keep-temp.
+ * --soak, --e2e, --safari, --ios, --no-mutation, --keep-temp.
  *
  * Two options connect two machines. `--export-reports=<dir>` writes the raw
  * reports and the measurements of this machine to `<dir>`, and it writes no
@@ -93,6 +94,8 @@ const steps : Step[] = [
     ...(has("--soak") ? [{ title : "Soak test", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "soak"] }] : []),
     ...(has("--e2e") ? [{ title : "E2E tests with the Grafana stack", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "e2e"] }] : []),
     ...(has("--safari") ? [{ title : "Browser tests in Safari", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "browser (safari)"], env : { LAG_SAFARI : "1" } }] : []),
+    // A booted iOS Simulator is necessary. LAG_IOS_UDID selects it.
+    ...(has("--ios") ? [{ title : "Browser tests in Safari on iOS", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "browser (ios)"], env : { LAG_IOS : "1" } }] : []),
     ...(has("--skip-site") ? [] : [
         { title : "Tests of @lag/site", packageName : "@lag/site", dir : "packages/site", args : [] },
     ]),

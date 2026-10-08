@@ -100,10 +100,12 @@ The number of steps in a window comes from the rule of step 4 and the measured b
 
 Other platforms have other granularities ([clocks and timers](/research/clocks-and-timers)):
 
-- Safari on macOS aligns nested timers to a grid of 4 ms, and to 30 ms in Low Power Mode.
+- Safari aligns each one-shot timer of the nesting level 10 or more to the next boundary of a grid with a random offset ([`DOMTimer.cpp`](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/page/DOMTimer.cpp)). The grid is 4 ms on a visible page, and 30 ms in Low Power Mode or with thermal mitigation. The chain of DriftLag is such a chain. A step of 5 ms ends at the next boundary after 5 ms, thus a step takes 8 ms, or 30 ms in Low Power Mode.
 - Chromium on Windows uses a timer resolution of 1 ms on AC power and 8 ms on battery power.
 
-The calibration measures these granularities too. A CI job operates `drift-accuracy.test.ts` in Safari 26.6.2 on a GitHub macOS runner, and the test passes there. This site does not give the step of Safari. The WebKit build for Windows is not Safari on macOS.
+The calibration measures these granularities too. A CI job operates `drift-accuracy.test.ts` in Safari 26.6.2 on a GitHub macOS runner, and the test passes there with a baseline of 8.4 ms. Safari 26.5 in the iOS Simulator also gave 8.4 ms. The WebKit build for Windows is not Safari on macOS.
+
+A GitHub macOS runner cannot turn on Low Power Mode: `sudo pmset -a lowpowermode 1` gives "LowPowerMode not supported on AC Power". Thus the unit test `DriftLag.power.test.ts` uses the rule of the source on a simulated thread. With the grid of 4 ms, the baseline is 8 ms, as in the CI job. With the grid of 30 ms, DriftLag accepts steps of 30 ms as a granularity, and the idle lag stays near 0. A block of 300 ms then gives more than 260 ms of lag. Nobody tested DriftLag on a device in Low Power Mode.
 
 ## Measurement validity
 
@@ -188,6 +190,8 @@ The callbacks of the monitor are also tasks on the main thread. Thus the monitor
 ## Limits
 
 - **Before the first check, and in some browsers.** Before a check confirms the first value, a sustained load increases the baseline, and the monitor reports less lag. This is also true without `MessageChannel`. It is also true in a browser in which a message waits on an idle thread, for example the WebKit build of Playwright for Windows. The [worker monitor](/docs/monitors/worker-lag) measures that case correctly.
+
+  The cause of the wait is in the Windows port of WebKit. Its event loop schedules each task with a timer of 0 ms, and on Windows that timer can wait for the system timer tick ([local experiments](/research/local-experiments)). No major browser uses that port, thus the library does not work around it.
 - **A load at the start.** The first confirmed value is the recent baseline. After a load at the start of the page, it can be too long. It decreases with the recent baseline in 100 steps or less.
 - **A small increase of the granularity.** An increase of less than max(4 ms, half of the baseline) starts no row. The recent baseline follows it after approximately 50 steps, and then a check confirms it. Until then, each window has a small lag.
 - **A light load.** A probed step is idle if the thread was busy for less than max(2 ms, half of the extra duration of the step). Thus the steps of a light load can be in a confirmed baseline.
@@ -212,6 +216,7 @@ Unit tests (Vitest, fake timers):
 - `BusyTimeProbe.test.ts`: no busy time on an idle thread. Each task delays one message. A wait of 2 ms or less does not count, and a message of an earlier measurement does nothing.
 - `DriftLag.load.test.ts` uses a simulated thread with a timer queue and a message queue. Equal message tasks of 20 ms and timer tasks of 30 ms stay lag for 5 s, also with steps of 15.6 ms. Without a probe, the same load gives less than 5% lag. After the load, there is no lag.
 - `DriftLag.load.test.ts` also simulates three behaviors of browsers. In Chromium, a probed step is shorter and the next step is longer. In WebKit for Windows, a message waits also on an idle thread.
+- `DriftLag.power.test.ts`: the timer alignment of WebKit on the simulated thread, with three offsets of the grid. A grid of 4 ms gives a baseline of 8 ms. A grid of 30 ms (Low Power Mode) gives a baseline of 30 ms, an idle lag near 0, and the lag of a 300 ms block. A change into Low Power Mode and out of it.
 - `LagLogger.test.ts`: the thresholds of the 2 s and 5 s periods, the reset after each report, and no log for a hidden tab. The logger uses the interval of each measurement, for example windows of 93 ms.
 - `setup-all-monitors.test.ts`: a 250 ms lag goes into `lag_drift_histogram`. The validator discards a window that overlaps a system suspend. The monitor pauses while the page is hidden, and it keeps the first window after the page is visible again.
 

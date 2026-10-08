@@ -113,8 +113,10 @@ export type RecordedInstrument = {
 export function createRecordingMeter() {
     const instruments = new Map<string, RecordedInstrument>();
 
+    // Two instruments with the same name share their values, as in the OpenTelemetry SDK. For
+    // example, the worker monitor and the peer hang watch both record lag_main_thread_hangs.
     const recorder = (name : string, kind : RecordedInstrument["kind"], unit : string) => {
-        const instrument : RecordedInstrument = { name, kind, unit, values : [] };
+        const instrument : RecordedInstrument = instruments.get(name) ?? { name, kind, unit, values : [] };
         instruments.set(name, instrument);
         return (value : number, attributes? : unknown) => {
             instrument.values.push({ value, attributes : attributes as Record<string, unknown> | undefined });

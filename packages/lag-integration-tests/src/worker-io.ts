@@ -1,11 +1,12 @@
 /**
  * Probes of the input and output of workers while the main thread is
- * blocked. WebKit completes the IndexedDB requests and the fetches of a
+ * blocked (experiments E4 and E6). WebKit completes the input and output of a
  * worker on the main thread. Then a worker cannot write or send anything
  * during a hang, and the hang journal cannot keep a hang that the page does
  * not survive.
  */
 import { blockMainThread, wait } from "./harness.js";
+import { startProbeSocketServer, stopProbeSocketServer } from "./commands.js";
 
 /** The times of one probe, in milliseconds after the start of the block. */
 export type WorkerIoTimes = {
@@ -69,6 +70,9 @@ function scriptUrl(source : string) : string {
 
 const absoluteNow = () : number => performance.timeOrigin + performance.now();
 
+/** A URL of the Vitest server for the requests of the probes. The probes use only the end of each request, not its response. */
+const probeUrl = () : string => new URL(`/__lag_worker_io_probe?${Math.random()}`, location.href).href;
+
 async function probe(source : string, message : string, blockMs : number) : Promise<WorkerIoTimes> {
     const worker = new Worker(scriptUrl(source));
     try {
@@ -94,7 +98,167 @@ export function probeWorkerIndexedDb(blockMs : number) : Promise<WorkerIoTimes> 
 
 /** This function measures when a fetch with `keepalive` of a dedicated worker completes, during a block of `blockMs`. */
 export function probeWorkerFetch(blockMs : number) : Promise<WorkerIoTimes> {
-    return probe(FETCH_PROBE, new URL(`/__lag_worker_io_probe?${Math.random()}`, location.href).href, blockMs);
+    return probe(FETCH_PROBE, probeUrl(), blockMs);
+}
+
+
+/**
+ * The output operations of a dedicated worker that experiment E6 measures,
+ * in addition to those of E4:
+ * - `opfs-sync-access`: a write and a flush through a
+ *   `FileSystemSyncAccessHandle`, in the origin private file system (OPFS)
+ * - `opfs-writable`: a write through a `FileSystemWritableFileStream`, in the OPFS
+ * - `opfs-lookup`: `getDirectory()` and `getFileHandle()`, in the OPFS
+ * - `cache-put`: `Cache.put()` of the Cache API
+ * - `xhr` and `sync-xhr`: an `XMLHttpRequest`, asynchronous and synchronous.
+ */
+export type WorkerOutput = "opfs-sync-access" | "opfs-writable" | "opfs-lookup" | "cache-put" | "xhr" | "sync-xhr";
+
+/**
+ * The worker prepares each operation in a first message, for example it opens
+ * the file. A second message starts the operation. Thus the probe measures
+ * only the operation. The worker gives `unavailable` when it does not have
+ * the API.
+ */
+const OUTPUT_PROBE = `
+let fileHandle, accessHandle;
+const now = () => performance.timeOrigin + performance.now();
+async function prepare(kind) {
+    if (kind.startsWith("opfs-")) {
+        if (typeof navigator.storage?.getDirectory !== "function") return "The worker has no navigator.storage.getDirectory().";
+        const root = await navigator.storage.getDirectory();
+        fileHandle = await root.getFileHandle("lag-worker-io-" + kind, { create : true });
+        if (kind === "opfs-sync-access") {
+            if (typeof fileHandle.createSyncAccessHandle !== "function") return "The worker has no createSyncAccessHandle().";
+            accessHandle = await fileHandle.createSyncAccessHandle();
+        }
+        if (kind === "opfs-writable" && typeof fileHandle.createWritable !== "function") return "The worker has no createWritable().";
+    }
+    if (kind === "cache-put" && typeof caches === "undefined") return "The worker has no caches.";
+    return undefined;
+}
+function send(url, async) {
+    return new Promise((resolve) => {
+        const request = new XMLHttpRequest();
+        request.open("POST", url, async);
+        request.onloadend = resolve;
+        try { request.send("probe"); } catch { resolve(); }
+        if (!async) resolve();
+    });
+}
+async function operate(kind, url, start) {
+    const text = String(start);
+    if (kind === "opfs-sync-access") {
+        accessHandle.write(new TextEncoder().encode(text), { at : 0 });
+        accessHandle.flush();
+        accessHandle.close();
+    }
+    if (kind === "opfs-writable") {
+        const writable = await fileHandle.createWritable();
+        await writable.write(text);
+        await writable.close();
+    }
+    if (kind === "opfs-lookup") await (await navigator.storage.getDirectory()).getFileHandle("lag-worker-io-lookup", { create : true });
+    if (kind === "cache-put") await (await caches.open("lag-worker-io")).put(new Request(url), new Response(text));
+    if (kind === "xhr" || kind === "sync-xhr") await send(url, kind === "xhr");
+}
+self.onmessage = async (event) => {
+    const { kind, url, go } = event.data;
+    try {
+        if (!go) {
+            self.postMessage({ unavailable : await prepare(kind) });
+            return;
+        }
+        const start = now();
+        await operate(kind, url, start);
+        self.postMessage({ start, done : now() });
+    } catch (error) {
+        self.postMessage({ error : String(error) });
+    }
+};`;
+
+/** The worker opens a WebSocket in the first message, and sends one message through it in the second message. */
+const WEBSOCKET_PROBE = `
+let socket;
+self.onmessage = (event) => {
+    const { url, go } = event.data;
+    if (!go) {
+        socket = new WebSocket(url);
+        socket.onopen = () => self.postMessage({ ready : true });
+        socket.onerror = () => self.postMessage({ error : "The WebSocket did not open." });
+        return;
+    }
+    const start = performance.timeOrigin + performance.now();
+    socket.send(String(start));
+    self.postMessage({ start });
+};`;
+
+type ProbeReply = { unavailable? : string; error? : string; ready? : boolean; start? : number; done? : number };
+
+/** This function sends `message` to `worker` and gives the next reply. */
+function ask(worker : Worker, message : unknown) : Promise<ProbeReply> {
+    const reply = new Promise<ProbeReply>((resolve) => {
+        worker.onmessage = (event) => resolve(event.data as ProbeReply);
+    });
+    worker.postMessage(message);
+    return reply;
+}
+
+/**
+ * This function measures when an output operation of a dedicated worker
+ * completes, during a block of `blockMs`. It gives `undefined` when the
+ * worker does not have the API. For example, the WebKit build of Playwright
+ * for Windows has no `navigator.storage`.
+ */
+export async function probeWorkerOutput(kind : WorkerOutput, blockMs : number) : Promise<WorkerIoTimes | undefined> {
+    const worker = new Worker(scriptUrl(OUTPUT_PROBE));
+    try {
+        const url = probeUrl();
+        const prepared = await ask(worker, { kind, url, go : false });
+        if (prepared.error !== undefined) throw new Error(`${kind}: ${prepared.error}`);
+        if (prepared.unavailable !== undefined) return undefined;
+        await wait(200);
+        const result = ask(worker, { kind, url, go : true });
+        const blockStart = absoluteNow();
+        blockMainThread(blockMs);
+        const blockEnd = absoluteNow();
+        const { start, done, error } = await result;
+        if (error !== undefined) throw new Error(`${kind}: ${error}`);
+        return { startMs : start! - blockStart, doneMs : done! - blockStart, blockMs : blockEnd - blockStart };
+    } finally {
+        worker.terminate();
+    }
+}
+
+/**
+ * This function measures when a WebSocket message of a dedicated worker
+ * arrives at a server, during a block of `blockMs`. The server is a command
+ * in Node (`commands/probe-socket.ts`). It records the arrival with the wall
+ * clock of the machine. The time of the page also comes from the wall clock
+ * (`performance.timeOrigin`), thus the two times can differ by some
+ * milliseconds.
+ */
+export async function probeWorkerWebSocket(blockMs : number) : Promise<WorkerIoTimes> {
+    const port = await startProbeSocketServer();
+    const worker = new Worker(scriptUrl(WEBSOCKET_PROBE));
+    try {
+        const opened = await ask(worker, { url : `ws://127.0.0.1:${port}/`, go : false });
+        if (opened.error !== undefined) throw new Error(opened.error);
+        await wait(200);
+        const sent = ask(worker, { go : true });
+        const blockStart = absoluteNow();
+        blockMainThread(blockMs);
+        const blockEnd = absoluteNow();
+        const { start } = await sent;
+        // The message can arrive after the block
+        await wait(300);
+        const [arrival] = await stopProbeSocketServer();
+        if (arrival === undefined) throw new Error("The server got no message.");
+        return { startMs : start! - blockStart, doneMs : arrival - blockStart, blockMs : blockEnd - blockStart };
+    } finally {
+        worker.terminate();
+        await stopProbeSocketServer();
+    }
 }
 
 /**

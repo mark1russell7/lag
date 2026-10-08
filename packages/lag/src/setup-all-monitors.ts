@@ -32,8 +32,9 @@ import type {
     PageDeps,
     AbsoluteClockDeps,
     CrashReportDeps,
+    PeerDeps,
 } from "./dep-groups.js";
-import { withEventContext } from "./events.js";
+import { withEventContext, type EventSink } from "./events.js";
 import { createAbsoluteClock } from "./absolute-clock.js";
 import { LIVENESS_BUFFER_BYTES, beatingSetTimeout, createLivenessBeacon } from "./shared-liveness.js";
 import { MonitorRegistry } from "./monitor-registry.js";
@@ -59,6 +60,7 @@ import type { ClockReliabilityChecker } from "./ClockReliabilityChecker.js";
 import type { ClockDriftMonitor } from "./ClockDriftMonitor.js";
 import type { BrowserReportMonitor } from "./BrowserReportMonitor.js";
 import type { SharedLivenessMonitor } from "./SharedLivenessMonitor.js";
+import type { PeerHangWatch } from "./PeerHangWatch.js";
 import type { PageViewVitals } from "./vitals/PageViewVitals.js";
 
 import {
@@ -80,10 +82,12 @@ import {
     createInstrumentedClockDrift,
     createInstrumentedBrowserReports,
     createInstrumentedSharedLiveness,
+    createInstrumentedPeerHangWatch,
     createInstrumentedPageViewVitals,
     createInstrumentedPageViewContext,
 } from "./instrumented/index.js";
 import type { PageViewContext } from "./instrumented/page-view-context.js";
+import { createRandomId } from "./random-id.js";
 
 /**
  * All dependencies of `setupAllMonitors`.
@@ -112,7 +116,8 @@ export type AllMonitorDeps =
     & Partial<SharedMemoryDeps>
     & Partial<PageDeps>
     & Partial<AbsoluteClockDeps>
-    & Partial<CrashReportDeps>;
+    & Partial<CrashReportDeps>
+    & Partial<PeerDeps>;
 
 /**
  * The handles that `setupAllMonitors` gives.
@@ -159,8 +164,22 @@ export type AllMonitorHandles = {
     readonly clockDrift : ClockDriftMonitor | undefined;
     readonly browserReports : BrowserReportMonitor | undefined;
     readonly sharedLiveness : SharedLivenessMonitor | undefined;
+    readonly peerHangWatch : PeerHangWatch | undefined;
     readonly pageViewContext : PageViewContext | undefined;
 };
+
+/**
+ * An event sink that calls `onEnded` for each `lag.main_thread.hang` event
+ * of the phase `ended`, and gives each event to `sink`, if there is one.
+ */
+function observeHangEnds(sink : EventSink | undefined, onEnded : () => void) : EventSink {
+    return {
+        emit : (name, attributes) => {
+            if (name === EVENTS.hang.name && attributes["phase"] === "ended") onEnded();
+            sink?.emit(name, attributes);
+        },
+    };
+}
 
 function monitorOf<T>(registry : MonitorRegistry, name : string) : T | undefined {
     return registry.get<T>(name)?.monitor;
@@ -206,6 +225,8 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
     const absoluteClock = rootDeps.performance ? createAbsoluteClock(rootDeps.performance) : undefined;
     const deps : AllMonitorDeps = {
         ...rootDeps,
+        // One ID for the page instance: the hang journal of the worker and the peer hang watch use it
+        pageId : rootDeps.pageId ?? createRandomId(),
         ...(events ? { events } : {}),
         ...(absoluteClock ? { absoluteClock } : {}),
     };
@@ -271,13 +292,16 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
         }));
     }
 
-    // 11. Worker ground truth (heartbeat timestamps need performance.timeOrigin)
+    // 11. Worker ground truth (heartbeat timestamps need performance.timeOrigin). The peer hang watch
+    //     learns of each hang that the worker monitor counts, so that the page does not report it again at its close.
+    let peerHangWatch : PeerHangWatch | undefined;
     if (deps.worker) {
         if (deps.performance) {
             registry.add(createInstrumentedWorkerLag({
                 ...deps,
                 worker : deps.worker,
                 performance : deps.performance,
+                events : observeHangEnds(deps.events, () => peerHangWatch?.noteHangEnded()),
             }, conditions));
         } else {
             deps.logger.log("warn", "Worker lag monitor skipped: it needs `performance` (for timeOrigin).", {
@@ -289,6 +313,16 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
     // 12. Shared-memory liveness (cross-origin-isolated pages only)
     if (livenessBuffer && deps.worker) {
         registry.add(createInstrumentedSharedLiveness({ ...deps, worker : deps.worker, livenessBuffer }, conditions));
+    }
+
+    // 12b. The open pages of the origin watch each other for hangs (BroadcastChannel + Web Locks)
+    if (deps.BroadcastChannel && deps.locks && deps.wallClock && lifecycle) {
+        peerHangWatch = registry.add(createInstrumentedPeerHangWatch({
+            ...deps,
+            BroadcastChannel : deps.BroadcastChannel,
+            locks : deps.locks,
+            wallClock : deps.wallClock,
+        }, lifecycle)).monitor;
     }
 
     // 13. Compute Pressure API
@@ -330,10 +364,12 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
         }));
     }
 
-    // 17. The ID of the current page view, for the hang reports of the worker and the crash reports of the browser
-    const workerMonitor = monitorOf<WorkerLagMonitor>(registry, "worker-lag");
-    if (vitals && (workerMonitor || deps.crashReport)) {
-        registry.add(createInstrumentedPageViewContext(deps, vitals, workerMonitor ? [workerMonitor] : []));
+    // 17. The ID of the current page view, for the hang reports of the worker, the heartbeats of the
+    //     peer hang watch and the crash reports of the browser
+    const receivers = [monitorOf<WorkerLagMonitor>(registry, "worker-lag"), monitorOf<PeerHangWatch>(registry, "peer-hang-watch")]
+        .filter(receiver => receiver !== undefined);
+    if (vitals && (receivers.length > 0 || deps.crashReport)) {
+        registry.add(createInstrumentedPageViewContext(deps, vitals, receivers));
     }
 
     return {
@@ -361,6 +397,7 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
         get clockDrift() { return monitorOf<ClockDriftMonitor>(registry, "clock-drift"); },
         get browserReports() { return monitorOf<BrowserReportMonitor>(registry, "browser-reports"); },
         get sharedLiveness() { return monitorOf<SharedLivenessMonitor>(registry, "shared-liveness"); },
+        get peerHangWatch() { return monitorOf<PeerHangWatch>(registry, "peer-hang-watch"); },
         get pageViewContext() { return monitorOf<PageViewContext>(registry, "page-view-context"); },
     };
 }
