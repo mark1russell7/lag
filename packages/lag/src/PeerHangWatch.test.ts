@@ -562,6 +562,21 @@ describe("PeerHangWatch, the own page at its close", () => {
         expect(a.hangs).toEqual([]);
     });
 
+    it("reports nothing for a close exactly one heartbeat interval after the heartbeat that ended the gap", async () => {
+        const a = open("a", { beatIntervalMs : 1_000 });
+        await advance(1_000);
+        a.page.hang();
+        await advance(5_500);
+        a.page.recover();
+        // The heartbeat after the gap comes at 7000 ms. Then a block hides the next heartbeat.
+        await advance(500);
+        a.page.hang();
+        await advance(1_000);
+        a.page.recover();
+        a.watch.hide(true);
+        expect(a.hangs).toEqual([]);
+    });
+
     it("counts a hang that the worker monitor counted at the time of the last heartbeat as counted", async () => {
         const a = open("a");
         await advance(1_000);
