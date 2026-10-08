@@ -174,8 +174,17 @@ export async function probeServiceWorker(blockMs : number) : Promise<{ completed
     }
 }
 
+/**
+ * True when an operation of a worker waited for the end of a block of the
+ * main thread. The worker and the page read different clocks, which can
+ * differ by a few milliseconds. Thus a completion in the second half of the
+ * block also counts: Chromium and Firefox complete in tens of milliseconds.
+ */
+export function waitedForBlock(times : WorkerIoTimes) : boolean {
+    return times.doneMs > times.blockMs / 2;
+}
+
 /** True when the IndexedDB requests of a worker complete only after a block of the main thread, as in WebKit. */
 export async function workerIndexedDbWaitsForMainThread() : Promise<boolean> {
-    const times = await probeWorkerIndexedDb(500);
-    return times.doneMs >= times.blockMs;
+    return waitedForBlock(await probeWorkerIndexedDb(1_000));
 }

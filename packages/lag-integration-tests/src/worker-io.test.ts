@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { recordMeasurement } from "./commands.js";
-import { probeServiceWorker, probeSharedWorker, probeWorkerFetch, probeWorkerIndexedDb } from "./worker-io.js";
+import { probeServiceWorker, probeSharedWorker, probeWorkerFetch, probeWorkerIndexedDb, waitedForBlock } from "./worker-io.js";
 
 /**
  * A worker must write and send during a hang of the main thread: the hang
@@ -19,15 +19,13 @@ describe("the input and output of a worker during a main-thread block", () => {
     it("an IndexedDB write of a worker completes during the block, except in WebKit", async () => {
         const times = await probeWorkerIndexedDb(BLOCK_MS);
         await recordMeasurement("worker-io/indexeddb_write_done_after_block_start", "ms", [times.doneMs], { engine });
-        if (webKit) expect(times.doneMs).toBeGreaterThanOrEqual(times.blockMs);
-        else expect(times.doneMs).toBeLessThan(times.blockMs / 2);
+        expect(waitedForBlock(times), JSON.stringify(times)).toBe(webKit);
     }, 20_000);
 
     it("a fetch with keepalive of a worker completes during the block, except in WebKit", async () => {
         const times = await probeWorkerFetch(BLOCK_MS);
         await recordMeasurement("worker-io/fetch_done_after_block_start", "ms", [times.doneMs], { engine });
-        if (webKit) expect(times.doneMs).toBeGreaterThanOrEqual(times.blockMs);
-        else expect(times.doneMs).toBeLessThan(times.blockMs / 2);
+        expect(waitedForBlock(times), JSON.stringify(times)).toBe(webKit);
     }, 20_000);
 
     it("the writes and fetches of a service worker complete during the block, except in WebKit", async (ctx) => {
