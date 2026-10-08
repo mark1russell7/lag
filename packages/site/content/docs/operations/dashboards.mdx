@@ -197,7 +197,7 @@ Refer to [DriftLag](/docs/monitors/drift-lag).
 | Panel | Type | Unit | What it shows |
 |---|---|---|---|
 | Drift lag p50 / p95 / p99 | Time series | `ms` | The quantiles and the mean of the lag of each window of chained timeouts (approximately 100 ms). Each block of the main thread in a window adds to the lag of the window. |
-| Drift baseline: timer granularity | Time series | `ms` | The p50 and the p95 of the idle duration of one timer step: the mean of the recent steps that are not blocks. It is the timer granularity of the browser and the operating system. DriftLag subtracts it. |
+| Drift baseline: timer granularity | Time series | `ms` | The p50 and the p95 of the idle duration of one timer step: the mean of the recent steps that are not blocks. An increase needs a probe that shows an idle thread. It is the timer granularity of the browser and the operating system. DriftLag subtracts it. |
 | Drift windows per second | Time series | `none` | The number of windows that DriftLag recorded each second, for all page loads. The monitors discard the windows of hidden and frozen pages. |
 
 ```promql

@@ -20,6 +20,7 @@ A monitor of main-thread lag uses browser APIs that behave differently in each e
 | Finding | Change in the library | Note |
 |---|---|---|
 | On an idle page, a chain of 5 ms timers measures the timer granularity of the browser and the operating system. | DriftLag subtracts a calibrated baseline of the recent steps. | [Local experiments](/research/local-experiments) |
+| A sustained load of equal tasks makes all timer steps longer, thus it looks like a new timer granularity. | A probe of message tasks must show an idle thread before the baseline of DriftLag increases. | [Local experiments](/research/local-experiments) (E5) |
 | A `setTimeout(0)` from a timer callback gets the clamp of nested timers. | MacrotaskLag and SchedulingFairness start each measurement in a message task. | [Clocks and timers](/research/clocks-and-timers) |
 | Safari calculates `timeOrigin` again at each read, and Chromium gives a worker a constant clock offset. | `createAbsoluteClock` reads the origin one time, and `WorkerClockSync` measures the offset. | [Clocks and timers](/research/clocks-and-timers) |
 | `performance.now()` stops during sleep, except on Windows, and no web event shows a suspend. | `ClockDriftMonitor` classifies suspends and steps. A suspend of the clock-drift monitor and a late worker timer each add a suspend interval. | [Clocks and timers](/research/clocks-and-timers) |

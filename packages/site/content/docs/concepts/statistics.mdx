@@ -85,7 +85,7 @@ With explicit-bucket histograms, use `rate(lag_drift_histogram_sum[5m])` and `ra
 Two effects change this fraction:
 
 - **Jitter.** The metric records 0 for a negative lag, thus the jitter above the baseline adds to the sum and the jitter below it does not. An idle page shows a small blocked fraction. In experiment E3, the 90th percentile of the idle lag was 3.1 ms in Chromium ([local experiments](/research/local-experiments)).
-- **Sustained load.** DriftLag calculates its baseline from the recent steps. If the main thread is busy during more than half of the steps, the baseline increases and DriftLag reports less lag. Also, 10 equal steps of 40 ms or less in a row look like a new timer granularity. Tasks of the same length can give such steps ([DriftLag](/docs/monitors/drift-lag)). The worker heartbeat measures these cases correctly.
+- **Sustained load.** DriftLag calculates its baseline from the recent steps, and a sustained load can make all steps longer. Thus a probe of message tasks must show an idle thread before the baseline increases ([DriftLag](/docs/monitors/drift-lag)). Before the first check of the probe, the baseline can increase, and DriftLag reports less lag. This is also true in a browser in which a message waits on an idle thread. The worker heartbeat measures these cases correctly.
 
 ## The observer effect and the cost of the probes
 

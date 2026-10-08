@@ -7,9 +7,11 @@ status: final
 
 import { idleLagChart, idleLagTable } from "./local-experiments.data";
 
-We did four experiments in this repository on 2026-10-07 and 2026-10-08. They measured facts that no document gives. E1 measured the order of the event listeners at the target of an event. E2 measured the timers of an idle page in three engines. E3 measured the calibrated DriftLag on the same machine. E4 measured when the IndexedDB writes and the fetches of a worker complete while the main thread is blocked, also in Safari.
+We did five experiments in this repository on 2026-10-07 and 2026-10-08. They measured facts that no document gives.
 
-The results changed the library in three ways. An explicit hook, not the order of the listeners, records the final values before each flush. DriftLag subtracts a calibrated baseline. The probes that use `setTimeout(0)` start in a message task. E4 changed no code, but it found a limit of the hang reports and of the hang journal in WebKit and Safari.
+E1 measured the order of the event listeners at the target of an event. E2 measured the timers of an idle page in three engines. E3 measured the calibrated DriftLag on the same machine. E4 measured when the IndexedDB writes and the fetches of a worker complete while the main thread is blocked, also in Safari. E5 measured DriftLag during a sustained load.
+
+The results changed the library in four ways. An explicit hook, not the order of the listeners, records the final values before each flush. DriftLag subtracts a calibrated baseline. The probes that use `setTimeout(0)` start in a message task. A probe of message tasks must show an idle thread before the baseline of DriftLag increases. E4 changed no code, but it found a limit of the hang reports and of the hang journal in WebKit and Safari.
 
 ## E1: the order of listeners at the target
 
@@ -119,6 +121,46 @@ In the other browsers, it expects the write and the fetch in the first half of t
 
 The browser test `hang-journal.test.ts` skips itself where a probe finds that the IndexedDB requests of a worker wait for the main thread. The probe uses a block of 500 ms. Thus the skip comes from a measurement, not from the name of the browser. In the CI log, the test skips itself in Safari.
 
+## E5: DriftLag during a sustained load
+
+**Question.** Does DriftLag report a sustained load of tasks of the same length? The baseline comes from the recent steps. Thus a load that makes all steps longer can look like a new timer granularity.
+
+**Method.** The page calibrated DriftLag for 2 s. Then it kept the main thread busy for 4 s with a chain of equal tasks, and then it was idle for 1.5 s. The experiment used the Playwright builds on Windows 11 (2026-10-08).
+
+There were two loads. In the first, each task of 20 ms starts the next task with a message. In the second, each task of 30 ms starts the next task with `setTimeout(0)`, thus 4 ms later. The table gives the lag as a part of the time of the windows.
+
+| Load | Chromium 145 | Firefox 146 | WebKit |
+|---|---|---|---|
+| Message tasks of 20 ms | 85% for 2.5 s. Then the baseline increased to 39 ms, and the lag decreased to 6%. | 25% for 1 s. Steps of 20 ms are in the jitter limit of steps of 15.6 ms, thus the baseline increased to 20 ms. The lag was 0 after 2 s. | Approximately 0 after 0.5 s. A row of steps of 31 ms was a new granularity after 10 steps. |
+| Timer tasks of 30 ms | Approximately 0 from the start. A row of steps of 34 ms was a new granularity. | 67% for 2 s. Then the median increased to 42 ms, and the lag decreased to 12%. | 66% for 2 s. Then the median increased to 41 ms, and the lag decreased to 14%. |
+
+**Meaning.** The calibration of E3 hides a sustained load. The lag decreased to less than 15% in each case within 4 s, and to approximately 0 in three of the six cases. The steps of a busy thread agree with each other, or the median becomes a busy step. The [worker monitor](/docs/monitors/worker-lag) measures these loads correctly, because it does not use the timers of the page.
+
+**Change in the library.** A probe of message tasks must show an idle thread before the baseline increases ([DriftLag](/docs/monitors/drift-lag)). On an idle thread, a message starts at once. On a busy thread, it waits for the current task. A check is an idle probe, 3 steps, and a second idle probe. The browser tests of the change found three behaviors of the engines:
+
+- **A probe changes the timing.** A probe keeps the thread awake. In Chromium, a probed step took 0.7 ms less than an idle step, and 2.5 ms less one time. The next step took up to 3 ms more (11 ms instead of 8 ms). A first version used the probed step as the idle duration, and gave 48 ms of lag in each window of an idle page in Chrome. Thus the probed step and the next step are not recent steps.
+- **Messages wait in WebKit for Windows.** A chain of messages posted 84 messages in 100 ms there, and more than 13,000 in Chromium and Firefox. After an idle period, the first message waited 12 ms to 17 ms: the next timer tick of the system. Thus the probe finds no idle step there, and DriftLag operates as before the change.
+- **Irregular steps in Firefox.** For some seconds after a load, the steps changed between 8 ms and 16 ms. A first version lowered the confirmed value to the recent baseline of one window. Then each window had 6 ms to 10 ms of lag. Thus the confirmed value decreases only to the highest recent baseline of 3 windows.
+
+**Result.** The browser test [`drift-load.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/drift-load.test.ts) uses a load of 3 s. The table gives the lag in the second half of the load. The rows of Windows 11 come from three runs of four browsers at the same time. The rows of GitHub runners come from the logs of one CI run:
+
+| Browser | Platform | Message tasks of 20 ms | Timer tasks of 30 ms, 4 ms apart |
+|---|---|---|---|
+| Chromium 145 | Windows 11, three runs | 80% to 86% | 78% to 85% |
+| Chrome 153 | Windows 11, three runs | 80% to 86% | 79% to 85% |
+| Firefox 146 | Windows 11, three runs | 24% to 29% | 53% to 72% |
+| WebKit (Playwright) | Windows 11 | The test skips itself | The test skips itself |
+| Chromium 145 | Linux, GitHub runner | 87% | 85% |
+| Firefox 146 | Linux, GitHub runner | 75% | 84% |
+| WebKit (Playwright) | Linux, GitHub runner | 60% | 79% |
+| Safari 26.6.2 | macOS, GitHub runner | 62% | 77% |
+
+In WebKit on Linux and in Safari on macOS, a probe on an idle page measured 0 ms of busy time. Thus only the WebKit build for Windows makes a message wait.
+
+After the load, the median lag of a window was between −9 ms and 8 ms, in windows of approximately 100 ms. In Firefox on Windows, an idle step already takes 15.6 ms. Thus a step that waits for a task of 20 ms gives only 4.4 ms of lag.
+
+**Check in the repository.** `drift-load.test.ts` expects more than 10% lag in the second half of each load. After the load, it expects a median lag of less than 10% of a window. It skips itself if a probe on an idle page measures more than 10 ms of busy time in 100 ms. The unit tests of `DriftLag.load.test.ts` use a simulated thread with a timer queue and a message queue. They simulate the three behaviors above.
+
 ## Limits of the experiments
 
 - The experiments used one machine with Windows 11. Only the Safari column of E4 comes from a GitHub macOS runner.
@@ -126,4 +168,5 @@ The browser test `hang-journal.test.ts` skips itself where a probe finds that th
 - The experiments did not test Safari in Low Power Mode, or Chromium on battery power. On battery, Chromium uses a timer tick of 8 ms on Windows ([Bruce Dawson](https://randomascii.wordpress.com/2020/10/04/windows-timer-resolution-the-great-rule-change/)).
 - E3 used approximately 30 idle windows for each engine.
 - E4 used a block of 2 s. The fetch probes send their requests to the test server of Vitest on the same machine, not to a remote collector.
+- E5 used one load of 4 s for each case before the change, on Windows 11. The results of the change come from three local runs, with the four browsers at the same time on the same machine. They also come from one CI run on Linux and macOS.
 - The browser tests of the repository operate in Chromium, Firefox, WebKit and Chrome ([testing strategy](/docs/testing/strategy)). Thus they check the `document` case of E1, the two properties of E3 and the behavior of E4 in the four browsers. A CI job also operates them in Safari on macOS. No test checks the `window` case of E1.

@@ -1,6 +1,7 @@
-import type { CoreDeps, TimerDeps } from "../dep-groups.js";
+import type { CoreDeps, SchedulingDeps, TimerDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { DriftLag } from "../DriftLag.js";
+import { createMessageTaskQueue } from "../message-task.js";
 import { LagLogger } from "../LagLogger.js";
 import type { MeasurementConditions } from "../measurement-conditions.js";
 import { highFrequencyLagIntervalMs } from "../constants.js";
@@ -17,16 +18,19 @@ import { createHandle, validatedRecorder } from "./shared.js";
  * each window of approximately 100 ms). With `conditions`, the monitor
  * pauses while the page is hidden. Also, it does not record a sample whose
  * window overlaps an unreliable interval, and it records the baseline only
- * with a valid sample.
+ * with a valid sample. With `deps.MessageChannel`, a probe of message tasks
+ * confirms each larger increase of the baseline. Thus, a sustained load
+ * does not increase the baseline.
  */
 export function createInstrumentedDriftLag(
-    deps : CoreDeps & TimerDeps,
+    deps : CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">>,
     conditions? : MeasurementConditions,
 ) : MonitorHandle<DriftLag> {
     return createHandle("drift-lag", deps.logger, () => {
         const histogram = createHistogram(deps.meter, METRICS.drift);
         const baselineHistogram = createHistogram(deps.meter, METRICS.driftBaseline);
         const lagLogger = new LagLogger(highFrequencyLagIntervalMs, deps.logger);
+        const tasks = deps.MessageChannel ? createMessageTaskQueue(deps.MessageChannel) : undefined;
         const recorder = validatedRecorder(conditions, (lag, windowMs) => {
             histogram.record(lag);
             baselineHistogram.record(monitor.getBaselineMs());
@@ -45,6 +49,7 @@ export function createInstrumentedDriftLag(
             deps.setTimeoutFn,
             deps.clearTimeoutFn,
             deps.clock,
+            tasks ? { postTask : (callback) => tasks.post(callback) } : {},
         );
         const unpause = conditions?.pauseWhileHidden(monitor);
 
@@ -53,6 +58,7 @@ export function createInstrumentedDriftLag(
             stop : () => {
                 unpause?.();
                 monitor.stop();
+                tasks?.close();
                 recorder.dispose();
             },
         };
