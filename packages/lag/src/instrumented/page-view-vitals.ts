@@ -1,4 +1,4 @@
-import type { CoreDeps, EventDeps, FrameDeps, ObserverDeps, PageDeps, PerformanceDeps } from "../dep-groups.js";
+import type { CoreDeps, EventDeps, FrameDeps, LifecycleDeps, ObserverDeps, PageDeps, PerformanceDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import type { LifecycleStateMachine } from "../LifecycleStateMachine.js";
 import type { Histogram } from "../meter.js";
@@ -32,7 +32,7 @@ type VitalAttributes = { navigation_type : NavigationType };
  * `browser.web_vital.id` has the final value.
  */
 export function createInstrumentedPageViewVitals(
-    deps : CoreDeps & ObserverDeps & Partial<PerformanceDeps> & Partial<EventDeps> & Partial<Pick<FrameDeps, "requestAnimationFrame">> & Partial<PageDeps>,
+    deps : CoreDeps & ObserverDeps & Partial<PerformanceDeps> & Partial<EventDeps> & Partial<Pick<FrameDeps, "requestAnimationFrame">> & Partial<PageDeps> & Partial<Pick<LifecycleDeps, "window">>,
     lifecycle : LifecycleStateMachine,
 ) : MonitorHandle<PageViewVitals> {
     return createHandle("page-view-vitals", deps.logger, () => {
@@ -69,6 +69,8 @@ export function createInstrumentedPageViewVitals(
             ...(deps.requestAnimationFrame ? { requestAnimationFrame : deps.requestAnimationFrame } : {}),
             ...(deps.describeNode ? { describeNode : deps.describeNode } : {}),
             ...(deps.softNavigations !== undefined ? { softNavigations : deps.softNavigations } : {}),
+            // The key presses and clicks make the LCP final
+            ...(deps.window ? { inputTarget : deps.window } : {}),
         });
 
         return { monitor, stop : () => monitor.stop() };

@@ -131,8 +131,8 @@ Each product learns about a block after it ends. PerformanceObserver callbacks, 
 The library measures the main thread from a worker ([`WorkerLagMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/WorkerLagMonitor.ts), [`lag-worker.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/lag-worker.ts)). These are its properties:
 
 - The worker sends a heartbeat from its own timer, by default each second. The delay until the main thread handles the heartbeat is the time that the main thread was blocked.
-- When the main thread does not acknowledge heartbeats for 5 s, the worker detects a hang. With a report target, the worker reports the start of the hang itself, through `fetch` with `keepalive`, while the hang continues. WebKit is an exception: it completes the request only after the hang ([experiment E4](/research/local-experiments)).
-- The method uses only a worker and `postMessage`, which Firefox and Safari also have. The browser tests of the library operate in Chromium, Firefox, WebKit and Chrome. WebKit is the build of Playwright, not Safari.
+- When the main thread does not acknowledge heartbeats for 5 s, the worker detects a hang. With a report target, the worker reports the start of the hang itself, through `fetch` with `keepalive`, while the hang continues. WebKit and Safari are an exception: they complete the request only after the hang ([experiment E4](/research/local-experiments)).
+- The method uses only a worker and `postMessage`, which Firefox and Safari also have. The browser tests of the library operate in Chromium, Firefox, WebKit and Chrome. WebKit is the build of Playwright, not Safari. A CI job also operates them in Safari 26.6.2 on macOS, and `worker.test.ts` passes there.
 - On a cross-origin-isolated page, `SharedLivenessMonitor` adds a counter in a `SharedArrayBuffer`. The DriftLag timer callbacks increase it, and the worker reads it each 5 ms. A counter that does not change for 50 ms is a block.
 
 The pages [worker lag](/docs/monitors/worker-lag) and [shared liveness](/docs/monitors/shared-liveness) describe the two monitors.
@@ -143,7 +143,7 @@ A page that closes or crashes during a hang cannot report the end of the hang. T
 
 When a hang starts, the worker of the library writes a record to IndexedDB ([`hang-journal.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/hang-journal.ts)). It writes the record again each second while the hang continues. At the end of the hang, it removes the record. The next page of the same origin finds each record that nobody updated for 30 s. It reports the record as a hang with the outcome `abandoned`, with the attributes of the earlier page. An atomic take gives each record to one page only, also when two pages start at the same time.
 
-In WebKit, the write of the worker completes only when the main thread operates again. Thus there, the journal cannot keep a hang that the page does not survive ([experiment E4](/research/local-experiments)).
+In WebKit and Safari, the write of the worker completes only when the main thread operates again, also in a service worker. Thus there, the journal cannot keep a hang that the page does not survive ([experiment E4](/research/local-experiments)).
 
 ### Page-view identity for main-thread data
 

@@ -146,6 +146,7 @@ pnpm --filter @lag/integration-tests exec playwright install chromium firefox we
 | Cross-origin-isolated tests | `pnpm --filter @lag/integration-tests test:coi` | Shared memory, the fine clock and `measureUserAgentSpecificMemory()` on a cross-origin-isolated page. |
 | Overhead benchmark | `pnpm test:overhead` | The main-thread CPU time and the callbacks of all monitors on an idle page, against their budgets. |
 | Soak test | `pnpm test:soak` | All monitors for 3 minutes under a mixed workload. The heap must not grow without limit. `stop()` must release each timer. |
+| Safari tests | `pnpm --filter @lag/integration-tests test:safari` | The browser tests in the real Safari, through safaridriver. Only on macOS: enable it one time with `sudo safaridriver --enable`. |
 | E2E tests | `pnpm test:e2e` | The export to the Grafana stack. The script starts the stack with Docker Compose. |
 | Test results | `pnpm results` | All test kinds, without the soak test and the E2E tests. The results go to the site. |
 
@@ -171,7 +172,7 @@ To show the test results on the site, do these steps:
 
 `pnpm results` writes the results to `packages/site/public/data/results/`. Git ignores this folder. The script includes the latest Stryker report if it exists.
 
-To include the soak test or the E2E tests, add `--soak` or `--e2e` to `pnpm results`.
+To include the soak test, the E2E tests or Safari (on macOS), add `--soak`, `--e2e` or `--safari` to `pnpm results`.
 
 GitHub Actions starts the build, the unit tests, the coverage, the browser tests and the site checks for each push and pull request (`ci.yml`). `e2e.yml` and `mutation.yml` start each week. You can also start them manually.
 

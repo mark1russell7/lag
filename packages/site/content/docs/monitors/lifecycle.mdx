@@ -171,6 +171,8 @@ Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in
 - `cdp/freeze.test.ts` (Chromium in the new headless mode): a real freeze of 1 s gives four transitions: to `hidden`, to `frozen`, to `hidden` and back to the visible state. Each transition has the time of its event, and a 10 ms interval starts fewer than 30 times during the freeze. With all monitors, `lag_lifecycle_transitions` counts the freeze and the resume.
 - `cdp/visibility.test.ts` (Chromium in the new headless mode): a second page in front gives the transition to `hidden`, and then to `active` or `passive`, with the trigger `visibilitychange`.
 
+A CI job also operates the browser test files in Safari 26.6.2 on a GitHub macOS runner, through safaridriver. In the log of that job, `lifecycle.test.ts` passes.
+
 ## Source
 
 - [`LifecycleStateMachine.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/LifecycleStateMachine.ts): the state machine.
