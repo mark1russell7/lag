@@ -40,6 +40,36 @@ The timer granularity can change while the page is open. For example, Windows ca
 
 The CDP tests found this case. In Chromium on Windows, the steps changed from 5.5 ms to 15.6 ms after the page was hidden and shown again. Before this rule, DriftLag reported windows of 160 ms of lag on an idle page ([testing strategy](/docs/testing/strategy)).
 
+### A sustained load
+
+A sustained load can also make all steps longer. On a thread that is busy with tasks of the same length, the steps agree with each other, thus they look like a new granularity. If the thread is busy during more than half of the steps, the median is a busy step, and the baseline increases. In the two cases, the monitor reports less lag. Experiment E5 measured this with a load of 100% for 4 s. The lag decreased to less than 15% in each engine, and to approximately 0 in three of six cases ([local experiments](/research/local-experiments)).
+
+Thus the monitor accepts a longer baseline only after a probe shows an idle thread. The probe (`BusyTimeProbe`) is a chain of message tasks during one timer step. Each message posts the next message. On an idle thread, a message starts at once. On a busy thread, it waits until the current task ends.
+
+The busy time is the sum of the waits of more than 2 ms. A probed step is idle if the busy time is less than max(2 ms, half of the extra duration of the step).
+
+A probe keeps the thread awake, thus it changes the timing. In Chromium, the probed step took 0.7 ms less than an idle step, and the next step took up to 3 ms more. Thus the probed step and the next step are not recent steps, and they are not in a row. The rules are in `BaselineConfirmation` and `drift-baseline.ts`:
+
+- **A check.** A check is an idle probe, 3 steps, and a second idle probe. The 3 steps must agree with each other. The step after the first probe is not one of the 3 steps.
+- **The first confirmed value.** After the first window, a check confirms the baseline. The first confirmed value is the recent baseline.
+- **An increase.** At the end of a window, a recent baseline that is more than max(1 ms, 10%) above the confirmed value starts a check. Until a check confirms the increase, the window uses the confirmed value. The new value is the lower of the recent baseline and the mean of the 3 steps.
+- **The end of a load.** If the 3 steps agree better with the confirmed value than with the recent baseline, the longer recent steps were load. The monitor removes them from the recent steps.
+- **A decrease.** A busy thread does not make a step shorter, thus a decrease needs no check. The confirmed value decreases to the highest recent baseline of the last 3 windows. Thus a short decrease does not change it.
+- **A row of longer steps.** After the first confirmed value, a row of 5 longer steps starts a probe of the next step. A row of longer steps is a new granularity only if the last probe during the row showed an idle thread. A window does not wait for a row that a probe showed as busy.
+
+Before the first confirmed value, the monitor accepts a longer baseline without a probe, as before the change. The probe needs `MessageChannel`. Without it, the monitor always operates as before the change. In the WebKit build of Playwright for Windows, a message waits for the next timer tick of the system after an idle period. Thus the probe finds no idle step there, and no check confirms a value.
+
+The browser test `drift-load.test.ts` measured the result with a load of 100% for 3 s. The table gives the lag in the second half of the load, as a part of the time of the windows (8 October 2026, Windows 11):
+
+| Load | Chromium 145 | Chrome 153 | Firefox 146 | WebKit (Playwright) |
+|---|---|---|---|---|
+| Message tasks of 20 ms | 80% to 86% | 80% to 86% | 24% to 29% | The test skips itself |
+| Timer tasks of 30 ms, 4 ms apart | 78% to 85% | 79% to 85% | 53% to 72% | The test skips itself |
+
+Before the change, the lag of each case decreased to less than 15% within 4 s. In Firefox on Windows, an idle step already takes 15.6 ms. A step that waits for a task of 20 ms takes 20 ms, thus it gives only 4.4 ms of lag. This is the resolution of one step (refer to the limits).
+
+### Windows and records
+
 A window has a whole number of steps. Thus its length is 100 ms only when the baseline divides 100 ms. In Firefox and WebKit on Windows, a window has 6 steps of 15.6 ms, thus approximately 93 ms. The first window has 20 steps, thus approximately 310 ms there. `getLastWindowMs()` gives the measured length of the last window, with its lag.
 
 For each window, the factory gives the lag and the measured window length to the sample validator. For a valid sample, the factory records the lag in `lag_drift_histogram` and the current baseline in `lag_drift_baseline_histogram`. A negative lag is jitter around the baseline, thus the factory records it as 0.
@@ -92,7 +122,7 @@ DriftLag sends no events of its own. The measurement conditions send a `lag.stal
 
 ```ts
 function createInstrumentedDriftLag(
-    deps : CoreDeps & TimerDeps,
+    deps : CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">>,
     conditions? : MeasurementConditions,
 ) : MonitorHandle<DriftLag>;
 ```
@@ -101,13 +131,15 @@ The factory uses these dependency groups:
 
 - `CoreDeps`: `logger`, `clock` (`performance.now()`) and `meter`.
 - `TimerDeps`: `setTimeoutFn`, `clearTimeoutFn`, `setIntervalFn` and `clearIntervalFn`.
+- `MessageChannel` (optional): the message tasks of the probe. The factory makes one queue on it, and it closes the queue when it stops. Without it, the monitor has no probe.
 
-Give `conditions` to pause the monitor while the page is hidden and to validate each window. The factory uses a window of 100 ms (`highFrequencyLagIntervalMs`) and a step of 5 ms. The class has two options:
+Give `conditions` to pause the monitor while the page is hidden and to validate each window. The factory uses a window of 100 ms (`highFrequencyLagIntervalMs`) and a step of 5 ms. The class has three options:
 
 | Option | Default | What it does |
 |---|---|---|
 | `stepMs` | 5 | The requested delay of each timer step. |
 | `baselineSteps` | 100 | The number of recent steps that give the baseline. |
+| `postTask` | None | A function that starts a callback in a new task, for example `createMessageTaskQueue(...).post`. With it, a probe must show an idle thread before the baseline increases. |
 
 ```ts
 import { metrics } from "@opentelemetry/api";
@@ -141,6 +173,7 @@ lifecycle.stop();
 - **Timers:** one chain of timeouts. At the measured idle steps, the chain has approximately 175 callbacks each second in Chromium (5.7 ms). In Firefox and WebKit on Windows (15.6 ms), it has approximately 64. These are estimates, calculated from experiment E3.
 - **Records:** two histogram values for each valid window, thus approximately 20 values each second.
 - **CPU:** the overhead benchmark measured approximately 11 ms of main-thread time each second for the chain alone. It used Chromium in the new headless mode on a desktop computer (the comment of `overhead/overhead.test.ts`).
+- **Probes:** a check is two probes. A probe is a chain of message tasks during one step: approximately 6 ms in Chromium and 16 ms in Firefox on Windows. On an idle page, the monitor does one check after the first window, and then only when the recent baseline increases. In the overhead benchmark, the monitors posted 0.6 messages each second during the measurement, thus no probe operated then. During a load, each window starts a check. A probe on a busy thread posts few messages, because each message waits for a task.
 - **Memory:** the durations of 100 steps. Each calculation of the baseline sorts them, three times for each window.
 - **Power:** short timers keep a fine timer resolution of the operating system. While short timers wait, Chromium on Windows asks for a 1 ms tick on AC power, and 8 ms on battery power. A published measurement gives approximately 0.3 W for a 1 ms tick, approximately 10% of the idle power of the processor package ([clocks and timers](/research/clocks-and-timers)). We did not measure this for DriftLag.
 
@@ -148,12 +181,16 @@ The callbacks of the monitor are also tasks on the main thread. Thus the monitor
 
 ## Limits
 
-- **A busy thread changes the baseline.** If the thread is busy during more than half of the steps, the median increases. Then the baseline increases, and the monitor reports less lag. The [worker monitor](/docs/monitors/worker-lag) measures that case correctly.
+- **Before the first check, and in some browsers.** Before a check confirms the first value, a sustained load increases the baseline, and the monitor reports less lag. This is also true without `MessageChannel`. It is also true in a browser in which a message waits on an idle thread, for example the WebKit build of Playwright for Windows. The [worker monitor](/docs/monitors/worker-lag) measures that case correctly.
+- **A load at the start.** The first confirmed value is the recent baseline. After a load at the start of the page, it can be too long. It decreases with the recent baseline in 100 steps or less.
+- **A small increase of the granularity.** An increase of less than max(4 ms, half of the baseline) starts no row. The recent baseline follows it after approximately 50 steps, and then a check confirms it. Until then, each window has a small lag.
+- **A light load.** A probed step is idle if the thread was busy for less than max(2 ms, half of the extra duration of the step). Thus the steps of a light load can be in a confirmed baseline.
+- **A probe delays other work.** During one step, a message task starts each few microseconds. An idle callback cannot start in that step.
+- **Firefox after a load.** In Firefox on Windows, the steps changed between 8 ms and 16 ms for some seconds after a load (experiment E5). The lag of each window was between −9 ms and 8 ms in that time.
 - **The resolution is one step.** A block can start immediately after a step. Thus the lag of a block can be less than its duration by up to one step: 16 ms in Firefox on Windows (experiment E3).
 - **One sample for each block.** The chain is closed-loop: a long block gives one long window, not many samples. In a histogram of windows, a 30 s block is one value among hundreds of normal windows ([clocks and timers](/research/clocks-and-timers), coordinated omission). The sum of the histogram contains the full length of the block. Thus use the sum for the blocked time, and the quantiles only for the typical window.
 - **Idle noise.** The factory records a negative lag as 0. Thus an idle page gives small positive values, for example a p90 of 3.1 ms in Chromium (experiment E3).
 - **A change of the timer granularity.** A row of 10 steps that agree with each other starts a new baseline. Thus the baseline follows a change, for example to battery power, after 10 steps of the new granularity: approximately 160 ms with steps of 16 ms.
-- **Equal tasks look like a granularity.** On a busy thread with tasks of the same length, each step is longer by the same quantity. If these steps are 40 ms or shorter, the monitor accepts them as a new granularity after 10 steps, and it reports less lag. The [worker monitor](/docs/monitors/worker-lag) measures that case correctly.
 - **No samples from hidden pages.** The monitor pauses there, and so does the worker monitor. The [timer throttling](/docs/monitors/timer-throttle) detector and the [clock drift](/docs/monitors/clock-drift) monitor continue in hidden pages.
 
 ## Tests
@@ -164,12 +201,18 @@ Unit tests (Vitest, fake timers):
 - `DriftLag.test.ts`, the timer chain: one chain after `stop()` and `start()`, also from inside the report function. A window of 103 ms has 20 steps of 5 ms.
 - `DriftLag.granularity.test.ts`, a change of the granularity: steps that change from 6 ms to 16 ms on an idle thread give a lag of less than 20 ms. The baseline follows the change, also when the change comes at the end of a window. After a change to a finer granularity, a 300 ms block gives a lag of 300 ms. A row of steps of more than 40 ms, and a row of steps that do not agree, stay lag.
 - `DriftLag.granularity.test.ts`, the baseline: the mean of the steps that are not longer than the median plus max(4 ms, half of the median). A block does not count, also when it comes before shorter steps.
+- `drift-baseline.test.ts`: the rules of the baseline at their limits. An increase of max(1 ms, 10%) needs no check. A probed step is idle below max(2 ms, half of its extra duration). The findings of a check, and the steps that it removes.
+- `BaselineConfirmation.test.ts`: a check of an idle probe, 3 steps and a second idle probe. The first value, the decrease to the highest recent baseline of 3 windows, a busy closing probe and a probe of a row.
+- `BusyTimeProbe.test.ts`: no busy time on an idle thread. Each task delays one message. A wait of 2 ms or less does not count, and a message of an earlier measurement does nothing.
+- `DriftLag.load.test.ts` uses a simulated thread with a timer queue and a message queue. Equal message tasks of 20 ms and timer tasks of 30 ms stay lag for 5 s, also with steps of 15.6 ms. Without a probe, the same load gives less than 5% lag. After the load, there is no lag.
+- `DriftLag.load.test.ts` also simulates three behaviors of browsers. In Chromium, a probed step is shorter and the next step is longer. In WebKit for Windows, a message waits also on an idle thread.
 - `LagLogger.test.ts`: the thresholds of the 2 s and 5 s periods, the reset after each report, and no log for a hidden tab. The logger uses the interval of each measurement, for example windows of 93 ms.
 - `setup-all-monitors.test.ts`: a 250 ms lag goes into `lag_drift_histogram`. The validator discards a window that overlaps a system suspend. The monitor pauses while the page is hidden, and it keeps the first window after the page is visible again.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
 
 - `drift-accuracy.test.ts`: on an idle page, the median lag is between −5 ms and 5 ms. After a 300 ms block, the largest lag is more than 300 ms minus the baseline minus 10 ms, and less than 340 ms.
+- `drift-load.test.ts`: equal message tasks of 20 ms and timer tasks of 30 ms for 3 s give more than 10% lag in the second half of the load. After the load, the median lag of a window is less than 10% of its length. The test skips itself if a probe on an idle page measures more than 10 ms of busy time in 100 ms (the WebKit build for Windows).
 - `lag-monitors.test.ts`: a 300 ms block gives a lag of more than 200 ms.
 - `stress.test.ts`: with the light profile of `@lag/load`, the largest lag is less than 150 ms. With the heavy profile, it is more than 100 ms.
 - `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no window while the page is hidden or frozen. It records more than 5 windows after the page is visible again. After a freeze of 2 s, each lag after the resume is less than half of the freeze, and no stall occurs.
@@ -179,5 +222,7 @@ Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in
 ## Source
 
 - [`DriftLag.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/DriftLag.ts): the monitor, the calibration and the change of the granularity.
+- [`drift-baseline.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/drift-baseline.ts) and [`BaselineConfirmation.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/BaselineConfirmation.ts): the rules of the baseline, and the confirmed value.
+- [`BusyTimeProbe.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/BusyTimeProbe.ts): the probe of message tasks.
 - [`instrumented/drift-lag.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/drift-lag.ts): the factory.
 - [`LagLogger.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/LagLogger.ts) and [`constants.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/constants.ts): the warnings and the constants.
