@@ -27,6 +27,8 @@ export const driftLagMetrics : readonly MetricRow[] = rowsOf("DriftLag");
 export const macrotaskLagMetrics : readonly MetricRow[] = rowsOf("MacrotaskLag");
 export const workerLagMetrics : readonly MetricRow[] = rowsOf("WorkerLagMonitor");
 export const livenessMetrics : readonly MetricRow[] = rowsOf("SharedLivenessMonitor");
+/** The peer hang watch records into the hang metrics of the worker monitor. */
+export const hangMetrics : readonly MetricRow[] = workerLagMetrics.filter(row => row.name.startsWith("lag_main_thread_hang"));
 export const conditionsMetrics : readonly MetricRow[] = rowsOf("MeasurementConditions");
 export const loafMetrics : readonly MetricRow[] = rowsOf("LongAnimationFrameMonitor");
 export const eventTimingMetrics : readonly MetricRow[] = rowsOf("EventTimingMonitor");

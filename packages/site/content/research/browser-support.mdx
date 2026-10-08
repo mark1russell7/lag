@@ -277,6 +277,18 @@ A block of the main thread also stops the input and output of the workers in Web
 
 Thus in WebKit and Safari, a worker can detect a hang with its own timer. But it cannot send a report or write a record until the main thread operates again. Also a service worker cannot do this, although it operates outside the page.
 
+Experiment E6 measured the other output APIs of a dedicated worker with the same method ([local experiments](/research/local-experiments)):
+
+- In WebKit and Safari 26.6.2, all of them wait for the end of the block. These are three operations of the origin private file system (OPFS), `Cache.put()`, an `XMLHttpRequest` (asynchronous and synchronous) and a WebSocket message. The OPFS operations are a `FileSystemSyncAccessHandle` write, a `FileSystemWritableFileStream` write and a file lookup. The WebKit build of Playwright for Windows has no `navigator.storage`, thus no OPFS.
+- In Chromium, all of them complete during the block.
+- In Firefox, the storage APIs complete during the block. An `XMLHttpRequest` and a WebSocket message of a worker wait for the end of the block. Thus Firefox operates them through the main thread.
+
+Experiment E7 measured what another page of the origin can see during a block. In the three engines, another page operated during the block. A Web Lock that the blocked page held stayed held. The test closed the blocked page during its block. The other page then got the lock. WebKit gave it after less than 60 ms, Firefox after 37 ms to 2.8 s, and Chromium after 0.5 s to 8 s.
+
+A worker of the blocked page also sent BroadcastChannel messages. They arrived during the block in Chromium and Firefox, and after the block in WebKit and Safari.
+
+The engines end a closed page during its block in different ways. Chromium, Safari 26.5 on iOS and the WebKit build for Windows stop the page. Firefox stops the blocked script, and the page then closes normally. Safari 26.6.2 on macOS lets the script continue until it ends, also for 90 s, and the page then closes normally. The [peer hang watch](/docs/monitors/peer-hang-watch) uses these facts.
+
 The note [clocks and timers](/research/clocks-and-timers) gives the timer rules of each engine from the source code.
 
 ## Changes in 2025 and 2026

@@ -47,6 +47,7 @@ The function gets the dependencies from the browser globals. It examines each op
 | `sharedMemory` | `true` | Uses shared memory for the liveness watcher in a cross-origin-isolated page. |
 | `hangJournal` | `true` | Reads the hang journal in IndexedDB, when there is a worker. With `false`, the worker also writes no records. |
 | `crashReportContext` | `true` | Puts the page-view ID into `window.crashReport` (Chrome 145 and later). |
+| `peerHangWatch` | `true` | The open pages of the origin watch each other for hangs, through `BroadcastChannel` and `navigator.locks` ([peer hang watch](/docs/monitors/peer-hang-watch)). |
 
 ## Factories
 
@@ -69,6 +70,7 @@ Each factory makes one monitor, connects it to its instruments, and gives a `Mon
 | `createInstrumentedMemory` | `MemoryMonitor` | [Memory](/docs/monitors/memory) |
 | `createInstrumentedWorkerLag` | `WorkerLagMonitor` | [Worker lag](/docs/monitors/worker-lag) |
 | `createInstrumentedSharedLiveness` | `SharedLivenessMonitor` | [Shared liveness](/docs/monitors/shared-liveness) |
+| `createInstrumentedPeerHangWatch` | `PeerHangWatch` | [Peer hang watch](/docs/monitors/peer-hang-watch) |
 | `createInstrumentedComputePressure` | `ComputePressureMonitor` | [Compute pressure](/docs/monitors/compute-pressure) |
 | `createInstrumentedGCSignal` | `GCSignalDetector` | [GC signal](/docs/monitors/gc-signal) |
 | `createInstrumentedClockReliability` | `ClockReliabilityChecker` | [Clock reliability](/docs/monitors/clock-reliability) |

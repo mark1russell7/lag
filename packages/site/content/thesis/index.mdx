@@ -50,7 +50,7 @@ The export of the data also has a problem. Many browsers that write the same met
 3. **An outside observer.** A heartbeat from a Web Worker is the most robust estimator of the queueing delay in all engines. It is open-loop. It does not use the timers of the main thread. It can detect a hang while the hang continues. In Chromium and Firefox, it can also report the hang during the hang.
 4. **The page view as the unit.** Lag must have the same unit of analysis as the Core Web Vitals: the page view. Each event carries the ID of its page view.
 5. **Correct aggregation.** Field metrics must be counters and histograms with one writer identity for each SDK instance. Details with many values (selectors, URLs, IDs) go into events, not into metric attributes.
-6. **Less survivorship bias.** A monitor can report hangs that the page did not survive, from a journal that the worker keeps. This claim is true in Chromium and Firefox, but not in WebKit and Safari (refer to [E4](#e4-the-input-and-output-of-a-worker-during-a-hang)).
+6. **Less survivorship bias.** A monitor can report hangs that the page did not survive. In Chromium and Firefox, a journal that the worker keeps has them. In WebKit and Safari, a worker cannot write or send during a hang ([E4](#e4-the-input-and-output-of-a-worker-during-a-hang), [E6](#e6-the-other-output-apis-of-a-worker)). There, another open page of the origin or the hung page itself at its close reports the hang ([E7](#e7-another-page-of-the-origin)).
 
 ## Method
 
@@ -159,6 +159,35 @@ The tests of this change found three behaviors of the engines. A probe changes t
 
 **Result:** the calibration follows the timer granularity, but not a sustained load. In CI, the change also works in Safari 26.6.2 on macOS (62% and 77%) and in WebKit on Linux (60% and 79%). In the WebKit build for Windows, the probe cannot see an idle thread, thus the probe there operates as before the change. A browser test (`drift-load.test.ts`) checks the result.
 
+### E6: the other output APIs of a worker
+
+E4 left one question: can a worker of a blocked page write or send through another API? A browser test measures OPFS (three operations), `Cache.put()`, an `XMLHttpRequest` (asynchronous and synchronous) and a WebSocket message. The method is the same as in E4: the worker prepares the operation, and the main thread blocks for 2 s.
+
+| Operation, complete after | Chromium and Chrome | Firefox | WebKit (Playwright) | Safari 26.6.2 |
+|---|---|---|---|---|
+| OPFS write and flush through a sync access handle | 6 ms to 45 ms | 2 ms to 40 ms | No OPFS in the Windows build | 2001 ms to 2002 ms |
+| `Cache.put()` | 29 ms to 98 ms | 28 ms to 75 ms | 2011 ms to 2023 ms | 2004 ms to 2009 ms |
+| `XMLHttpRequest` | 30 ms to 103 ms | 2073 ms | 2014 ms | 2005 ms |
+| WebSocket message, at the server | 0 ms to 3 ms | 2000 ms to 2002 ms | 2016 ms to 2048 ms | 2001 ms |
+
+**Result:** in WebKit and Safari, each output API of a worker waits for the main thread of the page. In the source of WebKit, the worker side of each API posts its work to the main thread. Thus no worker API can keep a hang there. Firefox operates the `XMLHttpRequest` and the WebSocket of a worker through the main thread, but not its storage APIs or `fetch`.
+
+### E7: another page of the origin
+
+Another page of the origin has its own main thread. A browser test opens a second top-level page. That page holds a Web Lock and sends heartbeats. Then it blocks its main thread, and the test closes it during the block.
+
+| Measurement | Chromium | Firefox | WebKit (Playwright) | Safari 26.6.2, macOS | Safari 26.5, iOS Simulator |
+|---|---|---|---|---|---|
+| The other page operates, and the lock stays held during the block | Yes | Yes | Yes | Yes | Yes |
+| The lock comes free after the close | 0.5 s to 8 s later | 14 ms to 2.8 s later | Windows: less than 60 ms. Linux: 3 s | At the end of the block, also after 90 s | 5.3 s later |
+| `pagehide` of the closed page | No | Yes, at once | Windows: no. Linux: at the end of the block | Yes, at the end of the block | No |
+
+**Result:** another page sees the silence of a hung page, and the lock of the hung page shows that the page still exists.
+
+The engines end a closed hung page in three ways. Chromium, Safari on iOS and the WebKit build for Windows stop it. Then another page can report the hang. Firefox stops the blocked script, and Safari on macOS lets the script continue to its end. Then the page closes normally, and it can report its own hang.
+
+The [peer hang watch](/docs/monitors/peer-hang-watch) uses both ways. A browser test in two pages expects the right report in each engine, also in Safari on macOS and on iOS.
+
 ### The Web Vitals
 
 The [page-view vitals](/docs/monitors/page-view-vitals) obey the rules of web-vitals 6.2. A browser test clicks a button. For 120 ms, the click handler blocks the main thread. The monitor gives an INP of 120 ms or more (119.99999999999955 ms one time in WebKit, whose clock moves in steps of 1 ms) and a processing phase of 110 ms or more. It gives the target `#slow-button` and the type `pointer`.
@@ -229,13 +258,13 @@ Each of the 140 mutants that survive has no effect that a user of the metrics ca
 ## Limits
 
 - **Engines.** LoAF, CLS, `visibility-state` entries, the `freeze` event and Compute Pressure exist only in Chromium. Safari has no `requestIdleCallback`. The library uses each API only where it exists.
-- **Test environment.** The browser tests operate in Safari 26.6.2 on a macOS runner of GitHub, and in the WebKit build of Playwright. We did not test Safari on iOS, or Safari in Low Power Mode, which aligns nested timers to 30 ms.
+- **Test environment.** The browser tests operate in the WebKit build of Playwright and in Safari 26.6.2 on a macOS runner of GitHub. They also operate in Safari 26.5 in the iOS Simulator. A simulator is not a phone: it has the CPU and the power of a Mac. A runner cannot turn on Low Power Mode, which aligns nested timers to 30 ms. Thus a unit test uses the timer rule of the WebKit source instead.
 - **Sustained load.** DriftLag needs a probe of message tasks to keep its baseline during a sustained load. Before the first check of the probe, a sustained load increases the baseline. This is also true in a browser in which a message waits on an idle thread. Then DriftLag reports less lag. The worker heartbeat measures that case correctly.
 - **Resolution.** The resolution of DriftLag is one step: 5.7 ms in Chromium and 16 ms in Firefox and WebKit on Windows.
 - **Sampling.** The worker sends one heartbeat each second by default. A block of B milliseconds delays a heartbeat with a probability of approximately min(1, B / 1000).
 - **Hidden pages.** The library discards samples from hidden pages. Thus it has no data on background work.
 - **Clock steps.** A forward step of the system clock of 1 s or more looks like a suspend.
-- **Abandoned hangs.** The journal works only for pages of the same origin, only where IndexedDB is available, and only after 30 s without updates. In WebKit, the journal and the hang report of the worker do not work for a page that does not survive its hang (E4).
+- **Abandoned hangs.** The journal works only for pages of the same origin, only where IndexedDB is available, and only after 30 s without updates. In WebKit, the journal and the hang report of the worker do not work for a page that does not survive its hang (E4, E6). There, the peer hang watch needs another open page on iOS. On macOS, it misses a hung script that does not end (E7).
 - **A busy machine.** The timing tests measure the page and the machine together. In one run of all browsers at the same time, on a busy machine, an idle Chromium page had a median lag of 5.0 ms. The same test alone gave less than 0.3 ms three times.
 - **Cost.** The monitors use approximately 2.5% of one core on an idle page, with approximately 300 wake-ups each second. The DriftLag chain and the animation-frame loop of the frame timing cost the most. This cost is real, especially on battery power.
 - **CDP tests.** The tests of hidden pages need Chromium in the new headless mode and an internal API of Playwright.
@@ -245,6 +274,7 @@ Each of the 140 mutants that survive has no effect that a user of the metrics ca
 - Duty cycles for the probes, so that the high-frequency probes run only some of the time.
 - An adaptive step size for DriftLag where the timer granularity is coarse.
 - Soft navigations in browsers other than Chromium, through the Navigation API.
-- A hang journal for WebKit and Safari. The web APIs that we tested cannot do it (E4). A dedicated worker, a shared worker and a service worker all wait for the main thread.
+- A hang report from a worker in WebKit and Safari. The web APIs that we tested cannot do it (E4, E6), thus the change must come from WebKit. The peer hang watch covers most cases, but not a single page on iOS, or a hung script that does not end on macOS.
+- Tests on real devices: an iPhone, and a Mac on battery power in Low Power Mode.
 - Metrics from events at the collector (for example the `signaltometrics` component of Alloy), so that the histograms of each page view can change after the first report.
 - Segments by device class, for example from `navigator.deviceMemory` and `navigator.cpuPerformance` as resource attributes.
