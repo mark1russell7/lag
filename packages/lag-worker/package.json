@@ -16,5 +16,8 @@
   },
   "dependencies": {
     "@lag/core": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^7.3.1"
   }
 }

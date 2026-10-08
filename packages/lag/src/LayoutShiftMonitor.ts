@@ -1,21 +1,22 @@
 import { ObserverMonitor } from "./ObserverMonitor.js";
+import { ClsCalculator } from "./ClsCalculator.js";
 import type { PerformanceEntryLike, PerformanceObserverInit, LayoutShiftEntry } from "./perf-types.js";
 import type { Logger } from "./types.js";
 
 export type LayoutShiftReport = {
     value : number;
+    startTime : number;
     sessionValue : number;
     worstSessionValue : number;
+    sources : LayoutShiftEntry["sources"];
 };
 
-const SESSION_GAP_MS = 1000;
-const SESSION_MAX_MS = 5000;
-
+/**
+ * This monitor observes the layout shifts that did not follow user input,
+ * and it calculates the CLS for the lifetime of the page.
+ */
 export class LayoutShiftMonitor extends ObserverMonitor {
-    private sessionValue = 0;
-    private sessionStart = -1;
-    private lastShiftTime = -1;
-    private worstSessionValue = 0;
+    private readonly cls = new ClsCalculator();
 
     constructor(
         private readonly report : (entry : LayoutShiftReport) => void,
@@ -33,41 +34,24 @@ export class LayoutShiftMonitor extends ObserverMonitor {
             return;
         }
 
-        const shiftTime = shift.startTime;
-
-        // Start new session if gap > 1s or session > 5s
-        if (
-            this.sessionStart === -1 ||
-            shiftTime - this.lastShiftTime > SESSION_GAP_MS ||
-            shiftTime - this.sessionStart > SESSION_MAX_MS
-        ) {
-            this.sessionValue = 0;
-            this.sessionStart = shiftTime;
-        }
-
-        this.sessionValue += shift.value;
-        this.lastShiftTime = shiftTime;
-
-        if (this.sessionValue > this.worstSessionValue) {
-            this.worstSessionValue = this.sessionValue;
-        }
-
+        const sources = shift.sources ?? [];
+        const sessionValue = this.cls.add(shift.startTime, shift.value, sources);
         this.report({
             value : shift.value,
-            sessionValue : this.sessionValue,
-            worstSessionValue : this.worstSessionValue,
+            startTime : shift.startTime,
+            sessionValue,
+            worstSessionValue : this.cls.getCLS(),
+            sources,
         });
     }
 
     getCLS() : number {
-        return this.worstSessionValue;
+        return this.cls.getCLS();
     }
 
     override stop() : void {
         super.stop();
-        this.sessionValue = 0;
-        this.sessionStart = -1;
-        this.lastShiftTime = -1;
-        this.worstSessionValue = 0;
+        // A restart reads the browser's buffered entries again, so start clean
+        this.cls.reset();
     }
 }

@@ -1,0 +1,358 @@
+---
+title: Browser support
+description: The support of the measurement APIs in Chrome, Edge, Firefox and Safari on 2026-10-07, the changes of 2025 and 2026, and what they mean for the library.
+order: 2
+status: draft
+---
+
+import {
+    frameNotes, frameRows, interactionNotes, interactionRows, isolationNotes, isolationRows,
+    navigationNotes, navigationRows, paintNotes, paintRows, schedulingNotes, schedulingRows,
+    supportColumns, timeNotes, timeRows,
+} from "./browser-support.data";
+
+This note gives the browser support of the APIs that a monitor of main-thread lag can use. It shows the state on 2026-10-07. On that date, the stable versions were Chrome 155 (2026-10-06), Firefox 157 (2026-09-29) and Safari 27 (2026-09-14).
+
+Long Animation Frames, layout shifts, soft navigations and the Page Lifecycle events exist only in Chromium. From Safari 26.2 (2025-12-12), all three engines report INP and LCP. The library examines each API before it uses it. Thus a missing API stops only the monitors that use it. The [sources](/research/sources) page lists all sources of this note.
+
+## Method
+
+The research used these sources:
+
+- [MDN browser-compat-data](https://github.com/mdn/browser-compat-data) (BCD) v8.1.4 of 2026-10-01. The research downloaded all the data and queried it locally.
+- [ChromeStatus](https://chromestatus.com/), the [Chrome release notes](https://developer.chrome.com/release-notes/154) 144 to 154, and the [Chromium metrics changelog](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/speed/metrics_changelog/inp.md).
+- The W3C, WHATWG and WICG specifications. The status and the date of each specification come from the document itself.
+- The standards positions of [Mozilla](https://mozilla.github.io/standards-positions/) and [WebKit](https://github.com/WebKit/standards-positions), and the bug trackers of WebKit and Mozilla.
+- A probe in Google Chrome 153 stable on Windows, with Playwright, on 2026-10-07. The probe examined each feature in a page and in a dedicated worker.
+
+Nobody tested Firefox and Safari by hand. Their cells come from BCD, from the release notes and from the bug trackers. The release dates come from [Chromium Dash](https://chromiumdash.appspot.com/fetch_milestone_schedule?mstone=151), the [Firefox calendar](https://whattrainisitnow.com/calendar/) and the [WebKit notes for Safari 27](https://webkit.org/blog/18325/webkit-features-for-safari-27-0/).
+
+### Release cadence
+
+In August and September 2026, three browsers changed to one release every two weeks. Edge changed on 2026-08-27, Firefox with version 155 on 2026-09-01, and Chrome with version 153 on 2026-09-08 ([Chrome](https://developer.chrome.com/blog/chrome-two-week-start), [Mozilla](https://blog.mozilla.org/sumo/2026/08/19/firefox-new-release-cadence-and-what-to-expect/)). Thus the version numbers increase approximately two times as fast as before. A monitor must use feature detection, not version numbers.
+
+### How to read the tables
+
+Each table has one column for Chrome and Edge, one column for Firefox, one for Safari, and one for workers. The number in a cell is the first stable version with the status. These rules apply to all tables:
+
+- Edge has the Chrome version on the same Chromium milestone. The notes give the exceptions.
+- Safari on macOS and Safari on iOS have the same versions in every row. All iOS browsers use WebKit, also Chrome and Firefox for iOS. Thus the Safari column applies to them too.
+- The research did not verify a browser that has its own engine under the EU alternative-engine entitlement of Apple.
+- A feature behind a flag, a preference or an origin trial has the status "No", because the stable version does not have it.
+- "Partial" means that the stable version has the feature with limits. A note gives the limits.
+- "Unknown" means that the research did not verify the cell, or that it gives no value for the cell.
+
+## Long tasks and frames
+
+<SupportMatrix rows={frameRows} browsers={supportColumns} footnotes={frameNotes} caption="Long tasks and frames on 2026-10-07" />
+
+Long Animation Frames (LoAF) came in Chrome 123 (2024-03-19). The W3C Web Performance group published the [First Public Working Draft](https://www.w3.org/TR/long-animation-frames/) on 2026-04-28. The [Chrome LoAF guide](https://developer.chrome.com/docs/web-platform/long-animation-frames) gives these limits:
+
+- The browser reports frames of 50 ms or more. A script appears in `scripts[]` only if its duration is more than 5 ms.
+- The buffer holds 200 entries.
+- No script attribution exists for cross-origin iframes, workers, service workers and extensions. For a cross-origin script without CORS, only `sourceURL` has a value.
+- `blockingDuration` adds the duration minus 50 ms of each long task. The rendering phase counts toward the task.
+
+The Long Tasks API (`longtask`) is not deprecated. The Chrome documentation said so in its update of 2024-10-14. From Chrome 124, a developer trial makes `longtask` entries from the LoAF data. With this change, Chrome stops the reports of long tasks in hidden tabs. The change did not ship ([ChromeStatus](https://chromestatus.com/feature/5146440839200768)).
+
+The Firefox bug for LoAF ([1348405](https://bugzilla.mozilla.org/show_bug.cgi?id=1348405)) is open. Its blocker is the relation between tasks and documents, which has open questions in HTML. Interop 2026 did not select the LoAF proposal ([#1067](https://github.com/web-platform-tests/interop/issues/1067)). The proposal for Interop 2027 is [#1372](https://github.com/web-platform-tests/interop/issues/1372) of 2026-09-05.
+
+## Interactions
+
+<SupportMatrix rows={interactionRows} browsers={supportColumns} footnotes={interactionNotes} caption="Event Timing and interactions on 2026-10-07" />
+
+The [Event Timing Working Draft](https://www.w3.org/TR/event-timing/) of 2026-03-19 and [MDN](https://developer.mozilla.org/en-US/docs/Web/API/PerformanceEventTiming) give these mechanics:
+
+- The default `durationThreshold` is 104 ms. The minimum is 16 ms. The browser rounds `duration` to 8 ms.
+- The browser buffers an entry only if its duration is 104 ms or more. The event buffer holds 150 entries, and the `first-input` buffer holds 1 entry. Thus an observer that starts late does not get the shorter interactions.
+- Only `pointerdown`, `pointerup`, `click`, `keydown` and `keyup` get an `interactionId`. Continuous events, for example `pointermove`, `wheel` and `touchmove`, do not get one.
+- Without `performance.interactionCount`, a monitor can count the distinct values of `interactionId`. The web-vitals library did this before Chrome 144.
+
+The [Chromium INP changelog](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/speed/metrics_changelog/inp.md) gives these recent changes:
+
+| Chrome | Change |
+|---|---|
+| 135 | `interactionId` became `uint64`. |
+| 147 | The browser gives the `interactionId` early, at `processingStart`. |
+| 148 | The browser sets `entry.target` only for targets to which the page has access. Thus it is `null` more frequently, for example for detached nodes and closed shadow roots. |
+| 150 | A nested click, for example a label that forwards a click to a control, gets `interactionId = 0`. |
+
+## Paint and layout
+
+<SupportMatrix rows={paintRows} browsers={supportColumns} footnotes={paintNotes} caption="Paint and layout metrics on 2026-10-07" />
+
+In the [LCP Working Draft](https://www.w3.org/TR/largest-contentful-paint/) of 2026-08-26, the LCP reports stop after the first scroll or input. The [Chromium LCP changelog](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/speed/metrics_changelog/lcp.md) and the WebKit bug tracker give these facts:
+
+- A cross-origin image without `Timing-Allow-Origin` gets a coarsened `renderTime` instead of 0. Chrome 133 (February 2025), Firefox 141 (July 2025) and Safari 26.2 have this rule.
+- Chrome changed the emission of LCP candidates. After the change, the entries come from the largest painted element, not the largest pending image. Thus more intermediate candidates appear. The release notes give Chrome 146, and the Chromium changelog gives 147. CrUX does not change.
+- In Chrome 140 to 142, the presentation timestamps of text were early by approximately one vsync. Thus text LCP looked better than it was. Chrome 143 (December 2025) has the fix.
+- Safari does not report LCP candidates in shadow DOM. A fix landed and was reverted in April 2026 ([bug 310264](https://bugs.webkit.org/show_bug.cgi?id=310264)).
+- Safari has no check for low-entropy images ([bug 299558](https://bugs.webkit.org/show_bug.cgi?id=299558)). Thus Safari can count placeholder images. Chrome ignores such images from version 112.
+- Chrome 145 added `paintTime`. Thus a monitor can compare the LCP of Chrome with the LCP of Firefox and Safari, which do not have `presentationTime`.
+
+For layout shifts, `hadRecentInput` covers the 500 ms after an input ([Layout Instability](https://wicg.github.io/layout-instability/)). Chrome 145 reports the attribution rectangles in CSS pixels and sorts `sources` by impact area. Code that scales the rectangles by `devicePixelRatio` must examine the version. CLS is the only Core Web Vital with no API in more than one engine. Interop 2025 excluded it, and Interop 2026 did not select it. The proposal for Interop 2027 is [#1352](https://github.com/web-platform-tests/interop/issues/1352) of 2026-09-03.
+
+## Navigation and page lifecycle
+
+<SupportMatrix rows={navigationRows} browsers={supportColumns} footnotes={navigationNotes} caption="Navigation, prerender and page lifecycle on 2026-10-07" />
+
+A `visibility-state` entry with `startTime` 0 always gives the first state of the page. Each change adds an entry, and the buffer holds 50 entries ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/VisibilityStateEntry)). Thus a script that loads late can find out if the page was hidden before a metric. Other browsers have only `document.visibilityState` and `visibilitychange`. Before Safari 14 and 14.1, `visibilitychange` did not bubble to `window` and did not fire at a navigation away from the page. Thus a monitor also adds a listener for `pagehide`.
+
+The prerender APIs come from the [WICG prerendering specification](https://wicg.github.io/nav-speculation/prerendering.html), not from Navigation Timing. On a prerendered page, a monitor reports `max(0, t − activationStart)` and treats the time before the activation as hidden. Chrome shipped `prerender_until_script` in version 150. Safari 26.2 has prefetch only, behind the "SpeculationRules prefetch" flag. Firefox has no speculation rules, and the Mozilla position is neutral.
+
+A `pageshow` event with `persisted === true` shows a restore from the back/forward cache. No new navigation entry comes with the restore. The strings of `notRestoredReasons` change over time ([Chrome](https://developer.chrome.com/docs/web-platform/bfcache-notrestoredreasons)). Chrome removed `websocket` in version 149, because it disconnects WebSockets when a page goes into the cache. Chrome removed `unload-listener` in version 154.
+
+Chrome deprecated the `unload` event in steps: 1% of sites in version 146 (March 2026), 40% in 150, and 100% in 154 (2026-09-22) ([Chrome](https://developer.chrome.com/docs/web-platform/deprecating-unload)). Thus a monitor must not use `unload`. It uses `pagehide` and `visibilitychange`.
+
+Chrome freezes pages in these cases ([Page Lifecycle](https://wicg.github.io/page-lifecycle/), [Energy Saver](https://developer.chrome.com/blog/freezing-on-energy-saver), [Android](https://chromestatus.com/feature/5386725031149568)):
+
+- A page in the back/forward cache.
+- A tab in a collapsed tab group.
+- A hidden tab with high CPU use, when Energy Saver is on. This started in Chrome 133 on desktop with a gradual rollout from 1%.
+- On Android, a background page and its workers after 5 minutes. From Chrome 139, the time is 1 minute.
+
+On desktop, the pause of dedicated workers in a frozen document is still behind a flag ([ChromeStatus](https://chromestatus.com/feature/5276568928649216)). Thus the timers of a desktop worker can continue while its page is frozen. A freeze, a resume or a wake from sleep makes one very long timer gap. A lag monitor must exclude these intervals.
+
+## Scheduling, memory and device information
+
+<SupportMatrix rows={schedulingRows} browsers={supportColumns} footnotes={schedulingNotes} caption="Scheduling, memory and device APIs on 2026-10-07" />
+
+Safari does not ship `requestIdleCallback`. A change to enable it landed in WebKit on 2025-02-04, and the bug opened again on 2025-02-14. On 2025-06-03, a WebKit engineer put the feature on hold because of a page-load regression on google.com. The bug was still open in September 2026 ([bug 285049](https://bugs.webkit.org/show_bug.cgi?id=285049)). The [specification](https://www.w3.org/TR/requestidlecallback/) caps a deadline at 50 ms.
+
+Firefox 142 (2025-08-19) shipped `scheduler.postTask()`, `scheduler.yield()`, `TaskController` and `WorkerGlobalScope.scheduler` ([Firefox 142](https://developer.mozilla.org/en-US/docs/Mozilla/Firefox/Releases/142)). The priorities are `user-blocking`, `user-visible` (the default) and `background` ([Scheduling APIs](https://wicg.github.io/scheduling-apis/)). The Chrome documentation does not recommend `isInputPending()`: it can give false while input waits.
+
+The [Compute Pressure](https://www.w3.org/TR/compute-pressure/) specification is a Candidate Recommendation Draft of 2026-05-14. It has these properties:
+
+- The only source is `"cpu"`. The `"thermals"` source is at risk.
+- The states are `nominal`, `fair`, `serious` and `critical`.
+- Only a document that is focused, visible or capturing gets updates.
+- The browser hides the rate of changes. After 50 to 100 changes in a window, a penalty of 5 to 10 s applies.
+- The Chrome 153 probe found `PressureObserver` in a dedicated worker, with `knownSources` equal to `["cpu"]`. It did not find `ownContributionEstimate`.
+
+`performance.measureUserAgentSpecificMemory()` gives its result at the next garbage collection, with a default timeout of approximately 20 s ([web.dev](https://web.dev/articles/monitor-total-page-memory-usage)). `performance.memory` counts shared heaps too many times, and it does not count workers and cross-site iframes ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/Performance/memory)).
+
+The values of `navigator.deviceMemory` changed in Chrome 147 (2026-04-07) ([Chrome 147](https://developer.chrome.com/release-notes/147)). Thus the bucket limits in stored data change at version 147. The Chrome 153 probe got 32.
+
+| Platform | Values from Chrome 147 | Values before Chrome 147 |
+|---|---|---|
+| Desktop | 2, 4, 8, 16, 32 | 0.25, 0.5, 1, 2, 4, 8 |
+| Android | 1, 2, 4, 8 | 0.25, 0.5, 1, 2, 4, 8 |
+
+`navigator.cpuPerformance` shipped in Chrome 152 (2026-08-25), after an origin trial in Chrome 146 to 152 ([CPU Performance](https://wicg.github.io/cpu-performance/)). Its value is 0 for unknown, or a tier from 1 to 4. Tier 1 is one core, and tier 2 is 2 to 4 cores. Tier 3 is 5 to 10 cores, and tier 4 is 11 cores or more. An implementation can change the tier by one for known CPU models. The probe got 4 on a desktop with 16 threads.
+
+## Isolation and reporting
+
+<SupportMatrix rows={isolationRows} browsers={supportColumns} footnotes={isolationNotes} caption="Cross-origin isolation and the Reporting API on 2026-10-07" />
+
+`SharedArrayBuffer` is available only when `crossOriginIsolated` is true: the page has COOP `same-origin` and COEP `require-corp` or `credentialless` ([MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer)). Without isolation, the constructor is hidden. The Chrome 153 probe found it `undefined` on a page that was not isolated. The `crossOriginIsolated` global came in Chrome 87, Firefox 72 and Safari 15.2.
+
+The blocking `Atomics.wait()` works only outside the main thread. Thus a watchdog worker can wait on a shared heartbeat with a timeout, but only on a cross-origin-isolated page. Safari 27 improved the enforcement of cross-origin isolation for workers. It also fixed the cloning of `SharedArrayBuffer` and the assignment of agent cluster IDs.
+
+`ReportingObserver` sees these report types:
+
+| Type | Chrome | Firefox | Safari |
+|---|---|---|---|
+| `deprecation` | 69 | 149 (not in workers) | No |
+| `intervention` | 69 | No | No |
+| `csp-violation` | 74 | 149 | 18.4 |
+| `coep` | 69 | No | 16.4 |
+| `integrity-violation` | 138 | 149 | No |
+| `permissions-policy-violation` | 120 | No | No |
+| `connection-allowlist` | 152 | No | No |
+
+Chrome batches the delivery to an endpoint and delays it by up to approximately one minute ([Chrome](https://developer.chrome.com/docs/capabilities/web-apis/reporting-api)). The [Crash Reporting draft](https://wicg.github.io/crash-reporting/) of 2026-02-02 defines the crash reports of Chromium. They have these properties:
+
+- Only an endpoint gets them. `ReportingObserver` does not get them.
+- The body has `reason` (`"oom"` or `"unresponsive"`), `stack`, `is_top_level`, `visibility_state` and `crash_report_api`.
+- The reports go to a `crash-reporting` endpoint if the page defines one, or else to `default`.
+- `Document-Policy: include-js-call-stacks-in-crash-reports` adds a JavaScript stack to the report of an unresponsive page. This shipped in Chrome 137 (May 2025). The stack has no frames of cross-origin scripts without CORS.
+- `window.crashReport` has `initialize(length)`, `set(key, value)` and `delete(key)`. It adds a map of each document to its crash reports. It shipped in Chrome 145 (February 2026), after an origin trial in Chrome 140 to 145 ([ChromeStatus](https://chromestatus.com/feature/6228675846209536)).
+
+The Declarative Performance Observer is a response header and a reporting endpoint. The browser itself reports navigation, user timing and `visibility-state` entries, also when the JavaScript of the page does not start or the renderer crashes. Its origin trial is in Chrome 151 to 155, and on desktop it continues to Chrome 161 ([ChromeStatus](https://chromestatus.com/feature/6594955352080384)).
+
+[JS Self-Profiling](https://wicg.github.io/js-self-profiling/) is available only with the header `Document-Policy: js-profiling`. When the header is present, any script of the page can profile, also third-party scripts. The minimum sample interval is 10 ms, and 16 ms on Windows. Facebook measured approximately 1% more load time. The origin trial of profile markers is in Chrome 153 to 161.
+
+## Time and observers
+
+<SupportMatrix rows={timeRows} browsers={supportColumns} footnotes={timeNotes} caption="Time and PerformanceObserver on 2026-10-07" />
+
+The list of `PerformanceObserver.supportedEntryTypes` is different in each global. Version 6.2.0 of the web-vitals library added a guard for a missing list. The Chrome 153 probe found these lists:
+
+- In a page: `element`, `event`, `first-input`, `interaction-contentful-paint`, `largest-contentful-paint`, `layout-shift`, `long-animation-frame`, `longtask`, `mark`, `measure`, `navigation`, `paint`, `resource`, `soft-navigation` and `visibility-state`.
+- In a dedicated worker: `mark`, `measure` and `resource`.
+
+From BCD, the research infers this list for Firefox and for Safari 26.2 and later: `event`, `first-input`, `largest-contentful-paint`, `mark`, `measure`, `navigation`, `paint` and `resource`. Nobody tested this list.
+
+The time origin of a window is its navigation start. The time origin of a worker is the start of the worker. In the probe, the `timeOrigin` of the worker was approximately 20.9 s after the `timeOrigin` of the page. Thus a monitor must convert each time with `timeOrigin + now()` before it compares the times of two threads. The note [clocks and timers](/research/clocks-and-timers) gives the behavior of each engine.
+
+## Specification status
+
+| Specification | Status | Date |
+|---|---|---|
+| [Long Animation Frames](https://www.w3.org/TR/long-animation-frames/) | W3C First Public Working Draft | 2026-04-28 |
+| [Long Tasks](https://www.w3.org/TR/longtasks-1/) | W3C Working Draft | 2026-03-19 |
+| [Event Timing](https://www.w3.org/TR/event-timing/) | W3C Working Draft | 2026-03-19 |
+| [Largest Contentful Paint](https://www.w3.org/TR/largest-contentful-paint/) | W3C Working Draft | 2026-08-26 |
+| [Paint Timing](https://www.w3.org/TR/paint-timing/) | W3C Working Draft | 2026-10-02 |
+| [Element Timing](https://w3c.github.io/element-timing/) | W3C Editor's Draft | 2026-09-03 |
+| [Container Timing](https://wicg.github.io/container-timing/) | WICG draft | 2026-10-01 |
+| [Layout Instability](https://wicg.github.io/layout-instability/) | WICG draft | 2025-12-17 |
+| [Soft Navigations](https://wicg.github.io/soft-navigations/) | WICG draft | 2026-08-26 |
+| [Navigation Timing Level 2](https://www.w3.org/TR/navigation-timing-2/) | W3C Working Draft | 2026-09-01 |
+| [High Resolution Time](https://www.w3.org/TR/hr-time-3/) | W3C Working Draft | 2026-09-01 |
+| [Performance Timeline](https://www.w3.org/TR/performance-timeline/) | W3C Candidate Recommendation Draft | 2025-05-21 |
+| [Timing entry-types registry](https://w3c.github.io/timing-entrytypes-registry/) | Registry | 2026-09-16 |
+| [Page Lifecycle](https://wicg.github.io/page-lifecycle/) | WICG draft | 2022-06-09 |
+| [Compute Pressure](https://www.w3.org/TR/compute-pressure/) | W3C Candidate Recommendation Draft | 2026-05-14 |
+| [requestIdleCallback](https://www.w3.org/TR/requestidlecallback/) | W3C Working Draft | 2025-05-21 |
+| [Scheduling APIs](https://wicg.github.io/scheduling-apis/) | WICG draft | 2025-05-30 |
+| [Reporting](https://www.w3.org/TR/reporting-1/) | W3C Working Draft | 2025-06-11 |
+| [Crash Reporting](https://wicg.github.io/crash-reporting/) | WICG draft | 2026-02-02 |
+| [Device Memory](https://www.w3.org/TR/device-memory/) | W3C Working Draft | 2026-03-30 |
+| [Server Timing](https://www.w3.org/TR/server-timing/) | W3C Working Draft | 2026-04-07 |
+| [CPU Performance](https://wicg.github.io/cpu-performance/) | WICG draft | 2026-08-15 |
+| [Measure Memory](https://wicg.github.io/performance-measure-memory/) | WICG draft | 2021-05-28 |
+
+The `visibility-state` entries, the back/forward cache events, the Navigation API and the timers are parts of the WHATWG HTML standard.
+
+## Soft navigations
+
+Chrome 151 (stable on 2026-07-28) enabled soft navigations by default on desktop, Android and WebView, but not on iOS. The experiments started near Chrome 110. A new origin trial started in Chrome 139, and a final origin trial was in Chrome 147 to 149 ([Chrome guide](https://developer.chrome.com/docs/web-platform/soft-navigations), [Chrome 151](https://developer.chrome.com/release-notes/151)). The [WICG draft](https://wicg.github.io/soft-navigations/) of 2026-08-26 defines two entry types:
+
+- `soft-navigation` gives a `PerformanceSoftNavigation`. Chrome 150 renamed it from `SoftNavigationEntry`. Its `name` is the URL, and its `navigationType` is `push`, `replace` or `traverse`. Its `startTime` is the start of the interaction, and its `duration` ends at the first contentful paint. From Chrome 150, `getLargestInteractionContentfulPaint()` is a method.
+- `interaction-contentful-paint` gives an `InteractionContentfulPaint` with an `interactionId` and a nested LCP entry. From Chrome 147, the browser makes one for each interaction that paints content, also without a soft navigation.
+
+These three things are necessary for a soft navigation:
+
+- an interaction of the user
+- a URL change in the same document
+- a contentful paint that task attribution connects to the interaction.
+
+From Chrome 147, `replaceState` also counts. Each entry gets the current navigation ID of its global. `PerformanceEntry.navigationId` is an `unsigned long long` that is different for each hard and soft navigation. The specification tells monitors not to use it as a count of navigations, and not to think that it starts at 0.
+
+The time origin does not change at a soft navigation. All `startTime` values stay relative to the time origin of the hard navigation. Thus a monitor subtracts the `startTime` of the `soft-navigation` entry to get the metrics of a route. The Chrome documentation connects ICP entries to soft navigations through `interactionId`, not through `navigationId`. The `largest-contentful-paint` entries stop at the first interaction, thus they describe only the hard navigation.
+
+The buffer of `soft-navigation` holds 50 entries, and the buffer of `interaction-contentful-paint` holds 150. A long-lived single-page app must observe them early. Mozilla and WebKit have no position, and the TAG review is not complete. Version 6.0.0 (2026-07-21) of the web-vitals library added soft navigations with the option `reportSoftNavs` ([changelog](https://github.com/GoogleChrome/web-vitals/blob/main/CHANGELOG.md)). How CrUX will show soft navigations is not decided.
+
+## The INP problem in Safari
+
+The engines measure INP to different points ([web.dev](https://web.dev/blog/lcp-and-inp-are-now-baseline-newly-available)). Chrome measures to `presentationTime`, when the pixels are on the screen. Firefox and Safari measure to `paintTime`, the end of the rendering update. Thus for the same work, their values do not include the latency of the compositor and the screen, and they are slightly lower.
+
+Safari reports INP values that are too high, especially in the tail. [DebugBear](https://www.debugbear.com/blog/firefox-safari-web-vitals) (2025-12-15, updated 2026-03-19) writes that Safari still has INP bugs that sometimes give values that are too high. [WebKit bug 319911](https://bugs.webkit.org/show_bug.cgi?id=319911) (filed 2026-07-21, status NEW) gives a cause. After an interaction, WebKit does not give rendering priority over tasks that were already in the queue. Thus a click handler that uses `setTimeout(long400msTask, 0)` gives an INP of more than 400 ms in WebKit, but a small INP in Chromium.
+
+Shopify storefront data on that bug compares the presentation delay:
+
+| Platform | p50 | p75 | p95 | p99 |
+|---|---|---|---|---|
+| Safari on macOS | 11 ms | 18 ms | 129 ms | 597 ms |
+| Chrome and Edge on macOS (same machines) | 21 ms | 41 ms | 68 ms | 130 ms |
+| Safari on iOS | – | – | – | 465 ms |
+| Chromium on Android | – | – | – | 310 ms |
+
+On approximately 77% of the stores, the p99 presentation delay of Safari was worse than that of Chromium.
+
+Chromium gives priority to the frame after an input. Chrome 109 gives compositing priority after an input. Chrome 134 defers the tasks that are not urgent until the frame after the input is on the screen. Thus a part of the higher INP of Safari is a real difference of the user experience, not only a measurement error. WebKit evaluated patches ([#69866](https://github.com/WebKit/WebKit/pull/69866), [#70039](https://github.com/WebKit/WebKit/pull/70039)). On 2026-08-13, Apple examined their risk of regressions.
+
+## Workers
+
+These APIs are available in workers: `performance.now()` (Chrome 30, Firefox 34, Safari 11), `PerformanceObserver` (Chrome 62, Firefox 57, Safari 11), `scheduler.postTask()` and `scheduler.yield()`, `PressureObserver` (Chrome desktop), `ReportingObserver` (Chrome and Firefox), `navigator.deviceMemory`, `navigator.hardwareConcurrency` and the blocking `Atomics.wait()`. These APIs are not available in workers: LoAF, `longtask`, Event Timing, LCP, layout shifts, paint entries, `requestIdleCallback`, `Profiler` (Chrome 153) and `navigator.cpuPerformance`.
+
+The background throttling of worker timers has no standard. The research found these facts ([Chrome 88](https://developer.chrome.com/blog/timer-throttling-in-chrome-88), [ChromeStatus](https://chromestatus.com/feature/6334419736461312), [Firefox bug 1774542](https://bugzilla.mozilla.org/show_bug.cgi?id=1774542)):
+
+- In Chrome, the documented throttling applies to page timers: one wake-up each second in a hidden page, and one each minute under intensive throttling. The intervention that throttles dedicated workers in background pages has no active development. Thus the timers of a desktop dedicated worker are effectively not throttled. The library [worker-timers](https://github.com/chrisguttandin/worker-timers) uses this fact.
+- Chrome on Android freezes background pages and their workers after 1 minute (Chrome 139 and later). On desktop, a freeze does not pause dedicated workers, because that change is behind a flag.
+- Firefox has a minimum of 1 s for the timers of inactive tabs on desktop, and 15 minutes on Android. Bug 1774542, about timers in workers of background tabs that are not throttled, is open. A preference `dom.workers.throttling.enabled` appeared in 2025. Its default is not verified.
+- Firefox pauses dedicated workers when the document goes into the back/forward cache.
+- For Safari, the research found no authoritative document. It is not verified that iOS suspends background tabs and their workers.
+- In Low Power Mode, Safari halves `requestAnimationFrame` to 30 fps, and it throttles rAF in cross-origin iframes without interaction ([Motion](https://motion.dev/magazine/when-browsers-throttle-requestanimationframe), 2020). This affects a lag probe that uses rAF heartbeats.
+
+A block of the main thread also stops the input and output of the workers in WebKit. Experiment E4 measured this in the Playwright builds on Windows 11 ([local experiments](/research/local-experiments)):
+
+- Chromium and Firefox complete the IndexedDB writes and the `fetch` requests of a dedicated worker during a block of 2 s, after 7 ms to 58 ms. A shared worker that writes and sends each 100 ms also completes operations during the block: 18 in Chromium and 16 in Firefox.
+- WebKit completes them on the main thread, after the block: the IndexedDB write after 2015 ms and the `fetch` after 2013 ms. A shared worker completes none of its operations during the block.
+- In WebKit, a message from the page to a shared worker that the page posts immediately before the block arrives only after the block.
+
+Thus in WebKit, a worker can detect a hang with its own timer. But it cannot send a report or write a record until the main thread operates again. The WebKit build for Windows is not Safari. The IndexedDB and loader code of workers is shared code of WebCore, thus Safari probably behaves the same. This is not verified.
+
+The note [clocks and timers](/research/clocks-and-timers) gives the timer rules of each engine from the source code.
+
+## Changes in 2025 and 2026
+
+### All engines
+
+- **2025.** Interop 2025 made LCP and INP a focus area, and it excluded CLS. The final Interop 2025 score was 97% overall, and 99% in experimental builds. The press reports that Safari went from 43 to 99. WebKit published its [review](https://webkit.org/blog/17808/interop-2025-review/) on 2026-02-06.
+- **2025-12-12.** Safari 26.2 shipped Event Timing (INP), LCP, `interactionCount`, `eventCounts`, the Navigation API and speculation-rules prefetch behind a flag ([WebKit](https://webkit.org/blog/17640/webkit-features-for-safari-26-2/)). LCP and INP became "Baseline Newly available".
+- **2026-02-12.** The Interop 2026 announcement gave 20 focus areas, but none for performance metrics ([web.dev](https://web.dev/blog/interop-2026)). The related areas are the Navigation API (`precommitHandler`), the timing of scroll events relative to animation events, and work on the reliability of the event loop.
+- **September 2026.** LoAF ([#1372](https://github.com/web-platform-tests/interop/issues/1372)) and CLS ([#1352](https://github.com/web-platform-tests/interop/issues/1352)) are proposals for Interop 2027.
+- **Release cadence.** Edge, Firefox and Chrome changed to stable releases every two weeks, from 2026-08-27, 2026-09-01 and 2026-09-08.
+- **web-vitals.** Version 5.0.0 (2025-05-07) removed `onFID` and moved to a "Baseline Widely available" support policy. Version 5.1.0 (2025-07-31) finalizes LCP only on trusted events. Version 6.0.0 (2026-07-21) added soft navigations, set `includeProcessedEventEntries` to false, and added back/forward cache handling for small INP values. Versions 6.2.x (August to October 2026) fixed memory leaks and negative durations ([changelog](https://github.com/GoogleChrome/web-vitals/blob/main/CHANGELOG.md)).
+
+The section [Specification status](#specification-status) gives the dates of the specifications of the period.
+
+### Chromium
+
+| Version | Changes |
+|---|---|
+| Chrome 133 (February 2025) | Coarsened cross-origin `renderTime` for LCP and Element Timing. Energy Saver freezing, with a gradual rollout. |
+| Chrome 134 (March 2025) | `DeferRendererTasksAfterInput`, for a better INP. |
+| Chrome 135 (April 2025) | `fetchLater()`. `interactionId` became `uint64`. |
+| Chrome 137 (May 2025) | JavaScript stacks in the crash reports of unresponsive pages. `Document-Isolation-Policy` on desktop. |
+| Chrome 138 (June 2025) | `is_top_level` and `visibility_state` in crash reports. `integrity-violation` reports. |
+| Chrome 139 (August 2025) | The new soft-navigation origin trial. The `crash-reporting` endpoint. Background freezing after 1 minute on Android. |
+| Chrome 140 to 142 | The bug of early text timestamps in LCP. Chrome 143 (December 2025) fixed it. |
+| Chrome 144 (January 2026) | `performance.interactionCount`. |
+| Chrome 145 (February 2026) | `paintTime` and `presentationTime` on paint, LCP, element and LoAF entries. Navigation `confidence`. `window.crashReport`. Layout-shift attribution in CSS pixels. Container Timing behind a flag. |
+| Chrome 146 (March 2026) | The change of LCP candidate emission (147 in the Chromium changelog). The CPU Performance origin trial. The `form_submission` origin trial. The `unload` deprecation at 1% of sites. |
+| Chrome 147 (April 2026) | New `deviceMemory` buckets. Early `interactionId`. The final soft-navigation origin trial (147 to 149). Soft navigations with `replaceState`. |
+| Chrome 148 (May 2026) | The Container Timing origin trial (148 to 153). The LoAF style-duration origin trial (148 to 153). Event Timing reports only the targets to which the page has access. `contentType` in Resource Timing. `extendedLifetime` for SharedWorker. |
+| Chrome 149 (June 2026) | Pages with open WebSockets can go into the back/forward cache. |
+| Chrome 150 (June 2026) | `prerender_until_script`. The origin trial of `performance.getSpeculations()`. `interactionId = 0` for nested clicks. `SoftNavigationEntry` renamed to `PerformanceSoftNavigation`. The `unload` deprecation at 40%. |
+| Chrome 151 (2026-07-28) | Soft navigations, `interaction-contentful-paint` and `navigationId`. The Declarative Performance Observer origin trial. The video LCP fix. |
+| Chrome 152 (2026-08-25) | The CPU Performance API. Connection allowlists. |
+| Chrome 153 (2026-09-08) | The origin trial of JS Self-Profiling markers (153 to 161). The first release of the two-week cycle. |
+| Chrome 154 (2026-09-22) | `unload` disabled for 100% of page loads. `unload-listener` removed from the reasons of the back/forward cache. |
+| Chrome 157 (planned for approximately 2026-11-03) | `styleDuration`, `forcedStyleDuration`, `layoutDuration` and `forcedLayoutDuration` on LoAF entries (intent to ship approved). |
+
+### Firefox
+
+| Version | Changes |
+|---|---|
+| 140 (June 2025) | `paintTime`, and the LCP `presentationTime`, which is always `null`. |
+| 141 (July 2025) | The coarsened cross-origin LCP `renderTime`. |
+| 142 (August 2025) | Prioritized task scheduling: `postTask()`, `yield()` and `TaskController`, also in workers. |
+| 144 (October 2025) | `interactionId` and `interactionCount`. Thus Firefox can measure INP. Firefox has LCP from version 122 (January 2024). |
+| 145 (November 2025) | `Atomics.waitAsync()`. |
+| 146 (December 2025) | Symbols as targets of `WeakRef` and `FinalizationRegistry`. |
+| 147 (January 2026) | The Navigation API. |
+| 149 (March 2026) | `ReportingObserver` (CSP, integrity and deprecation reports) and `Report-To`. |
+| 152 (June 2026) | Resource Timing fields for interim responses. |
+| 156 (September 2026) | Container Timing behind a preference. |
+
+Firefox still does not have LoAF, Long Tasks, CLS, Element Timing, soft navigations, `visibility-state` entries and Compute Pressure.
+
+### Safari and WebKit
+
+| Version | Changes |
+|---|---|
+| 18.4 (March 2025) | The `csp-violation` type of `ReportingObserver`. |
+| 26.2 (December 2025) | Event Timing (INP), LCP, `interactionCount`, the Navigation API, and speculation-rules prefetch behind a flag. Web Inspector shows LCP. |
+| 26.4 (March 2026) | The Resource Timing fields `deliveryType`, `finalResponseHeadersStart` and `firstInterimResponseStart` ([WebKit](https://webkit.org/blog/17862/webkit-features-for-safari-26-4/)). |
+| 27.0 (2026-09-14) | No new APIs for performance measurement. Fixes for `domInteractive` and `domContentLoadedEventEnd` that gave 0, for the cross-origin isolation of workers and for the cloning of `SharedArrayBuffer`. Resource Timing fields for the static routing of service workers. |
+
+Safari still does not have LoAF, Long Tasks, CLS, Element Timing, `requestIdleCallback`, `scheduler`, `visibility-state` entries, prerendering, `notRestoredReasons`, the Page Lifecycle events, `measureUserAgentSpecificMemory()`, COEP `credentialless` and `deviceMemory`. The open WebKit issues are LCP in shadow DOM (bug 310264), the render priority after input (bug 319911) and `requestIdleCallback` (bug 285049).
+
+## Implications for the library
+
+The research gives seven implications. This table shows the response of the library to each of them at this time.
+
+| Implication | The library at this time |
+|---|---|
+| Feature detection in each global, with a guard for a missing `supportedEntryTypes` | `createBrowserDeps` examines each optional API. `ObserverMonitor` and `PageViewVitals` make no observer for an entry type that the browser does not list. `PageViewVitals` then gives no value for the vital of that type, as web-vitals does. |
+| A ladder of blocking signals: LoAF, then `longtask`, then Event Timing with `durationThreshold: 16`, then a heartbeat | LoAF in Chromium, Event Timing with a threshold of 16 ms, the calibrated DriftLag and the worker heartbeat. The library does not use `longtask`. |
+| INP from `interactionId` and `performance.interactionCount`, or from a count of the distinct IDs, with the engine on each value | `InpCalculator` uses the native count, or else the count of the interactions that it saw. The metrics have no engine attribute. |
+| Page views of single-page apps from soft navigations in Chrome 151 and later, and from the Navigation API in other browsers | `PageViewVitals` starts a new page view at each soft navigation when the option `softNavigations` is true. The library does not use the Navigation API. |
+| No samples from hidden time, prerender before `activationStart`, the back/forward cache, `freeze` to `resume`, or sleep | The measurement conditions discard samples that overlap hidden, frozen and suspend intervals. The page-view vitals start at the activation. |
+| Delivery at `pagehide` and `visibilitychange` with `fetchLater()` or `sendBeacon()`, and no `unload` | otel-ts flushes when the page becomes hidden and at `pagehide`. The worker sends hang reports with `fetch` and `keepalive`, but in WebKit the request completes only after a block of the main thread. Nothing uses `unload`. |
+| The Chromium extras where they help: Compute Pressure, crash reports and `window.crashReport` | `ComputePressureMonitor` observes the `"cpu"` source. The page-view ID goes into `window.crashReport`. The library does not use `deviceMemory`, `cpuPerformance` or JS Self-Profiling. |
+
+The code is in [`browser/browser-deps.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/browser/browser-deps.ts), [`ObserverMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ObserverMonitor.ts), [`InpCalculator.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/InpCalculator.ts) and [`measurement-conditions.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/measurement-conditions.ts). The page [measurement validity](/docs/concepts/measurement-validity) explains the discarded samples.

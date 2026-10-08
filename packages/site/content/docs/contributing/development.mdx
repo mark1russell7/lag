@@ -1,0 +1,60 @@
+---
+title: Development
+description: How to build the packages, add a package, operate the tests and contribute a change.
+order: 71
+status: draft
+---
+
+The repository is a pnpm workspace of TypeScript packages. TypeScript project references build all packages in the correct sequence.
+
+## Install and build
+
+```bash
+pnpm install
+pnpm build
+```
+
+`pnpm build` operates `tsc -b`. It builds each package into its `dist` folder.
+
+## The packages
+
+| Folder | Package |
+|---|---|
+| `packages/lag` | `@lag/core` |
+| `packages/lag-worker` | `@lag/worker` |
+| `packages/lag-integration-tests` | The browser tests |
+| `packages/load` | `@lag/load` |
+| `packages/report` | `@lag/report` |
+| `packages/ste-lint` | `@lag/ste-lint` |
+| `packages/scripts` | The scripts of the repository |
+| `packages/site` | `@lag/site` |
+
+## Add a package
+
+Use the scaffold of the repository. Do not write a `package.json` file yourself.
+
+```bash
+pnpm new --name my-package --config node
+```
+
+The scaffold makes the folder, the `package.json` and `tsconfig.json` files, and the reference in the root `tsconfig.json`.
+
+## Tests
+
+| Command | What it does |
+|---|---|
+| `pnpm test` | The unit tests of `@lag/core`. |
+| `pnpm test:integration` | The browser tests. They start the Grafana stack first. |
+| `pnpm --filter @lag/site test` | The tests of the site, in Node and in Chromium. |
+| `pnpm --filter @lag/ste-lint test` | The tests of the linter. |
+| `pnpm lint:ste` | The writing rules. |
+
+The [test strategy](/docs/testing/strategy) explains each type of test.
+
+## Rules for a change
+
+- Give each new part its dependencies as arguments. Do not read browser globals outside the browser adapter.
+- Add the metrics of a new monitor to the metric catalog. The catalog test makes sure that the code agrees with it.
+- Write a unit test for each rule, with fake time. Write a browser test for each behavior that depends on a real browser.
+- Write the comments and the pages with the [writing style](/docs/contributing/writing-style), and operate `pnpm lint:ste`.
+- Make sure that `pnpm build`, the tests and the linter pass before you commit.

@@ -1,6 +1,14 @@
 import type { WorkerLike } from "@lag/core/WorkerLagMonitor.js";
 
-export function createLagWorker() : WorkerLike {
+export type LagWorker = WorkerLike & {
+    /**
+     * This method stops the worker thread (`worker.terminate()`). The caller
+     * owns the worker. The stop of a monitor does not stop the worker.
+     */
+    terminate() : void;
+};
+
+export function createLagWorker() : LagWorker {
     const worker = new Worker(
         new URL("./bundled-worker.js", import.meta.url),
         { type : "module" },
@@ -10,5 +18,6 @@ export function createLagWorker() : WorkerLike {
         postMessage : (message) => worker.postMessage(message),
         addEventListener : (type, handler) => worker.addEventListener(type, handler),
         removeEventListener : (type, handler) => worker.removeEventListener(type, handler),
+        terminate : () => worker.terminate(),
     };
 }

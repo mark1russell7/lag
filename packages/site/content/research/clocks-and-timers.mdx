@@ -1,0 +1,394 @@
+---
+title: Clocks and timers
+description: How the clocks and timers of browsers behave in each engine and operating system, how this changes lag measurements, and which consequences the library implements.
+order: 3
+status: draft
+---
+
+This note collects the facts about clocks, timers and measurement that a lag monitor depends on. The research read the source code of Chromium, WebKit, Firefox and OpenTelemetry JS on 2026-10-07, because blog posts and MDN pages are older than the code. The note marks each inference of the research as a synthesis.
+
+`performance.timeOrigin + performance.now()` is not one shared clock that continues through sleep, in any engine. `performance.now()` stops during system sleep on all operating systems except Windows. Timer probes measure the timer policy of the browser and of the operating system, not only the load. The last sections give the stall classification and the consequences that the library implements at this time. The [sources](/research/sources) page lists all sources of this note.
+
+## HR-Time and the time origin
+
+### The specification
+
+The [High Resolution Time](https://www.w3.org/TR/hr-time-2/) Level 2 Recommendation (2019) defines one global monotonic clock. The values of `now()` with the same time origin use the same monotonic clock, and system clock changes do not affect it. The specification also warns that the monotonic properties apply only to contexts that can exchange messages.
+
+The Level 3 [Working Draft](https://www.w3.org/TR/hr-time-3/) and the [Editor's Draft](https://w3c.github.io/hr-time/) of 2026-09-01 add these rules:
+
+- The wall clock and the monotonic clock are two different clocks. The monotonic clock exists only in one execution of the user agent.
+- Each group of contexts that can communicate has one estimated monotonic time of the Unix epoch. The user agent calculates it one time, from the wall time and the monotonic time, and then coarsens it.
+- `timeOrigin` is the duration from that estimated epoch to the time origin of the global. The time origin of a window is the start of the navigation. The time origin of a worker is the start time of the worker.
+- Thus a window and its dedicated workers share one anchor, and `timeOrigin + now()` agrees between them. Later changes of the wall clock also do not change it. This consequence is a synthesis of the research, from the text of the specification.
+
+A note from [PR #69](https://github.com/w3c/hr-time/pull/69) (May 2019) permits user agents to throttle or freeze the timers of a background context. The throttling must not change the resolution or the accuracy of the monotonic clock. No level of the specification says that the clock continues during sleep. [Issue #115](https://github.com/w3c/hr-time/issues/115) (May 2021) asks for this rule. It records a consensus of Level 2 for a clock that continues during sleep, but no resolution of the editors.
+
+The resolution of the clock is 100 µs or more. When the context is cross-origin isolated, the resolution is 5 µs or more. Implementations can also add jitter.
+
+### The engines
+
+| Engine | Anchor of `timeOrigin` | Window and dedicated worker | Later reads move with the wall clock |
+|---|---|---|---|
+| Chromium (Chrome, Edge) | Each `Performance` object calculates its anchor when the engine makes the object, at the first access. | The same monotonic clock, but two anchors: a constant offset | No |
+| Gecko (Firefox) | One anchor for each content process | The same anchor: aligned | No |
+| WebKit (Safari) | Each read of `timeOrigin` calculates it again from the current wall time and monotonic time. | Approximately aligned, but not monotonic | Yes |
+
+The sources are the engine code: Chromium [`performance.cc`](https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/core/timing/performance.cc) and [`global_performance.cc`](https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/core/timing/global_performance.cc), Firefox [`PerformanceService.cpp`](https://searchfox.org/firefox-main/source/dom/performance/PerformanceService.cpp), and WebKit [`Performance.cpp`](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/page/Performance.cpp).
+
+These facts come from the same research:
+
+- In the WebPerfWG meeting of 2023-06-22, Yoav Weiss described an earlier change in Chromium ([minutes](https://lists.w3.org/Archives/Public/public-web-perf/2023Jul/0006.html)). Chromium synchronized the clocks one time for each renderer process, not for each window, and the change made very large drifts.
+- Nic Jansma reported that the `timeOrigin` of Safari drifts over days. [WebKit bug 258572](https://bugs.webkit.org/show_bug.cgi?id=258572) shows values that moved backward by 1 ms to 3 ms in some minutes.
+- [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Performance/timeOrigin) warns that a window that stays open during system sleep and then starts a worker can have an offset of the sleep duration. MDN says that no method can restore the synchronization.
+- The known bugs are Chromium 1206450 and 1207386, Mozilla [1709767](https://bugzilla.mozilla.org/show_bug.cgi?id=1709767) and [1710762](https://bugzilla.mozilla.org/show_bug.cgi?id=1710762), and WebKit [225610](https://bugs.webkit.org/show_bug.cgi?id=225610) and 258572.
+- In October 2026, `timeOrigin` is approximately 1.79e12 ms. The step of a double at that value is 2^-12 ms, approximately 0.24 µs. Thus the addition of `now()` to `timeOrigin` loses nothing that matters, when the coarsening is 5 µs to 100 µs.
+
+### The size of the offset in Chrome
+
+This section is a synthesis of the research. The offset is a change of the difference between the wall clock and the monotonic clock. The change starts when the window makes its `Performance` object, and ends when the worker makes its object.
+
+- **Linux, ChromeOS and Android.** The offset is approximately 0 while the device is awake, because NTP slews `CLOCK_REALTIME` and `CLOCK_MONOTONIC` together ([clock_gettime(2)](https://man7.org/linux/man-pages/man2/clock_gettime.2.html)). A step or a suspend adds its full size.
+- **macOS.** NTP does not slew `mach_absolute_time`, but it corrects the wall clock. Thus the drift is the correction of the crystal: 72 ms each hour at 20 ppm, and 180 ms each hour (approximately 4.3 s each day) at 50 ppm ([Microsoft](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)). A sleep adds its full duration.
+- **Windows.** QPC is not slewed and counts sleep, while W32Time corrects the system time. Thus the drift is at the ppm level. Chrome calculates `Time::Now()` as an initial time plus the elapsed QPC time, and calculates the initial time again after more than 60 s ([`time_win.cc`](https://chromium.googlesource.com/chromium/src/+/HEAD/base/time/time_win.cc)). This gives a sawtooth noise of approximately the drift rate multiplied by 60 s, approximately 3 ms at 50 ppm.
+
+An example: on macOS, the NTP correction is 20 ppm, and a worker starts one hour after the page load. The worker gets a constant offset of approximately 72 ms. A delivery delay of "received minus sent" then shows 72 ms of lag that does not exist, or a negative lag in the other direction.
+
+## Sleep by operating system
+
+`performance.now()` stops during system sleep on all operating systems except Windows. The cause is the clock of the operating system that each engine uses.
+
+| Engine | Windows | macOS | Linux and ChromeOS | Android | iOS and iPadOS |
+|---|---|---|---|---|---|
+| Chrome and Edge | Continues (QPC) | Stops (`mach_absolute_time`) | Stops (`CLOCK_MONOTONIC`) | Stops | WebKit engine |
+| Firefox | Continues | Stops (`mach_absolute_time`) | Stops (`CLOCK_MONOTONIC`) | Stops | WebKit engine |
+| Safari and WebKit | – | Stops, and `timeOrigin` moves with the wall clock at each read | Stops in WebKitGTK and WPE | – | Stops |
+
+The sources are the MDN [compliance table](https://github.com/mdn/content/issues/4713), the bugs Mozilla 1709767 and WebKit 225610, and the Chromium file [`time.h`](https://chromium.googlesource.com/chromium/src/+/HEAD/base/time/time.h). On iOS, Chrome and Firefox use WebKit. The exception is a browser with its own engine under the EU entitlement of Apple, which the research did not examine.
+
+The clocks of the operating systems have these properties:
+
+- Linux `CLOCK_MONOTONIC` does not count the time of a suspend, and NTP frequency changes affect it. `CLOCK_BOOTTIME` is the same, but it includes the suspend ([clock_gettime(2)](https://man7.org/linux/man-pages/man2/clock_gettime.2.html)).
+- macOS `CLOCK_UPTIME_RAW` is equal to `mach_absolute_time()` and does not increase during sleep. macOS `CLOCK_MONOTONIC` continues during sleep ([clock_gettime(3)](https://keith.github.io/xcode-man-pages/clock_gettime.3.html)).
+- Windows QPC counts all ticks from the start of Windows, also during standby, hibernate and connected standby. Its frequency is frequently 10 MHz. `QueryUnbiasedInterruptTime` does not count sleep ([Microsoft](https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps)).
+
+Chromium has internal clocks that continue during a suspend (`RealTicks`, with `CLOCK_BOOTTIME`, `mach_continuous_time()` and `QueryInterruptTimePrecise()`). They are for the internal use of the engine, and `performance.now()` still uses `TimeTicks`. Node.js has the same problem ([node#47724](https://github.com/nodejs/node/issues/47724)).
+
+### Timers after a wake
+
+This section is a synthesis of the research, from the clock sources.
+
+- **Platforms with a clock that stops.** The deadline of a timer is on the stopped clock, thus the remaining delay continues after the wake. For example, a 60 s timer that starts 10 s before a sleep of one hour fires approximately 50 s after the wake. The measured lateness, on the same stopped clock, is approximately 0.
+- **Windows.** `performance.now()` continued during the sleep. Thus each timer that came due during the sleep is late by approximately the sleep duration.
+- **No burst after a resume.** Browsers do not fire the missed repeats of `setInterval`. Firefox fixed this in 2007: before the fix, a 1 s interval fired 86,400 times after one day of suspend ([bug 376643](https://bugzilla.mozilla.org/show_bug.cgi?id=376643)).
+
+### Visibility, freeze and system sleep
+
+No web event shows a suspend or a resume of the operating system. The `freeze` and `resume` events fire only when the browser freezes a page. This occurs in the back/forward cache, in the background on Android, and with Energy Saver on desktop ([Page Lifecycle API](https://developer.chrome.com/docs/web-platform/page-lifecycle-api)).
+
+MDN says that a page is `hidden` while the screen lock of the operating system is active ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/Document/visibilityState)). The implementations are different.
+
+On Windows, Chrome 86 and later treats all windows as occluded while the screen lock is active ([Chromium](https://chromium.googlesource.com/chromium/src/+/main/docs/windows_native_window_occlusion_tracking.md)). Then it treats their foreground tabs as background tabs. On macOS, Chrome uses the occlusion of `NSWindow`. An open Chromium report says that `visibilityState` stays `visible` on macOS in some setups. Thus a hidden state before a sleep is likely, but not sure.
+
+The [Page Lifecycle specification](https://wicg.github.io/page-lifecycle/) blocks the dedicated workers of a frozen document. For Chrome, the sources do not agree. An intent to implement of 2019 announced the pause of dedicated workers ([blink-dev](https://groups.google.com/a/chromium.org/g/blink-dev/c/KwDF6Eavfek/m/Qb48J5ceAwAJ)). But ChromeStatus shows that on desktop, the pause is still behind a flag ([ChromeStatus](https://chromestatus.com/feature/5276568928649216)). Thus it is not verified that Chrome on desktop pauses the workers of a frozen page.
+
+### Prior art: the suspend detector of Chromium
+
+`base::ElapsedNoSleepTimer` in Chromium compares `LiveTicks`, which excludes a suspend, with `RealTicks`, which includes it ([`elapsed_timer.cc`](https://github.com/chromium/chromium/blob/main/base/timer/elapsed_timer.cc)). It has these rules:
+
+- Each sample reads `LiveTicks`, then `RealTicks`, then `LiveTicks` again.
+- The maximum error is the read duration plus 1 µs. If a read pair takes more than 50 µs, the timer reads again, up to 3 times.
+- The timer rejects the measurement in two cases. In the first case, the sum of the errors is more than 200 µs. In the second case, the real time minus the live time is more than the error, which shows a sleep.
+- Windows "Modern Standby" can stay hidden from the timer, because `LiveTicks` possibly does not stop there.
+
+JavaScript has coarser clocks, thus the same method in JavaScript must use thresholds in milliseconds, not in microseconds.
+
+## Divergence of `Date.now()`
+
+### How operating systems change the wall clock
+
+| Daemon or system | Slew or step | Numbers |
+|---|---|---|
+| [ntpd](https://www.ntp.org/documentation/4.2.8-series/clock/) | It slews. It steps only for a spike larger than the step threshold that continues past the stepout threshold. | Step threshold 128 ms, stepout 300 s, panic 1000 s, kernel slew 500 ppm |
+| [chrony](https://chrony-project.org/doc/4.6/chrony.conf.html) | It slews by default, and steps only with `makestep`. | Default `maxslewrate` 83 333.333 ppm (1/12), example `makestep 0.1 3` |
+| [systemd-timesyncd](https://github.com/systemd/systemd/blob/main/src/timesync/timesyncd-manager.c) | It slews an offset of less than 0.4 s through the kernel PLL. Else it steps (`ADJ_SETOFFSET`). | `NTP_MAX_ADJUST 0.4` |
+| [Windows W32Time](https://learn.microsoft.com/en-us/windows-server/networking/windows-time-service/windows-time-service-tools-and-settings) | It slews if the offset is not more than `MaxAllowedPhaseOffset`. Else it sets the clock at once. | `MaxAllowedPhaseOffset` 1 s for standalone computers and 300 s for domain members. Standalone `SpecialPollInterval` 604 800 s (weekly). `MaxPosPhaseCorrection` and `MaxNegPhaseCorrection` 54 000 s (15 h) for standalone computers |
+| macOS (`timed`) | Not publicly documented | – |
+
+On macOS and Windows, the time service corrects the wall clock but not the monotonic counter. Thus the two clocks drift apart at the rate of the crystal correction. Crystals are usually ±30 ppm to ±50 ppm, and rarely ±500 ppm. An error of 100 ppm is 8.64 s each day, and ±10 ppm is ±36 ms each hour. On Linux, NTP slews `CLOCK_MONOTONIC` together with `CLOCK_REALTIME`, thus the two diverge only at steps and suspends. A detector of drift or suspend must have a tolerance that depends on the rate, not a fixed tolerance.
+
+With a weekly poll on Windows, the wall clock can collect an error of tens of seconds, and then step. This is a synthesis of the research.
+
+Users and malware change clocks frequently. In the certificate-error data of Chrome ([Acer and others, CCS 2017](https://acmccs.github.io/papers/p1407-acerA.pdf)), these facts were true:
+
+- The client clock was more than 24 h behind in 6.7% of the reports, and more than 24 h ahead in 0.05%.
+- 99.8% of those clocks were within 3 months of the true time.
+- Client clock errors caused more than 30% of all certificate warnings on Windows.
+- The signed "secure time" service of Chrome increased the detection of clock errors to 96%. 93% of its queries got an answer within 3 s.
+
+### How browsers show wall-clock changes
+
+No event announces a change of the wall clock. `Date.now()` jumps forward or backward.
+
+- **Chrome.** `Date.now()` is `base::Time::Now()`, clamped to milliseconds. The `TimeClamper` adds jitter near the millisecond boundaries ([`gin/time_clamper.h`](https://chromium.googlesource.com/chromium/src/+/HEAD/gin/time_clamper.h)). On Windows, `base::Time::Now()` is the initial system time plus the elapsed QPC time, and Chrome calculates the initial time again after more than 60 s (`kMaxTimeToAvoidDrift`). Thus a step or a slew of the wall clock can arrive in `Date.now()` up to approximately 60 s late, as a sawtooth.
+- **Firefox.** `Date.now()` is rounded to 1 ms (`privacy.reduceTimerPrecision`), and to 16.667 ms or more with `privacy.resistFingerprinting` ([MDN](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/now)).
+- **Safari.** Each read of `timeOrigin` calculates it again. Thus code that reads `performance.timeOrigin` at each use actually uses the wall clock.
+
+### How a monitor can find a suspend or a step
+
+This section is a synthesis of the research. Let `d(t) = Date.now() − (T0 + performance.now())`, where `T0` is `performance.timeOrigin`, read one time at the start. The single read is necessary for Safari. These are the signatures:
+
+- **Suspend on a platform where the clock stops.** `d` jumps up by approximately the sleep duration. No timer is late.
+- **Suspend on Windows.** `d` does not change. The main-thread timers and the worker timers are late by approximately the sleep duration.
+- **Step of the wall clock.** `d` jumps by the step, forward or backward, and no timer is late. A backward jump can only be a step, or a read of `timeOrigin` in Safari.
+- **NTP slew.** `d` changes slowly. On Linux the change is approximately 0. On macOS and Windows it is at the ppm level, but the phase correction of W32Time can be fast. Chrome on Windows adds the 60 s sawtooth.
+- **Noise.** `Date.now()` has whole milliseconds and jitter, thus approximately 1 ms of noise. The coarsening of `performance.now()` adds 0.1 ms to 1 ms.
+
+A practical threshold is `|Δd| > max(50 ms, k × Δt)` with `k` between 1% and 5%, sampled approximately each second. A suspend is a change of 1 s or more with no lateness at the same time. Sentry tried 5 minutes and 15 s before it used 1 s ([Sentry PR #23054](https://github.com/getsentry/sentry-javascript/pull/23054)). The two reads of `performance.now()` before and after `Date.now()` find a preemption: if they differ by more than approximately 1 ms, the monitor discards the sample.
+
+The library does not use the lateness rule. In a hidden page, Chrome can give the timer one wake-up each minute (refer to [background throttling](#background-throttling-of-the-main-thread)). Also, a hidden state before a sleep is likely (refer to [visibility, freeze and system sleep](#visibility-freeze-and-system-sleep)). Thus the timer is frequently late at the sample after a sleep. `ClockDriftMonitor` classifies each forward change of 1 s or more as a suspend, whatever the lateness of its timer. A unit test simulates a sleep of one hour in a hidden page that gets one wake-up each minute.
+
+The research found this prior art:
+
+- **wake-event** ([GitHub](https://github.com/HenrikJoreteg/wake-event)) uses a `setInterval` of 5000 ms. It fires an event if `Date.now()` is more than the last time plus 5000 ms plus 2000 ms. It operates on the main thread, thus throttling and long tasks give incorrect alarms.
+- **Noam Rosenthal** ([dev.to](https://dev.to/noamr/when-a-millisecond-is-not-a-millisecond-3h6)) treats the origin as a variable, `Date.now() − performance.now()`, and measures it again from time to time.
+- **Sentry PR #23054** (merged 2026-10-07) compares `Date.now()` with `timeOrigin + now()` one time in each task. It sets a new anchor when the difference is more than 1 s, examines the clocks again at `visibilitychange`, and keeps up to 100 earlier origins. Thus a late performance entry uses the origin that was valid when the browser measured it. An earlier Sentry issue saw `timeOrigin + now()` more than 24 h in the past in Chrome 81 on macOS ([Sentry #2590](https://github.com/getsentry/sentry-javascript/issues/2590)). In Safari 13.1, the error was more than 13 h.
+- **React Native 0.86 on iOS 27** drifted by approximately 7 days on a long-lived simulator, because the sleep time accumulated ([react-native#57595](https://github.com/react/react-native/issues/57595)).
+
+## Clock resolution
+
+| Context | `performance.now()` | Cross-origin isolated | Jitter | `Date.now()` |
+|---|---|---|---|---|
+| Chrome and Edge 91 and later | 100 µs | 5 µs | Yes, a pseudorandom threshold for each interval | 1 ms, with jitter at the boundaries |
+| Firefox | 1 ms | 20 µs | Yes, a random seed for each context | 1 ms, or 16.667 ms or more with `resistFingerprinting` |
+| Safari | 1 ms | 20 µs | No jitter in the source | 1 ms |
+| Workers | The same rules, with the isolation of the worker itself | | | |
+
+The sources are Chromium [`time_clamper.h`](https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/core/timing/time_clamper.h), the [Chrome 91 blog post](https://developer.chrome.com/blog/cross-origin-isolated-hr-timers), the Firefox `Performance.cpp`, the WebKit `Performance.cpp` and [MDN](https://developer.mozilla.org/en-US/docs/Web/API/WorkerGlobalScope/crossOriginIsolated). Before Chrome 91, desktop had 5 µs and Android had 100 µs. A measurement of 2021 found Chromium 95 near 100 µs ([incolumitas](https://incolumitas.com/2021/12/18/on-high-precision-javascript-timers/)). Rare Windows hardware without an invariant TSC makes Chrome use `timeGetTime`, with a resolution that can be as coarse as approximately 15.6 ms.
+
+Implicit clocks also exist. In the browsers of 2017, [Fantastic Timers](https://gruss.cc/files/fantastictimers.pdf) measured `setTimeout` at approximately 4 ms, CSS animations at approximately 16 ms, and `postMessage` and `MessageChannel` at approximately 12 µs to 145 µs. A `SharedArrayBuffer` counter in a worker gave 2 ns (Firefox) to 15 ns (Chrome).
+
+With a coarsening `r`, each reading has an error of less than `r`, and a difference has an error of less than `2r`. This consequence is a synthesis of the research. In Firefox and Safari without isolation (`r` = 1 ms), a timer-drift sample of 5 ms has an error of ±2 ms. Thus a monitor aggregates the samples, and does not compare single samples with a threshold of 1 ms to 2 ms. In Chrome, with 100 µs, a lag of less than 0.2 ms is noise. A histogram must have a bucket width of at least `2r`.
+
+The library measures the resolution one time for each page with `ClockReliabilityChecker`. It takes the smallest step between consecutive reads of `performance.now()`, and treats a step of less than 50 µs as high resolution ([`ClockReliabilityChecker.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ClockReliabilityChecker.ts)).
+
+## Timer policy
+
+### The nesting clamp
+
+The [HTML standard](https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html) sets a timeout to 4 ms when the nesting level is more than 5 and the timeout is less than 4 ms. Each repeat of `setInterval` increases the nesting level. The user agent can also wait more, for example to save power. The engines apply the rule in different ways:
+
+- **Chromium.** The clamp applies when `nesting_level_` is more than 6, because Blink counts from 1 ([`dom_timer.cc`](https://github.com/chromium/chromium/blob/main/third_party/blink/renderer/core/scheduler/dom_timer.cc)). Chrome 108 shipped a threshold of 15, but the current source has no trace of it. `setTimeout(…, 0)` lost its 1 ms clamp in 2022, and `setInterval` lost it in Chrome 135. Timers shorter than 32 ms do not align their wake-ups, and `AlignWakeUps` is disabled by default.
+- **Firefox.** The clamp applies at nesting level 5 (`dom.clamp.timeout.nesting.level`). `setInterval` gets the clamp after approximately five repeats, from Firefox 56 ([bug 1378586](https://bugzilla.mozilla.org/show_bug.cgi?id=1378586)).
+- **WebKit.** The maximum nesting level is 10 for one-shot timers and 5 for repeating timers ([`DOMTimer.cpp`](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/page/DOMTimer.cpp)). A maximally nested timer aligns to a grid with a random offset. The grid is 4 ms or more on a visible page, and 30 ms in Low Power Mode or thermal mitigation. It is also 30 ms in cross-origin frames without interaction, and 1 s on a hidden page.
+- **WebKit and the DOM.** A nested timer whose callbacks make only DOM changes that the user cannot see gets 1 s or more. A timer that does not touch the DOM is not throttled.
+
+[Nolan Lawson](https://nolanlawson.com/2025/08/31/why-do-browsers-throttle-javascript-timers/) measured these medians on an idle 2021 MacBook Pro, with 101 iterations, in August 2025:
+
+| Browser | Nested `setTimeout(0)` | `MessageChannel` | `window.postMessage` | `scheduler.postTask` |
+|---|---|---|---|---|
+| Chrome 139 | 4.2 ms | 0.05 ms | 0.03 ms | 0.00 ms |
+| Firefox 142 | 4.72 ms | 0.02 ms | 0.01 ms | 0.01 ms |
+| Safari 18.4 | 26.73 ms | 0.52 ms | 0.05 ms | – |
+
+The scheduler of React prefers `MessageChannel` because of the 4 ms clamp ([React](https://github.com/facebook/react/blob/main/packages/scheduler/src/forks/Scheduler.js)). The 5 ms timers of a chain are longer than the 4 ms clamp, thus the clamp does not apply in Chrome and Firefox. In Safari, the chain aligns to the grid after 10 nestings. The grid is usually 4 ms, and 30 ms in Low Power Mode, which makes a large lag that does not exist. A `setTimeout(0)` probe must start from a task that is not a timer, for example a message task, so that the nesting level is 0. This consequence is a synthesis of the research.
+
+### The Windows timer tick
+
+Chromium sets the Windows timer interrupt to 1 ms on AC power, and to 8 ms on battery power, while short timers wait ([`time_win.cc`](https://chromium.googlesource.com/chromium/src/+/HEAD/base/time/time_win.cc), [Bruce Dawson](https://randomascii.wordpress.com/2020/10/04/windows-timer-resolution-the-great-rule-change/)). From Windows 10 2004, `timeBeginPeriod` applies to one process, and a process that does not use it gets the default of 15.625 ms. On Windows 11, a process whose windows are occluded, minimized or invisible, and that makes no sound, gets no promise of a better resolution ([Microsoft](https://learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timebeginperiod)).
+
+Thus a 5 ms timer on a Windows laptop on battery has a lateness also on an idle page. This consequence is a synthesis of the research. The experiment [E2](/research/local-experiments) measured the 15.6 ms tick in Firefox and WebKit on Windows. A fast timer also costs power. With a 1 kHz timer, Bruce Dawson measured 0.3 W more, approximately 10% of the idle package power ([Megawatts Wasted](https://randomascii.wordpress.com/2013/07/08/windows-timer-resolution-megawatts-wasted/)). The throughput also decreased by 2.5% to 5%.
+
+The CDP tests of the repository saw a change of the tick in Chromium on Windows. A headless page was hidden and shown again. After that, the 5 ms steps took 15.6 ms instead of 5.5 ms ([testing strategy](/docs/testing/strategy)).
+
+### Background throttling of the main thread
+
+**Chrome** ([Chrome 88](https://developer.chrome.com/blog/timer-throttling-in-chrome-88), [Chrome 57](https://developer.chrome.com/blog/background_tabs), [scheduler features](https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/platform/scheduler/common/features.cc)):
+
+- A visible page, or a page that played sound in the last 30 s, gets minimal throttling.
+- A hidden page gets one timer wake-up each second.
+- Budget throttling limits a hidden page to 1% of the CPU after 10 s. The budget grows by 0.01 s each second.
+- Intensive throttling (Chrome 88) gives one wake-up each minute. It applies when all these conditions are true:
+  - A timer chain has 5 or more steps.
+  - The page is hidden for longer than the grace period.
+  - The page made no sound for 30 s or more.
+  - No WebRTC connection is open.
+- The grace period in the current source is 300 s if the page did not complete its load when it became hidden. It is 60 s if the page completed its load. This is shorter than the 5 minutes that sources usually give.
+- Intensive throttling decreased the CPU use by up to 5 times, and increased the battery life by up to 1.25 h ([BleepingComputer](https://www.bleepingcomputer.com/news/google/new-google-chrome-feature-to-drastically-reduce-battery-usage/)). It applies to `setTimeout`, `setInterval` and `scheduler.postTask`, not to WebSockets.
+- Energy Saver (Chrome 133) freezes hidden, silent pages with high CPU use after more than 5 minutes ([blink-dev](https://groups.google.com/a/chromium.org/g/blink-dev/c/OVoSqEhtpNI)). Pages with capture, WebRTC, WebUSB, Bluetooth, HID, Serial, Web Locks or IndexedDB are exempt.
+
+**Firefox** ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/Window/setTimeout), [bug 1377766](https://bugzilla.mozilla.org/show_bug.cgi?id=1377766)):
+
+- Inactive tabs have a minimum of 1 s.
+- Budget throttling (Firefox 58) starts after 30 s in the background. The budget is at most 50 ms and at least −150 ms, and it grows by 10 ms each second. WebRTC, WebSockets, IndexedDB and audio are exempt.
+- Tracking scripts get a minimum of 10 s, from 30 s after the load in background tabs. Firefox for Android has a minimum of 15 minutes for inactive tabs.
+- From Firefox 108, background content processes on Windows 11 use EcoQoS, which slows all threads, also workers ([bug 1796525](https://bugzilla.mozilla.org/show_bug.cgi?id=1796525)).
+
+**WebKit.** Hidden pages align timers to 1 s ([bug 98474](https://bugs.webkit.org/show_bug.cgi?id=98474), 2012). With the setting `HiddenPageDOMTimerThrottlingAutoIncreases`, the alignment grows with the hidden time, but the default of WebKit is false. A secondary source says that iOS suspends background web content, also workers ([Firtman](https://firt.dev/understanding-js-background/)). The research found no authoritative source for this.
+
+### Worker timers
+
+- **Chrome.** Worker timer throttling exists behind `kDedicatedWorkerThrottling`, which is disabled by default ([features.cc](https://chromium.googlesource.com/chromium/src/+/HEAD/third_party/blink/renderer/platform/scheduler/common/features.cc)). An [intent of 2018](https://groups.google.com/a/chromium.org/g/blink-dev/c/8xpEA-iNHwg/m/efk7cSE4CAAJ) proposed it. Thus worker timers keep their full rate in hidden tabs, and the [worker-timers](https://github.com/chrisguttandin/worker-timers) library uses this fact.
+- **WebKit.** The source says that WebKit does not throttle the timers of worker threads.
+- **Firefox.** The research found no evidence of worker timer throttling. The 1 s background clamp is for windows.
+- **The operating system.** Background processes can get a lower priority, for example EcoQoS on Windows and App Nap on macOS. This can slow workers too.
+
+### Animation frames and idle callbacks in hidden pages
+
+Most browsers pause `requestAnimationFrame` in background tabs and in hidden iframes ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame)). iOS in Low Power Mode throttles rAF to 30 fps ([WebKit bug 168837](https://bugs.webkit.org/show_bug.cgi?id=168837)). On ProMotion screens, Safari caps rAF near 60 fps by default. Chrome Energy Saver throttles the frame rate, but its cap is not documented publicly.
+
+The [requestIdleCallback specification](https://w3c.github.io/requestidlecallback/) caps a deadline at 50 ms. For a hidden page, it lets the user agent throttle the idle periods, for example to one idle period each 10 s. In Chrome, a hidden document gets no idle periods. Callbacks without a `timeout` collect, and then they all start when the page becomes visible ([Eric Schaefer](https://eric-schaefer.com/til/2023-03-11-dark-side-of-requestidlecallback/)). Safari still ships `requestIdleCallback` disabled by default ([caniuse](https://caniuse.com/requestidlecallback)).
+
+HTML defines the idle deadline ([whatwg/html#7166](https://github.com/whatwg/html/pull/7166), November 2021). It is the minimum of three times:
+
+- 50 ms after the start of the idle period
+- the next timer deadline
+- the next render deadline, when rAF callbacks or renders wait.
+
+Thus the 5 ms timer chain and the rAF loop of a monitor make the idle deadlines 5 ms or shorter. As a result, the other probes bias an idle-time measurement. This consequence is a synthesis of the research.
+
+### The Chrome scheduler
+
+Chrome gives each task type a set of queue traits ([`frame_scheduler_impl.cc`](https://github.com/chromium/chromium/blob/main/third_party/blink/renderer/platform/scheduler/main_thread/frame_scheduler_impl.cc)):
+
+| Task type | Traits | Throttled in a hidden page | Frozen |
+|---|---|---|---|
+| `kJavascriptTimerImmediate` (timeout 0, low nesting) | Deferrable, not throttled | No | Yes |
+| `kJavascriptTimerDelayedLowNesting` | Throttleable | Yes (1 each second) | Yes |
+| `kJavascriptTimerDelayedHighNesting`, `kIdleTask` | Throttleable and intensively throttleable | Yes (1 each second, then 1 each minute) | Yes |
+| `kPostedMessage` (`window.postMessage`, `MessageChannel`, messages from a worker to its owner) | Pausable | No | Yes |
+
+The messages from a worker to its page use `kPostedMessage` ([`dedicated_worker_object_proxy.cc`](https://github.com/chromium/chromium/blob/main/third_party/blink/renderer/core/workers/dedicated_worker_object_proxy.cc)). The sequence manager takes tasks from the queues in the sequence of their priority, from the highest to the lowest. In one priority, it takes the oldest task first. At most 3 delayed tasks can start while an immediate task waits ([`task_queue_selector.h`](https://github.com/chromium/chromium/blob/main/base/task/sequence_manager/task_queue_selector.h)).
+
+Thus timers cannot starve `MessageChannel` probes. In a hidden Chrome page, the worker heartbeats and the `MessageChannel` probes keep their full rate, but the timer-drift samples do not. This consequence is a synthesis of the research.
+
+## Measurement theory
+
+### The observer effect
+
+A monitor changes the system that it measures. The research found these costs:
+
+- **Message loops.** Vila and Köpf ([Loophole](https://arxiv.org/abs/1702.06764), USENIX Security 2017) watched the event loop of a Chrome renderer with a loop of `postMessage` messages to itself, approximately 25 µs apart. One `mousemove` event cost approximately 100 µs. The JIT warm-up took approximately 150 ms. Minor garbage collections took less than 1 ms, and major ones more than 100 ms. Such a loop gives high resolution but uses most of a core.
+- **Timer chains.** A 5 ms chain wakes the thread up to 200 times each second. On Windows it keeps the system timer at 1 ms (AC) or 8 ms (battery), and it prevents idle periods.
+- **rAF loops.** They keep the rendering pipeline active in each frame, and they make the idle deadlines shorter.
+- **Profilers.** JS Self-Profiling cost less than 1% of the load time at Facebook. Chrome sets a minimum sample interval of 16 ms on Windows and 10 ms on macOS, Linux and Android ([Nic Jansma](https://nicj.net/js-self-profiling-api-in-practice/)).
+- **Native APIs.** Long Tasks (Chromium 58 and later) and LoAF (Chromium 123 and later) cost almost nothing, but Firefox and Safari do not have them.
+
+The research recommends duty cycles for high-frequency probes, passive APIs where they exist, and a calibration against an idle baseline. The calibration includes the cost of the probe itself.
+
+### Coordinated omission
+
+A measurer that waits for the system before it takes the next sample "coordinates" with the system, and omits the slow periods. Gil Tene gave the term ([How NOT to Measure Latency](https://videog.infoq.com/downloads/pdfdownloads/presentations/QConSF2015-GilTene-HowNOTtomeasureLatency.pdf)). The research found these examples:
+
+- [HdrHistogram](https://github.com/HdrHistogram/HdrHistogram): 100 s of 1 ms responses and then a pause of 100 s give approximately 99.99% of the samples at 1 ms. A correct count gives approximately 50% of the samples at more than 1 ms.
+- [wrk2](https://github.com/giltene/wrk2): for a server stall of 1.4 s, the corrected 99th percentile was 1.27 s, and the uncorrected one was 6.04 ms. That is approximately 200 times less.
+- Node.js ([node#34661](https://github.com/nodejs/node/issues/34661), closed as "not planned"): a synchronous block of 30 s in a window of 60 s gave 1 sample of 30 000 ms, against approximately 600 normal samples. The stall was 0.17% of the samples, but 50% of the time.
+
+The corrections are a measurement from the intended start time (wrk2), and a back-fill of the missed samples. HdrHistogram `recordValueWithExpectedInterval` adds the values `L − I`, `L − 2I` and so on, down to `I`. [jHiccup](https://github.com/giltene/jHiccup) samples with a 1 ms thread and an interval correction. It can also use an idle control process, to separate the stalls of the system from the stalls of the process.
+
+The mapping to the probes of a lag monitor is a synthesis of the research:
+
+- Timer-drift chains, rAF gaps, idle callbacks, chained `setTimeout(0)` and chained `MessageChannel` pings are closed loops. One long task gives one sample. A back-fill with the interval of the probe (5 ms for the chain, the frame interval for rAF) corrects them. Time-weighted statistics also correct them, for example the share of the wall time that the thread was blocked.
+- Worker heartbeats on the clock of the worker are an open loop. With a heartbeat interval `H`, approximately `L / H` heartbeats wait in the queue during a hang of length `L`. After the hang, the main thread handles them with the delays `L`, `L − H` and so on. Thus the stream is correct without a back-fill.
+- To stay correct, the worker must stamp the planned send time and report its own lateness. The backlog also costs main-thread time.
+
+### Sampling bias
+
+- **Hidden and throttled pages.** Timers align to 1 s or 1 minute, rAF pauses, and idle callbacks starve. A monitor must drop or flag each sample that overlaps a hidden, frozen, back/forward cache or discarded interval. Worker heartbeats are not throttled in Chrome, but they must have a visibility tag.
+- **Survivorship.** The worst sessions do not report. In Chrome on Android, each second more of FCP adds 2.6 percentage points of abandonment, 17.3% at 4 s ([Simon Hearne](https://simonhearne.com/2022/survorship-bias-in-webperf/)). Nic Jansma measured approximately 2 million Chrome page views in May 2023 ([Nic Jansma](https://nicj.net/beaconing-in-practice-an-update-on-reliability-and-the-pending-beacon-api/)). `sendBeacon` at `pagehide` or `visibilitychange` was 95.8% reliable. Onload plus `pagehide` plus `visibilitychange` reached 98%, and XHR reached 84.9%.
+- **Workers.** `sendBeacon` is not available in workers, because `WorkerNavigator` does not have it ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/WorkerNavigator)). A worker uses `fetch(…, { keepalive: true })` or IndexedDB. A worker that sees missing acknowledgements can report a hang while it continues. This decreases the survivorship bias of tabs that close during a hang. Experiment E4 found an exception: WebKit completes the fetches and the IndexedDB requests of a worker on the main thread ([local experiments](/research/local-experiments)).
+- **Long-lived pages.** The clock drift grows with the age of the page, thus long sessions have more clock errors.
+- **Power and system state.** Battery power (the 8 ms tick on Windows), Low Power Mode (the 30 ms grid and 30 fps rAF of WebKit) and EcoQoS change the baselines. A monitor can segment by these states where it can find them.
+
+### How Node.js measures event-loop lag
+
+`perf_hooks.monitorEventLoopDelay({ resolution: 10 })` (Node 11.10 and later) uses a libuv timer that fires each `resolution` milliseconds ([Node.js](https://nodejs.org/docs/latest-v24.x/api/perf_hooks.html)). Each tick records the full interval in nanoseconds into an HDR histogram, thus each sample has a floor of the resolution ([PR #62935](https://github.com/nodejs/node/pull/62935)). The mode `samplePerIteration: true` (Node v24.19.0 and v26.5.0) uses the prepare and check hooks of libuv. The documentation says that the two modes give very different results and are not comparable. `uv_hrtime` uses `CLOCK_MONOTONIC` on Linux, thus it does not find a suspend. Other libraries, for example [toobusy-js](https://github.com/STRML/node-toobusy) (a check each 500 ms, a default `maxLag` of 70 ms), use the same `setInterval` drift method.
+
+The research found no peer-reviewed field study of worker-heartbeat monitors for main-thread lag. The nearest academic work is security research with the same mechanics, for example [Loophole](https://arxiv.org/abs/1702.06764) and [Fantastic Timers](https://gruss.cc/files/fantastictimers.pdf). The study of client clock errors by Acer and others is also related. [Surma](https://surma.dev/things/is-postmessage-slow/) measured that `postMessage` payloads up to 100 KiB stay in a budget of 100 ms on slow devices. A payload of 10 KiB or less is safe for a frame of 16 ms.
+
+## Clock synchronization
+
+### NTP-style offset estimation
+
+[RFC 5905](https://www.rfc-editor.org/rfc/rfc5905.html) gives the offset θ = ½[(T2 − T1) + (T3 − T4)] and the delay δ = (T4 − T1) − (T3 − T2). Its clock filter keeps 8 samples and prefers the sample with the smallest delay. When the one-way delays are not negative, the error of the offset is at most ±δ/2. The [timesync](https://github.com/enmasseio/timesync) library sends 5 requests 1 s apart, each hour. It sorts them by latency, takes the median, discards the samples that are approximately one standard deviation slower than the median, and averages the rest.
+
+Between the main thread and a worker, the research gives these rules (synthesis):
+
+- The two directions are not symmetric. A message from the worker waits behind the main-thread tasks (`kPostedMessage`), which is the delay that the monitor measures. A message to the worker usually arrives fast.
+- The exchange must occur when the main thread is idle. Of N ≥ 8 rounds, the 1 to 3 rounds with the smallest δ give the offset.
+- The coarsening sets the floor: in Chrome the error is approximately ±(δ/2 + 0.2 ms), and in Firefox and Safari ±1 ms to 2 ms.
+- The two contexts share one monotonic source. Thus the true offset is constant in Chrome and 0 in Firefox. One exchange at the start of the worker is sufficient, with a check after `resume`, when the page becomes `visible` again, and after a discontinuity.
+- In Safari, both sides must use a cached origin. Else both sides move with the wall clock and jump together.
+- On a cross-origin-isolated page, a `SharedArrayBuffer` in which each side writes its latest time avoids the latency of the messages.
+
+### Client and server
+
+These methods are a synthesis of the research:
+
+- The HTTP `Date` header has a resolution of 1 s, thus its error is ±0.5 s plus half the round trip. It finds only large skew, of minutes or hours. It is not a CORS-safelisted response header, thus for a cross-origin read, `Access-Control-Expose-Headers: Date` is necessary ([MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Date)).
+- `Server-Timing` can carry the server time in milliseconds, in `desc` or `dur` ([MDN](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Server-Timing)). For a cross-origin read, `Timing-Allow-Origin` is necessary. Some browsers give it only to secure contexts, and the Fetch API cannot read trailers.
+- The `requestStart` and `responseStart` of the Resource Timing entry make the window smaller than the start and the end of `fetch()`. They remove the DNS, TCP, TLS and body time from δ. Both are 0 for a cross-origin request without `Timing-Allow-Origin`.
+- Chrome uses its own signed "secure time" service, with a budget of 3 s. 93% of the queries completed in time.
+
+The library does not synchronize with a server at this time.
+
+## OpenTelemetry timestamps
+
+The research read OpenTelemetry JS on `main` in October 2026 ([time.ts](https://github.com/open-telemetry/opentelemetry-js/blob/main/packages/opentelemetry-core/src/common/time.ts), [Span.ts](https://github.com/open-telemetry/opentelemetry-js/blob/main/packages/sdk-trace/src/Span.ts)):
+
+- `hrTime()` in `@opentelemetry/core` is `timeOrigin + now()`. In Chrome and Firefox it is behind the wall clock by the sum of the sleeps. In Safari it is the wall clock, because Safari calculates `timeOrigin` again at each read.
+- `timeInputToHrTime(n)` treats a value less than `performance.timeOrigin / 2` as a relative `performance.now()` value, and other values as Unix milliseconds.
+- A span takes its start from `Date.now()` (PR #3434, version 1.9.0, early 2023). At the start, it stores the offset `Date.now() − (performance.now() + timeOrigin)` and shifts each performance timestamp by that offset. Without an explicit start, the end time is the start time plus the elapsed `performance.now()` time. Version 1.7.0 used an `AnchoredClock` for each root span, and [issue #852](https://github.com/open-telemetry/opentelemetry-js/issues/852) showed errors of hours or days after a sleep.
+- Metrics use `Date.now()` for `record()` and for the collection time (#3514, version 1.9.0). Log records use `Date.now()` for `timestamp` and `observedTimestamp` by default.
+- [Issue #6816](https://github.com/open-telemetry/opentelemetry-js/issues/6816) asks for a clock that the application can replace.
+
+After a suspend on a platform where the clock stops, the research gives these effects (synthesis):
+
+- A span that starts after the wake has a correct start time.
+- A span that includes the sleep has a duration without the sleep, thus its end is early by the sleep length.
+- A span can start after the sleep and get a performance timestamp from before the sleep. That timestamp moves forward by the sleep, because the offset includes the sleep. The history of 100 origins in Sentry corrects this case.
+- Metrics and logs are correct in wall time, but they get every step of the wall clock.
+- On Windows, a duration includes the sleep (QPC), thus a span across a sleep is too long, not too short.
+
+The library exports metrics and events, but no spans. The main-thread events set no timestamp, thus the SDK uses `Date.now()` ([`otel-logger-adapter.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/otel-logger-adapter.ts)). The hang reports of the worker also use `Date.now()`, as the SDK does ([`bundled-worker.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-worker/src/bundled-worker.ts)). The hang journal uses `Date.now()` too, because the pages of an origin compare its times with their own time ([`hang-journal.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/hang-journal.ts)).
+
+## Stall classification
+
+The research gives this matrix for a very long gap of length `L`, with a heartbeat interval `H`. It is a synthesis of the research. The first column is the delivery delay of the worker heartbeats on the main thread. The second column is the lateness of the timer of the worker. The third column is the change of `d = Date.now() − (T0 + now())`.
+
+| Case | Heartbeat delivery delay | Lateness of the worker timer | Δd | Likely cause |
+|---|---|---|---|---|
+| A | Approximately `L`, with a backlog of `L`, `L − H` and so on | Approximately 0 | Approximately 0 | A main-thread hang |
+| B | Approximately 0, with a gap in the arrivals only | Approximately 0 | Approximately `+L` | A system suspend on macOS, Linux, Android or iOS |
+| C | Approximately 0, with a gap | Approximately `L` | Approximately 0 | A pause of the whole system: a suspend on Windows, a renderer freeze, the back/forward cache, a debugger, a pause of a virtual machine, or a strong CPU starvation |
+| D | Approximately 0 | Approximately 0 | A jump in either direction | A step of the wall clock, from NTP or from the user |
+| E | Approximately 0, or small | Approximately `L` | Approximately 0 | Starvation of the worker only, for example a garbage collection in the worker or EcoQoS |
+
+In case C, the `freeze`, `resume` and `pageshow` events and the visibility state separate the causes. In case E, the conclusions of the main thread for that window are not reliable. The library handles the cases in this way at this time:
+
+| Case | The library at this time |
+|---|---|
+| A | The worker detects a hang when the main thread does not acknowledge heartbeats for 5 s. With a report target (`workerHangReport`), the worker reports the start itself. A timer sample of 5 s or more without evidence of a suspend becomes a stall of the type `hang`. The stall samples of one block count as one stall episode. |
+| B | `ClockDriftMonitor` classifies a forward jump of 1 s or more as a `suspend`, also with a late timer, and counts it. The monotonic samples do not include the sleep on these platforms. The suspend goes into the reliability tracker, over the interval between two samples of the monitor. The validator discards the samples that overlap it. |
+| C | A worker timer that is late by 5 s or more adds a `suspend` interval to the reliability tracker. The interval ends when the worker sent the heartbeat. The validator discards the samples that overlap it. The hang detector of the worker does not blame the main thread, and it removes that time from a hang in progress. The lifecycle states `hidden` and `frozen` add their own intervals. |
+| D | `ClockDriftMonitor` classifies all other jumps as a `step`, and each backward jump is a step. |
+| E | The library does not separate E from C. A lateness of 5 s or more of the worker timer counts as a suspend. |
+
+The code is in [`WorkerLagMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/WorkerLagMonitor.ts), [`lag-worker.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/lag-worker.ts), [`ClockDriftMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ClockDriftMonitor.ts) and [`measurement-conditions.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/measurement-conditions.ts). The validator lets each sample of 5 s or more wait 2 s for late evidence before it records the sample or discards it.
+
+## Consequences for the library
+
+The research gives eight consequences. The table shows the state of each one in the library at this time.
+
+| Consequence | State | The library at this time |
+|---|---|---|
+| One read of `performance.timeOrigin` in each context, at once also in the worker | Implemented | `createAbsoluteClock` reads the origin one time. `setupAllMonitors` makes one absolute clock for the page. The worker bundle reads its origin when it loads. |
+| A synchronization of the main thread and the worker with N ≥ 8 rounds, the round with the smallest δ, and a correction of each delivery delay by the offset | Implemented, with limits | `WorkerClockSync` uses 8 exchanges and keeps the shortest round trip of all synchronizations. The correction is 0 while the offset is inside its uncertainty plus 1 ms. A synchronization starts at the start of the monitor, each time that the page becomes visible again, and each 60 s. No synchronization starts after a discontinuity, and no check for an idle main thread exists. |
+| A sample of `d` approximately each second in both contexts, with paired reads, and a flag for `\|Δd\| > max(50 ms, 3% × Δt)` | Implemented on the main thread only | `ClockDriftMonitor` samples each 1000 ms. It discards a reading when the two monotonic reads are more than 1 ms apart, and flags a change of more than max(50 ms, 3% of the interval). The worker has no drift monitor. |
+| A classification of the stalls with the matrix | Implemented, with limits | Refer to the previous section. |
+| Timer, rAF and idle probes only on a visible page, `setTimeout(0)` from message tasks, and a calibrated idle baseline | Implemented | The timer, rAF, idle and message probes and the worker heartbeat pause while the page is hidden or frozen. MacrotaskLag and SchedulingFairness start in a message task. DriftLag subtracts a baseline from the recent 100 steps, and it follows a change of the timer granularity after 10 steps that agree. The library does not correct the idle deadlines for its own probes. |
+| A correction of coordinated omission for the closed-loop probes, and the open-loop worker heartbeat as the main estimator | Implemented, with limits | The worker sends one heartbeat each second by default, and the library records the delay of each heartbeat. The worker stamps the actual send time, not the planned time, and it reports its own lateness separately. A DriftLag window includes all blocking time in the window. No back-fill exists for the closed-loop probes. |
+| Hang detection in the worker, hang reports with `fetch(keepalive)`, and a breadcrumb in IndexedDB | Implemented, with limits | In WebKit, the report and the record complete only after the hang (experiment E4). The worker reports the start of a hang through `fetch` with `keepalive`. It writes a hang record to IndexedDB, and writes it again each second. The next page of the origin reports a record that nobody updated for 30 s as an `abandoned` hang. An atomic take gives each record to one page only. |
+| The verdict (suspend, step, hang) in attributes, and no samples that include a discontinuity | Implemented, with limits | The `lag.stall` and `lag.clock.jump` events carry the classification, and a counter of discarded samples has the reason. The evidence of the worker and a clock jump of the type `suspend` discard samples. A clock jump of the type `step` does not discard samples. |
+
+The code is in [`absolute-clock.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/absolute-clock.ts), [`WorkerClockSync.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/WorkerClockSync.ts), [`ClockDriftMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ClockDriftMonitor.ts), [`DriftLag.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/DriftLag.ts), [`message-task.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/message-task.ts), [`hang-journal.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/hang-journal.ts) and [`instrumented/worker-lag.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/worker-lag.ts). The experiment [E3](/research/local-experiments) measured the calibration of DriftLag. The pages [clock drift](/docs/monitors/clock-drift), [worker lag](/docs/monitors/worker-lag) and [measurement validity](/docs/concepts/measurement-validity) describe the monitors and the discarded samples.

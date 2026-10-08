@@ -1,54 +1,55 @@
 import type { CoreDeps, FrameDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { FrameTimingMonitor, type FrameMeasurement } from "../FrameTimingMonitor.js";
+import type { MeasurementConditions } from "../measurement-conditions.js";
+import { METRICS, createCounter, createHistogram } from "../metric-catalog.js";
+import { createHandle } from "./shared.js";
 
 /**
- * Constructs a FrameTimingMonitor wired to one histogram + two gauges.
+ * This factory makes a `FrameTimingMonitor` that records into
+ * `lag_frame_delta_histogram` and into the `lag_frames` counter (delivered
+ * and dropped frames).
  *
- * Metrics:
- * - `lag_frame_delta_histogram` — time between consecutive rAF callbacks
- * - `lag_frame_fps_gauge` — instantaneous FPS from the last frame
- * - `lag_frame_dropped_rate_gauge` — cumulative dropped/observed ratio
- *
- * Dropped frame detection is exact: `round(delta / targetFrameTime) - 1`.
+ * The dropped-frame rate of the fleet is
+ * `rate(lag_frames{outcome="dropped"})` divided by the rate of all frames.
+ * With `conditions`, the monitor pauses while the page is hidden, because
+ * `requestAnimationFrame` does not operate in a hidden page. Also, the
+ * monitor does not record a frame gap that overlaps an unreliable interval.
  */
 export function createInstrumentedFrameTiming(
     deps : CoreDeps & FrameDeps,
+    conditions? : MeasurementConditions,
 ) : MonitorHandle<FrameTimingMonitor> {
-    try {
-        const deltaHist = deps.meter.createHistogram<FrameMeasurement>(
-            "lag_frame_delta_histogram", { unit : "ms" });
-        const fpsGauge = deps.meter.createObservableGauge<Record<string, never>>(
-            "lag_frame_fps_gauge", { unit : "fps" });
-        const droppedGauge = deps.meter.createObservableGauge<Record<string, never>>(
-            "lag_frame_dropped_rate_gauge", { unit : "ratio" });
+    return createHandle("frame-timing", deps.logger, () => {
+        const deltaHist = createHistogram(deps.meter, METRICS.frameDelta);
+        const frames = createCounter<{ outcome : "delivered" | "dropped" }>(deps.meter, METRICS.frames);
+        const validator = conditions?.createValidator();
 
-        let lastFps = 0;
+        const record = (m : FrameMeasurement) : void => {
+            deltaHist.record(m.frameDeltaMs);
+            frames.add(1, { outcome : "delivered" });
+            if (m.droppedFrames > 0) frames.add(m.droppedFrames, { outcome : "dropped" });
+        };
 
         const monitor = new FrameTimingMonitor(
             (m) => {
-                deltaHist.record(m.frameDeltaMs, m);
-                lastFps = m.fps;
+                if (validator) validator.submit(m.frameDeltaMs, m.frameDeltaMs, () => record(m));
+                else record(m);
             },
             deps.logger,
             deps.requestAnimationFrame,
             deps.cancelAnimationFrame,
             deps.clock,
         );
+        const unpause = conditions?.pauseWhileHidden(monitor);
 
-        fpsGauge.addCallback((result) => {
-            if (lastFps > 0) result.observe(lastFps);
-        });
-        droppedGauge.addCallback((result) => {
-            result.observe(monitor.getDroppedFrameRate());
-        });
-
-        return { name : "frame-timing", monitor, stop : () => monitor.stop() };
-    } catch (error) {
-        deps.logger.log("warn", "Failed to create FrameTimingMonitor.", {
-            error,
-            type : "createInstrumentedFrameTiming",
-        });
-        return { name : "frame-timing", monitor : undefined, stop : () => {} };
-    }
+        return {
+            monitor,
+            stop : () => {
+                unpause?.();
+                monitor.stop();
+                validator?.dispose();
+            },
+        };
+    });
 }

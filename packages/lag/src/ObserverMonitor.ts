@@ -4,15 +4,24 @@ import type {
     PerformanceEntryList,
     PerformanceObserverInit,
     PerformanceObserverInstance,
+    PerformanceObserverOptions,
 } from "./perf-types.js";
 
 export abstract class ObserverMonitor {
-    protected observer : PerformanceObserverInstance | undefined;
+    private observer : PerformanceObserverInstance | undefined;
 
+    /**
+     * The constructor starts the observation immediately. In this base class,
+     * that is safe, but in `LagMonitor` it is not. `start()` changes only the
+     * fields of this class. Also, `PerformanceObserver` delivers entries
+     * asynchronously. Thus, no entry comes before the construction of the
+     * subclass is complete.
+     */
     constructor(
         protected readonly entryType : string,
         protected readonly logger : Logger,
-        protected readonly PerformanceObserverCtor : PerformanceObserverInit,
+        private readonly PerformanceObserverCtor : PerformanceObserverInit,
+        private readonly observeOptions : PerformanceObserverOptions = {},
     ) {
         this.start();
     }
@@ -21,32 +30,68 @@ export abstract class ObserverMonitor {
         if (this.observer) {
             return;
         }
+        const supported = this.PerformanceObserverCtor.supportedEntryTypes;
+        if (supported && !supported.includes(this.entryType)) {
+            this.logger.log("warn", `PerformanceObserver type "${this.entryType}" not supported.`, {
+                entryType : this.entryType,
+            });
+            return;
+        }
         try {
-            this.observer = new this.PerformanceObserverCtor(
-                (list : PerformanceEntryList) => {
-                    for (const entry of list.getEntries()) {
-                        try {
-                            this.processEntry(entry);
-                        } catch (error) {
-                            this.logger.log("error", "Error processing performance entry.", {
-                                error,
-                                entryType : this.entryType,
-                            });
-                        }
-                    }
-                },
+            const observer = new this.PerformanceObserverCtor(
+                (list : PerformanceEntryList) => this.receive(list.getEntries()),
             );
-            this.observer.observe({ type : this.entryType, buffered : true });
+            observer.observe({ ...this.observeOptions, type : this.entryType, buffered : true });
+            this.observer = observer;
         } catch (error) {
             this.logger.log("warn", `PerformanceObserver type "${this.entryType}" not supported.`, {
                 error,
+                entryType : this.entryType,
             });
         }
     }
 
     stop() : void {
         this.observer?.disconnect();
-        this.observer = undefined as PerformanceObserverInstance | undefined;
+        this.observer = undefined;
+    }
+
+    /**
+     * This method processes the entries that the browser did not deliver
+     * yet. Use it before a checkpoint, for example when the page becomes
+     * hidden. The browser delivers entries asynchronously, and possibly not
+     * again before the page unloads.
+     */
+    takeRecords() : void {
+        const records = this.takePendingEntries();
+        if (records.length > 0) this.processEntries(records);
+    }
+
+    /**
+     * This method removes the entries that the browser did not deliver yet.
+     * It gives them, but it does not process them.
+     */
+    protected takePendingEntries() : PerformanceEntryLike[] {
+        return this.observer?.takeRecords?.() ?? [];
+    }
+
+    /** The browser gives each delivery of entries to this method. By default, the method processes the entries. */
+    protected receive(entries : readonly PerformanceEntryLike[]) : void {
+        this.processEntries(entries);
+    }
+
+    /** This method processes each entry. An error in one entry does not stop the other entries. */
+    protected processEntries(entries : readonly PerformanceEntryLike[]) : void {
+        for (const entry of entries) {
+            try {
+                this.processEntry(entry);
+            } catch (error) {
+                this.logger.log("error", "Error processing performance entry.", {
+                    error,
+                    entryType : this.entryType,
+                });
+            }
+        }
     }
 
     protected abstract processEntry(entry : PerformanceEntryLike) : void;

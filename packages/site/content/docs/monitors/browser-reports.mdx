@@ -1,0 +1,113 @@
+---
+title: Browser reports
+description: Counts the intervention and deprecation reports of the Reporting API that the page can read, and sends one event for each report.
+order: 39
+status: final
+---
+
+import { browserReportMetrics } from "./metrics.data";
+
+`BrowserReportMonitor` uses a `ReportingObserver` to get the reports that the page itself can read: interventions and deprecations. An intervention shows that the browser blocked or changed an action of the page, for example a heavy ad. The monitor counts each report and sends an event with its details.
+
+## What it measures
+
+The signal is the number of reports, with the attribute `type` (`intervention` or `deprecation`).
+
+The monitor answers this question: did the browser act against the page, or does the page use APIs that the browser will remove? An intervention can explain a change of the behavior of the page. A deprecation tells you to change the code before the browser removes the API.
+
+## How it works
+
+1. The monitor makes a `ReportingObserver` for the types `intervention` and `deprecation`, with `buffered: true`. Thus it also gets the reports from before its start.
+2. For each report of these types, it reads `id`, `message`, `sourceFile` and `lineNumber` from the body. A missing field gives an empty string or 0.
+3. The factory adds 1 to `lag_browser_reports` and, with an event sink, sends a `lag.browser_report` event. It sends at most 10 events in each period of 60 s, and it removes the query string and the fragment from the source file.
+
+When the constructor fails, the monitor logs a warning and gets no reports. The monitor cannot get crash reports, for example `oom` or `unresponsive`. The browser sends them only to the endpoints of the `Reporting-Endpoints` header, because the page is gone. The [page-view context](/docs/monitors/page-view-context) puts the page-view ID into those crash reports.
+
+## Browser support
+
+| Feature | Chromium | Firefox | Safari |
+|---|---|---|---|
+| `ReportingObserver` | 69 (workers from 84) | 149 (also in workers) | 16.4 (not in workers) |
+| Report type `deprecation` | 69 | 149 (not in workers) | not available |
+| Report type `intervention` | 69 | not available | not available |
+
+Safari has `ReportingObserver`, but it has neither of the two types, thus the monitor gets no reports there. MDN and the compatibility data mark `InterventionReportBody` as deprecated, but Chromium still sends intervention reports, for example for heavy ads ([browser support](/research/browser-support)).
+
+## Measurement validity
+
+The monitor does not pause while the page is hidden, and it uses no `SampleValidator`. It counts reports, not durations.
+
+## Metrics
+
+<MetricTable metrics={browserReportMetrics} />
+
+### The browser report event
+
+`lag.browser_report` has these attributes:
+
+| Attribute | Value |
+|---|---|
+| `type` | `intervention` or `deprecation` |
+| `id` | The ID of the report, for example `HeavyAdIntervention`. |
+| `message` | The message of the browser. |
+| `source_file` | The file that caused the report, without the query string and the fragment. |
+| `line_number` | The line in the file, or 0. |
+
+`setupAllMonitors()` adds `lag.page_view.id` to each event.
+
+## Configuration
+
+```ts
+function createInstrumentedBrowserReports(
+    deps : CoreDeps & ReportingDeps & Partial<EventDeps>,
+) : MonitorHandle<BrowserReportMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `ReportingDeps` (`ReportingObserver`). `EventDeps` is optional: without it, the factory sends no events. The event limit (10 each minute) is a constant of the factory. The class takes the list of report types as its last argument.
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { logs } from "@opentelemetry/api-logs";
+import { createBrowserDeps, createInstrumentedBrowserReports, createOtelEventSink } from "@lag/core";
+
+const deps = createBrowserDeps(window, {
+    logger : console,
+    meter : metrics.getMeter("lag"),
+    events : createOtelEventSink(logs.getLogger("lag-events")),
+});
+if (deps.ReportingObserver) {
+    const reports = createInstrumentedBrowserReports({ ...deps, ReportingObserver : deps.ReportingObserver });
+    reports.stop();
+}
+```
+
+## Cost
+
+- **Observers:** one `ReportingObserver`. No timers.
+- **Records:** one counter value for each report.
+- **Events:** at most 10 each minute.
+
+## Limits
+
+- **Only two types.** The monitor ignores the other report types, for example `csp-violation` and `permissions-policy-violation`.
+- **No crash reports.** A page cannot read its own crash reports.
+- **Events are limited.** After 10 events in a period of 60 s, the factory sends no more events in that period. The counter still counts each report.
+- **Safari gives no reports.** It has no deprecation or intervention reports.
+
+## Tests
+
+Unit tests:
+
+- `BrowserReportMonitor.test.ts`: the observer asks for interventions and deprecations, with `buffered: true`. The monitor reads the fields of each report body. Without `ReportingObserver`, it logs a warning. An error in the report callback does not stop the other reports. `stop()` disconnects the observer, and the monitor can start again.
+- `setup-all-monitors.test.ts`: a `HeavyAdIntervention` report gives an event with the source file without its query string.
+- `support.test.ts`: the rate limiter lets the limit of actions occur in each window, and `stripUrlParameters()` removes the query string and the fragment.
+
+Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
+
+- `lag-monitors.test.ts`: the setup starts the monitor only where the browser has `ReportingObserver`. No browser test examines its values at this time.
+
+## Source
+
+- [`BrowserReportMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/BrowserReportMonitor.ts): the monitor.
+- [`instrumented/browser-reports.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/browser-reports.ts): the factory and the event.
+- [`rate-limiter.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/rate-limiter.ts): the event limit and the removal of URL parameters.

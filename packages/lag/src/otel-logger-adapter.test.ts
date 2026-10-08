@@ -60,6 +60,14 @@ describe("createOtelLoggerAdapter", () => {
         expect(otelLogger.emit.mock.calls[0]![0].attributes).toEqual({ args : "string-arg" });
     });
 
+    it("gives the string of an argument that is not a primitive and not an object", () => {
+        const otelLogger = { emit : vi.fn() };
+
+        createOtelLoggerAdapter(otelLogger).log("info", "x", Symbol("lag"));
+
+        expect(otelLogger.emit.mock.calls[0]![0].attributes).toEqual({ args : "Symbol(lag)" });
+    });
+
     it("handles null/undefined args without throwing", () => {
         const otelLogger = { emit : vi.fn() };
         const adapter = createOtelLoggerAdapter(otelLogger);
@@ -91,5 +99,74 @@ describe("createTeeLogger", () => {
 
         expect(() => tee.log("info", "x", null)).not.toThrow();
         expect(working.log).toHaveBeenCalled();
+    });
+});
+
+describe("createOtelLoggerAdapter attribute encoding", () => {
+    it("turns an Error into semantic-convention exception attributes", () => {
+        const otelLogger = { emit : vi.fn() };
+        const error = new TypeError("bad thing");
+
+        createOtelLoggerAdapter(otelLogger).log("error", "failed", { error, type : "DriftLag" });
+
+        expect(otelLogger.emit.mock.calls[0]![0].attributes).toEqual({
+            "exception.type" : "TypeError",
+            "exception.message" : "bad thing",
+            "exception.stacktrace" : error.stack,
+            type : "DriftLag",
+        });
+    });
+
+    it("JSON-encodes nested objects and keeps primitive arrays", () => {
+        const otelLogger = { emit : vi.fn() };
+
+        createOtelLoggerAdapter(otelLogger).log("warn", "x", {
+            rect : { x : 1, y : 2 },
+            sources : ["cpu", "thermals"],
+            skipped : undefined,
+        });
+
+        expect(otelLogger.emit.mock.calls[0]![0].attributes).toEqual({
+            rect : '{"x":1,"y":2}',
+            sources : ["cpu", "thermals"],
+        });
+    });
+
+    it("keeps booleans, numbers and strings, and leaves out the attributes that are undefined or null", () => {
+        const otelLogger = { emit : vi.fn() };
+
+        createOtelLoggerAdapter(otelLogger).log("info", "x", { flag : true, count : 3, name : "drift", gone : undefined, empty : null });
+
+        const attributes = otelLogger.emit.mock.calls[0]![0].attributes as Record<string, unknown>;
+        expect(attributes).toEqual({ flag : true, count : 3, name : "drift" });
+        expect(Object.keys(attributes).sort()).toEqual(["count", "flag", "name"]);
+    });
+
+    it("JSON-encodes an array with values of different types or with objects", () => {
+        const otelLogger = { emit : vi.fn() };
+
+        createOtelLoggerAdapter(otelLogger).log("info", "x", { mixed : [1, "a"], objects : [{ a : 1 }] });
+
+        expect(otelLogger.emit.mock.calls[0]![0].attributes).toEqual({ mixed : '[1,"a"]', objects : '[{"a":1}]' });
+    });
+
+    it("leaves out the stack trace of an Error that has no stack", () => {
+        const otelLogger = { emit : vi.fn() };
+        const error = new Error("no stack");
+        delete error.stack;
+
+        createOtelLoggerAdapter(otelLogger).log("error", "failed", { error });
+
+        expect(Object.keys(otelLogger.emit.mock.calls[0]![0].attributes as object).sort()).toEqual(["exception.message", "exception.type"]);
+    });
+
+    it("gives the string of an object that JSON cannot encode", () => {
+        const otelLogger = { emit : vi.fn() };
+        const circular : Record<string, unknown> = {};
+        circular["self"] = circular;
+
+        createOtelLoggerAdapter(otelLogger).log("info", "x", { circular });
+
+        expect(otelLogger.emit.mock.calls[0]![0].attributes).toEqual({ circular : "[object Object]" });
     });
 });

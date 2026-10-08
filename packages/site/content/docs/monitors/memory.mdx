@@ -1,0 +1,115 @@
+---
+title: Memory
+description: Samples the memory use of the page each 30 s with measureUserAgentSpecificMemory() or with the legacy performance.memory of Chromium.
+order: 32
+status: final
+---
+
+import { memoryMetrics } from "./metrics.data";
+
+`MemoryMonitor` samples the memory use of the page. In a cross-origin-isolated page, it uses `performance.measureUserAgentSpecificMemory()`. Otherwise it uses the legacy `performance.memory` of Chromium. The attribute `source` tells which API gave the value. Only Chromium has these APIs.
+
+## What it measures
+
+The monitor gives two signals:
+
+- **The used memory** (`lag_memory_used_bytes_histogram`): the bytes of each sample, with the attribute `source` (`modern` or `legacy`).
+- **The usage ratio** (`lag_memory_usage_ratio_histogram`): the used JavaScript heap divided by the heap limit. Only the legacy API gives the limit.
+
+The monitor answers this question: does the memory of the page increase over its life? A slow increase of the used memory can show a leak. Garbage collection also uses the main thread: in one study of Chrome, a major collection took more than 100 ms, in incremental steps ([clocks and timers](/research/clocks-and-timers)).
+
+## How it works
+
+1. At its start, the monitor takes one sample immediately. Then it takes one sample each 30 000 ms (`defaultMemoryIntervalMs`).
+2. If the browser has `measureUserAgentSpecificMemory()`, the monitor uses it, and records `bytes` with `source="modern"`.
+3. If the modern API fails one time, the monitor uses the legacy API from then on, and logs the change at the level `debug`.
+4. The legacy API gives `usedJSHeapSize`, `totalJSHeapSize` and `jsHeapSizeLimit`. The monitor records `usedJSHeapSize` with `source="legacy"`, and the ratio of used to limit.
+
+The modern API can take many seconds, thus the monitor does not start a sample while one waits. It does not record a sample that comes back after `stop()`.
+
+`createBrowserDeps()` gives the memory source only when the browser has one of the two APIs. Without them, `setupAllMonitors()` does not start the monitor.
+
+## Browser support
+
+| API | Chromium | Firefox | Safari |
+|---|---|---|---|
+| `performance.measureUserAgentSpecificMemory()` | 89, only in a cross-origin-isolated page | not available | not available |
+| `performance.memory` | yes (not standard, deprecated) | not available | not available |
+
+These facts come from [browser support](/research/browser-support):
+
+- Without cross-origin isolation, `measureUserAgentSpecificMemory` is undefined. The result comes at the next garbage collection, with a default timeout of approximately 20 s.
+- The modern API also measures the dedicated workers of the page.
+- MDN says that the values of `performance.memory` are not reliable. They count too much with shared heaps, and too little with workers or cross-site iframes. Use them only as a coarse hint.
+
+## Measurement validity
+
+The monitor does not pause while the page is hidden, and it uses no `SampleValidator`. A memory sample does not depend on timer delays, thus throttled timers change only the time of the sample.
+
+## Metrics
+
+<MetricTable metrics={memoryMetrics} />
+
+Do not mix the two sources in one series: they measure different things. The monitor sends no events.
+
+## Configuration
+
+```ts
+function createInstrumentedMemory(
+    deps : CoreDeps & MemoryDeps & Pick<TimerDeps, "setIntervalFn" | "clearIntervalFn">,
+) : MonitorHandle<MemoryMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`), `MemoryDeps` and the interval functions of `TimerDeps`.
+
+| Option | Default | What it does |
+|---|---|---|
+| `memorySource` | necessary | The functions `readLegacy` and `measureModern`. `createBrowserDeps()` makes them from `performance`. |
+| `memoryIntervalMs` | 30 000 | The time between two samples. `createBrowserDeps()` passes the option of the same name. |
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { createBrowserDeps, createInstrumentedMemory } from "@lag/core";
+
+const deps = createBrowserDeps(window, {
+    logger : console,
+    meter : metrics.getMeter("lag"),
+    memoryIntervalMs : 60_000,
+});
+if (deps.memorySource) {
+    const memory = createInstrumentedMemory({ ...deps, memorySource : deps.memorySource });
+    memory.stop();
+}
+```
+
+## Cost
+
+- **Timers:** one interval callback each 30 s.
+- **Records:** one or two histogram values for each sample.
+- **The API:** the modern API waits for a garbage collection. The research does not give its cost.
+
+## Limits
+
+- **Only Chromium.** Firefox and Safari give no values.
+- **Two different measurements.** The modern API measures the memory of the page and of its dedicated workers. The legacy API gives the JavaScript heap. Compare values only of one source.
+- **A fixed interval.** The research recommends a random (Poisson) schedule for the modern API. The monitor uses a fixed interval.
+- **One failure stops the modern API.** After one failure, the monitor uses the legacy API for the rest of the page life.
+
+## Tests
+
+Unit tests:
+
+- `MemoryMonitor.test.ts`: the first sample comes at the start. The monitor uses the modern API when it is available, and the legacy API when the modern API fails. After one failure, it does not use the modern API again. It takes samples at the interval and stops at `stop()`. It does not start a sample while one waits, and it drops a modern sample that comes after `stop()`.
+- `browser/browser-deps.test.ts`: the adapter finds the legacy and the standard memory APIs.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
+
+- `lag-monitors.test.ts` (only where the browser has `performance.memory`): `lag_memory_used_bytes_histogram` has a value of more than 0, with the `source` `legacy`.
+- `browser-apis.test.ts` (only with `performance.memory`): the first sample comes at once, and it is more than 1 MB.
+- `coi/isolation.test.ts` (a cross-origin-isolated page, only with `measureUserAgentSpecificMemory()`): the first sample has the `source` `modern` and more than 1 MB. The project starts Chromium in the new headless mode with `ForceEagerMeasureMemory`, so that the promise resolves at once and not at the next garbage collection.
+
+## Source
+
+- [`MemoryMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/MemoryMonitor.ts): the monitor.
+- [`instrumented/memory.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/memory.ts): the factory.
+- [`browser/browser-deps.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/browser/browser-deps.ts): the memory source of the browser.

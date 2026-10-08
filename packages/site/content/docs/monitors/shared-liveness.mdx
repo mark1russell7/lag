@@ -1,0 +1,129 @@
+---
+title: Shared liveness
+description: Measures main-thread blocks from a worker through a counter in shared memory, without messages, in cross-origin-isolated pages.
+order: 25
+status: final
+---
+
+import { livenessMetrics } from "./metrics.data";
+
+`SharedLivenessMonitor` uses a counter in a `SharedArrayBuffer`. The main thread increments the counter while it operates. A worker reads the counter each 5 ms. When the counter does not change for 50 ms or more, the worker reports a block. The page must be cross-origin isolated.
+
+## What it measures
+
+The signal is the duration of each main-thread block that the worker found. The duration starts at the last change of the counter before the block, and it ends at the first change after it. The worker reads shared memory, not messages. Thus the measurement does not depend on a message queue of the main thread.
+
+The monitor answers this question: how long was each block of the main thread, measured from outside the main thread? It works in each engine that has `SharedArrayBuffer`, also in Firefox and Safari, where Long Animation Frames are not available.
+
+## How it works
+
+1. `setupAllMonitors()` makes a buffer of 4 bytes (`LIVENESS_BUFFER_BYTES`): one 32-bit counter.
+2. It gives [DriftLag](/docs/monitors/drift-lag) a `setTimeoutFn` from `beatingSetTimeout()`. Before each DriftLag timer callback, the wrapper increments the counter with `Atomics.add()`. DriftLag sets a timer each 5 ms, thus the counter changes often while the main thread is free.
+3. The monitor sends `liveness-start` to the worker, with the buffer, the threshold (50 ms) and the poll interval (5 ms).
+4. The worker reads the counter with `Atomics.load()` each 5 ms. When the counter changes after a quiet period of 50 ms or more, the worker sends `liveness-block` with the duration of the quiet period.
+5. The monitor gives each duration to the sample validator, which records it in `lag_liveness_block_histogram`.
+
+The worker does not blame the main thread for time in which the worker itself did not operate. When a poll of the worker comes 50 ms or more late, the worker starts a new quiet period at that poll. The worker compares only counter values, thus it is not necessary that the two clocks agree.
+
+## Browser support
+
+`SharedArrayBuffer` is available only with cross-origin isolation: the headers `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` or `credentialless`. Without isolation, the browser hides the constructor ([browser support](/research/browser-support)).
+
+| Feature | Chromium | Firefox | Safari |
+|---|---|---|---|
+| `SharedArrayBuffer` with cross-origin isolation | 92 on desktop, 88 on Android (89 in BCD) | 79 | 15.2 |
+| `crossOriginIsolated` | 87 | 72 | 15.2 |
+| COEP `credentialless` | 96 | 119 (desktop) | not available |
+| `Document-Isolation-Policy` | 137 (desktop), 146 (Android) | not available | not available |
+
+`createBrowserDeps()` gives `SharedArrayBuffer` only when `crossOriginIsolated` of the window is true and the option `sharedMemory` is not false. `setupAllMonitors()` starts the monitor only when it also has a `worker`.
+
+## Measurement validity
+
+With measurement conditions, the monitor pauses while the page is hidden or frozen. DriftLag also pauses then, thus no beats occur. Each block goes to a `SampleValidator` with a window of the length of the block. The validator discards a block that overlaps a hidden, frozen or suspend interval. A block of 5000 ms or more waits 2000 ms for late evidence of a suspend.
+
+## Metrics
+
+<MetricTable metrics={livenessMetrics} />
+
+The monitor sends no events of its own. The measurement conditions send a `lag.stall` event for each stall episode.
+
+## Configuration
+
+```ts
+function createInstrumentedSharedLiveness(
+    deps : CoreDeps & Pick<WorkerMonitorDeps, "worker"> & {
+        livenessBuffer : SharedArrayBuffer;
+        livenessOptions? : SharedLivenessOptions;
+    },
+    conditions? : MeasurementConditions,
+) : MonitorHandle<SharedLivenessMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`), the `worker` from `WorkerMonitorDeps`, and the buffer. The caller makes the buffer and makes a frequent main-thread callback beat it. `setupAllMonitors()` does both when the page is cross-origin isolated and has a worker.
+
+| Option of `livenessOptions` | Default | What it does |
+|---|---|---|
+| `thresholdMs` | 50 | A counter that does not change for this long is a block. |
+| `pollIntervalMs` | 5 | The time between two reads of the counter in the worker. |
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import {
+    LIVENESS_BUFFER_BYTES,
+    beatingSetTimeout,
+    createBrowserDeps,
+    createInstrumentedDriftLag,
+    createInstrumentedSharedLiveness,
+    createLivenessBeacon,
+} from "@lag/core";
+import { createLagWorker } from "@lag/worker";
+
+if (globalThis.crossOriginIsolated) {
+    const worker = createLagWorker();
+    const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag"), worker });
+    const livenessBuffer = new SharedArrayBuffer(LIVENESS_BUFFER_BYTES);
+    // DriftLag beats the counter before each of its timer callbacks
+    const setTimeoutFn = beatingSetTimeout(deps.setTimeoutFn, createLivenessBeacon(livenessBuffer));
+    const driftLag = createInstrumentedDriftLag({ ...deps, setTimeoutFn });
+    const liveness = createInstrumentedSharedLiveness({
+        ...deps,
+        worker,
+        livenessBuffer,
+        livenessOptions : { thresholdMs : 50, pollIntervalMs : 5 },
+    });
+    console.log(driftLag.name, liveness.name);
+}
+```
+
+## Cost
+
+- **Main thread:** one `Atomics.add()` before each DriftLag timer callback. No timers of its own. One message from the worker for each block.
+- **Worker:** one interval callback each 5 ms, thus approximately 200 reads of the counter each second.
+- **Memory:** 4 bytes of shared memory.
+
+## Limits
+
+- **Cross-origin isolation is necessary.** The page must send the isolation headers. A script of a third party cannot assume them ([real user monitoring](/research/rum-landscape)). Thus many pages cannot use this monitor.
+- **The watcher cannot tell a block from a free main thread with no timers.** It depends on a frequent beat. In `setupAllMonitors()`, the beat comes from DriftLag. If the beats stop while the watcher operates, the worker reports the next beat as the end of a block.
+- **The report comes after the block.** The worker reports a block when the counter changes again. Thus a block that does not end gives no report. The [worker monitor](/docs/monitors/worker-lag) detects hangs while they continue.
+- **Short blocks.** A block of less than 50 ms gives no value. The resolution is the poll interval (5 ms) plus the interval of the beats. The beat interval is one DriftLag step: 5.7 ms in Chromium, and 15.5 ms to 15.6 ms in Firefox and WebKit on Windows ([experiment E3](/research/local-experiments)).
+
+## Tests
+
+Unit tests:
+
+- `shared-liveness.test.ts`: no report while the main thread beats. A report when the counter stops changing, at the next change. No report for a quiet period shorter than the threshold. No report for time in which the watcher itself did not operate. `stop()` stops the reads. `beatingSetTimeout()` beats before each callback.
+- `setup-all-monitors.test.ts`: with a `SharedArrayBuffer`, `setupAllMonitors()` adds the monitor, and DriftLag increments the counter more than 100 times in 1 s of fake time. `stop()` leaves no timers.
+
+Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy)):
+
+- `coi/isolation.test.ts` (a cross-origin-isolated page, in Chromium in the new headless mode, Firefox and WebKit): the page has `SharedArrayBuffer`. An idle page gives no block in 700 ms. A 300 ms block gives one block of more than 260 ms and less than 400 ms. The comment of the test gives the measured values: 305 ms in Chromium, 288 ms in Firefox and 330 ms in WebKit.
+- `lag-monitors.test.ts` (in Chromium, Firefox, WebKit and Chrome): the test page is not cross-origin isolated, thus the setup starts no shared-liveness monitor.
+
+## Source
+
+- [`SharedLivenessMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/SharedLivenessMonitor.ts): the main-thread side.
+- [`shared-liveness.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/shared-liveness.ts): the counter, the beacon and the watcher of the worker.
+- [`instrumented/shared-liveness.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/shared-liveness.ts): the factory.
+- [`setup-all-monitors.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/setup-all-monitors.ts): the buffer and the DriftLag beat.

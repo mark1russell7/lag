@@ -1,0 +1,153 @@
+---
+title: Test strategy
+description: The kinds of tests in the project, where they operate, what each kind shows, and how the results get to this site.
+order: 60
+status: final
+---
+
+import { heavyProfileChart, heavyProfileTable } from "./strategy.data";
+
+Each claim of the [thesis](/thesis) has a type of test that can show it. A rule with an exact value gets a unit test with fake time. A fact about a browser gets a test in that browser. A claim of agreement with web-vitals gets a test that operates the two libraries on the same page. The [results](/results) page shows the latest run of all tests.
+
+## The kinds of tests
+
+| Kind | Where it operates | What it shows | Command |
+|---|---|---|---|
+| Unit tests | Node, with the fake timers of Vitest | The rules of each part, with exact values | `pnpm test` |
+| Property tests | Node, with fast-check | The INP and CLS calculators agree with a reference for all sequences of entries | `pnpm test` |
+| Browser tests | Chromium, Firefox, WebKit and Chrome, through Playwright | The monitors with real timers, real workers, real input and real paints | `pnpm test:browser` |
+| web-vitals oracle | The four engines | The vitals agree with web-vitals 6 on the same page | `pnpm test:browser` |
+| CDP tests | Chromium in the new headless mode | Hidden and frozen pages, CPU throttling and compute pressure | `pnpm --filter @lag/integration-tests test:cdp` |
+| Cross-origin-isolated tests | Chromium, Firefox and WebKit | Shared memory, the fine clock and `measureUserAgentSpecificMemory()` | `pnpm --filter @lag/integration-tests test:coi` |
+| Overhead benchmark | Chromium in the new headless mode | The cost of all monitors on an idle page, against budgets | `pnpm test:overhead` |
+| Soak test | Chromium, for 3 minutes or more | The heap does not grow without limit, and `stop()` releases each timer | `pnpm test:soak` |
+| E2E tests | Chromium and the Grafana stack in Docker | The export of the metrics to Mimir | `pnpm test:e2e` |
+| Coverage | Node | The parts of `@lag/core` that the unit tests use | `pnpm coverage` |
+| Mutation testing | Node, with Stryker | The changes to `@lag/core` that the unit tests find | `pnpm mutation` |
+| Writing checks | Node | The STE rules for the README, the site and the comments. The metric table of the README agrees with the catalog. | `pnpm lint:ste`, `pnpm readme:metrics:check` |
+
+<Tabs label="Test commands">
+  <Tab label="Fast check">
+    Use `pnpm test` for the unit tests, and `pnpm test:chromium` for the browser tests in Chromium only. These commands do not need Docker.
+  </Tab>
+  <Tab label="All engines">
+    Install the browsers one time with `pnpm --filter @lag/integration-tests exec playwright install chromium firefox webkit`. Then use `pnpm test:browser`.
+  </Tab>
+  <Tab label="All results">
+    Use `pnpm results`. The command operates all kinds of tests, except the soak test and the E2E tests, and writes the results for this site.
+  </Tab>
+</Tabs>
+
+## Unit tests
+
+Each monitor gets its browser APIs from outside, as duck-typed dependencies (refer to the [architecture](/docs/architecture)). Thus a unit test gives each monitor fake timers, a fake clock and fake observers. The tests are fast, and they give the same result each time.
+
+The fakes copy the behavior of the browsers that the [research](/research) found. For example, the fake `PerformanceObserver` keeps entries for `takeRecords()`, and the fake lifecycle sends the events in the sequence of Chromium. Each test examines one behavior, and its name states that behavior.
+
+An adversarial review of the library wrote a proof test for each defect that it found. The unit tests include these tests. Each one first failed, and passes after its fix. Examples are a second report of a page view after `pagehide`, and a hang that two tabs reported two times.
+
+## Browser tests
+
+The browser tests use Vitest browser mode with Playwright. Each test file operates in Chromium, Firefox, WebKit and Chrome. They examine the facts that fake time cannot show:
+
+- `drift-accuracy.test.ts`: the median lag of DriftLag on an idle page is less than 5 ms. A 300 ms block gives more than 300 ms minus one step and 10 ms, and less than 340 ms.
+- `lifecycle.test.ts`: the lifecycle machine notifies its subscribers before a listener that the page added earlier. It uses the time of the event, and it removes its listeners at the end.
+- `lag-monitors.test.ts`: the monitors on a real page, and the INP of a real click on a button that blocks for 120 ms.
+- `worker.test.ts` and `hang-journal.test.ts`: the worker heartbeat, a hang of 6.5 s, and the record of the hang in IndexedDB.
+- `worker-io.test.ts`: the IndexedDB writes and the fetches of a worker during a block of 2 s. WebKit completes them only after the block, thus `hang-journal.test.ts` skips itself there after a probe ([experiment E4](/research/local-experiments)).
+- `stress.test.ts`: the workload profiles of `@lag/load` (refer to [stress tests](#stress-tests-and-workload-profiles)).
+- `browser-apis.test.ts`: the monitors that need one browser API, with the real API. Examples are the layout shifts, the real CPU pressure source, the visibility-state entries, the idle periods and `performance.memory`.
+
+A test that needs an API of one engine skips itself in the other engines. The skip reason comes from `features.ts`, for example "Long Animation Frames (the long-animation-frame entry type) are Chromium-only." The results page shows each skip with its reason.
+
+<Callout type="note" title="One file at a time in each engine">
+  The timing tests measure milliseconds. When 28 test files operated at the same time in four engines, the CPU was overloaded. A 300 ms block then measured 245 ms. Thus each engine operates its files one after the other, and the four engines operate at the same time.
+</Callout>
+
+## The web-vitals oracle
+
+`web-vitals-oracle.test.ts` operates web-vitals 6.2.3 and the [page-view vitals](/docs/monitors/page-view-vitals) on the same page. The two libraries read the same entries with the same rules. Thus the values must be the same, with no tolerance:
+
+- FCP, LCP and TTFB of the load.
+- CLS in Chromium. In Firefox and WebKit, the browser has no layout-shift entries, and the two libraries report no CLS.
+- INP of real clicks on buttons that block for 40, 100 and 180 ms, with the target, the type and the three phases of the attribution.
+
+The oracle found a bug. The library reported a CLS of 0 in browsers without layout-shift entries. Those values were false "good" values in the CLS histogram. After the fix, the library reports no CLS there, as web-vitals does.
+
+## CDP tests
+
+The CDP tests use the Chrome DevTools Protocol to make page states that a user makes:
+
+- A hidden page: the timer monitors pause, and they continue when the page is visible.
+- A frozen page: the timer monitors pause before the freeze, record no stall for it, and continue after the resume.
+- CPU throttling: 4× throttling of the same work increases the drift and the worker lag.
+- A virtual compute-pressure source: the monitor records each state of the source, as the ordinals 0 to 3.
+- A checkpoint: the page-view vitals record one value for each vital, and the events, when the page becomes hidden.
+
+<Callout type="caution" title="The CDP tests need Chromium in the new headless mode">
+  Only that mode changes `visibilityState` when another page comes to the front. The tests also turn off the focus emulation of Playwright, through an internal API of Playwright 1.58. A new version of Playwright can break these tests.
+</Callout>
+
+CDP hides a page before it freezes it. Thus the monitors pause at the hidden transition, and no sample gets the discard reason `frozen` in these tests.
+
+The CDP tests found a second bug. In Chromium on Windows, the 5 ms timer steps changed from 5.5 ms to 15.6 ms after a page was shown again. DriftLag then reported windows of 160 ms of lag on an idle page, and the worker saw less than 2 ms. After the fix, DriftLag follows a change of the timer granularity (refer to [DriftLag](/docs/monitors/drift-lag)).
+
+## Overhead and soak
+
+The overhead benchmark measures an idle page with all monitors and without them. It uses `Performance.getMetrics` of CDP, in 3 rounds of 10 s. The budgets come from these measurements and from the research:
+
+| Budget | Limit | The reason for the limit |
+|---|---|---|
+| CPU of all monitors | 3% of one core (30 ms each second) | The largest measured round, plus 20% |
+| Timer callbacks | 210 each second | A 5 ms chain fires 200 times each second at most. The other monitors add fewer than 10. |
+| Wake-ups | 340 each second | 210 timers, 60 animation frames, 60 idle callbacks and 10 messages |
+
+The budgets depend on the machine. Thus the benchmark operates in `pnpm results`, but not in the CI workflow.
+
+The soak test operates all monitors under a mixed workload for 3 minutes, or for `LAG_SOAK_MS` milliseconds. It measures the heap after a full garbage collection. A growth of more than 100 kB each minute after the warm-up is a leak. After `stop()`, no timer, animation frame, idle callback or worker heartbeat must stay.
+
+## Coverage and mutation testing
+
+`pnpm coverage` measures the coverage of `@lag/core` with V8. The command fails below the thresholds in `packages/lag/vitest.config.ts`.
+
+`pnpm mutation` uses Stryker. Stryker makes many small changes to the code, for example `-` to `+`. It operates the unit tests on each change. A change that no test finds is a surviving mutant: a behavior that no test pins down. The command fails below the break threshold in `packages/lag/stryker.config.json`. The incremental mode tests again only the mutants whose code or tests changed.
+
+## Stress tests and workload profiles
+
+The stress tests use the workload profiles of `@lag/load` to make main-thread load. A profile is a list of lag specs. Each spec has a weight and a distribution of durations.
+
+<PlotFigure
+  title="Lag event durations of the heavy profile"
+  description="One box for each lag spec of the heavy profile. Each box shows the middle half of the sampled durations. The line in the box is the median."
+  options={heavyProfileChart}
+  table={heavyProfileTable}
+  caption="Samples of the duration distribution of each lag spec in the heavy profile of @lag/load, with seed 42. The page only draws the numbers. It makes no load."
+/>
+
+## How the results get to this site
+
+`pnpm results` collects the results:
+
+1. It builds all packages.
+2. It operates the unit tests with coverage, the browser tests, the overhead benchmark and the site tests. A reporter writes each test with its project and its engine.
+3. It reads the coverage summary, and the newest Stryker report if one exists.
+4. It writes one run to `packages/site/public/data/results/`. Git ignores this folder.
+
+The results page reads this folder. It shows the tests of each engine, the skips with their reasons, the coverage, the surviving mutants, the measurements and the budgets.
+
+## Continuous integration
+
+| Workflow | When | What |
+|---|---|---|
+| `ci.yml` | Each push and each pull request | The build, the type check, the unit tests, the coverage, the browser tests in each engine, and the tests and the build of the site |
+| `e2e.yml` | Each week, or manually | The Grafana stack in Docker, and the E2E tests |
+| `mutation.yml` | Each week, or manually | Stryker, with the incremental file from the cache |
+| `pages.yml` | Each push to `main`, or manually | `pnpm results`, the build of this site and its deployment to GitHub Pages |
+
+## Limits
+
+- **WebKit is not Safari.** The WebKit tests use the WebKit build of Playwright for Windows. Safari on macOS and iOS can behave differently, for example in Low Power Mode.
+- **The E2E tests need a free port.** The Grafana stack uses port 3000 by default. Set `GRAFANA_PORT` when another program uses that port.
+- **Mimir labels.** Mimir puts `service.name` into the `job` label. The E2E query accepts `job` or `service_name`, and a native or a classic histogram.
+- **Mimir and CORS.** Mimir sends no CORS headers, thus a test page cannot read the answer of a query. A Vitest command sends the query from Node (`commands/mimir.ts`).
+- **Shared machines.** The CI runners of GitHub are shared machines. In the first CI operation, on 8 October 2026, a runner stopped a page for 490 ms. Thus a test of an idle page or of a light load examines a median or a percentile, not the largest single window.

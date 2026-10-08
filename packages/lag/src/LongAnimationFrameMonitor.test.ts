@@ -52,22 +52,40 @@ describe("LongAnimationFrameMonitor", () => {
         }));
     });
 
-    it("calculates renderDuration", () => {
+    it("calculates renderDuration from renderStart to the end of the frame", () => {
         const { MockCtor, triggerEntries } = createMockPerformanceObserver();
         const report = vi.fn();
         const logger = { log : vi.fn() };
 
         new LongAnimationFrameMonitor(report, logger, MockCtor);
 
-        // duration=200, styleAndLayoutStart=180, startTime=100
-        // renderDuration = 200 - (180 - 100) = 120
+        // Frame ends at 100 + 200 = 300; rendering started at 220
         triggerEntries([makeLoafEntry({
             startTime : 100,
             duration : 200,
-            styleAndLayoutStart : 180,
+            renderStart : 220,
+            styleAndLayoutStart : 250,
         })]);
 
-        expect(report.mock.calls[0]![0].renderDuration).toBe(120);
+        expect(report.mock.calls[0]![0].renderDuration).toBe(80);
+    });
+
+    it("reports renderDuration 0 for frames that did not render", () => {
+        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+        const report = vi.fn();
+        const logger = { log : vi.fn() };
+
+        new LongAnimationFrameMonitor(report, logger, MockCtor);
+
+        // Browsers report renderStart = styleAndLayoutStart = 0 when nothing rendered
+        triggerEntries([makeLoafEntry({
+            startTime : 5_000,
+            duration : 120,
+            renderStart : 0,
+            styleAndLayoutStart : 0,
+        })]);
+
+        expect(report.mock.calls[0]![0].renderDuration).toBe(0);
     });
 
     it("detects forced layout from scripts", () => {
@@ -119,5 +137,59 @@ describe("LongAnimationFrameMonitor", () => {
         })]);
 
         expect(report.mock.calls[0]![0].hasForceLayout).toBe(false);
+    });
+
+    describe("rules of the script attribution", () => {
+        const script = (fields : { duration : number; forced? : number; functionName? : string; invoker? : string }) => ({
+            name : "script",
+            invoker : fields.invoker ?? "BUTTON.onclick",
+            invokerType : "event-listener",
+            startTime : 100,
+            executionStart : 101,
+            duration : fields.duration,
+            forcedStyleAndLayoutDuration : fields.forced ?? 0,
+            sourceURL : "https://shop.example/app.js",
+            ...(fields.functionName === undefined ? {} : { sourceFunctionName : fields.functionName }),
+        });
+
+        it("reports no scripts for an entry without a list of scripts", () => {
+            const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+            const report = vi.fn();
+            new LongAnimationFrameMonitor(report, { log : vi.fn() }, MockCtor);
+            const entry = makeLoafEntry();
+            delete (entry as Partial<LoafEntry>).scripts;
+
+            triggerEntries([entry]);
+
+            expect(report).toHaveBeenCalledWith(expect.objectContaining({ scriptCount : 0, hasForceLayout : false, topScript : undefined }));
+        });
+
+        it("names the first of the longest scripts with its function name, and finds a forced layout in any script", () => {
+            const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+            const report = vi.fn();
+            new LongAnimationFrameMonitor(report, { log : vi.fn() }, MockCtor);
+
+            triggerEntries([makeLoafEntry({ scripts : [
+                script({ duration : 40, forced : 5, functionName : "onLoad", invoker : "IMG.onload" }),
+                script({ duration : 120, functionName : "onClick", invoker : "BUTTON#buy.onclick" }),
+                script({ duration : 120, functionName : "onSubmit", invoker : "FORM.onsubmit" }),
+            ] })]);
+
+            expect(report).toHaveBeenCalledWith(expect.objectContaining({
+                scriptCount : 3,
+                hasForceLayout : true,
+                topScript : { invoker : "BUTTON#buy.onclick", invokerType : "event-listener", sourceURL : "https://shop.example/app.js", sourceFunctionName : "onClick", duration : 120 },
+            }));
+        });
+
+        it("gives an empty function name for a script without one", () => {
+            const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+            const report = vi.fn();
+            new LongAnimationFrameMonitor(report, { log : vi.fn() }, MockCtor);
+
+            triggerEntries([makeLoafEntry({ scripts : [script({ duration : 80 })] })]);
+
+            expect(report.mock.calls[0]![0].topScript.sourceFunctionName).toBe("");
+        });
     });
 });

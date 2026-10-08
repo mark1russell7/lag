@@ -1,0 +1,318 @@
+---
+title: OpenTelemetry metrics in the browser
+description: Why many browsers that write the same metric series break Mimir, why delta temporality and collectors do not fix it, and the settings that the library and otel-ts use.
+order: 7
+status: draft
+---
+
+This note explains how a page can export OpenTelemetry metrics to Grafana Mimir, and the problems of this export. The research read the specifications, the official documentation and the source code on 2026-10-07. The note marks an inference of the research as an inference, and an item that nobody verified as not verified.
+
+Without `service.instance.id`, all browsers of a service write to the same Prometheus series. Mimir then rejects samples, and the samples that it accepts mix the totals of different browsers. Delta temporality and the components of the collector do not fix this. The fix is a random writer identity for each SDK instance, with cumulative temporality and exponential histograms. Events in Loki carry the details that have high cardinality. The [sources](/research/sources) page lists all sources of this note.
+
+## The starting point
+
+At the start of the research, the project used the OTel JS SDK 2.x through otel-ts. The SDK exported with `OTLPMetricExporter` over OTLP/HTTP and cumulative temporality, through Grafana Alloy to the `/otlp` endpoint of Mimir. The browser tests set an export interval of 5 s. The resource had `service.name`, `service.version` and `session.id` (in `sessionStorage`, with a TTL of 30 minutes), but no `service.instance.id`. Many sessions of one service exported at the same time.
+
+The research used these versions, the latest on 2026-10-07:
+
+| Component | Version and date |
+|---|---|
+| Grafana Mimir | 3.2.1 (2026-09-10) and 3.1.7 (2026-10-06), and the `main` branch |
+| Prometheus | 3.14.0 (2026-08-17) |
+| Grafana Alloy | 1.20.1 (2026-09-28) |
+| OpenTelemetry JS | 2.11.0 (2026-08-31). Version 3.0.0 is in development. |
+| OpenTelemetry semantic conventions | v1.44.0 (2026-08-04) |
+| opentelemetry-collector-contrib | The `main` branch (October 2026) |
+
+## Shared labels in Mimir
+
+### How resource attributes become labels
+
+Mimir uses the OTLP translator of Prometheus ([`metrics_to_prw.go`](https://github.com/prometheus/prometheus/tree/main/storage/remote/otlptranslator/prometheusremotewrite), [Mimir](https://grafana.com/docs/mimir/latest/configure/configure-otel-collector/)):
+
+- `job` is `service.namespace` + `/` + `service.name`, or `service.name` without a namespace. `instance` is `service.instance.id`.
+- If `service.instance.id` is missing, the translator sets no `instance` label. The [compatibility specification](https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/) adds an empty `instance` in this case. In Prometheus, an empty label and a missing label are the same.
+- All other resource attributes go to the info series `target_info` (value 1), with `job` and `instance`. A query uses a join or the `info()` function, which is experimental in Prometheus.
+- The translator makes `target_info` only when the resource has an attribute that does not identify it, and the series has `job` or `instance`.
+- The experimental per-tenant option `promote_otel_resource_attributes` copies the listed resource attributes onto every series.
+- Grafana Cloud promotes a fixed list by default: `service.instance.id`, `service.name`, `service.namespace`, `service.version`, `deployment.environment(.name)`, `cloud.*` and `k8s.*` ([Grafana Cloud](https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/)). The list does not include `session.id`.
+
+With the old resource, each sample had only `__name__`, `job` and the metric attributes. Each session added one `target_info` series with the same `job` and no `instance`. This broke the rule of the compatibility specification: at most one `target_info` for each combination of `job` and `instance`. A join `* on (job, instance) group_left(...) target_info` became many-to-many.
+
+### The problems
+
+| Symptom | Mechanism | Evidence |
+|---|---|---|
+| Rejected samples with `new-value-for-timestamp` | Two browsers write a sample for the same series in the same millisecond, with different values. | The [Mimir runbook](https://grafana.com/docs/mimir/latest/manage/mimir-runbooks/) names endpoints that export the same metrics with identical labels as the cause. |
+| Rejected samples with `sample-out-of-order` | The sample of a browser is older than the newest stored sample of the series. The default `out_of_order_time_window` of Mimir is `0s`. | The runbook gives targets with identical labels as the cause. |
+| Silent loss | Mimir answers HTTP 200 with an OTLP partial success for some rejections, thus Alloy and the browser get a success. | [`otel.go`](https://github.com/grafana/mimir/blob/main/pkg/distributor/otel.go) and [PR #15589](https://github.com/grafana/mimir/pull/15589) (merged 2026-09-10) |
+| Incorrect `rate()`, `increase()` and `histogram_quantile()` | The accepted samples mix the cumulative totals of different browsers. PromQL treats each decrease as a counter reset and adds the full value after the reset. | The [PromQL functions](https://prometheus.io/docs/prometheus/latest/querying/functions/) documentation |
+| A larger error with out-of-order ingestion | A larger `out_of_order_time_window` lets more of the mixed samples in. It does not merge the writers. | An inference of the research |
+| Gauges that change between browsers | The browser that wrote last wins. `avg` and `max` over time have no meaning. | An inference of the research |
+| Clock skew | The timestamps come from the clock of the browser (`Date.now()`). Mimir rejects samples more than 10 minutes in the future (`creation_grace_period`). | The [Mimir configuration](https://grafana.com/docs/mimir/latest/configure/configuration-parameters/) and [`MetricCollector.ts`](https://github.com/open-telemetry/opentelemetry-js/blob/main/packages/sdk-metrics/src/state/MetricCollector.ts) |
+
+### A worked example
+
+This example is an inference of the research. The counter of browser A reads 100, 101 and 102 at 0 s, 5 s and 10 s. The counter of browser B reads 5, 6 and 7 at 2 s, 7 s and 12 s. Both write to the same series, thus the series reads 100, 5, 101, 6, 102 and 7. `increase()` treats each decrease as a reset, thus it adds 5 + 96 + 6 + 96 + 7 = **210**. The true increase is **4**.
+
+The [metrics data model](https://opentelemetry.io/docs/specs/otel/metrics/data-model/) of OpenTelemetry has a stable Single-Writer rule. All metric streams in OTLP must have one logical writer. In the specification, more than one writer for a stream is an error state, which gives cumulative sums that nobody can use. The correction is a different `Resource` for each writer.
+
+## The cost of one identity for each writer
+
+| Instrument | Series for each attribute set |
+|---|---|
+| Classic histogram with explicit buckets | The number of buckets, plus 1 (`+Inf`), plus `_sum` and `_count` |
+| Native histogram, or NHCB | 1 |
+| Counter or gauge | 1 |
+| `target_info` | 1 for each writer |
+
+Ingesters keep series in memory until the compaction of the TSDB head, which occurs each two hours by default ([Mimir](https://grafana.com/docs/mimir/latest/references/architecture/components/ingester/)). Thus the series of ended sessions count against `max_global_series_per_user` (default 150,000) for approximately 1 h to 3 h after their last sample. This duration is an inference of the research. An experimental early head compaction can drop inactive series sooner.
+
+Grafana Cloud bills on active series, which are the series with samples in the last 20 minutes. The usage is `max(active_series, total_DPM / included_DPM)`, with 1 DPM included ([Grafana Cloud](https://grafana.com/docs/grafana-cloud/cost-management-and-billing/understand-usage-cost/metrics/)). An export each 5 s is 12 DPM, thus each series costs approximately 12 times as much. The series of each writer also go into the blocks, thus a query of 30 days reads all old session series. Recording rules decrease this cost.
+
+A promoted `session.id` costs the same number of series as a `service.instance.id`. But `session.id` is not a valid writer identity.
+
+## The session ID as a writer identity
+
+- **Duplicated tabs.** A duplicated tab gets a copy of the `sessionStorage` of the original tab ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage)). Safari is different ([mdn/browser-compat-data#21594](https://github.com/mdn/browser-compat-data/issues/21594)). A page that a page opens also starts with a copy. Thus two live SDKs with one `session.id` write the same streams.
+- **Reloads and navigations.** A reload keeps the `session.id`, but the new SDK starts its cumulative streams again at 0, with the same labels. This looks like a reset. The final flush of the old page can also arrive after the first export of the new page, out of order.
+- **Workers.** A worker with its own `MeterProvider` shares the session.
+- **Session rotation.** A new session after 30 minutes changes a resource attribute in the middle of a page. The [Prometheus guide](https://prometheus.io/docs/guides/opentelemetry/) asks for a unique `service.instance.id` for each instance, and a new one at each change of a resource attribute. It recommends a new UUID at each start of an instance.
+- **Semantic conventions.** A session is a collection of logs, events and spans, not metrics ([session](https://opentelemetry.io/docs/specs/semconv/general/session/)). `service.instance.id` must be unique for each instance of a `service.namespace` and `service.name` pair. The conventions recommend a random version 1 or version 4 UUID, and one ID for each worker division ([service](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/)).
+- **The SDK.** In the browser build of the JS SDK, `serviceInstanceIdDetector` does nothing ([source](https://github.com/open-telemetry/opentelemetry-js/blob/main/packages/opentelemetry-resources/src/detectors/platform/browser/ServiceInstanceIdDetector.ts)). Thus the library must set `service.instance.id` itself.
+
+## Delta temporality as a fix
+
+### The default behavior
+
+By default, Mimir drops delta sums and delta histograms with `invalid temporality and type combination`. If the rest of the request converted, Mimir stores the rest and then answers 400 ([`otel.go`](https://github.com/grafana/mimir/blob/main/pkg/distributor/otel.go)). A collector does not retry a 400. Prometheus also drops delta metrics without a feature flag ([feature flags](https://prometheus.io/docs/prometheus/latest/feature_flags/)). The compatibility specification permits a conversion of delta histograms to cumulative ones. Else a drop is necessary.
+
+### The options
+
+| Backend | Option | From version | Status | Behavior |
+|---|---|---|---|---|
+| Prometheus | `--enable-feature=otlp-deltatocumulative` | 3.2.0 (2025-02-17) | Experimental | It embeds the `deltatocumulative` processor. Its state is in memory, thus a restart gives a counter reset. |
+| Prometheus | `--enable-feature=otlp-native-delta-ingestion` | 3.4.0 (2025-05-17) | Experimental, "very early stage" | It stores raw deltas, ignores `StartTimeUnixNano`, and gives them the unknown metadata type. |
+| Mimir | `-distributor.otel-native-delta-ingestion` | 2.17.0 (2025-08-15) | Still experimental in 3.2 | It stores the raw delta values without a conversion. |
+| Mimir | A built-in conversion from delta to cumulative | – | None | Alloy can convert instead (`otelcol.processor.deltatocumulative`). |
+
+With native delta ingestion, a sum becomes one float sample for each interval, with the type `unknown`. An exponential histogram becomes a gauge histogram. Prometheus says that `rate()` and `increase()` give incorrect results with deltas. A query must use `sum_over_time()`, and a range that is not a multiple of the export interval gives spiky graphs.
+
+### Many writers in one delta series
+
+Prometheus keeps only one sample when many samples have the same timestamp, and does not add them. Thus any aggregation must occur before the samples arrive ([Prometheus guide](https://prometheus.io/docs/guides/opentelemetry/)).
+
+The research calculates this loss (an inference). With N browsers that export each 5 s, a series gets N/5 samples each second. That gives approximately (N/5)²/2000 collisions each second, approximately 10% of the samples at N = 1,000. The method also depends on out-of-order ingestion. Thus it is not usable.
+
+### The direction of Prometheus
+
+- PROM-48 ("OTEL delta temporality support") closed on 2026-09-14. [PROM-77](https://github.com/prometheus/proposals/pull/77) replaced it: start timestamps in the `rate`-like functions for deltas. PROM-77 is open from 2026-03-18 and is a work in progress.
+- [PROM-60](https://github.com/prometheus/proposals/pull/60) (TSDB storage of start timestamps) merged on 2026-07-08.
+- Prometheus 3.11 added the experimental `st-storage` flag. Versions 3.12 and 3.14 added `use-start-timestamps` for `rate()`, `increase()` and `start_timestamp()`.
+- Mimir 3.2 can read the XOR2 and HistogramST chunk encodings, which keep start timestamps.
+
+Thus delta ingestion into Mimir is not ready for production in 2026, and a design must not depend on it.
+
+## Collectors do not merge writers
+
+No supported component of the Collector or of Alloy merges the metric streams of many writers over time.
+
+### deltatocumulative
+
+The processor is alpha in contrib and experimental in Alloy (`otelcol.processor.deltatocumulative`, from Alloy 1.2). Its [README](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/deltatocumulativeprocessor/README.md) says nothing about many writers or about the sequence of the points. The code ([`delta.go`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/deltatocumulativeprocessor/internal/delta/delta.go)) has these rules:
+
+- The first point of a stream sets its state.
+- A point with an earlier start time than the stream is dropped (`ErrOlderStart`). The error message tells the user to look for many processes that send the same series.
+- A point with a timestamp that is not later than the last point is dropped (`ErrOutOfOrder`).
+- The metric `otelcol_deltatocumulative_datapoints` counts the dropped points, with the attribute `error`.
+
+With many writers in one stream, the research infers these effects from the code:
+
+- The first accepted point sets the start of the stream. A JS delta point starts at the previous collection of its browser, thus the earlier points of other browsers are frequently dropped.
+- When arrivals interleave, the processor drops each point that arrives after a newer point of a different browser. A comment of 2026-09-16 on [issue #46441](https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/46441) reports the same drops with the count connector.
+- The result is a silent undercount: the processor adds a random part of the deltas.
+- One browser with a clock that is one hour fast moves the stream one hour ahead. Then the processor drops the points of all other browsers until the real time arrives there. The stale timer updates before the aggregation, thus the stream does not go stale.
+- Explicit histograms with different bounds reset the state. Thus different library versions in the fleet cause resets. Exponential histograms with different scales merge correctly.
+
+The maintainers closed issue #46441 (filed 2026-02-25) as "not planned" on 2026-07-03. The code owner said that the processor takes the entries in the sequence of their arrival, and that a different processor can sort them. A pull request that sorted the samples ([#32958](https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/32958)) closed without a merge on 2024-06-22. The scaling guide of Grafana (2024-11-26) sends each sample of a series to the same collector instance, through `loadbalancing` with `routing_key: streamID` ([Grafana](https://grafana.com/blog/how-to-use-opentelemetry-and-grafana-alloy-to-convert-delta-to-cumulative-at-scale/)). Metrics support in the loadbalancing exporter of Alloy is experimental.
+
+### Other processors and connectors
+
+- **interval** ([README](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/intervalprocessor/README.md)) forwards the latest value of each stream at an interval. For many writers, the last write still wins. It does not add values across writers.
+- **metricstransform** ([README](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/metricstransformprocessor/README.md)) aggregates only within one batch. Its README says that it is not suitable for metrics from many sources. Alloy does not ship it.
+- **`aggregate_on_attributes`** of the transform processor merges only points with identical timestamps ([aggregateutil](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/internal/coreinternal/aggregateutil/aggregate.go)). It works on one batch only, and keeps no state between batches.
+- **groupbyattrs** regroups the records, but it does not combine values.
+- **signaltometrics** makes metrics from spans, logs or data points with OTTL ([README](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/connector/signaltometricsconnector/README.md)). It is alpha in contrib, and experimental in Alloy from 1.18.0 (2026-07-17). It emits delta metrics for each batch, thus the Alloy example sends them through `deltatocumulative` and then `interval` (60 s). It adds the instance of the collector as `signal_to_metrics.service.instance.id`, so that the collector is the single writer.
+
+With more than one Alloy replica, the attribute `signal_to_metrics.service.instance.id` must become `service.instance.id`, or Mimir must promote it. Mimir maps only `service.instance.id` to `instance`. This is an inference of the research. The research also infers that the connector cannot merge incoming histogram points: each record gives one value and one count. With these limits, `signaltometrics` is the nearest supported pattern: the browsers send events, and the collector writes the fleet metrics.
+
+### Aggregation in the backend
+
+- **Query time.** Each writer keeps its identity, and PromQL aggregates with `sum without (instance)` or `sum by (le)`. This is the normal Prometheus model.
+- **Recording rules.** Mimir precomputes the fleet series. This decreases the query cost, but not the ingest cost.
+- **Grafana Cloud Adaptive Metrics.** Rules aggregate at ingestion, and `sum:counter` accounts for counter resets ([Grafana Cloud](https://grafana.com/docs/grafana-cloud/adaptive-telemetry/adaptive-metrics/create-rules/define-metrics-aggregation-rules/)). The research infers that the input must still have one series for each writer.
+- **VictoriaMetrics stream aggregation.** It accepts OTLP and `without: [instance]`. Counter resets do not affect its output `total`, but a unique identity for each writer is also necessary ([VictoriaMetrics](https://docs.victoriametrics.com/victoriametrics/stream-aggregation/)).
+- **Loki recording rules.** They make metrics from logs and events, and write them to Mimir ([Loki](https://grafana.com/docs/loki/latest/alert/)).
+
+Thus the supported patterns are these three:
+
+1. A unique writer identity, and an aggregation at query time or in rules.
+2. Events, from which the collector or the backend makes the metrics.
+3. An ingest-time aggregation of a vendor, which also must have a unique identity for each writer.
+
+## RUM products record events first
+
+Each production RUM product records events and makes the metrics on the server:
+
+- Grafana Faro writes measurements to Loki, and its dashboards use LogQL `quantile_over_time … | unwrap`.
+- Datadog stores view and long-task events, and generates metrics on the server.
+- New Relic stores `PageViewTiming` events.
+- Sentry and Honeycomb use spans.
+- The OpenTelemetry Browser SDK says that metrics are not in its scope at this time, and the browser conventions define only events.
+
+None of these products aggregates client-side OTel metric streams in a collector. The note [real user monitoring](/research/rum-landscape) gives the details of each product.
+
+## Semantic conventions for browsers
+
+The browser conventions define events only, not metrics ([browser events](https://opentelemetry.io/docs/specs/semconv/browser/browser-events/)). The event `browser.web_vital` has the status Development. It came in v1.34.0 (2025-05-19), with the values in the body. Version 1.44.0 (2026-08-04) moved the name, the value, the delta and the ID from the body to attributes ([CHANGELOG](https://github.com/open-telemetry/semantic-conventions/blob/main/CHANGELOG.md)).
+
+| Attribute | Requirement | Type | Values |
+|---|---|---|---|
+| `browser.web_vital.name` | `Required` | string | `cls`, `fcp`, `inp`, `lcp`, `ttfb` |
+| `browser.web_vital.value` | `Required` | double | |
+| `browser.web_vital.delta` | `Required` | double | The change from the last report |
+| `browser.web_vital.id` | `Required` | string | |
+| `browser.web_vital.navigation_type` | `Recommended` | string | `navigate`, `reload`, `back-forward`, `back-forward-cache`, `prerender`, `restore` |
+| `browser.web_vital.rating` | `Recommended` | string | `good`, `needs-improvement`, `poor` |
+
+The OpenTelemetry browser instrumentation emits these names ([`semconv.ts`](https://github.com/open-telemetry/opentelemetry-browser/blob/main/packages/instrumentation/src/web-vitals/semconv.ts)). These conventions also apply:
+
+- **Browser resource.** `browser.brands`, `browser.platform`, `browser.mobile` and `browser.language` have the status Development. `user_agent.original` is stable. The `browser.*` attributes are only for resources in a web browser ([browser resource](https://opentelemetry.io/docs/specs/semconv/resource/browser/)). Version 1.42.0 (2026-06-12) added the entity `browser.document`, with `browser.document.url.full`.
+- **Session.** `session.id` and `session.previous_id` have the status Development, with the events `session.start` and `session.end`. No session entity exists, thus a session is not a resource. The OTel Browser SDK puts `session.id` on spans and log records through processors. Its default store is `localStorage`, thus all tabs of an origin share one session ([session management](https://github.com/open-telemetry/opentelemetry-browser/blob/main/docs/session-management.md)).
+- **Service instance.** `service.instance.id` is stable from v1.40.0 (2026-02-19). The conventions do not recommend that a collector sets it, if the collector cannot find the instance without doubt. The research found no guidance for browsers, thus the general rule applies: one value for each SDK instance.
+- **Other events.** The pull requests for `browser.navigation`, `browser.navigation_timing`, `browser.resource_timing`, `browser.user_action.click` and `browser.console` closed as stale. The definitions in the opentelemetry-browser repository are the working versions (updated 2026-08-27).
+- **Long tasks.** No convention exists. The contrib `instrumentation-long-task` emits spans and is experimental.
+
+## Details of the JavaScript SDK
+
+### Cardinality limits
+
+The [SDK specification](https://opentelemetry.io/docs/specs/otel/metrics/sdk/) gives a default cardinality limit of 2000. Overflow goes to the attribute set `{otel.metric.overflow: true}`. The JS SDK has this limit from 1.29.0 (2024-12-04), with `aggregationCardinalityLimit` on each view. Version 2.7.0 (2026-04-17) added `cardinalityLimits` for each instrument type on `PeriodicExportingMetricReader` ([CHANGELOG](https://github.com/open-telemetry/opentelemetry-js/blob/main/CHANGELOG.md)). The implementation keeps the limit minus one sets, plus one overflow series, which Mimir shows with `otel_metric_overflow="true"`.
+
+With cumulative temporality, one long-lived tab can export up to approximately 2000 attribute sets of each instrument for its whole life. Thus the research recommends low limits, for example 20 to 50.
+
+### Observable gauges
+
+With cumulative temporality, the JS SDK continues to export each attribute set that it observed one time, with its last value ([issue #4096](https://github.com/open-telemetry/opentelemetry-js/issues/4096), open from 2023-08-30). The fix, [PR #6884](https://github.com/open-telemetry/opentelemetry-js/pull/6884), was open and not merged at its last update on 2026-09-24. With delta temporality, the SDK exports only the sets of the current callback. A synchronous instrument with cumulative temporality exports every attribute set that it recorded, for the life of the `MeterProvider`.
+
+### Temporality and timestamps
+
+| Preference | Delta | Cumulative |
+|---|---|---|
+| `CUMULATIVE` (the default) | – | All instruments |
+| `DELTA` | Counter, ObservableCounter, Gauge, Histogram, ObservableGauge | UpDownCounter, ObservableUpDownCounter |
+| `LOWMEMORY` | Counter, Histogram | All other instruments |
+
+The reader takes the temporality from `exporter.selectAggregationTemporality` ([`OTLPMetricExporterBase.ts`](https://github.com/open-telemetry/opentelemetry-js/blob/main/experimental/packages/opentelemetry-exporter-metrics-otlp-http/src/OTLPMetricExporterBase.ts)). Thus a thin wrapper exporter can select the temporality for each instrument type. `MetricCollector` uses `Date.now()`, thus the timestamps come from the wall clock of the device, with its skew.
+
+## The recommendation
+
+The research recommends three decisions:
+
+- **(a) A unique writer identity for each SDK instance, with cumulative temporality.** Only this option obeys the Single-Writer rule from end to end, with no stateful or experimental collector component. It works with any OTLP backend. Cumulative data heals a lost export at the next export, and the fleet aggregation is normal PromQL. The cost is the churn of the series of each writer.
+- **(c) OTel log events to Loki, as a complement.** All RUM products and the OTel Browser group work in this way. Events give accurate percentiles across sessions, the attribution of each occurrence and a drill-down to a session, with no cardinality cost in Mimir.
+- **No (b): delta temporality with an aggregation in the collector.** No component supports the aggregation of many writers. It works only with timestamps that Alloy writes again and with serialized processing, and the maintainers say that this use is a misconfiguration. Explicit buckets that differ between library versions reset the state.
+
+### Signals and stores
+
+| Signal | Type | Store |
+|---|---|---|
+| Durations of main-thread lag | Histogram with the exponential aggregation, which becomes a native histogram in Mimir | Mimir |
+| Counts, for example missed worker heartbeats | Counter of occurrences, not a gauge | Mimir |
+| The current lag | A gauge only if it is necessary, without attributes | Mimir |
+| Each long task or LoAF longer than the threshold, with its attribution | OTel log event | Loki |
+| Web Vitals | `browser.web_vital` events with the v1.44 attribute names | Loki |
+| `session.id`, URL, route, user agent | Events only, not metric labels | Loki |
+
+### Resource identity
+
+- `service.instance.id` must be a new random UUID each time a `MeterProvider` or a `LoggerProvider` starts. This applies to each page load, to each worker with its own SDK, and to each change of the resource. The SDK must not store it, and it must not come from `session.id`.
+- The metrics resource has `service.name`, optionally `service.namespace`, `service.version`, `deployment.environment.name` and `service.instance.id`. It can also have `browser.platform` and `browser.mobile`, which have low cardinality. It must not have `session.id` and `user_agent.original`.
+- The logs resource has the same attributes and the same `service.instance.id`. `session.id` goes on each log record as an attribute.
+- The pivot path is the `instance` label in Mimir, then `service_instance_id` in the structured metadata of Loki, then `session_id`.
+
+### SDK, Mimir and Loki settings
+
+- **Export interval.** 15 s, not 5 s, because 12 DPM for each series is expensive.
+- **Cardinality.** `cardinalityLimits: { default: 20 }` (JS 2.7.0 and later).
+- **Histograms.** The exponential aggregation with `maxSize: 64`. The research infers that this settles at scale 2 for 1 ms to 10 s, a bucket width of approximately 19%.
+- **Flush.** At `visibilitychange` to hidden and at `pagehide`. With cumulative data, a failed flush loses only the last interval.
+- **Views.** Two views must not match one instrument, because they give two streams with the same name.
+- **Mimir.** `otel_created_timestamp_zero_ingestion_enabled: true` (experimental) adds a zero sample at the start time. Without it, `rate()` and `increase()` lose the first interval of each page load, when the start-up long tasks occur. The other options are `promote_otel_resource_attributes` for constant attributes, `out_of_order_time_window: 10m`, and `max_global_series_per_user` from the sizing rule. Native histograms are on by default from Mimir 2.16. Native delta ingestion must stay off.
+- **Monitoring.** The counter `cortex_discarded_samples_total` shows the rejections, with the reasons `sample-out-of-order`, `new-value-for-timestamp`, `sample-too-far-in-future`, `sample-timestamp-too-old` and `per_user_series_limit`.
+- **Loki.** `service.instance.id` is a default index label for OTLP logs, and the Loki documentation recommends to move it to structured metadata ([Loki](https://grafana.com/docs/loki/latest/send-data/otel/)). The research found in the source that Loki stores the OTLP `EventName` field as the structured metadata `event_name` ([`otlp.go`](https://github.com/grafana/loki/blob/main/pkg/loghttp/push/otlp.go)).
+
+### Queries
+
+A fleet quantile aggregates all instances first, and then takes the quantile. The recording rules of the Grafana stack of this project (`config/mimir/rules/anonymous/lag.yaml` in grafana-infra) do this with native histograms:
+
+```promql
+histogram_quantile(0.95, sum by (service_name) (rate(lag_drift_histogram[5m])))
+```
+
+The research gives these rules for queries:
+
+- A query must not average the quantiles of the instances.
+- A query must not use `sum by (le)` without `rate()`.
+- The scrape interval of the Grafana data source must be the export interval. Then `$__rate_interval` is at least 4 times the export interval.
+- Pushed OTLP series get staleness markers only from points with the flag `NoRecordedValue`. The research infers that the JS SDK does not send such points. Thus an instant query sees closed pages for up to the lookback of 5 minutes.
+
+### Sizing
+
+The research gives these formulas (an inference), with S the series of each writer, C the concurrent page loads and R the page loads each hour:
+
+- In-memory series are approximately R × 2.5 h × S, because inactive series stay until the head compaction.
+- Active series (a window of 20 minutes) are approximately (C + R/3) × S.
+- Samples each second are approximately C × S divided by the export interval.
+
+An example has C = 2,000, a mean page life of 10 minutes (R = 12,000 each hour) and S = 8. It gives approximately 240,000 in-memory series and approximately 48,000 active series. At an interval of 15 s, it gives approximately 1,000 samples each second. That is already more than the default limit of 150,000. The research gives three steps of escalation:
+
+1. Increase the limits.
+2. Sample at the start of the SDK, for example 10% of the page loads. Scale the counts in the dashboards. Percentiles do not change with sampling.
+3. Move the histograms to events, and make the fleet metrics with `signaltometrics`.
+
+### Risks that are not verified
+
+The research names these risks for tests before production:
+
+- The created-timestamp zero ingestion is experimental. `increase()` must be correct for page loads shorter than two export intervals.
+- The DELTA temporality for gauges is an inference from the SDK source. A unit test of the OTLP payload must show that only the observed sets go out.
+- Browser clock skew can cause `sample-too-far-in-future` and `sample-timestamp-too-old` rejections.
+- The research did not verify that the transport of the exporter (keepalive or beacon) completes during `pagehide`.
+- A public endpoint must have an allowlist of metric names in Alloy, a limit for each metric, and a rate limit at the edge.
+
+## The library and otel-ts at this time
+
+**`@lag/core`.** The library makes only counters and histograms ([`metric-catalog.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/metric-catalog.ts)). Each attribute has a small, fixed set of values. Measured values, timestamps and IDs are not attributes.
+
+IDs, URLs, selectors and script names go only into events, which are OTel log records with an event name. Each event of the monitors gets `lag.page_view.id`. The `browser.web_vital` events use the attribute names of v1.44. The histograms of the vitals have only the attribute `navigation_type`.
+
+**otel-ts.** The source of [otel-ts](https://github.com/mark1russell7/otel-ts) (commit `d2ca8f7` of 2026-10-07, in `main` from the merge `a4a7722`) has these defaults and options, in `src/init.ts`, `src/metrics.ts`, `src/resource.ts` and `src/lifecycle.ts`:
+
+- **Writer identity.** Each `init()` gets a new random version 4 UUID as `service.instance.id`. Without `crypto.randomUUID()`, it uses `crypto.getRandomValues()`, or `Math.random()`. The metrics, logs and traces resources share the value. otel-ts does not store it.
+- **Temporality.** Cumulative by default. The option `metricsTemporality: "delta"` exists.
+- **Histograms.** The option `histogramAggregation: "exponential"` selects base-2 exponential histograms for all histogram instruments, through the aggregation preference of the exporter and not through a view. The default is `"explicit"`. The [quick start](/docs/getting-started) sets `"exponential"`.
+- **Export interval.** 15 s by default.
+- **Flush.** otel-ts flushes at each `visibilitychange` to hidden and at a `pagehide` into the back/forward cache. At any other `pagehide`, it shuts down. It does not use `unload` or `beforeunload`.
+- **`onBeforeFlush`.** Each flush first starts the `onBeforeFlush` listeners, synchronously. The quick start connects it to `monitors.flush()`. The [local experiments](/research/local-experiments) explain the reason: in Chromium, the order of the `pagehide` listeners cannot protect the final values.
+- **Session.** `session.id` goes on each log record and each span through processors, not on the resource. Thus the metrics do not carry it. The session is in `sessionStorage` and changes after 30 minutes without activity.
+
+<Callout type="note" title="An earlier version of otel-ts">
+  Before the merge `a4a7722`, the `main` branch of otel-ts had commit `b98c3ea` (2026-04-09). That version puts `session.id` on the resource, sets no `service.instance.id` and has no `onBeforeFlush`.
+</Callout>
+
+**The Grafana stack.** The source of [grafana-infra](https://github.com/mark1russell7/grafana-infra) (commit `c56a945`, in `main` from the merge `4e183e3`) uses Mimir 3.2.2. Its Mimir configuration enables native histograms and the created-timestamp zero ingestion. It promotes `service.name`, `service.namespace`, `service.version`, `deployment.environment.name`, `browser.platform` and `browser.mobile`, but not `session.id`. It sets `out_of_order_time_window: 10m` and `max_global_series_per_user: 500000`.
+
+Loki 3.6.0 indexes only `service.name` and `event.name`, and keeps `service_instance_id` and `session_id` in the structured metadata. The Alloy configuration says that Loki 3.6 and 3.7 ignore the `EventName` field, thus Alloy copies it to the attribute `event.name`. The research read the `main` branch of Loki, not the version of the stack. Thus both facts can be correct, but this is not verified.
+
+The page [OpenTelemetry setup](/docs/operations/opentelemetry) gives the settings as instructions.

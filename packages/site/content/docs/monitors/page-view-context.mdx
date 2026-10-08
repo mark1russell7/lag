@@ -1,0 +1,116 @@
+---
+title: Page-view context
+description: Gives the ID of the current page view to the worker, for its hang reports, and to the crash-report context of Chromium, before a hang starts.
+order: 29.5
+status: final
+---
+
+The page-view context gives the ID of the current page view to two parts: the worker and the crash reports of the browser. These parts report while the main thread cannot operate. The context sets the ID at the start and again at each new page view. Thus a hang report or a crash report has the page view of the hang.
+
+## What it measures
+
+The page-view context measures nothing. It updates one attribute, `lag.page_view.id`, in two places:
+
+- **The worker.** The [worker monitor](/docs/monitors/worker-lag) sends a `context` message to the worker. The worker adds the context to each hang report and to each record of the hang journal.
+- **The crash-report context of Chromium.** `window.crashReport` keeps keys and values that the browser adds to its crash reports, for example when it stops an unresponsive page.
+
+It answers this question: which page view was the page in when it hung or crashed? The main thread cannot give this information during a hang, thus the worker and the browser must have it before the hang starts. [Page views](/docs/concepts/page-views) explains the unit.
+
+## How it works
+
+1. At its start, the context reads the current page view of the [page-view vitals](/docs/monitors/page-view-vitals) (`vitals.getView()`).
+2. It gives `{ "lag.page_view.id": id }` to each receiver with `setContext()`. The worker monitor is a receiver: it sends the context to the worker, and it sends the context again after each restart.
+3. With a crash-report context, it uses `initialize(512)` one time. Then it uses `set("lag.page_view.id", id)`.
+4. It subscribes to the page-view vitals. At each new page view (a restore from the back/forward cache, or a soft navigation), it does steps 2 and 3 again with the new ID.
+5. At `stop()`, it removes the subscription and deletes the key from the crash-report context.
+
+The crash-report context accepts only one `initialize()`. If another script of the page initialized it first, `initialize()` fails, and the context uses `set()` all the same. A failure of `set()` goes to the logger at the level `debug`, and the context continues.
+
+`setupAllMonitors()` also adds `lag.page_view.id` to each event of the other monitors, through `withEventContext()`. That wrapper is part of the setup, not of this factory. An attribute of the event itself has priority. Thus an abandoned hang keeps the page-view ID of the page that hung.
+
+## Browser support
+
+The worker part works in all browsers that have the worker monitor. The crash-report context is only in Chromium ([browser support](/research/browser-support)):
+
+| Feature | Chromium | Firefox | Safari |
+|---|---|---|---|
+| `window.crashReport` (`initialize`, `set`, `delete`) | 145 (origin trial 140 to 145) | not available | not available |
+| Crash reports with the reason `oom` or `unresponsive` | yes | not available | not available |
+| The `crash-reporting` endpoint | 139 | not available | not available |
+| `is_top_level` and `visibility_state` in the report | 138 | not available | not available |
+| JavaScript call stacks for unresponsive pages (`Document-Policy: include-js-call-stacks-in-crash-reports`) | 137 | not available | not available |
+
+The browser sends a crash report only to the reporting endpoint of the page. That is the `crash-reporting` endpoint of the `Reporting-Endpoints` header, or else the `default` endpoint. A script cannot read crash reports with a `ReportingObserver`. The report body has the key-value data in `crash_report_api`.
+
+## Metrics
+
+The page-view context records no metrics and sends no events. The hang reports of the worker and the crash reports of the browser carry its attribute.
+
+## Configuration
+
+```ts
+function createInstrumentedPageViewContext(
+    deps : Pick<CoreDeps, "logger"> & Partial<CrashReportDeps>,
+    vitals : PageViewVitals,
+    receivers : readonly PageContextReceiver[],
+) : MonitorHandle<PageViewContext>;
+```
+
+The factory uses the `logger`, the page-view vitals and the list of receivers. A receiver is an object with `setContext(attributes)`, for example the `WorkerLagMonitor`. `CrashReportDeps` (`crashReport`) is optional. `getAttributes()` gives the current context.
+
+`setupAllMonitors()` adds the context only when the page-view vitals operate, and only with a worker monitor or a crash-report context. `createBrowserDeps()` gives `window.crashReport` only if it has a `set()` function, and only while the option `crashReportContext` is not false (the default is true).
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import {
+    createBrowserDeps,
+    createInstrumentedLifecycle,
+    createInstrumentedPageViewContext,
+    createInstrumentedPageViewVitals,
+} from "@lag/core";
+
+const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
+const lifecycle = createInstrumentedLifecycle(deps).monitor;
+const vitals = lifecycle && deps.PerformanceObserver
+    ? createInstrumentedPageViewVitals({ ...deps, PerformanceObserver : deps.PerformanceObserver }, lifecycle).monitor
+    : undefined;
+if (vitals) {
+    // A receiver gets the context at the start and at each new page view
+    const receiver = { setContext : (attributes : Record<string, string>) => console.log(attributes) };
+    // deps.crashReport is window.crashReport, where the browser has it
+    const context = createInstrumentedPageViewContext(deps, vitals, [receiver]);
+    console.log(context.monitor?.getAttributes());
+}
+```
+
+## Cost
+
+- **Messages:** one `context` message to the worker for each page view.
+- **Crash-report context:** one `initialize()`, and one `set()` for each page view. The context asks for 512 bytes for the keys and values of the monitors.
+- **Timers and observers:** none.
+
+## Limits
+
+- **The crash report goes to your server.** The browser sends it to the reporting endpoint, not to the OpenTelemetry collector. Connect it with the events of the page view through `lag.page_view.id` on the server.
+- **Only Chromium has the crash-report context.** In Firefox and Safari, only the worker gets the context.
+- **The context of the start of the hang.** The worker keeps the last context that it got. A hang report has the page view that was current when the hang started.
+- **A fixed list of receivers.** The factory gets the receivers at its start. A receiver that you make later does not get the context.
+
+## Tests
+
+Unit tests:
+
+- `instrumented/page-view-context.test.ts`: each receiver gets the current page-view ID at the start and at each new page view. The crash-report context gets `initialize()` one time, `set()` for each page view, and `delete()` at `stop()`. The context still sets the ID when another script initialized the crash-report context first. A failure of the crash-report context goes to the logger at the level `debug`, and the receivers still get the context.
+- `setup-all-monitors.test.ts`: the worker monitor gets the ID of the current page view. The events of the other monitors get it too.
+- `browser/browser-deps.test.ts`: the adapter uses `window.crashReport` where the browser has it, and not with `crashReportContext: false`.
+
+Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
+
+- `hang-journal.test.ts`: the journal record of a hang has the attributes `{ "lag.page_view.id": <the ID of the page view> }`.
+
+## Source
+
+- [`instrumented/page-view-context.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/page-view-context.ts): the factory.
+- [`events.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/events.ts): `withEventContext()`.
+- [`setup-all-monitors.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/setup-all-monitors.ts): the event context and the receivers.
+- [`dep-groups.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/dep-groups.ts): `CrashReportDeps` and `CrashReportContextLike`.

@@ -1,5 +1,5 @@
 import { vi, expect } from "vitest";
-import { EventTimingMonitor } from "./EventTimingMonitor.js";
+import { EventTimingMonitor, interactionType } from "./EventTimingMonitor.js";
 import type { PerformanceEntryList, PerformanceObserverInit, EventTimingEntry } from "./perf-types.js";
 
 function createMockPerformanceObserver() {
@@ -123,5 +123,100 @@ describe("EventTimingMonitor", () => {
 
         monitor.stop();
         expect(monitor.getINP()).toBe(0);
+    });
+
+    it("asks the browser for events down to 16ms (default threshold is 104ms)", () => {
+        const observe = vi.fn();
+        class SpyObserver {
+            constructor(_callback : unknown) {}
+            observe = observe;
+            disconnect() {}
+        }
+
+        new EventTimingMonitor(vi.fn(), { log : vi.fn() }, SpyObserver as unknown as PerformanceObserverInit);
+
+        expect(observe).toHaveBeenCalledWith({ type : "event", buffered : true, durationThreshold : 16 });
+    });
+
+    it("keeps INP correct while tracking only the longest few interactions", () => {
+        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+        const monitor = new EventTimingMonitor(vi.fn(), { log : vi.fn() }, MockCtor);
+
+        // 1000 interactions with durations 1..1000, in shuffled order
+        const durations = Array.from({ length : 1000 }, (_, i) => i + 1);
+        for (let i = durations.length - 1; i > 0; i--) {
+            const j = (i * 7919) % (i + 1);
+            [durations[i], durations[j]] = [durations[j]!, durations[i]!];
+        }
+        triggerEntries(durations.map((duration, i) => makeEventEntry({ interactionId : i + 1, duration })));
+
+        // floor(1000 / 50) = 20 outliers ignored — but only 10 are tracked, so
+        // the 10th longest is the best available answer (as in web-vitals)
+        expect(monitor.getINP()).toBe(991);
+        expect(monitor.getWorstInteractionDuration()).toBe(1000);
+    });
+
+    it("counts an interaction once across its several events", () => {
+        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+        const monitor = new EventTimingMonitor(vi.fn(), { log : vi.fn() }, MockCtor);
+
+        // 50 interactions, each with pointerdown + pointerup + click
+        const entries = Array.from({ length : 50 }, (_, i) => ["pointerdown", "pointerup", "click"].map(name =>
+            makeEventEntry({ interactionId : i + 1, name, duration : name === "click" ? (i + 1) * 10 : 8 }),
+        )).flat();
+        triggerEntries(entries);
+
+        // 50 interactions → one outlier ignored → second longest click
+        expect(monitor.getINP()).toBe(490);
+    });
+
+    it("clamps presentationDelay at 0 when rounding makes it negative", () => {
+        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+        const report = vi.fn();
+        new EventTimingMonitor(report, { log : vi.fn() }, MockCtor);
+
+        // duration is rounded to 8ms: 72 < processingEnd - startTime = 75
+        triggerEntries([makeEventEntry({ startTime : 100, processingStart : 110, processingEnd : 175, duration : 72 })]);
+
+        expect(report.mock.calls[0]![0].presentationDelay).toBe(0);
+    });
+
+    it("uses performance.interactionCount when the browser supplies it", () => {
+        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+        let browserCount = 0;
+        const monitor = new EventTimingMonitor(vi.fn(), { log : vi.fn() }, MockCtor, () => browserCount);
+
+        // 200 interactions happened; only the 10 slowest produced entries
+        browserCount = 200;
+        triggerEntries(Array.from({ length : 10 }, (_, i) => makeEventEntry({ interactionId : (i + 1) * 7, duration : 300 - i })));
+
+        expect(monitor.getInteractionCount()).toBe(200);
+        // 200 interactions: skip 4 outliers, so the 5th longest
+        expect(monitor.getINP()).toBe(296);
+    });
+
+    it("counts the interactions it saw when the browser count is missing", () => {
+        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+        const monitor = new EventTimingMonitor(vi.fn(), { log : vi.fn() }, MockCtor, () => undefined);
+
+        triggerEntries(Array.from({ length : 10 }, (_, i) => makeEventEntry({ interactionId : (i + 1) * 7, duration : 300 - i })));
+
+        expect(monitor.getInteractionCount()).toBe(10);
+        expect(monitor.getINP()).toBe(300);
+    });
+
+    it.each([
+        ["keydown", "keyboard"],
+        ["keyup", "keyboard"],
+        ["pointerdown", "pointer"],
+        ["mousedown", "pointer"],
+        ["click", "pointer"],
+        ["auxclick", "pointer"],
+        ["contextmenu", "pointer"],
+        ["touchstart", "pointer"],
+        ["dblclick", "other"],
+        ["input", "other"],
+    ])("gives the event %s the interaction type %s", (name, type) => {
+        expect(interactionType(name)).toBe(type);
     });
 });

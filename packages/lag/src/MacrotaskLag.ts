@@ -1,43 +1,69 @@
 import { LagMonitor } from "./LagMonitor.js";
 
-export class MacrotaskLag  extends LagMonitor{
-    private handle?: number;
-    private started : boolean = false;
+/** A function that starts a callback in a new task, for example `createMessageTaskQueue(...).post`. */
+export type PostTaskFn = (callback : () => void) => void;
+
+/**
+ * This monitor measures how long a zero-delay `setTimeout` waits in the task
+ * queue, one time in each `expectedElapsedTimeMs`. The value is an indirect
+ * measure of the congestion of the task queue.
+ *
+ * With `postTask`, each measurement starts in a message task. Without it,
+ * the measurement starts in the `setInterval` callback. Browsers count the
+ * repeats of `setInterval` as nested timers, and they clamp a nested timeout
+ * to 4 ms or more. Thus, without `postTask`, the values have a minimum of
+ * approximately 4 ms.
+ */
+export class MacrotaskLag extends LagMonitor {
+    private handle : number | undefined;
+    private readonly postTask : PostTaskFn | undefined;
+
+    constructor(...args : [...ConstructorParameters<typeof LagMonitor>, postTask? : PostTaskFn]) {
+        const [expectedElapsedTimeMs, report, logger, setIntervalFn, clearIntervalFn, setTimeoutFn, clearTimeoutFn, clock, postTask] = args;
+        super(expectedElapsedTimeMs, report, logger, setIntervalFn, clearIntervalFn, setTimeoutFn, clearTimeoutFn, clock);
+        this.postTask = postTask;
+        this.start();
+    }
+
     public start() : void {
-        if(this.started) return;
-        this.started = true;
-        const measureAndReport = async () : Promise<void> => {
-            try {
-                this.report(await this.measure());
-            }catch(error){
-                this.logger.log(
-                    'error',
-                    'Error measuring/reporting lag.',
-                    {
-                        error,
-                        type : 'LagMonitor',
-                        subtype : 'MacrotaskLag',
-                    }
-                );
-            }
-        };
+        if (this.handle !== undefined) return;
         this.handle = this.setIntervalFn(() => {
-            void measureAndReport();
+            void this.measureAndReport();
         }, this.expectedElapsedTimeMs);
     }
-    async measure() : Promise<number> {
+
+    public stop() : void {
+        if (this.handle === undefined) return;
+        this.clearIntervalFn(this.handle);
+        this.handle = undefined;
+    }
+
+    measure() : Promise<number> {
         return new Promise(resolve => {
-            const start : number = this.clock.now();
-            this.setTimeoutFn(() => {
-                resolve(this.clock.now() - start);
-            }, 0)
-            
+            const run = () : void => {
+                const start = this.clock.now();
+                this.setTimeoutFn(() => {
+                    resolve(this.clock.now() - start);
+                }, 0);
+            };
+            if (this.postTask) this.postTask(run);
+            else run();
         });
     }
-    public stop() : void {
-        this.started = false;
-        if(this.handle == null) return;
-        this.clearIntervalFn(this.handle);
-        delete this.handle;
+
+    private async measureAndReport() : Promise<void> {
+        try {
+            const lag = await this.measure();
+            // Skip the in-flight sample if stop() was called while it waited
+            if (this.handle !== undefined) {
+                this.report(lag);
+            }
+        } catch (error) {
+            this.logger.log("error", "Error measuring/reporting lag.", {
+                error,
+                type : "LagMonitor",
+                subtype : "MacrotaskLag",
+            });
+        }
     }
 }

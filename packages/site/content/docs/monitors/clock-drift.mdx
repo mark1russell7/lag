@@ -1,0 +1,147 @@
+---
+title: Clock drift
+description: Compares the wall clock with the absolute monotonic clock each second, and detects suspends of the device and steps of the system clock.
+order: 38
+status: final
+---
+
+import { clockDriftMetrics } from "./metrics.data";
+
+`ClockDriftMonitor` compares the wall clock (`Date.now()`) with the absolute monotonic clock (`timeOrigin` from the start plus `performance.now()`) each second. A sudden change of the difference is a discontinuity. The monitor finds two types: a `suspend` of the device and a `step` of the system clock.
+
+## What it measures
+
+The monitor gives two signals:
+
+- **The skew** (`lag_clock_skew_histogram`): the absolute difference between the two clocks at each sample. It is near 0 at the load of the page. It shows how far a timestamp of the monotonic clock is from the wall clock.
+- **The jumps** (`lag_clock_jumps`): each discontinuity, with the attributes `direction` (`forward` or `backward`) and `kind` (`suspend` or `step`).
+
+The monitor answers these questions: did the device sleep while the page was open, and did the system clock change? No browser API reports a sleep or a clock step. The comparison of the two clocks is the standard method: the suspend detector of Chromium and Sentry use it too ([clocks and timers](/research/clocks-and-timers)).
+
+## How it works
+
+1. Each 1000 ms, a `setInterval` callback reads the monotonic clock, then the wall clock, then the monotonic clock again.
+2. If the two monotonic reads are more than 1 ms apart, the thread stopped between the reads. The monitor ignores that sample.
+3. The skew of the sample is the wall time minus the middle of the two monotonic reads.
+4. The drift is the change of the skew since the previous valid sample. The interval is the monotonic time since that sample.
+5. A drift whose absolute value is more than max(50 ms, 3% of the interval) is a discontinuity.
+
+The tolerance of 3% lets the operating system correct the wall clock gradually. The monitor gives each discontinuity a type with these rules:
+
+| Type | Rule | Cause |
+|---|---|---|
+| `suspend` | A forward drift of 1000 ms or more. | The monotonic clock stopped while the device slept, as on macOS, Linux, Android and iOS. |
+| `step` | All other discontinuities. A backward drift is always a step. | A change of the system clock, for example by NTP or by the user. |
+
+The lateness of the timer has no effect on the type. In a hidden page, Chrome can start the interval only one time each minute. Also, a page is likely hidden before the device sleeps ([clocks and timers](/research/clocks-and-timers)). Thus the timer is frequently late at the sample after a sleep. The lateness is the interval minus 1000 ms. The event gives it for information (`lateness_ms`).
+
+The absolute clock reads `timeOrigin` only one time (`createAbsoluteClock()`). Safari calculates `timeOrigin` again from the wall clock at each read. Without the single read, the skew changes with the wall clock in Safari.
+
+## Browser support
+
+The monitor uses `setInterval`, `Date.now()`, `performance.now()` and `performance.timeOrigin` (Chromium 62, Firefox 53, Safari 15). The clocks behave differently in each engine and on each operating system ([clocks and timers](/research/clocks-and-timers)):
+
+- `performance.now()` stops during a sleep of the system on macOS, Linux, Android and iOS, in Chromium, Firefox and Safari. On Windows, it continues during the sleep.
+- On macOS and Windows, the operating system corrects the wall clock, but not the monotonic clock. Thus the two clocks drift apart slowly: ±10 ppm is approximately 36 ms in each hour.
+- In Chromium on Windows, `Date.now()` reads the system time again only each 60 s. Thus `Date.now()` can show a step of the system clock up to approximately 60 s late.
+- `Date.now()` has a resolution of 1 ms. Firefox uses 16.667 ms or more with `privacy.resistFingerprinting`.
+
+## Measurement validity
+
+The monitor does not pause while the page is hidden, because the device can sleep while the page is hidden. It uses no `SampleValidator`.
+
+A change of the wall clock does not change the values that the monotonic clock measures. A suspend on macOS, Linux, Android or iOS stops the monotonic clock too, thus the timer monitors do not measure that sleep as lag.
+
+With measurement conditions, each `suspend` is evidence for the other monitors. The factory adds a closed `suspend` interval to the reliability tracker. The interval is the monotonic time since the previous sample, because the discontinuity occurred in that time. Then the validators discard each sample whose window overlaps the interval. A `step` adds no interval. `setupAllMonitors()` gives the shared conditions to the monitor.
+
+On Windows, the monotonic clock continues, and each timer is late instead. The [worker monitor](/docs/monitors/worker-lag) finds that case and gives the evidence of the suspend to the measurement conditions.
+
+## Metrics
+
+<MetricTable metrics={clockDriftMetrics} />
+
+### The clock jump event
+
+Each discontinuity also sends a `lag.clock.jump` event:
+
+| Attribute | Value |
+|---|---|
+| `direction` | `forward` or `backward` |
+| `kind` | `suspend` or `step` |
+| `magnitude_ms` | The absolute drift. |
+| `skew_ms` | The skew after the discontinuity. |
+| `lateness_ms` | The lateness of the timer of the monitor at this sample. It does not change the type. |
+
+`setupAllMonitors()` adds `lag.page_view.id` to each event. The class gives each discontinuity to its callback as a `ClockJump`. It has the same values, and `intervalMs`: the monotonic time since the previous sample.
+
+## Configuration
+
+```ts
+function createInstrumentedClockDrift(
+    deps : CoreDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & WallClockDeps
+        & Pick<TimerDeps, "setIntervalFn" | "clearIntervalFn"> & Partial<EventDeps>,
+    conditions? : MeasurementConditions,
+) : MonitorHandle<ClockDriftMonitor>;
+```
+
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`), `PerformanceDeps` (`performance`), `WallClockDeps` (`wallClock`, usually `Date.now()`) and the interval functions of `TimerDeps`. `AbsoluteClockDeps` is optional: `setupAllMonitors()` gives one absolute clock for the page, and without it the factory makes its own. `EventDeps` is optional: without it, the factory sends no events. `conditions` is optional: with it, each suspend goes into the reliability tracker of the conditions.
+
+The factory uses the defaults of the class:
+
+| Option of the class | Default | What it does |
+|---|---|---|
+| `intervalMs` | 1000 | The time between two samples. |
+| `minJumpMs` | 50 | The smallest drift that is a discontinuity. |
+| `jumpRate` | 0.03 | The smallest drift as a part of the interval. |
+| `suspendMinMs` | 1000 | The smallest forward drift that can be a suspend. |
+
+```ts
+import { metrics } from "@opentelemetry/api";
+import { logs } from "@opentelemetry/api-logs";
+import { createBrowserDeps, createInstrumentedClockDrift, createOtelEventSink } from "@lag/core";
+
+const deps = createBrowserDeps(window, {
+    logger : console,
+    meter : metrics.getMeter("lag"),
+    events : createOtelEventSink(logs.getLogger("lag-events")),
+});
+const clockDrift = createInstrumentedClockDrift({
+    ...deps,
+    performance : window.performance,
+    wallClock : { now : () => Date.now() },
+});
+console.log(clockDrift.monitor?.getSkewMs());
+```
+
+## Cost
+
+- **Timers:** one interval callback each second.
+- **Records:** one histogram value each second, and one counter value and one event for each discontinuity.
+
+## Limits
+
+- **A forward step and a suspend give the same signal.** A forward step of the system clock of 1 s or more gets the type `suspend`. With measurement conditions, the validators then also discard the samples of its interval.
+- **A sleep on Windows gives no discontinuity.** The two clocks continue, thus the skew does not change.
+- **The skew grows slowly.** On macOS and Windows, the two clocks drift apart by the correction rate of the system. The skew histogram shows this growth over the life of a page.
+- **Hidden pages.** The browser throttles the interval in a hidden page. Chromium gives one wake-up each second, and one each minute after its grace period for chained timers. The threshold then grows with the interval: 3% of 60 s is 1.8 s. A suspend interval is then as long as the interval of the timer, for example 60 s.
+- **One second of resolution.** A sample each second cannot tell two jumps in one second apart.
+
+## Tests
+
+Unit tests:
+
+- `ClockDriftMonitor.test.ts`, the thresholds: a sample each second with a skew near 0 while the clocks agree. A gradual correction of the wall clock is not a discontinuity, and the threshold scales with the interval (3%). No discontinuity when the two clocks continue, as in a sleep on Windows or a blocked thread.
+- `ClockDriftMonitor.test.ts`, the types: a forward jump of 1 s or more is a suspend. This is also true during a late timer, because timers are late in a hidden page. The monitor finds a sleep in a hidden page in which the browser starts the timer one time each minute. A smaller forward jump and a backward jump are steps. The monitor ignores a sample with two monotonic reads far apart. After a restart, the drift starts again from the restart.
+- `instrumented/clock-drift.test.ts`: a suspend adds a `suspend` interval to the measurement conditions, over the interval in which it occurred. A clock step adds no interval.
+- `absolute-clock.test.ts`: the absolute clock reads `timeOrigin` one time, thus a later change of `timeOrigin` does not move it.
+- `setup-all-monitors.test.ts`: a backward change of 5 s of the wall clock gives one jump `{ direction: "backward", kind: "step" }` and a `lag.clock.jump` event.
+
+Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
+
+- `lag-monitors.test.ts`: the monitor starts in each of the four browsers. No browser test examines its values at this time.
+
+## Source
+
+- [`ClockDriftMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/ClockDriftMonitor.ts): the monitor and the rules.
+- [`absolute-clock.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/absolute-clock.ts): the absolute clock.
+- [`instrumented/clock-drift.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/clock-drift.ts): the factory, the event and the suspend intervals.

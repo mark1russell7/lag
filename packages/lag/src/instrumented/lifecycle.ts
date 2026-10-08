@@ -1,11 +1,8 @@
-import type { CoreDeps, LifecycleDeps, TimerDeps } from "../dep-groups.js";
+import type { CoreDeps, LifecycleDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import {
-    LifecycleStateMachine,
-    type StateTransition,
-} from "../LifecycleStateMachine.js";
-
-const TRANSITION_POLL_INTERVAL_MS = 5_000;
+import { LifecycleStateMachine } from "../LifecycleStateMachine.js";
+import { METRICS, createCounter } from "../metric-catalog.js";
+import { createHandle } from "./shared.js";
 
 type TransitionAttributes = {
     from : string;
@@ -14,61 +11,24 @@ type TransitionAttributes = {
 };
 
 /**
- * Constructs a LifecycleStateMachine + periodic transition flusher.
+ * This factory makes a `LifecycleStateMachine` that records into the
+ * `lag_lifecycle_transitions` counter, with the attributes `from`, `to` and
+ * `trigger`.
  *
- * Metric:
- * - `lag_lifecycle_transition_count_histogram` — records 1 per transition,
- *   labeled with `from`, `to`, and `trigger` so dashboards can count
- *   specific state changes (e.g., how often the page went hidden).
- *
- * **Fix for the `__stopPoll` hack:** the factory owns the polling interval
- * and includes its teardown in the returned handle's `stop()`. No type-unsafe
- * property attachment, no lost handle.
+ * The measurement conditions of the other monitors use this machine. Stop it
+ * last. The LIFO order of the registry does this.
  */
 export function createInstrumentedLifecycle(
-    deps : CoreDeps & LifecycleDeps & Pick<TimerDeps, "setIntervalFn" | "clearIntervalFn">,
+    deps : CoreDeps & LifecycleDeps,
 ) : MonitorHandle<LifecycleStateMachine> {
-    try {
-        const transitionHist = deps.meter.createHistogram<TransitionAttributes>(
-            "lag_lifecycle_transition_count_histogram", { unit : "count" });
+    return createHandle("lifecycle", deps.logger, () => {
+        const transitions = createCounter<TransitionAttributes>(deps.meter, METRICS.lifecycleTransitions);
 
-        const machine = new LifecycleStateMachine(
-            deps.document,
-            deps.window,
-            deps.clock,
-            deps.logger,
-        );
-
-        // Hold a single long-lived mark; resolve+remark each poll cycle to
-        // capture whatever transitions accumulated in between.
-        let mark = machine.mark();
-
-        const handle = deps.setIntervalFn(() => {
-            const transitions : StateTransition[] = machine.resolve(mark);
-            for (const t of transitions) {
-                if (t.trigger === "init") continue; // skip synthetic init event
-                transitionHist.record(1, {
-                    from : t.from,
-                    to : t.to,
-                    trigger : t.trigger,
-                });
-            }
-            mark = machine.mark();
-        }, TRANSITION_POLL_INTERVAL_MS);
-
-        return {
-            name : "lifecycle",
-            monitor : machine,
-            stop : () => {
-                deps.clearIntervalFn(handle);
-                machine.cancel(mark);
-            },
-        };
-    } catch (error) {
-        deps.logger.log("warn", "Failed to create LifecycleStateMachine.", {
-            error,
-            type : "createInstrumentedLifecycle",
+        const machine = new LifecycleStateMachine(deps.document, deps.window, deps.clock, deps.logger);
+        machine.subscribe(({ from, to, trigger }) => {
+            transitions.add(1, { from, to, trigger });
         });
-        return { name : "lifecycle", monitor : undefined, stop : () => {} };
-    }
+
+        return { monitor : machine, stop : () => machine.dispose() };
+    });
 }

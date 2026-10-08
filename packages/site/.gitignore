@@ -1,0 +1,6 @@
+# `pnpm results` writes the test results here. Keep them out of git.
+/public/data/results/
+
+# Screenshots that Vitest browser mode saves when a test fails.
+/.vitest-attachments/
+__screenshots__/
