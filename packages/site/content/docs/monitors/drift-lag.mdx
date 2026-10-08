@@ -217,7 +217,7 @@ Unit tests (Vitest, fake timers):
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
 
-- `drift-accuracy.test.ts`: on an idle page, the median lag is between −5 ms and 5 ms. After a 300 ms block, the largest lag is more than 300 ms minus the baseline minus 10 ms, and less than 340 ms.
+- `drift-accuracy.test.ts`: on an idle page, the median lag is between −5 ms and 5 ms. In a window without focus, the limit is 10 ms. On macOS, the timers of an app that is not in front can be late. After a 300 ms block, the largest lag is more than 300 ms minus the baseline minus 10 ms, and less than 340 ms.
 - `drift-load.test.ts`: equal message tasks of 20 ms and timer tasks of 30 ms for 3 s give more than 10% lag in the second half of the load. After the load, the median lag of a window is less than 10% of its length. The test skips itself if a probe on an idle page measures more than 10 ms of busy time in 100 ms (the WebKit build for Windows).
 - `lag-monitors.test.ts`: a 300 ms block gives a lag of more than 200 ms.
 - `stress.test.ts`: with the light profile of `@lag/load`, the largest lag is less than 150 ms. With the heavy profile, it is more than 100 ms.

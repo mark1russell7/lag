@@ -83,7 +83,7 @@ Refer to [`setup-all-monitors.ts`](https://github.com/mark1russell7/lag/blob/mai
 
 A first version used the median as the baseline. It gave an idle median lag of 3.3 ms in Chromium, because timer jitter is skewed to the right. Thus the baseline is a mean of the steps that are not blocks.
 
-**Check in the repository.** The browser test [`drift-accuracy.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/drift-accuracy.test.ts) keeps a check of the two properties. The idle median must be less than 5 ms from 0. After a 300 ms block, the largest lag must be more than 300 ms minus the baseline minus 10 ms, and less than 340 ms.
+**Check in the repository.** The browser test [`drift-accuracy.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/drift-accuracy.test.ts) keeps a check of the two properties. The idle median must be less than 5 ms from 0, or 10 ms in a window without focus. On macOS, the timers of an app that is not in front can be late. After a 300 ms block, the largest lag must be more than 300 ms minus the baseline minus 10 ms, and less than 340 ms.
 
 **A later finding.** The granularity can change while a page is open. The CDP tests found such a change in Chromium on Windows. After the page was hidden and shown again, the steps took 15.6 ms instead of 5.5 ms. The baseline of the last 100 steps followed the change slowly, and DriftLag reported windows of 160 ms of lag on an idle page. Thus DriftLag accepts a row of 10 steps that agree with each other as a new granularity ([DriftLag](/docs/monitors/drift-lag)).
 
