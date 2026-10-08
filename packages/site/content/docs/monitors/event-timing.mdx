@@ -114,7 +114,7 @@ Unit tests:
 
 Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
 
-- `lag-monitors.test.ts` (only where the browser has Event Timing with `interactionId`): a real click on a button whose handler blocks for 120 ms gives a `lag_event_duration_histogram` value of 120 ms or more.
+- `lag-monitors.test.ts` (only where the browser has Event Timing with `interactionId`): a real click on a button whose handler blocks for 120 ms gives a `lag_event_duration_histogram` value of 119 ms or more. The margin of 1 ms is for WebKit: its clock moves in steps of 1 ms, and it gave 119.99999999999955 ms one time.
 
 ## Source
 
