@@ -30,8 +30,13 @@ export type MeasurementPayload = {
 export type BackForwardResult = {
     /** True if the browser restored the page from the back/forward cache. */
     restored : boolean;
-    /** If not, the reasons of Chromium (`notRestoredReasons`), for example "broadcastchannel-message". */
+    /** If not, the reasons that Chromium gives to the page (`notRestoredReasons`), for example "broadcastchannel-message". */
     reasons : string[];
+    /**
+     * If not, the reasons of the Chrome DevTools Protocol (`Page.backForwardCacheNotUsed`), for example
+     * "BroadcastChannelOnMessage". They include the reasons that the page gets only as "masked".
+     */
+    explanations : { type : string; reason : string }[];
 };
 
 /** One budget check from a test, for the results collector. */
