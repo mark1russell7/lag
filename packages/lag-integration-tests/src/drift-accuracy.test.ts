@@ -39,9 +39,13 @@ describe("DriftLag accuracy", () => {
             expect(idle.length).toBeGreaterThan(5);
             // macOS can delay the timers of an app that is not in front. Safari on a GitHub runner had no
             // focus, and its idle median was between 0 ms and 5.4 ms in 22 runs. A window has 100 ms.
-            expect(Math.abs(median(idle))).toBeLessThan(document.hasFocus() ? 5 : 10);
-            // The resolution is one step: up to the baseline less than the block
-            expect(Math.max(...afterBlock)).toBeGreaterThan(300 - baseline - 10);
+            const focused = document.hasFocus();
+            expect(Math.abs(median(idle))).toBeLessThan(focused ? 5 : 10);
+            // The resolution is one step: up to the baseline less than the block. Without focus, some steps
+            // of Safari are late, thus its baseline is longer than its usual step. Then each other step of the
+            // window decreases the lag a little: the lag of the block was 12.4 ms less than 300 ms minus the
+            // baseline one time.
+            expect(Math.max(...afterBlock)).toBeGreaterThan(300 - baseline - (focused ? 10 : 20));
             expect(Math.max(...afterBlock)).toBeLessThan(340);
         } finally {
             monitor.stop();
