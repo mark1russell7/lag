@@ -155,7 +155,9 @@ The results page reads this folder. It shows the tests of each engine, the skips
 
 ## Limits
 
-- **Safari on iOS.** The tests operate in Safari on iOS only in the iOS Simulator of a macOS runner. A simulator has the CPU and the power of the Mac, not of a phone. To open the first session, safaridriver needed up to 131 s and more than one try. Thus the iOS project has a connect timeout of 600 s. In the simulator, the click of safaridriver gives no INP, also in web-vitals. Thus the two INP tests skip themselves there.
+- **Safari on iOS.** The tests operate in Safari on iOS only in the iOS Simulator of a macOS runner. A simulator has the CPU and the power of the Mac, not of a phone. To open the first session, safaridriver needed up to 131 s and more than one try. Thus the iOS project has a connect timeout of 600 s.
+
+  In the simulator, the click of safaridriver gives no INP, also in web-vitals. Thus the two INP tests skip themselves there.
 - **Low Power Mode.** A macOS runner refuses Low Power Mode on AC power. Thus no browser test operates in Low Power Mode. `DriftLag.power.test.ts` uses the timer rule of the WebKit source instead: a grid of 30 ms for nested timers.
 - **Safari on a shared runner.** Safari on a macOS runner of GitHub sometimes slows the timers of its window, for example by 9 s. Then a timing test fails for a reason that is not in the code. Thus the Safari job of CI reports its results, but it does not block a pull request. A stress profile that the browser slowed skips itself with the reason.
 - **Safari and the collector.** Only macOS has Safari. Thus a macOS job exports its reports (`--export-reports`), and the Linux job of the site imports them (`--import-reports`).
