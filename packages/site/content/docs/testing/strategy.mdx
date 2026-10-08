@@ -16,6 +16,7 @@ Each claim of the [thesis](/thesis) has a type of test that can show it. A rule 
 | Unit tests | Node, with the fake timers of Vitest | The rules of each part, with exact values | `pnpm test` |
 | Property tests | Node, with fast-check | The INP and CLS calculators agree with a reference for all sequences of entries | `pnpm test` |
 | Browser tests | Chromium, Firefox, WebKit and Chrome, through Playwright | The monitors with real timers, real workers, real input and real paints | `pnpm test:browser` |
+| Safari tests | Safari on macOS, through safaridriver (WebDriver) | The same browser test files in the real Safari | `pnpm --filter @lag/integration-tests test:safari` |
 | web-vitals oracle | The four engines | The vitals agree with web-vitals 6 on the same page | `pnpm test:browser` |
 | CDP tests | Chromium in the new headless mode | Hidden and frozen pages, CPU throttling and compute pressure | `pnpm --filter @lag/integration-tests test:cdp` |
 | Cross-origin-isolated tests | Chromium, Firefox and WebKit | Shared memory, the fine clock and `measureUserAgentSpecificMemory()` | `pnpm --filter @lag/integration-tests test:coi` |
@@ -48,7 +49,7 @@ An adversarial review of the library wrote a proof test for each defect that it 
 
 ## Browser tests
 
-The browser tests use Vitest browser mode with Playwright. Each test file operates in Chromium, Firefox, WebKit and Chrome. They examine the facts that fake time cannot show:
+The browser tests use Vitest browser mode with Playwright. Each test file operates in Chromium, Firefox, WebKit and Chrome. On macOS, the same files also operate in Safari, through safaridriver (the `browser (safari)` project, with `LAG_SAFARI=1`). The tests examine the facts that fake time cannot show:
 
 - `drift-accuracy.test.ts`: the median lag of DriftLag on an idle page is less than 5 ms. A 300 ms block gives more than 300 ms minus one step and 10 ms, and less than 340 ms.
 - `lifecycle.test.ts`: the lifecycle machine notifies its subscribers before a listener that the page added earlier. It uses the time of the event, and it removes its listeners at the end.
@@ -139,14 +140,15 @@ The results page reads this folder. It shows the tests of each engine, the skips
 
 | Workflow | When | What |
 |---|---|---|
-| `ci.yml` | Each push and each pull request | The build, the type check, the unit tests, the coverage, the browser tests in each engine, and the tests and the build of the site |
+| `ci.yml` | Each push and each pull request | The build, the type check, the unit tests, the coverage, the browser tests in each engine, Safari on a macOS runner, and the tests and the build of the site |
 | `e2e.yml` | Each week, or manually | The Grafana stack in Docker, and the E2E tests |
 | `mutation.yml` | Each week, or manually | Stryker, with the incremental file from the cache |
-| `pages.yml` | Each push to `main`, or manually | `pnpm results`, the build of this site and its deployment to GitHub Pages |
+| `pages.yml` | Each push to `main`, or manually | Safari on a macOS runner, then `pnpm results` with the Safari reports, the build of this site and its deployment to GitHub Pages |
 
 ## Limits
 
-- **WebKit is not Safari.** The WebKit tests use the WebKit build of Playwright for Windows. Safari on macOS and iOS can behave differently, for example in Low Power Mode.
+- **Safari on iOS.** The tests operate in Safari on macOS and in the WebKit build of Playwright, not in Safari on iOS. Nothing tests Low Power Mode, which aligns the nested timers of Safari to 30 ms.
+- **Safari and the collector.** Only macOS has Safari. Thus a macOS job exports its reports (`--export-reports`), and the Linux job of the site imports them (`--import-reports`).
 - **The E2E tests need a free port.** The Grafana stack uses port 3000 by default. Set `GRAFANA_PORT` when another program uses that port.
 - **Mimir labels.** Mimir puts `service.name` into the `job` label. The E2E query accepts `job` or `service_name`, and a native or a classic histogram.
 - **Mimir and CORS.** Mimir sends no CORS headers, thus a test page cannot read the answer of a query. A Vitest command sends the query from Node (`commands/mimir.ts`).

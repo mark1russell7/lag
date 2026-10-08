@@ -50,7 +50,7 @@ The export of the data also has a problem. Many browsers that write the same met
 3. **An outside observer.** A heartbeat from a Web Worker is the most robust estimator of the queueing delay in all engines. It is open-loop. It does not use the timers of the main thread. It can detect a hang while the hang continues. In Chromium and Firefox, it can also report the hang during the hang.
 4. **The page view as the unit.** Lag must have the same unit of analysis as the Core Web Vitals: the page view. Each event carries the ID of its page view.
 5. **Correct aggregation.** Field metrics must be counters and histograms with one writer identity for each SDK instance. Details with many values (selectors, URLs, IDs) go into events, not into metric attributes.
-6. **Less survivorship bias.** A monitor can report hangs that the page did not survive, from a journal that the worker keeps. This claim is true in Chromium and Firefox, but not in WebKit (refer to [E4](#e4-the-input-and-output-of-a-worker-during-a-hang)).
+6. **Less survivorship bias.** A monitor can report hangs that the page did not survive, from a journal that the worker keeps. This claim is true in Chromium and Firefox, but not in WebKit and Safari (refer to [E4](#e4-the-input-and-output-of-a-worker-during-a-hang)).
 
 ## Method
 
@@ -131,15 +131,16 @@ A browser test blocks the main thread for 6.5 s. It stops the worker with `termi
 
 ### E4: the input and output of a worker during a hang
 
-The hang report and the journal need a worker that can send and write while the main thread is blocked. A browser test measures this in each engine. The worker starts an IndexedDB write or a `fetch` with `keepalive`, and the main thread blocks for 2 s. The table gives the time of the completion after the start of the block, measured on 7 October 2026:
+The hang report and the journal need a worker that can send and write while the main thread is blocked. A browser test measures this in each engine. The worker starts an IndexedDB write or a `fetch` with `keepalive`, and the main thread blocks for 2 s. The table gives the time of the completion after the start of the block, or the number of operations that completed during the block. Safari 26.6.2 operated on a macOS runner of GitHub, on 8 October 2026. The other engines operated on Windows 11, on 7 and 8 October 2026.
 
-| Operation | Chromium | Firefox | WebKit |
-|---|---|---|---|
-| IndexedDB write of a dedicated worker | 7 ms | 36 ms | 2015 ms |
-| `fetch` of a dedicated worker | 19 ms | 14 ms | 2013 ms |
-| Operations of a shared worker that complete during the block | 18 of 28 | 16 of 26 | 0 of 26 |
+| Operation | Chromium | Firefox | WebKit (Playwright) | Safari 26.6.2 |
+|---|---|---|---|---|
+| IndexedDB write of a dedicated worker | 7 ms | 36 ms | 2015 ms | After the block |
+| `fetch` of a dedicated worker | 19 ms | 14 ms | 2013 ms | After the block |
+| Operations of a shared worker during the block | 18 of 28 | 16 of 26 | 0 of 26 | 0 |
+| Operations of a service worker during the block | 18 of 28 | 17 of 27 | 0 of 29 | 0 of 27 |
 
-**Result:** WebKit completes the IndexedDB requests and the network requests of workers on the main thread of the page. A shared worker does not help. Thus in WebKit the worker detects a hang, but it can send and write only after the hang. A page that does not survive the hang leaves no record. The test of the journal skips itself in WebKit, after the same measurement. We measured the WebKit build of Playwright for Windows, not Safari.
+**Result:** WebKit and Safari complete the IndexedDB requests and the network requests of workers on the main thread of the page. A shared worker and a service worker do not help. Thus in WebKit and Safari the worker detects a hang, but it can send and write only after the hang. A page that does not survive the hang leaves no record. The test of the journal skips itself in these browsers, after the same measurement.
 
 ### The Web Vitals
 
@@ -149,7 +150,7 @@ That test found an error in the first version of the attribution. In a real clic
 
 ### The oracle: agreement with web-vitals
 
-A browser test operates web-vitals 6.2.3 and the page-view vitals on the same page, in Chromium, Firefox, WebKit and Chrome. The two libraries read the same entries. Thus the values must be the same, with no tolerance. This table gives one run, on 7 October 2026:
+A browser test operates web-vitals 6.2.3 and the page-view vitals on the same page, in Chromium, Firefox, WebKit, Chrome and Safari. The two libraries read the same entries. Thus the values must be the same, with no tolerance. This table gives one run in each browser, on 7 and 8 October 2026:
 
 | Engine | FCP | LCP | TTFB | INP | CLS |
 |---|---|---|---|---|---|
@@ -157,8 +158,9 @@ A browser test operates web-vitals 6.2.3 and the page-view vitals on the same pa
 | Chrome | 148 = 148 ms | 148 = 148 ms | 4 = 4 ms | 192 = 192 ms | 0.018435 = 0.018435 |
 | Firefox | 312 = 312 ms | 312 = 312 ms | 9 = 9 ms | 184 = 184 ms | No value in the two libraries |
 | WebKit | 433 = 433 ms | 433 = 433 ms | 4 = 4 ms | 184 = 184 ms | No value in the two libraries |
+| Safari 26.6.2 | 400 = 400 ms | 400 = 400 ms | 22 = 22 ms | 184 = 184 ms | No value in the two libraries |
 
-The three phases of the INP attribution also agree exactly in the four browsers. The first version of the oracle found two differences. The library reported a CLS of 0 where the browser has no layout-shift entries. Also, its attribution used only the entries of the interaction, not all the events of the frame. Both differences are fixed.
+The three phases of the INP attribution also agree exactly in the five browsers. The first version of the oracle found two differences. The library reported a CLS of 0 where the browser has no layout-shift entries. Also, its attribution used only the entries of the interaction, not all the events of the frame. Both differences are fixed.
 
 ### Defects that the tests found
 
@@ -205,7 +207,7 @@ Each of the 139 mutants that survive has no effect that a user of the metrics ca
 ## Limits
 
 - **Engines.** LoAF, CLS, `visibility-state` entries, the `freeze` event and Compute Pressure exist only in Chromium. Safari has no `requestIdleCallback`. The library uses each API only where it exists.
-- **Test environment.** The WebKit tests use the WebKit build of Playwright for Windows. That build is not Safari on macOS. We did not test Safari in Low Power Mode, which aligns nested timers to 30 ms.
+- **Test environment.** The browser tests operate in Safari 26.6.2 on a macOS runner of GitHub, and in the WebKit build of Playwright. We did not test Safari on iOS, or Safari in Low Power Mode, which aligns nested timers to 30 ms.
 - **Sustained load.** DriftLag calculates its baseline from the recent steps. When the thread is busy during more than half of the steps, the baseline increases and DriftLag reports less lag. The worker heartbeat measures that case correctly.
 - **Resolution.** The resolution of DriftLag is one step: 5.7 ms in Chromium and 16 ms in Firefox and WebKit on Windows.
 - **Sampling.** The worker sends one heartbeat each second by default. A block of B milliseconds delays a heartbeat with a probability of approximately min(1, B / 1000).
@@ -222,6 +224,6 @@ Each of the 139 mutants that survive has no effect that a user of the metrics ca
 - Duty cycles for the probes, so that the high-frequency probes run only some of the time.
 - An adaptive step size for DriftLag where the timer granularity is coarse.
 - Soft navigations in browsers other than Chromium, through the Navigation API.
-- A hang journal for WebKit. A service worker operates outside the page, thus it could write the record when the heartbeats of the page stop. Nobody tested this.
+- A hang journal for WebKit and Safari. The web APIs that we tested cannot do it (E4). A dedicated worker, a shared worker and a service worker all wait for the main thread.
 - Metrics from events at the collector (for example the `signaltometrics` component of Alloy), so that the histograms of each page view can change after the first report.
 - Segments by device class, for example from `navigator.deviceMemory` and `navigator.cpuPerformance` as resource attributes.
