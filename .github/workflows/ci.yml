@@ -120,6 +120,12 @@ jobs:
       # safaridriver needs a one-time permission for remote automation
       - name: Enable safaridriver
         run: sudo safaridriver --enable
+      # App Nap of macOS slows the timers of a window that is not in front: a CI runner
+      # slowed the timers of Safari by 9 s one time
+      - name: Turn off App Nap
+        run: |
+          defaults write com.apple.Safari NSAppSleepDisabled -bool YES
+          defaults write NSGlobalDomain NSAppSleepDisabled -bool YES
       - name: Browser tests in Safari
         working-directory: packages/lag-integration-tests
         run: pnpm run test:safari
