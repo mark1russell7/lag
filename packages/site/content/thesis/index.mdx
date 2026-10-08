@@ -165,6 +165,8 @@ The [page-view vitals](/docs/monitors/page-view-vitals) obey the rules of web-vi
 
 That test found an error in the first version of the attribution. In a real click, `pointerdown` is the longest entry, but the handler of `click` does the work. At this time, the attribution uses the frame groups of web-vitals. The processing phase spans all the events that the browser presented in the frame of the longest entry.
 
+A second browser test makes a real soft navigation in Chrome 153, in a top-level page. The click that changes the URL gives the INP of the first page view. The second page view gets its LCP from its `interaction-contentful-paint` entry, a TTFB of 0 and no INP. On Windows and on Linux, Chrome delivered the entries of the click before the `soft-navigation` entry.
+
 ### The oracle: agreement with web-vitals
 
 A browser test operates web-vitals 6.2.3 and the page-view vitals on the same page, in Chromium, Firefox, WebKit, Chrome and Safari. The two libraries read the same entries. Thus the values must be the same, with no tolerance. This table gives one run in each browser, on 7 and 8 October 2026:
