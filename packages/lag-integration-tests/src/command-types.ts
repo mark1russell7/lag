@@ -41,11 +41,18 @@ export type ResultRecord =
 
 declare module "vitest" {
     export interface ProvidedContext {
-        /** The environment name of the instance: "chromium", "firefox", "webkit" or "chrome". */
+        /** The environment name of the instance: "chromium", "firefox", "webkit", "chrome", "safari" or "ios". */
         environment : string;
         /** True in the e2e project: the Grafana stack operates, so the Mimir checks are necessary. */
         e2e : boolean;
         /** The duration of the soak test, in ms. */
         soakMs : number;
+        /** The block of the page that experiment E7 closes during its block, in ms. */
+        e7CloseBlockMs : number;
+        /**
+         * The platform of the machine of the tests (`process.platform` of Node).
+         * The WebKit build of Playwright gives a user agent of macOS on each platform.
+         */
+        platform : string;
     }
 }

@@ -22,6 +22,11 @@ declare module "vitest/browser" {
         recordBudget : (budget : BudgetPayload) => Promise<void>;
         queryMimirValue : (query : string) => Promise<number>;
         clickInTopLevelPage : (path : string, selector : string, waitMs : number, resultExpression : string) => Promise<unknown>;
+        startProbeSocketServer : () => Promise<number>;
+        stopProbeSocketServer : () => Promise<number[]>;
+        openPeerPage : (path : string) => Promise<string>;
+        evaluateInPeerPage : (id : string, expression : string) => Promise<unknown>;
+        closePeerPage : (id : string) => Promise<{ startedAt : number; endedAt : number } | undefined>;
     }
 }
 
@@ -62,6 +67,39 @@ export function recordMeasurement(name : string, unit : string, values : readonl
  */
 export function clickInTopLevelPage<T>(path : string, selector : string, waitMs : number, resultExpression : string) : Promise<T> {
     return commands.clickInTopLevelPage(path, selector, waitMs, resultExpression) as Promise<T>;
+}
+
+/**
+ * This function starts a WebSocket server in Node, on a free port of
+ * 127.0.0.1, and gives the port. The server records when each message
+ * arrives, with `Date.now()` of Node.
+ */
+export function startProbeSocketServer() : Promise<number> {
+    return commands.startProbeSocketServer();
+}
+
+/** This function stops the WebSocket server and gives the arrival times of the messages (`Date.now()` of Node). */
+export function stopProbeSocketServer() : Promise<number[]> {
+    return commands.stopProbeSocketServer();
+}
+
+/**
+ * This function opens `path` of the Vitest server in a second top-level page
+ * (a peer page), and gives its ID. It waits until the page sets
+ * `window.peerReady`. In Safari, the peer page is a new window.
+ */
+export function openPeerPage(path : string) : Promise<string> {
+    return commands.openPeerPage(path);
+}
+
+/** This function gives the value of `expression` in the peer page `id`. */
+export function evaluateInPeerPage<T>(id : string, expression : string) : Promise<T> {
+    return commands.evaluateInPeerPage(id, expression) as Promise<T>;
+}
+
+/** This function closes the peer page `id`, and gives the time of Node (`Date.now()`) at the start and at the end of the close. */
+export function closePeerPage(id : string) : Promise<{ startedAt : number; endedAt : number } | undefined> {
+    return commands.closePeerPage(id);
 }
 
 /** This function sends a PromQL query to Mimir from Node, because Mimir sends no CORS headers. It gives the first value, or 0. */

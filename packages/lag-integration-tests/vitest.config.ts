@@ -8,6 +8,8 @@ import { cdpCommands } from "./commands/cdp.js";
 import { resultCommands } from "./commands/results.js";
 import { mimirCommands } from "./commands/mimir.js";
 import { topLevelPageCommands } from "./commands/top-level-page.js";
+import { probeSocketCommands } from "./commands/probe-socket.js";
+import { peerPageCommands } from "./commands/peer-page.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sourceOf = (packageDir : string) : string => path.resolve(here, "..", packageDir, "src");
@@ -19,7 +21,10 @@ type Instance = NonNullable<NonNullable<NonNullable<TestProjectInlineConfigurati
 /** The duration of the soak test. Set LAG_SOAK_MS to change it. */
 const SOAK_MS = Number(process.env["LAG_SOAK_MS"] ?? 180_000);
 
-const COMMANDS = { ...cdpCommands, ...resultCommands, ...mimirCommands, ...topLevelPageCommands };
+/** The block of the page that experiment E7 closes during its block. Set LAG_E7_CLOSE_BLOCK_MS to change it. */
+const E7_CLOSE_BLOCK_MS = Number(process.env["LAG_E7_CLOSE_BLOCK_MS"] ?? 20_000);
+
+const COMMANDS = { ...cdpCommands, ...resultCommands, ...mimirCommands, ...topLevelPageCommands, ...probeSocketCommands, ...peerPageCommands };
 
 /**
  * Chromium in the new headless mode (Chrome for Testing). The default
@@ -57,7 +62,7 @@ function instance(project : string, environment : Environment, provider? : Provi
     return {
         browser : environment === "chrome" ? "chromium" : environment,
         name : `${project} (${environment})`,
-        provide : { environment, e2e, soakMs : SOAK_MS },
+        provide : { environment, e2e, soakMs : SOAK_MS, e7CloseBlockMs : E7_CLOSE_BLOCK_MS, platform : process.platform },
         ...(chosen ? { provider : chosen } : {}),
     };
 }
@@ -79,7 +84,37 @@ function safariProject() : TestProjectInlineConfiguration {
                 headless : false,
                 provider : webdriverio(),
                 commands : COMMANDS,
-                instances : [{ browser : "safari", name : "browser (safari)", provide : { environment : "safari", e2e : false, soakMs : SOAK_MS } }],
+                instances : [{ browser : "safari", name : "browser (safari)", provide : { environment : "safari", e2e : false, soakMs : SOAK_MS, e7CloseBlockMs : E7_CLOSE_BLOCK_MS, platform : process.platform } }],
+            },
+        },
+    };
+}
+
+/**
+ * Safari on iOS in the iOS Simulator, through safaridriver (experiment). The
+ * project exists only with LAG_IOS=1 on macOS with Xcode. LAG_IOS_UDID
+ * selects a booted simulator.
+ */
+function iosProject() : TestProjectInlineConfiguration {
+    const udid = process.env["LAG_IOS_UDID"];
+    return {
+        extends : true,
+        test : {
+            name : "ios",
+            include : ["src/*.test.ts"],
+            fileParallelism : false,
+            browser : {
+                enabled : true,
+                headless : false,
+                provider : webdriverio({
+                    // safaridriver can time out while it waits for Safari in the simulator
+                    connectionRetryTimeout : 600_000,
+                    connectionRetryCount : 10,
+                    // The safari:* capabilities of safaridriver are not in the types of WebdriverIO
+                    capabilities : { platformName : "iOS", "safari:useSimulator" : true, ...(udid ? { "safari:deviceUDID" : udid } : {}) } as Record<string, unknown>,
+                }),
+                commands : COMMANDS,
+                instances : [{ browser : "safari", name : "browser (ios)", provide : { environment : "ios", e2e : false, soakMs : SOAK_MS, e7CloseBlockMs : E7_CLOSE_BLOCK_MS, platform : process.platform } }],
             },
         },
     };
@@ -120,6 +155,9 @@ export default defineConfig({
     test : {
         testTimeout : 60_000,
         globals : true,
+        // Vitest reads the connect timeout of the browser only from the root config. The iOS Simulator
+        // and Safari can need more than the default of 60 s to open the first page.
+        ...(process.env["LAG_IOS"] === "1" ? { browser : { connectTimeout : 300_000 } } : {}),
         projects : [
             // Every test in every engine. The Chromium-only tests skip themselves elsewhere (src/features.ts).
             // The files of one engine run one after another: the timing tests measure milliseconds, and 28
@@ -155,6 +193,8 @@ export default defineConfig({
             ]),
             // Safari on macOS (LAG_SAFARI=1): the browser tests in the real Safari
             ...(process.env["LAG_SAFARI"] === "1" ? [safariProject()] : []),
+            // Safari on iOS in the iOS Simulator (LAG_IOS=1, experiment)
+            ...(process.env["LAG_IOS"] === "1" ? [iosProject()] : []),
         ],
     },
 });
