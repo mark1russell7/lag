@@ -97,9 +97,12 @@ describe("Lag Monitor Stress Tests", () => {
             expect(result.totalLagMs).toBeGreaterThan(0);
             // Light load should accumulate < 25% of wall time as lag
             expect(result.totalLagMs).toBeLessThan(PROFILE_DURATION_MS * 0.25);
-            // ~10 DriftLag samples per second, none dramatic (spikes are ≤30ms)
-            expect(ctx.tee.values("lag_drift_histogram").length).toBeGreaterThan(50);
-            expect(ctx.tee.max("lag_drift_histogram")).toBeLessThan(150);
+            // ~10 DriftLag samples per second. The spikes are 30 ms or less, approximately two each
+            // second, thus most windows have no lag. A shared machine can stop the page for longer
+            // (a CI runner stopped it for 490 ms one time), thus the test examines the 95th percentile.
+            const drift = [...ctx.tee.values("lag_drift_histogram")].sort((a, b) => a - b);
+            expect(drift.length).toBeGreaterThan(50);
+            expect(drift[Math.floor(0.95 * (drift.length - 1))]).toBeLessThan(75);
         } finally {
             await teardown(ctx);
         }
