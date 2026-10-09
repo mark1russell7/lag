@@ -79,11 +79,14 @@ export class ComputePressureMonitor {
         this.started = true;
 
         try {
-            this.observer = new this.PressureObserverCtor((records) => this.handleRecords(records));
+            const observer = new this.PressureObserverCtor((records) => this.handleRecords(records));
+            this.observer = observer;
 
             for (const source of this.sources) {
-                this.observer.observe(source, { sampleInterval : this.sampleIntervalMs })
+                observer.observe(source, { sampleInterval : this.sampleIntervalMs })
                     .catch((error) => {
+                        // disconnect() at stop() rejects each pending observe() with an AbortError
+                        if (this.observer !== observer) return;
                         this.logger.log("warn", `PressureObserver source "${source}" not supported.`, {
                             error,
                             type : "ComputePressureMonitor",

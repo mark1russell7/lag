@@ -225,6 +225,37 @@ describe("ComputePressureMonitor", () => {
             expect(monitor.getWorstStateOrdinal()).toBe(2);
         });
 
+        it("logs no warning when stop() rejects the pending observe() calls, also after a new start", async () => {
+            // As the specification tells: disconnect() rejects each pending observe() with an AbortError
+            const pending = new Set<(error : Error) => void>();
+            class SpecObserver {
+                constructor(_callback : never) {}
+                observe() {
+                    return new Promise<void>((_, reject) => { pending.add(reject); });
+                }
+                disconnect() {
+                    for (const reject of pending) reject(new DOMException("The observer disconnected.", "AbortError"));
+                    pending.clear();
+                }
+                takeRecords() { return []; }
+            }
+            const logger = { log : vi.fn() };
+            const monitor = new ComputePressureMonitor(["cpu", "thermals"], vi.fn(), logger, SpecObserver as unknown as PressureObserverInit);
+
+            monitor.stop();
+            monitor.start();
+            await new Promise(resolve => setTimeout(resolve, 0));
+            expect(logger.log).not.toHaveBeenCalled();
+
+            // A rejection of the current observer still gives the warning
+            for (const reject of pending) reject(new DOMException("No such source.", "NotSupportedError"));
+            await new Promise(resolve => setTimeout(resolve, 0));
+            expect(logger.log.mock.calls.map(call => call[1])).toEqual([
+                'PressureObserver source "cpu" not supported.',
+                'PressureObserver source "thermals" not supported.',
+            ]);
+        });
+
         it("logs an error from the report function and continues with the next record", () => {
             const mock = createMockPressureObserver();
             const logger = { log : vi.fn() };
