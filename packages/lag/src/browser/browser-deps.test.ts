@@ -6,6 +6,7 @@ import { createFakeEventTarget, createFakePerformanceObserver } from "../vitals/
 import type { WorkerLike } from "../WorkerLagMonitor.js";
 import { MemoryStorage } from "../test-peers.js";
 import { createNoopSpanSink } from "../spans.js";
+import { getPageLifecycle, resetSharedPageLifecycle } from "page-lifecycle-tracker";
 
 /** Browser globals whose functions throw without their `this` value, as some browser functions do. */
 function createGlobals(extra : Record<string, unknown> = {}) {
@@ -304,5 +305,32 @@ describe("createBrowserDeps", () => {
 
         expect(deps.FinalizationRegistry).toBe(FakeRegistry);
         expect(deps.ReportingObserver).toBe(FakeReportingObserver);
+    });
+});
+
+describe("createBrowserDeps and the shared lifecycle tracker", () => {
+    afterEach(() => {
+        resetSharedPageLifecycle();
+        vi.unstubAllGlobals();
+    });
+
+    /** The global object as a page: Node has no document and no listeners on the global object. */
+    function stubPage() {
+        vi.stubGlobal("document", Object.assign(createFakeEventTarget(), { visibilityState : "visible", hasFocus : () => true }));
+        vi.stubGlobal("addEventListener", vi.fn());
+        vi.stubGlobal("removeEventListener", vi.fn());
+    }
+
+    it("gives the shared tracker of the page when the globals are the global object", () => {
+        stubPage();
+        const deps = createBrowserDeps(globalThis as unknown as BrowserGlobals, options());
+        expect(deps.lifecycleTracker).toBeDefined();
+        expect(deps.lifecycleTracker).toBe(getPageLifecycle());
+    });
+
+    it("gives no shared tracker with sharedLifecycle: false, or for other globals (as in a test)", () => {
+        stubPage();
+        expect(createBrowserDeps(globalThis as unknown as BrowserGlobals, { ...options(), sharedLifecycle : false }).lifecycleTracker).toBeUndefined();
+        expect(createBrowserDeps(createGlobals(), options()).lifecycleTracker).toBeUndefined();
     });
 });

@@ -4,7 +4,7 @@ import type { SpanSink } from "../spans.js";
 import type { Meter } from "../meter.js";
 import type { Logger, PerformanceLike } from "../types.js";
 import type { PerformanceEntryLike, PerformanceObserverInit } from "../perf-types.js";
-import type { LifecycleDocument, LifecycleWindow } from "../LifecycleStateMachine.js";
+import { getPageLifecycle, type LifecycleDocument, type LifecycleWindow } from "../LifecycleStateMachine.js";
 import type { RequestAnimationFrameFn, CancelAnimationFrameFn } from "../FrameTimingMonitor.js";
 import type { RequestIdleCallbackFn, CancelIdleCallbackFn } from "../IdleAvailabilityMonitor.js";
 import type { MessageChannelConstructor, QueueMicrotaskFn } from "../SchedulingFairnessMonitor.js";
@@ -97,6 +97,14 @@ export type BrowserDepsOptions = {
     peerHangWatch? : boolean;
     /** More attributes for the hang reports of the worker, for example the session ID. Refer to `PageDeps.pageContext`. */
     pageContext? : () => Readonly<Record<string, string>>;
+    /**
+     * When true (the default), the monitors use the lifecycle tracker that the
+     * page shares (`getPageLifecycle()` of `page-lifecycle-tracker`). Then an
+     * exporter can subscribe to the same tracker in the `export` phase. It
+     * sends the last telemetry after the monitors recorded the end of the
+     * page. The setting applies only when `globals` is the global object.
+     */
+    sharedLifecycle? : boolean;
 };
 
 /** The method `name` of `target`, bound to `target`, or `undefined` if `target` has no such method. */
@@ -168,6 +176,10 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
     const journalOn = options.hangJournal !== false && (options.worker !== undefined || peerDeps !== undefined);
     const hangJournal = journalOn && typeof indexedDB?.open === "function" ? createIndexedDbHangJournal(indexedDB) : undefined;
     const storage = journalOn ? localStorageOf(globals) : undefined;
+    // The shared tracker belongs to the global object: a test with other globals gets no shared tracker
+    const lifecycleTracker = options.sharedLifecycle !== false && (globals as unknown) === globalThis
+        ? getPageLifecycle({ document : globals.document, window : globals, clock : { now }, logger : options.logger })
+        : undefined;
     const crashReport = globals.crashReport as CrashReportContextLike | undefined;
     const crashReportContext = options.crashReportContext !== false && typeof crashReport?.set === "function" ? crashReport : undefined;
 
@@ -182,6 +194,7 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         clearIntervalFn : (handle) => globals.clearInterval(handle),
         document : globals.document,
         window : globals,
+        ...(lifecycleTracker ? { lifecycleTracker } : {}),
         performance,
         page : createPageSource(globals.document, performance),
         ...(options.softNavigations !== undefined ? { softNavigations : options.softNavigations } : {}),

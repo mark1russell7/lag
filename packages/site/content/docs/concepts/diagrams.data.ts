@@ -47,23 +47,26 @@ stateDiagram-v2
 `;
 
 /**
- * The final values of a page and the flush of the exporter in Chromium
- * (`setup-all-monitors.ts`, otel-ts `onBeforeFlush`). At `window`, Chromium
- * starts the listener that the page added first (experiment E1).
+ * The final values of a page and the flush of the exporter
+ * (`setup-all-monitors.ts`, otel-ts `onBeforeFlush`). The shared lifecycle
+ * tracker starts its observe phase before its export phase, thus the order
+ * of the window listeners in Chromium (experiment E1) is not important.
  */
 export const flushSequenceChart = `
 sequenceDiagram
     participant B as Browser
-    participant O as otel-ts
+    participant T as Shared lifecycle tracker
     participant M as Monitors
-    participant L as Lifecycle state machine
-    B->>O: pagehide (listener added first)
-    O->>M: onBeforeFlush: monitors.flush(pagehide)
+    participant O as otel-ts
+    B->>T: pagehide (capture listener)
+    Note over T: phase observe
+    T->>M: transition to terminated
+    M->>M: record the transition, the event and the hang report of the page
+    Note over T: phase export
+    T->>O: transition to terminated
+    O->>M: onBeforeFlush: monitors.flush()
     M->>O: record the values of the page view
     O->>O: export the telemetry and stop
-    B->>L: pagehide (capture listener)
-    L->>M: transition to terminated
-    Note over M: the final checkpoint records no new histogram value
 `;
 
 /**
