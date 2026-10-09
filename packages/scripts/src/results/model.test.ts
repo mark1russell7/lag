@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { SCHEMA_VERSION, type RunReport } from "@lag/report";
 import { reportFileName } from "./project-reporter.js";
 import {
+    changedDuringRun,
     mergeIndex,
     packageSlug,
     parseResultLines,
@@ -126,5 +127,13 @@ describe("the result of the collector", () => {
     it("fails when a test or a budget failed", () => {
         expect(runExitCode(1, [], [0])).toBe(1);
         expect(runExitCode(0, [{ ...passing, value : 3, pass : false }], [0])).toBe(1);
+    });
+
+    it("uses only the files that changed during the run, with a tolerance of 2 s", () => {
+        const start = new Date("2026-10-08T12:00:00.000Z");
+        expect(changedDuringRun(new Date("2026-10-08T12:05:00.000Z"), start)).toBe(true);
+        expect(changedDuringRun(new Date("2026-10-08T11:59:58.000Z"), start)).toBe(true);
+        expect(changedDuringRun(new Date("2026-10-08T11:59:57.999Z"), start)).toBe(false);
+        expect(changedDuringRun(new Date("2026-10-01T09:00:00.000Z"), start)).toBe(false);
     });
 });
