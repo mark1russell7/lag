@@ -40,7 +40,7 @@ Each page view has these properties:
 - `url`: the URL at the start of the page view, without the query string and the fragment. For a restore, it is the URL of the document at the `pageshow` event.
 
 ```ts
-import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@lag/core";
+import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@mark1russell7/lag";
 
 const monitors = setupAllMonitors(createBrowserDeps(window, {
     logger : { log : (level, message) => console.log(level, message) },

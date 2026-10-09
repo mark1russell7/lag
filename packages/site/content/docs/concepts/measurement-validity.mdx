@@ -216,7 +216,7 @@ The research on clocks gives five conditions that a monitor must separate ([cloc
 A probe of your app can use the same conditions as the monitors. Then its samples get the same hidden, frozen and suspend intervals, and the same stall rules:
 
 ```ts
-import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@lag/core";
+import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@mark1russell7/lag";
 
 const monitors = setupAllMonitors(createBrowserDeps(window, {
     logger : { log : (level, message) => console.log(level, message) },

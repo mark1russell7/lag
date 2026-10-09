@@ -352,7 +352,7 @@ After a suspend on a platform where the clock stops, the research gives these ef
 - Metrics and logs are correct in wall time, but they get every step of the wall clock.
 - On Windows, a duration includes the sleep (QPC), thus a span across a sleep is too long, not too short.
 
-The library exports metrics and events, but no spans. The main-thread events set no timestamp, thus the SDK uses `Date.now()` ([`otel-logger-adapter.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/otel-logger-adapter.ts)). The hang reports of the worker also use `Date.now()`, as the SDK does ([`bundled-worker.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-worker/src/bundled-worker.ts)). The hang journal uses `Date.now()` too, because the pages of an origin compare its times with their own time ([`hang-journal.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/hang-journal.ts)).
+The library exports metrics and events, but no spans. The main-thread events set no timestamp, thus the SDK uses `Date.now()` ([`otel-logger-adapter.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/otel-logger-adapter.ts)). The hang reports of the worker also use `Date.now()`, as the SDK does ([`bundled-worker.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/worker/bundled-worker.ts)). The hang journal uses `Date.now()` too, because the pages of an origin compare its times with their own time ([`hang-journal.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/hang-journal.ts)).
 
 ## Stall classification
 

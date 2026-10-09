@@ -14,26 +14,32 @@ You need:
 - an app that a bundler builds, for example Vite. The bundler must support `new Worker(new URL(...), { type: "module" })`.
 - an OTLP/HTTP endpoint, for example the [Grafana stack](/docs/operations/grafana-stack) on your computer.
 
-The packages of this project are private workspace packages at this time. They are not on a package registry. In a package of this repository, add them as workspace dependencies, and add otel-ts from GitHub:
+## Install
 
-```json
-{
-    "dependencies": {
-        "@lag/core": "workspace:*",
-        "@lag/worker": "workspace:*",
-        "@mark1russell7/otel-ts": "github:mark1russell7/otel-ts"
-    }
-}
+Install the package from npm:
+
+```bash
+npm install @mark1russell7/lag
 ```
 
-Then install them with `pnpm install`.
+The package is an ES module with TypeScript types. `@mark1russell7/lag` has the monitors, and `@mark1russell7/lag/worker` has `createLagWorker()`. The [API reference](/docs/api#install) lists all entry points. The [package page on npm](https://www.npmjs.com/package/@mark1russell7/lag) has a short example with the OpenTelemetry SDK.
+
+otel-ts is not on npm. To use it as in these examples, install it from GitHub:
+
+```bash
+npm install github:mark1russell7/otel-ts
+```
+
+<Callout type="note" title="The Vite dev server">
+  The dev server of Vite optimizes the dependencies into one folder. Then it cannot find the file of the worker. Exclude the worker export from the optimization in `vite.config.ts`: `optimizeDeps: { exclude: ["@mark1russell7/lag/worker"] }`. `vite build` needs no setting.
+</Callout>
 
 ## Start the monitors
 
 ```ts
 import { createInstanceId, init } from "@mark1russell7/otel-ts";
-import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@mark1russell7/lag";
+import { createLagWorker } from "@mark1russell7/lag/worker";
 
 const endpoint = "http://localhost:4318";
 const serviceInstanceId = createInstanceId();

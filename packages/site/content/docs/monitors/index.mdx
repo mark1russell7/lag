@@ -1,6 +1,6 @@
 ---
 title: All monitors
-description: The monitors of @lag/core with their signals, browser APIs, browser support and cost, how setupAllMonitors selects them, and which monitor answers which question.
+description: The monitors of @mark1russell7/lag with their signals, browser APIs, browser support and cost, how setupAllMonitors selects them, and which monitor answers which question.
 order: 20
 status: final
 ---
@@ -115,8 +115,8 @@ Each factory has an error boundary. If the construction of a monitor fails, its 
 
 ```ts
 import { init } from "@mark1russell7/otel-ts";
-import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@mark1russell7/lag";
+import { createLagWorker } from "@mark1russell7/lag/worker";
 
 const otel = init({ serviceName : "shop", endpoint : "http://localhost:4318" });
 const worker = createLagWorker();
@@ -140,7 +140,7 @@ To keep a monitor off, remove its dependency before the setup:
 
 ```ts
 import { metrics } from "@opentelemetry/api";
-import { createBrowserDeps, setupAllMonitors } from "@lag/core";
+import { createBrowserDeps, setupAllMonitors } from "@mark1russell7/lag";
 
 const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
 // Without its dependencies, the idle monitor does not start

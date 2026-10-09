@@ -21,7 +21,7 @@ The delivery delay answers this question: how long does an event that arrives at
 
 ## How it works
 
-The main-thread monitor and the worker (`@lag/worker`, which operates `createWorkerHandler()`) use these messages:
+The main-thread monitor and the worker (`@mark1russell7/lag/worker`, which operates `createWorkerHandler()`) use these messages:
 
 <Mermaid
   title="The worker protocol"
@@ -110,7 +110,7 @@ A worker timer that was 5000 ms late or more is evidence that the whole system s
 
 ### Watchdog
 
-A worker that cannot load sends nothing, and nothing else reports it. The comment of the code gives these causes: an import error, a Content-Security-Policy without `worker-src`, or a crash. The watchdog waits for the first heartbeat for 5 heartbeat intervals, and at least 5000 ms. The first check can come before heartbeats that wait in the queue, thus the watchdog examines the heartbeats two times. If no heartbeat came, it logs a warning: "The worker sent no heartbeat. Make sure that the worker loads and runs the @lag/worker handler."
+A worker that cannot load sends nothing, and nothing else reports it. The comment of the code gives these causes: an import error, a Content-Security-Policy without `worker-src`, or a crash. The watchdog waits for the first heartbeat for 5 heartbeat intervals, and at least 5000 ms. The first check can come before heartbeats that wait in the queue, thus the watchdog examines the heartbeats two times. If no heartbeat came, it logs a warning: "The worker sent no heartbeat. Make sure that the worker loads and runs the @mark1russell7/lag/worker handler."
 
 ## Browser support
 
@@ -177,7 +177,7 @@ The factory uses these dependency groups:
 
 | Option | Default | What it does |
 |---|---|---|
-| `worker` | necessary | The worker from `createLagWorker()` of `@lag/worker`. The caller owns it and stops it with `worker.terminate()`. |
+| `worker` | necessary | The worker from `createLagWorker()` of `@mark1russell7/lag/worker`. The caller owns it and stops it with `worker.terminate()`. |
 | `workerHeartbeatIntervalMs` | 1000 | The time between two heartbeats. The interval can be longer than the hang threshold: the wait of a heartbeat starts at its send. |
 | `workerHangReport` | none | `{ url, resource }`: the OTLP logs URL and the resource attributes of the hang reports. Without it, the worker detects hangs but sends no reports. |
 | `hangJournal` | none | The hang journal. `createBrowserDeps()` gives `createIndexedDbHangJournal(indexedDB)` when there is IndexedDB, and a worker or the peer hang watch (option `hangJournal`, default true). Without a journal, the worker writes no records. |
@@ -188,8 +188,8 @@ The hang threshold (5000 ms) and the system stall threshold (5000 ms) are consta
 
 ```ts
 import { metrics } from "@opentelemetry/api";
-import { createBrowserDeps, createInstrumentedWorkerLag } from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+import { createBrowserDeps, createInstrumentedWorkerLag } from "@mark1russell7/lag";
+import { createLagWorker } from "@mark1russell7/lag/worker";
 
 const worker = createLagWorker();
 const deps = createBrowserDeps(window, {
@@ -270,4 +270,4 @@ A CI job also operates the browser test files in Safari 26.6.2 on a GitHub macOS
 - [`hang-journal.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/hang-journal.ts) and [`browser/indexeddb-journal.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/browser/indexeddb-journal.ts): the hang journal.
 - [`absolute-clock.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/absolute-clock.ts): the absolute clock.
 - [`instrumented/worker-lag.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/instrumented/worker-lag.ts): the factory.
-- [`bundled-worker.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-worker/src/bundled-worker.ts): the worker bundle of `@lag/worker`, with the hang reports.
+- [`bundled-worker.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/worker/bundled-worker.ts): the worker bundle of `@mark1russell7/lag/worker`, with the hang reports.

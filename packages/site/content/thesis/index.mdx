@@ -9,7 +9,7 @@ status: final
 
 - **Problem:** The usual measurements of main-thread lag in browsers are incorrect in the field. Timer probes measure the timer granularity of the operating system. Clocks stop and jump. Hidden and frozen pages give samples that are not valid. The worst sessions report least.
 - **Claim:** A monitor can measure main-thread lag accurately in real browsers. It must calibrate each probe against its environment, validate each sample against the page lifecycle and the clocks, and measure from outside the main thread.
-- **Method:** We built `@lag/core` and tested each part. We used unit tests, property tests, real-browser tests in three engines, a comparison with web-vitals, mutation testing and experiments on a real machine.
+- **Method:** We built `@mark1russell7/lag` and tested each part. We used unit tests, property tests, real-browser tests in three engines, a comparison with web-vitals, mutation testing and experiments on a real machine.
 - **Result:** On an idle page, the old timer probe reported 16 ms of lag for each 100 ms window in Chromium and 211 ms in Firefox and WebKit. The calibrated probe reports 0.1 ms, −0.3 ms and −0.4 ms. It measures a 300 ms block as 283 ms to 297 ms.
 
 This page gives the argument. The [concepts](/docs/concepts/event-loop) explain each mechanism, and the [research](/research) gives the sources.
@@ -242,10 +242,10 @@ A soak test of 10 minutes kept the heap after garbage collection at 9.50 MB to 9
 
 | Measurement | First measurement | After the new tests |
 |---|---|---|
-| Unit tests of `@lag/core` | 458 | 895 |
-| Statement coverage of `@lag/core` | 96.1% | 99.3% |
-| Branch coverage of `@lag/core` | 89.0% | 98.2% |
-| Mutation score of `@lag/core` | 77.8% of 4095 mutants | 96.9% of 4690 mutants |
+| Unit tests of `@mark1russell7/lag` | 458 | 895 |
+| Statement coverage of `@mark1russell7/lag` | 96.1% | 99.3% |
+| Branch coverage of `@mark1russell7/lag` | 89.0% | 98.2% |
+| Mutation score of `@mark1russell7/lag` | 77.8% of 4095 mutants | 96.9% of 4690 mutants |
 
 The export works from end to end. On 8 October 2026, the E2E tests (20 tests) found the metrics of the test pages in Mimir, as native histograms. The pipeline check of grafana-infra passed 297 of 297 checks with its sample data.
 

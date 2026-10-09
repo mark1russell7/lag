@@ -151,7 +151,7 @@ sequenceDiagram
 `;
 
 /**
- * A hang that the worker detects (`lag-worker.ts`, `@lag/worker`). Each
+ * A hang that the worker detects (`lag-worker.ts`, `@mark1russell7/lag/worker`). Each
  * message from the main thread ends the hang: an `ack`, a `stop` or a `start`.
  */
 export const hangSequenceChart = `
