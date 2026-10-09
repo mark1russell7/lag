@@ -119,7 +119,7 @@ describe("createBrowserDeps", () => {
         });
     });
 
-    it("uses IndexedDB for the hang journal only with a worker, and only if the option permits it", () => {
+    it("uses IndexedDB for the hang journal only with a worker or the peer hang watch, and only if the option permits it", () => {
         const worker : WorkerLike = { postMessage : vi.fn(), addEventListener : vi.fn(), removeEventListener : vi.fn() };
         const indexedDB = { open : vi.fn() };
         const globals = createGlobals({ indexedDB });
@@ -128,6 +128,16 @@ describe("createBrowserDeps", () => {
         expect(createBrowserDeps(globals, options()).hangJournal).toBeUndefined();
         expect(createBrowserDeps(globals, { ...options(), worker, hangJournal : false }).hangJournal).toBeUndefined();
         expect(createBrowserDeps(createGlobals(), { ...options(), worker }).hangJournal).toBeUndefined();
+
+        // Without a worker, the peer hang watch takes the record of a hung page from the journal
+        const peerGlobals = createGlobals({
+            indexedDB,
+            BroadcastChannel : class { onmessage = null; postMessage() : void {} close() : void {} },
+            navigator : { locks : { request : vi.fn() } },
+        });
+        expect(createBrowserDeps(peerGlobals, options()).hangJournal).toBeDefined();
+        expect(createBrowserDeps(peerGlobals, { ...options(), peerHangWatch : false }).hangJournal).toBeUndefined();
+        expect(createBrowserDeps(peerGlobals, { ...options(), hangJournal : false }).hangJournal).toBeUndefined();
         // The database opens only at the first operation
         expect(indexedDB.open).not.toHaveBeenCalled();
     });

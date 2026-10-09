@@ -74,7 +74,8 @@ export type BrowserDepsOptions = {
     /**
      * When true (the default), the worker monitor reads the hang journal in
      * IndexedDB and reports the hangs that earlier pages did not survive. The
-     * bundled worker writes the journal.
+     * bundled worker writes the journal. The peer hang watch takes the record
+     * of a hung page from the journal, also in a page without a worker.
      */
     hangJournal? : boolean;
     /** When true (the default), the page-view ID goes into the crash-report context of the browser (Chrome 145 and later). */
@@ -139,15 +140,16 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
     const SharedArrayBuffer = globals.crossOriginIsolated === true && options.sharedMemory !== false
         ? constructorOf<new (byteLength : number) => SharedArrayBuffer>(globals.SharedArrayBuffer)
         : undefined;
-    const indexedDB = globals.indexedDB as IdbFactoryLike | undefined;
-    const hangJournal = options.hangJournal !== false && options.worker && typeof indexedDB?.open === "function"
-        ? createIndexedDbHangJournal(indexedDB)
-        : undefined;
     const BroadcastChannel = constructorOf<BroadcastChannelConstructor>(globals.BroadcastChannel);
     const AbortController = constructorOf<AbortControllerConstructor>(globals.AbortController);
     const locks = (globals.navigator as { locks? : Partial<LockManagerLike> } | undefined)?.locks;
     const peerDeps = options.peerHangWatch !== false && BroadcastChannel && typeof locks?.request === "function"
         ? { BroadcastChannel, locks : { request : locks.request.bind(locks) }, ...(AbortController ? { AbortController } : {}) }
+        : undefined;
+    // The worker monitor reads the journal. The peer hang watch takes the record of a hung page from it, also without a worker.
+    const indexedDB = globals.indexedDB as IdbFactoryLike | undefined;
+    const hangJournal = options.hangJournal !== false && (options.worker || peerDeps) && typeof indexedDB?.open === "function"
+        ? createIndexedDbHangJournal(indexedDB)
         : undefined;
     const crashReport = globals.crashReport as CrashReportContextLike | undefined;
     const crashReportContext = options.crashReportContext !== false && typeof crashReport?.set === "function" ? crashReport : undefined;

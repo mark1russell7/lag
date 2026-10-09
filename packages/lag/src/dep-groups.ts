@@ -127,7 +127,8 @@ export type WorkerMonitorDeps = {
     /**
      * The hang journal (`createIndexedDbHangJournal(indexedDB)`). With it, the
      * monitor reports the hangs that earlier pages of the origin did not
-     * survive. The worker must have a journal of the same storage.
+     * survive. The worker must have a journal of the same storage. The peer
+     * hang watch takes the record of a hung page from it.
      */
     hangJournal? : HangJournal;
     /** The ID of this page instance. The default is a new random ID. */
