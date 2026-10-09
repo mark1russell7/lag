@@ -324,6 +324,11 @@ describe("createInstrumentedPageViewVitals with page-view spans", () => {
             [restore.id, "back-forward-cache", 1_010_000, undefined],
         ]);
         expect(t.spans.spans[1]!.identity.traceId).not.toBe(t.spans.spans[0]!.identity.traceId);
+        // The start event of each view has the identity of its span
+        const starts = t.events.emit.mock.calls.filter(([name]) => name === "lag.page_view.start").map(([, attributes]) => attributes as Record<string, unknown>);
+        expect(starts.map(attributes => [attributes["lag.page_view.trace_id"], attributes["lag.page_view.span_id"]])).toEqual(
+            t.spans.spans.map(span => [span.identity.traceId, span.identity.spanId]));
+        expectCatalogEvents(t.events.emit);
 
         // After the stop, the span of the view ended, and a new view starts no span
         t.fake.setNow(12_000);

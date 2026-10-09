@@ -208,7 +208,7 @@ An INP estimate after a restore or a soft navigation has no time. Its event gets
 
 ### The page view event
 
-Each page view also sends a `lag.page_view.start` event at its start: the load, a restore from the back/forward cache, or a soft navigation. Its attributes are `navigation_type`, `lag.page_view.id`, `lag.page_view.url` (when the view has a URL), and `lag.page_view.previous_id` for each view after the first. Thus a chart can show the start of each page view, and the IDs connect the views of one page.
+Each page view also sends a `lag.page_view.start` event at its start: the load, a restore from the back/forward cache, or a soft navigation. Its attributes are `navigation_type`, `lag.page_view.id`, `lag.page_view.url` (when the view has a URL), and `lag.page_view.previous_id` for each view after the first. Thus a chart can show the start of each page view, and the IDs connect the views of one page. With a span sink, the event also has `lag.page_view.trace_id` and `lag.page_view.span_id`, the identity of the sampled span of the view. A dashboard can then link the view to its trace ([spans for the periods](/docs/concepts/metrics-model#spans-for-the-periods)).
 
 ## Configuration
 
