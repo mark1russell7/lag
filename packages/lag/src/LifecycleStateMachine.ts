@@ -115,6 +115,10 @@ export class LifecycleStateMachine {
         options : LifecycleListenerOptions;
     }> = [];
     private totalTransitions = 0;
+    /** The handler of each event type of the browser. The listeners and `handle()` use them. */
+    private readonly handlers = new Map<string, LifecycleListener>();
+    /** The event objects that the machine handled, so that `handle()` and a listener handle each one time. */
+    private readonly handled = new WeakSet<object>();
 
     constructor(
         private readonly document : LifecycleDocument,
@@ -192,6 +196,7 @@ export class LifecycleStateMachine {
             target.removeEventListener(type, listener, options);
         }
         this.attached.length = 0;
+        this.handlers.clear();
         this.subscribers.clear();
         this.marks.clear();
         this.transitions = [];
@@ -272,12 +277,38 @@ export class LifecycleStateMachine {
         }
     }
 
+    /**
+     * This method handles a lifecycle event of the browser at once, before
+     * the listener of the machine gets it. Then the machine handles that
+     * event object only one time.
+     *
+     * An exporter that flushes in its own `pagehide` listener can give the
+     * event to the machine first (refer to `AllMonitorHandles.flush`). In
+     * Chromium, the listeners of `window` start in the sequence of their
+     * registration, thus the listener of the exporter can start first. The
+     * machine ignores an event of another type, and an event that is not an
+     * object.
+     */
+    handle(event : unknown) : void {
+        const type = (event as { type? : unknown } | null | undefined)?.type;
+        const handler = typeof type === "string" ? this.handlers.get(type) : undefined;
+        handler?.(event);
+    }
+
     private listen(
         target : LifecycleEventTarget,
         type : string,
-        listener : LifecycleListener,
+        handler : LifecycleListener,
         options : LifecycleListenerOptions = {},
     ) : void {
+        const listener : LifecycleListener = (event) => {
+            if (typeof event === "object" && event !== null) {
+                if (this.handled.has(event)) return;
+                this.handled.add(event);
+            }
+            handler(event);
+        };
+        this.handlers.set(type, listener);
         target.addEventListener(type, listener, options);
         this.attached.push({ target, type, listener, options });
     }

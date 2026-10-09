@@ -73,13 +73,36 @@ const absoluteNow = () : number => performance.timeOrigin + performance.now();
 /** A URL of the Vitest server for the requests of the probes. The probes use only the end of each request, not its response. */
 const probeUrl = () : string => new URL(`/__lag_worker_io_probe?${Math.random()}`, location.href).href;
 
+const PING = "lag-probe-ping";
+const PONG = "lag-probe-pong";
+
+/**
+ * The probe worker answers a ping before the probe starts. Thus a late start
+ * of the worker cannot look like a wait. A message from the worker is not
+ * sufficient. In Chromium, a message to a new worker can wait in the page
+ * until the page operates again.
+ */
+const PING_LISTENER = `self.addEventListener("message", (event) => {
+    if (event.data !== ${JSON.stringify(PING)}) return;
+    event.stopImmediatePropagation();
+    self.postMessage(${JSON.stringify(PONG)});
+});
+`;
+
 async function probe(source : string, message : string, blockMs : number) : Promise<WorkerIoTimes> {
-    const worker = new Worker(scriptUrl(source));
+    // The ping listener comes first, thus it starts before the onmessage handler of the probe
+    const worker = new Worker(scriptUrl(PING_LISTENER + source));
     try {
+        let markReady = () : void => {};
+        const ready = new Promise<void>((resolve) => { markReady = resolve; });
         const result = new Promise<{ start : number; done : number }>((resolve) => {
-            worker.onmessage = (event) => resolve(event.data as { start : number; done : number });
+            worker.onmessage = (event) => {
+                if (event.data === PONG) markReady();
+                else resolve(event.data as { start : number; done : number });
+            };
         });
-        await wait(200);
+        worker.postMessage(PING);
+        await ready;
         worker.postMessage(message);
         const blockStart = absoluteNow();
         blockMainThread(blockMs);
@@ -351,9 +374,4 @@ const CLOCK_MARGIN_MS = 25;
  */
 export function waitedForBlock(times : WorkerIoTimes) : boolean {
     return times.doneMs >= times.blockMs - CLOCK_MARGIN_MS;
-}
-
-/** True when the IndexedDB requests of a worker complete only after a block of the main thread, as in WebKit. */
-export async function workerIndexedDbWaitsForMainThread() : Promise<boolean> {
-    return waitedForBlock(await probeWorkerIndexedDb(1_000));
 }

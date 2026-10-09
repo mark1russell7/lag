@@ -78,7 +78,9 @@ The state machine uses capture listeners, so that its subscribers record their f
 
 `visibilitychange`, `freeze` and `resume` have `document` as their target, thus the state machine is first in all three engines. `pagehide` and `pageshow` have `window` as their target. There, Chromium starts the listeners in the sequence in which the page added them. Thus an exporter that added its `pagehide` listener first can flush before the monitors record their final values.
 
-For this reason, the library has `AllMonitorHandles.flush()`. Connect it to the before-flush hook of the exporter, for example `otel.onBeforeFlush(() => monitors.flush())` with otel-ts. Then each flush first records the values that wait for a checkpoint, whatever the sequence of the listeners is.
+For this reason, the library has `AllMonitorHandles.flush(event)`. Connect it to the before-flush hook of the exporter, for example `otel.onBeforeFlush((cause) => monitors.flush(cause.event))` with otel-ts. Then each flush first records the values that wait for a checkpoint, whatever the sequence of the listeners is.
+
+The event is necessary for the end of the page. With the `pagehide` event, the state machine handles the event first (`LifecycleStateMachine.handle()`). Thus the transition to `terminated`, its event and the own hang report of the [peer hang watch](/docs/monitors/peer-hang-watch) go into the last export. Later, the listener of the machine ignores the same event object. Without the event, the flush records only the Web Vitals. A code review found this with the real SDK: in Chromium, the end of the page was not in the last export.
 
 ### Marks
 
@@ -151,7 +153,7 @@ lifecycle.stop();
 
 ## Limits
 
-- **The listener order on `window` in Chromium.** The capture phase does not put the state machine first for `pagehide` and `pageshow`. Use the flush hook.
+- **The listener order on `window` in Chromium.** The capture phase does not put the state machine first for `pagehide` and `pageshow`. Use the flush hook with the event of the flush. An exporter without such a hook loses the end of the page in Chromium.
 - **No `freeze` in Firefox and Safari.** There, the page becomes `frozen` only at a `pagehide` with `persisted`.
 - **No sleep event.** A sleep of the device without a hidden page gives no transition. The [clock drift](/docs/monitors/clock-drift) and [worker](/docs/monitors/worker-lag) monitors give that evidence.
 - **The focus.** Without `document.hasFocus()`, the state machine uses `active` for a visible page.
@@ -163,6 +165,8 @@ Unit tests:
 
 - `LifecycleStateMachine.test.ts`, the states: the start in `active`, `passive` or `hidden`. The transitions on `blur`, `focus`, `visibilitychange`, `freeze`, `resume`, `pagehide` and `pageshow`. A restore at `pageshow` is a transition also when the page is visible already, as in the event sequence of Chromium. A hidden page before the `visibilitychange` event. `terminated` stays after a `visibilitychange`.
 - `LifecycleStateMachine.test.ts`, the API: marks and their compaction, `summarizeTransitions()`, subscriptions and an error in a subscriber. No `beforeunload` listener, and `dispose()` removes each listener with its phase.
+- `LifecycleStateMachine.test.ts`, `handle()`: an event that the machine handled first gives no second transition from the listener, also for a restore. The machine ignores other event types, values that are not events, and all events after `dispose()`.
+- `setup-all-monitors.test.ts`, an exporter that gets `pagehide` first: without the event, the last export has no transition to `terminated`. With `flush(event)`, it has the transition, and the listener of the machine does not count it again.
 - `LifecycleStateMachine.test.ts`, listener phases: the listeners are in the capture phase, except for `focus` and `blur`. The subscribers start before a bubble listener that the page added earlier. A transition has the time of its event.
 - `instrumented/lifecycle.test.ts`: the counter and the `lag.lifecycle.transition` event of each transition. The time of the event is the time stamp of the browser event. For an event without a time stamp, it is the time at which the machine handled the event. Without a clock, the events have no time. After `stop()`, no events.
 - `setup-all-monitors.test.ts`: the counter gets `active` to `hidden` and `hidden` to `active`, with the trigger `visibilitychange`. The transition event has the ID of the page view and a time of the absolute clock.

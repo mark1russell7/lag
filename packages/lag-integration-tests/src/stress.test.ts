@@ -56,7 +56,7 @@ function makeContext(serviceName : string) : StressContext {
         workerHeartbeatIntervalMs : 250,
         memoryIntervalMs : 2_000,
     }));
-    otel.onBeforeFlush(() => handles.flush());
+    otel.onBeforeFlush((cause) => handles.flush(cause.event));
 
     return { otel, handles, tee, worker };
 }

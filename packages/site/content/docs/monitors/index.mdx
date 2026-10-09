@@ -127,7 +127,7 @@ const monitors = setupAllMonitors(createBrowserDeps(window, {
     worker,
 }));
 // Record the values that wait for a checkpoint, before each flush
-otel.onBeforeFlush(() => monitors.flush());
+otel.onBeforeFlush((cause) => monitors.flush(cause.event));
 
 // The monitors that started in this browser
 const started = monitors.registry.getAll().filter(handle => handle.monitor !== undefined);

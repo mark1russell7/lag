@@ -58,7 +58,7 @@ const monitors = setupAllMonitors(createBrowserDeps(window, {
     // More attributes for each hang report, for example the session ID
     pageContext : () => ({ "session.id" : otel.getSessionId() }),
 }));
-otel.onBeforeFlush(() => monitors.flush());
+otel.onBeforeFlush((cause) => monitors.flush(cause.event));
 ```
 
 The worker sends the reports without the OpenTelemetry SDK of the page. Give `workerHangReport.resource` the same `service.instance.id` as the page. Then a query can connect the reports with the metrics of the page. The worker adds the attributes of `pageContext` to each report, and the ID of the current page view. Refer to [OpenTelemetry setup](/docs/operations/opentelemetry).
@@ -119,7 +119,7 @@ Chromium can stop an unresponsive page and send a crash report to the reporting 
 
 ### Flush on hide
 
-otel-ts exports all telemetry each time the page becomes hidden. At `pagehide`, it exports again: a page that goes into the back/forward cache keeps its providers, and a page that unloads stops them. With `onBeforeFlush(() => monitors.flush())`, these exports contain the latest values of the monitors. Refer to [the flush hook](/docs/concepts/page-lifecycle).
+otel-ts exports all telemetry each time the page becomes hidden. At `pagehide`, it exports again: a page that goes into the back/forward cache keeps its providers, and a page that unloads stops them. With `onBeforeFlush((cause) => monitors.flush(cause.event))`, these exports contain the latest values of the monitors. Refer to [the flush hook](/docs/concepts/page-lifecycle).
 
 The library does not use `unload`. From Chrome 154, Chrome does not start `unload` listeners ([browser support](/research/browser-support)). The README of web-vitals gives the same advice: send the data when the page goes into the background or unloads. Refer to [Web Vitals algorithms](/research/web-vitals-algorithms).
 

@@ -881,3 +881,40 @@ describe("setupAllMonitors with BroadcastChannel and the Web Locks API", () => {
     });
 });
 
+
+describe("setupAllMonitors with an exporter that gets the pagehide event first", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    /**
+     * Chromium starts the listeners of `window` in the sequence of their registration. otel-ts registers
+     * its `pagehide` listener in `init()`, before the monitors start, and it shuts down at a final pagehide.
+     */
+    function setupWithExporter(passEvent : boolean) {
+        const browser = createFakeBrowser();
+        let exported : unknown[] | undefined;
+        let handles : AllMonitorHandles | undefined;
+        browser.window.addEventListener("pagehide", (event) => {
+            if (passEvent) handles?.flush(event);
+            else handles?.flush();
+            exported = (browser.meter.records().get("lag_lifecycle_transitions") ?? []).map(r => r.attributes);
+        });
+        handles = setupAllMonitors(browser.deps);
+        browser.window.dispatch("pagehide", { type : "pagehide", persisted : false });
+        return { browser, handles, exported : exported ?? [] };
+    }
+
+    it("without the event, the final export misses the end of the page", () => {
+        const { exported, handles } = setupWithExporter(false);
+        expect(exported).toEqual([]);
+        handles.stop();
+    });
+
+    it("flush(event) records the end of the page before the export, and the listener of the monitors does not record it again", () => {
+        const { browser, exported, handles } = setupWithExporter(true);
+        expect(exported).toEqual([{ from : "active", to : "terminated", trigger : "pagehide" }]);
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.lifecycle.transition", expect.objectContaining({ to : "terminated" }), { time : expect.any(Number) });
+        expect(browser.meter.records().get("lag_lifecycle_transitions")).toHaveLength(1);
+        handles.stop();
+    });
+});
