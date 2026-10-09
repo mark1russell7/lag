@@ -74,6 +74,11 @@ describe("metric catalog", () => {
         });
         expect(options.advice!.explicitBucketBoundaries).not.toBe(HISTOGRAM_BOUNDARIES.score);
         expect(createCounterSpy.mock.calls[0]![1]).toEqual({ unit : "{gc}", description : METRICS.gcEvents.description });
+
+        // A histogram definition of the caller, without advice: the SDK uses its default buckets
+        const { advice : _advice, ...withoutAdvice } = METRICS.drift;
+        createHistogram(meter, withoutAdvice);
+        expect(createHistogramSpy.mock.calls[1]![1]).toEqual({ unit : "ms", description : METRICS.drift.description });
     });
 
     it("refuses to create an instrument of the wrong kind", () => {
