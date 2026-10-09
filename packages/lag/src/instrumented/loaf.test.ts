@@ -102,8 +102,7 @@ describe("createInstrumentedLoaf", () => {
         ["user-callback", "Window.setTimeout", "Window.setTimeout"],
     ])("removes the query string and the fragment from a URL in the invoker of the type %s", (invokerType, invoker, expected) => {
         const t = setup(true);
-
-        t.observer.deliver("long-animation-frame", {
+        const entry : LoafEntry = {
             ...frame(200),
             scripts : [{
                 name : "script",
@@ -115,7 +114,9 @@ describe("createInstrumentedLoaf", () => {
                 forcedStyleAndLayoutDuration : 0,
                 sourceURL : "https://shop.example/app.js",
             }],
-        });
+        };
+
+        t.observer.deliver("long-animation-frame", entry);
 
         expect(t.events.emit.mock.calls[0]![1]["script.invoker"]).toBe(expected);
     });
