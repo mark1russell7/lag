@@ -132,7 +132,7 @@ pnpm lint:ste           # the writing rules of the README, the site and the TSDo
 
 `pnpm lint:ste` starts [`@mark1russell7/ste-lint`](https://github.com/mark1russell7/ste-lint), a linter for the writing rules of ASD-STE100 Simplified Technical English. It has its own repository, because other repositories use it too.
 
-To add a package, use `pnpm new --name <name> --config <config>`. Do not write `package.json` files yourself.
+To add a package, use `pnpm new --name <name> --config <config>`, then `pnpm install`. Do not write `package.json` files yourself. The command adds the devDependencies that the config needs, for example `@types/node` for `node`. It does not write into an existing folder, except with `--force`.
 
 The Grafana stack (Alloy, Mimir, Loki, Tempo and Grafana) is in [grafana-infra](https://github.com/mark1russell7/grafana-infra). The OpenTelemetry setup is in [otel-ts](https://github.com/mark1russell7/otel-ts).
 
