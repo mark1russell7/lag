@@ -84,7 +84,7 @@ createBrowserDeps(window, {
 });
 ```
 
-Give the hang reports the same `service.instance.id` as the SDK of the page. Then a query can join them with the metrics of the page. The worker adds the attributes of `pageContext`, for example the session ID, and the ID of the current page view to each report.
+Give the hang reports the same `service.instance.id` as the SDK of the page. Then a query can join them with the metrics of the page. Also, the Page load variable of the [Lag Monitor dashboard](/docs/operations/dashboards#variables) then shows them with the other events of the page. The worker adds the attributes of `pageContext`, for example the session ID, and the ID of the current page view to each report.
 
 The worker uses `fetch` with `keepalive`, because workers do not have `sendBeacon`. The collector must accept cross-origin requests from the page (CORS) for `POST` with the `Content-Type: application/json` header. In WebKit and Safari, the request of a worker completes only when the main thread operates again. Thus a report comes only after the hang ([worker lag](/docs/monitors/worker-lag)).
 
