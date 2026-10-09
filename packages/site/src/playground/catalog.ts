@@ -11,6 +11,7 @@ export const LOAD_ACTIONS : readonly LoadActionInfo[] = [
     { id : "block-50", label : "Block for 50 ms", description : "The button keeps the main thread busy for 50 ms." },
     { id : "block-200", label : "Block for 200 ms", description : "The button keeps the main thread busy for 200 ms." },
     { id : "block-800", label : "Block for 800 ms", description : "The button keeps the main thread busy for 800 ms." },
+    { id : "block-6000", label : "Hang for 6 s", description : "The button keeps the main thread busy for 6 s. The page does not respond. After 5 s, the worker detects a hang, and the measurement conditions record a stall." },
     { id : "layout-thrash", label : "Layout thrash", description : "The button reads and changes the layout in a loop for 150 ms. This causes style and layout work." },
     { id : "gc-pressure", label : "Make garbage", description : "The button makes many short-lived objects for 300 ms. This can start a garbage collection." },
     { id : "long-animation-frame", label : "Long animation frame", description : "The button does 150 ms of work in an animation frame callback." },
