@@ -152,7 +152,10 @@ function mutationScore(c : Partial<Record<MutantStatus, number>>) : number {
     return valid === 0 ? 100 : (detected / valid) * 100;
 }
 
-export function fromStrykerReport(report : StrykerReport, packageName : string, rootDir : string) : MutationReport {
+/** The commit and the time of a Stryker run. */
+export type MutationOrigin = Pick<MutationReport, "commit" | "createdAt">;
+
+export function fromStrykerReport(report : StrykerReport, packageName : string, rootDir : string, origin : MutationOrigin = {}) : MutationReport {
     const files : MutationFile[] = [];
     const totals : Partial<Record<MutantStatus, number>> = {};
     for (const [file, { mutants }] of Object.entries(report.files)) {
@@ -168,6 +171,8 @@ export function fromStrykerReport(report : StrykerReport, packageName : string, 
         packageName,
         score : mutationScore(totals),
         files : files.sort((a, b) => a.score - b.score),
+        ...(origin.commit !== undefined ? { commit : origin.commit } : {}),
+        ...(origin.createdAt !== undefined ? { createdAt : origin.createdAt } : {}),
     };
 }
 

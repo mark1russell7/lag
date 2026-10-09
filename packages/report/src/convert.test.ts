@@ -102,6 +102,13 @@ describe("fromStrykerReport", () => {
         expect(report.score).toBe(75);
         expect(report.files.map(f => [f.file, f.score])).toEqual([["a.ts", 50], ["b.ts", 100]]);
         expect(report.files[0]!.counts).toEqual({ Killed : 1, Survived : 1, CompileError : 1 });
+        expect(report).not.toHaveProperty("commit");
+        expect(report).not.toHaveProperty("createdAt");
+    });
+
+    it("keeps the commit and the time of the Stryker run", () => {
+        const report = fromStrykerReport({ files : {} }, "@lag/core", "/repo", { commit : "abc1234def", createdAt : "2026-10-04T03:41:00.000Z" });
+        expect(report).toEqual({ packageName : "@lag/core", score : 100, files : [], commit : "abc1234def", createdAt : "2026-10-04T03:41:00.000Z" });
     });
 });
 

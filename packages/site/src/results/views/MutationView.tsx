@@ -1,10 +1,17 @@
 import { PlotFigure } from "../../components/PlotFigure/PlotFigure";
-import { formatPercent } from "../../lib/format";
+import { formatCount, formatDateTime, formatPercent, shortCommit } from "../../lib/format";
 import { mutationChart, shortPath } from "../charts";
 import { Meter } from "../components/Meter";
 import { SortableTable, type Column } from "../components/SortableTable";
 import { EmptySection } from "../components/States";
-import { mutationFileRows, mutationPackageRows, type MutationFileRow, type MutationPackageRow } from "../model/mutation";
+import {
+    mutationFileRows,
+    mutationOrigins,
+    mutationPackageRows,
+    type MutationFileRow,
+    type MutationOriginRow,
+    type MutationPackageRow,
+} from "../model/mutation";
 import { useRunContext } from "./run-context";
 import styles from "./Results.module.css";
 
@@ -41,6 +48,21 @@ const FILE_COLUMNS : ReadonlyArray<Column<MutationFileRow, "file" | "score" | Co
     ...countColumns<MutationFileRow>(),
 ];
 
+/** The commit and the time of the Stryker run of one report. */
+function OriginNote({ origin } : { origin : MutationOriginRow }) {
+    const age = origin.daysBeforeRun === undefined || origin.daysBeforeRun === 0
+        ? null
+        : <> That is {formatCount(origin.daysBeforeRun, "day")} before this run.</>;
+    return (
+        <p className={styles.lead}>
+            Stryker tested <code>{origin.packageName}</code>
+            {origin.commit ? <> at the commit <code>{shortCommit(origin.commit)}</code></> : <> at an unknown commit</>}
+            {origin.createdAt ? <> on {formatDateTime(origin.createdAt)}.</> : <>. The report has no time.</>}
+            {age}
+        </p>
+    );
+}
+
 /** Mutation scores for each package and each file. */
 export function MutationView() {
     const { run } = useRunContext();
@@ -52,6 +74,7 @@ export function MutationView() {
         <>
             <section className={styles.block} aria-labelledby="mutation-packages">
                 <h2 id="mutation-packages">Mutation score by package</h2>
+                {mutationOrigins(run).map(origin => <OriginNote key={origin.packageName} origin={origin} />)}
                 <p className={styles.lead}>
                     The score is the number of mutants with the status <code>Killed</code> or <code>Timeout</code>, divided by the
                     number of valid mutants. A mutant with the status <code>Survived</code> is a change to the code that no
