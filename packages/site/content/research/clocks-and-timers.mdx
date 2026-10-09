@@ -370,7 +370,7 @@ In case C, the `freeze`, `resume` and `pageshow` events and the visibility state
 
 | Case | The library at this time |
 |---|---|
-| A | The worker detects a hang when the main thread does not acknowledge heartbeats for 5 s. With a report target (`workerHangReport`), the worker reports the start itself. A timer sample of 5 s or more without evidence of a suspend becomes a stall of the type `hang`. The stall samples of one block count as one stall episode. |
+| A | The worker detects a hang when a heartbeat waits 5 s for its acknowledgement from the main thread. With a report target (`workerHangReport`), the worker reports the start itself. A timer sample of 5 s or more without evidence of a suspend becomes a stall of the type `hang`. The stall samples of one block count as one stall episode. |
 | B | `ClockDriftMonitor` classifies a forward jump of 1 s or more as a `suspend`, also with a late timer, and counts it. The monotonic samples do not include the sleep on these platforms. The suspend goes into the reliability tracker, over the interval between two samples of the monitor. The validator discards the samples that overlap it. |
 | C | A worker timer that is late by 5 s or more adds a `suspend` interval to the reliability tracker. The interval ends when the worker sent the heartbeat. The validator discards the samples that overlap it. The hang detector of the worker does not blame the main thread, and it removes that time from a hang in progress. The lifecycle states `hidden` and `frozen` add their own intervals. |
 | D | `ClockDriftMonitor` classifies all other jumps as a `step`, and each backward jump is a step. |

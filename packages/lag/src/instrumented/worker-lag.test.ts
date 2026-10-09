@@ -446,7 +446,7 @@ describe("createInstrumentedWorkerLag with the messages of a worker", () => {
 
         expect(t.meter.sum("lag_main_thread_hangs")).toBe(1);
         expect(t.events.emit).toHaveBeenCalledTimes(1);
-        expect(t.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ "lag.hang.page_id" : "closed-page" }));
+        expect(t.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ "lag.hang.page_id" : "closed-page" }), { time : expect.any(Number) });
         expect(await journal.list()).toEqual([]);
         expect(storage.keys()).toEqual([]);
     });
