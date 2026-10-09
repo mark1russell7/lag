@@ -21,11 +21,14 @@ const LOAD_MS = 3_000;
  * Playwright for Windows, each message waits for a timer of 0 ms of the
  * system. There, the most messages of three probes were 122 to 278 in 32
  * runs (9 October 2026, also with four engines in parallel). In Chromium
- * and Firefox, they were 9,681 to 34,180. An earlier rule used the busy time
- * of the probe. In WebKit for Windows, that time changed from 0 ms to 87 ms
- * with the load of the computer. Then the test operated, and it failed.
+ * and Firefox, they were 9,681 to 34,180. In CI, the other WebKit builds
+ * post fewer messages, but they confirm a baseline: WebKit for Linux 904 to
+ * 920, Safari on macOS 615 to 877, Safari on iOS 580 to 609. The limit is
+ * between the two groups. An earlier rule used the busy time of the probe.
+ * In WebKit for Windows, that time changed from 0 ms to 87 ms with the load
+ * of the computer. Then the test operated, and it failed.
  */
-const MIN_IDLE_MESSAGES = 1_000;
+const MIN_IDLE_MESSAGES = 400;
 
 /** The lag of the windows after the load, above the idle windows before it, as a part of a window. */
 const AFTER_LOAD_MARGIN = 0.1;
