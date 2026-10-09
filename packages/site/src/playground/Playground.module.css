@@ -140,6 +140,13 @@
     gap: var(--space-4);
 }
 
+.analysis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
+    align-items: start;
+    gap: var(--space-4);
+}
+
 .counters {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
