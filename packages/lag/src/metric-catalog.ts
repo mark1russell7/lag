@@ -11,7 +11,7 @@
  *   timestamp or an ID is not an attribute at any time.
  */
 
-import type { Attributes, Counter, Histogram, Meter } from "./meter.js";
+import type { Attributes, Counter, Histogram, InstrumentOptions, Meter } from "./meter.js";
 import { NAVIGATION_TYPES } from "./vitals/types.js";
 
 export type MetricKind = "histogram" | "counter";
@@ -25,6 +25,46 @@ export type MetricDefinition = {
     description : string;
     /** A map from each attribute name to its permitted values. */
     attributes : Readonly<Record<string, readonly string[]>>;
+    /**
+     * The advice to the SDK. Only a histogram has it: the bucket boundaries
+     * for the explicit-bucket aggregation. An exponential histogram does not
+     * use them.
+     */
+    advice? : { readonly explicitBucketBoundaries : readonly number[] };
+};
+
+/**
+ * The bucket boundaries of the histograms, for the explicit-bucket
+ * aggregation. Each bucket includes its upper boundary. The default buckets
+ * of the OpenTelemetry SDK (0 to 10000) are for durations in milliseconds.
+ * They put all scores and ratios into one bucket, and all byte counts into
+ * the last bucket.
+ *
+ * - `duration`: milliseconds. The boundaries below 1 ms separate the clock
+ *   resolutions (5 μs, 20 μs, 100 μs, 1 ms). The boundaries 16 and 33 are the
+ *   frame budgets at 60 Hz and 30 Hz, and 50 is the long-task limit. The
+ *   thresholds of the Web Vitals and the stall limit (5000 ms) are also
+ *   boundaries. Thus the buckets give the exact number of each rating.
+ * - `score`: layout shifts, CLS and ratios from 0 to 1. The CLS thresholds
+ *   0.1 and 0.25 are boundaries.
+ * - `ordinal`: the pressure states 0 to 3. Each state has its own bucket.
+ * - `bytes`: the powers of 2 from 1 MiB to 16 GiB.
+ */
+export const HISTOGRAM_BOUNDARIES : Readonly<Record<"duration" | "score" | "ordinal" | "bytes", readonly number[]>> = {
+    duration : [
+        0, 0.01, 0.05, 0.1, 0.5, 1, 2, 5, 10, 16, 25, 33, 50, 75, 100, 150, 200, 300, 500, 800,
+        1_000, 1_800, 2_500, 3_000, 4_000, 5_000, 10_000, 30_000, 60_000,
+    ],
+    score : [0, 0.001, 0.01, 0.025, 0.05, 0.1, 0.15, 0.25, 0.5, 0.75, 0.9, 1],
+    ordinal : [0, 1, 2, 3],
+    bytes : Array.from({ length : 15 }, (_, index) => 2 ** (20 + index)),
+};
+
+/** The boundaries of a histogram with this unit, if the definition does not give other boundaries. */
+const BOUNDARIES_OF_UNIT : Readonly<Record<string, readonly number[]>> = {
+    ms : HISTOGRAM_BOUNDARIES.duration,
+    "1" : HISTOGRAM_BOUNDARIES.score,
+    By : HISTOGRAM_BOUNDARIES.bytes,
 };
 
 export type MetricKey =
@@ -58,8 +98,11 @@ function metric(
     monitor : string,
     description : string,
     attributes : Readonly<Record<string, readonly string[]>> = {},
+    boundaries : readonly number[] | undefined = BOUNDARIES_OF_UNIT[unit],
 ) : MetricDefinition {
-    return { name, kind, unit, monitor, description, attributes };
+    const definition : MetricDefinition = { name, kind, unit, monitor, description, attributes };
+    if (kind === "histogram" && boundaries) definition.advice = { explicitBucketBoundaries : boundaries };
+    return definition;
 }
 
 export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
@@ -159,7 +202,7 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
 
     pressureState : metric("lag_pressure_state_histogram", "histogram", "1", "ComputePressureMonitor",
         "The compute pressure state of each record: 0 nominal, 1 fair, 2 serious, 3 critical.",
-        { source : PRESSURE_SOURCES }),
+        { source : PRESSURE_SOURCES }, HISTOGRAM_BOUNDARIES.ordinal),
 
     gcEvents : metric("lag_gc_events", "counter", "{gc}", "GCSignalDetector",
         "The number of garbage collections that the detector saw."),
@@ -306,7 +349,10 @@ function assertKind(definition : MetricDefinition, kind : MetricKind) : void {
  */
 export function createHistogram<A extends Attributes = Attributes>(meter : Meter, definition : MetricDefinition) : Histogram<A> {
     assertKind(definition, "histogram");
-    return meter.createHistogram<A>(definition.name, { unit : definition.unit, description : definition.description });
+    const options : InstrumentOptions = { unit : definition.unit, description : definition.description };
+    // A copy: the SDK keeps the array, and the catalog must not change
+    if (definition.advice) options.advice = { explicitBucketBoundaries : [...definition.advice.explicitBucketBoundaries] };
+    return meter.createHistogram<A>(definition.name, options);
 }
 
 /**
