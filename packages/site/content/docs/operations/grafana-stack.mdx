@@ -8,7 +8,7 @@ status: draft
 The [grafana-infra](https://github.com/mark1russell7/grafana-infra) repository has a Docker Compose stack for development and for the integration tests. The browser exports the metrics and the events with OTLP over HTTP. Grafana Alloy receives the data and sends the metrics to Mimir, the logs to Loki and the traces to Tempo. Grafana shows the [dashboards](/docs/operations/dashboards). The page [OpenTelemetry setup](/docs/operations/opentelemetry) tells you how to configure the SDK in the page.
 
 <Callout type="note" title="The versions">
-  This page describes grafana-infra at commit `4e183e3`, the `main` branch on 2026-10-08. The lockfile of this repository has this commit. The scripts `infra:up` and `test:e2e` of `@lag/integration-tests` start the stack from `node_modules/@mark1russell7/grafana-infra`. The settings of [OpenTelemetry setup](/docs/operations/opentelemetry) need otel-ts at commit `a4a7722` or later, and the lockfile has that commit too.
+  This page describes grafana-infra at commit `6ebe0dc`, the `main` branch on 2026-10-09. The lockfile of this repository has this commit. The scripts `infra:up` and `test:e2e` of `@lag/integration-tests` start the stack from `node_modules/@mark1russell7/grafana-infra`. The settings of [OpenTelemetry setup](/docs/operations/opentelemetry) need otel-ts at commit `a4a7722` or later, and the lockfile has that commit too.
 </Callout>
 
 ## The services
@@ -130,7 +130,7 @@ An explicit-bucket histogram becomes `_bucket`, `_sum` and `_count` series. The 
 | `max_global_series_per_metric` | `100000` | The series budget of one metric. |
 | `query_scheduler.max_outstanding_requests_per_tenant` | `4096` | Lets the Lag Monitor dashboard send all its queries at the same time. |
 
-The Lag Monitor dashboard sends approximately 130 queries when it loads. Query sharding splits each query into up to 16 requests. With the default limit of 100, Mimir answers 429 "too many outstanding requests" to some panels.
+The Lag Monitor dashboard sends approximately 135 queries when it loads: 134 panel queries, and one query for each annotation layer that is on. Query sharding splits each query into up to 16 requests. With the default limit of 100, Mimir answers 429 "too many outstanding requests" to some panels.
 
 The series limits use the rule `in-memory series = R × 2.5 h × S`. `S` is the number of series of one page load, and the configuration uses `S = 100`. `R` is the number of page loads in one hour, and the stack plans for `R = 2,000`. Thus `2,000 × 2.5 × 100 = 500,000`. The series of a closed page stay in memory until the next head compaction, thus the rule uses 2.5 h. Refer to [the number of series](/docs/operations/opentelemetry#the-number-of-series).
 
@@ -171,7 +171,7 @@ Use the recorded series for long time ranges. To get a quantile of many services
 histogram_quantile(0.95, sum(service_name:lag_drift_histogram:rate5m{service_name=~"$service_name"}))
 ```
 
-The [long range row](/docs/operations/dashboards#long-range-recording-rules) of the dashboard uses the rules. Mimir reads the rule file again every 10 minutes. To load a change at once, restart Mimir:
+The [long range row](/docs/operations/dashboards#long-range-recording-rules-all-page-loads) of the dashboard uses the rules. The rules sum all page loads, thus the Page load variable of the dashboard does not apply to them. Mimir reads the rule file again every 10 minutes. To load a change at once, restart Mimir:
 
 ```sh
 docker compose restart mimir
@@ -186,7 +186,7 @@ set(log.body, ToKeyValueString(log.attributes, "=", " ", true)) where log.body =
 set(log.attributes["event.name"], log.event_name) where log.event_name != ""
 ```
 
-1. A record without a body gets its attributes as the line, as sorted `key=value` pairs. Loki drops an entry when the previous entry of its stream has the same timestamp and the same line. A browser can send several events in the same millisecond, for example the five Web Vitals of one report. The library gives each of its events a body with the attributes (refer to the next table). The statement applies to other senders, for example to the sample data of grafana-infra, which sends its events without a body.
+1. A record without a body gets its attributes as the line, as sorted `key=value` pairs. Loki drops an entry when the previous entry of its stream has the same timestamp and the same line. A browser can send several events in the same millisecond, for example the five Web Vitals of one report. The library gives each of its events a body with the attributes (refer to the next table). The statement applies to other senders that send no body. The sample data of grafana-infra sends a body in the form of the library.
 2. The Alloy configuration says that Loki 3.6 and 3.7 ignore the `EventName` field of an OTLP log record. Thus Alloy copies the event name to the log attribute `event.name`. Loki makes the index label `event_name` from this attribute.
 
 ### Labels and structured metadata
@@ -209,8 +209,12 @@ The line of an entry is the body of the record:
 | A record without a body | No body. Alloy writes the attributes as the line. |
 
 <Callout type="note" title="Events of the same millisecond">
-  The attributes in the line make the lines of two events different, also when the two events have the same name and the same timestamp. Thus the five Web Vitals of one report have five different lines. A unit test of the event sink makes sure that such events get different bodies. Two events with the same name, the same attributes and the same timestamp still have the same line. The verification script does not examine the bodies of the library, because the sample data sends its events without a body.
+  The attributes in the line make the lines of two events different, also when the two events have the same name and the same timestamp. Thus the five Web Vitals of one report have five different lines. A unit test of the event sink makes sure that such events get different bodies. Two events with the same name, the same attributes and the same timestamp still have the same line.
 </Callout>
+
+The sample data of grafana-infra makes its bodies with a copy of the rules of `formatEventLine`. The verification script makes sure that Loki has each event that the sample data sent. It does not examine the bodies of the library itself.
+
+The annotation layers of the Lag Monitor dashboard parse the line with `logfmt`. Thus the title and the text of a mark can use each attribute of the event. Refer to [annotation layers](/docs/operations/dashboards#annotation-layers).
 
 This LogQL query gives the p75 of each Web Vital in 5-minute windows:
 
@@ -234,7 +238,7 @@ The metrics generator of Tempo makes service graphs and span metrics, with the d
 Grafana gets its configuration from `config/grafana/grafana.ini` and from the provisioning files in `config/grafana/provisioning`:
 
 - The administrator is `admin` with the password `admin`. The variables `GF_SECURITY_ADMIN_USER` and `GF_SECURITY_ADMIN_PASSWORD` in `.env` set these values.
-- `grafana.ini` enables the anonymous access, with the role `Admin`. But the README of grafana-infra says that Grafana 13 gives anonymous users the Viewer role. The role that Grafana 13 gives to anonymous users is not verified. To edit a dashboard, sign in as `admin`.
+- `grafana.ini` enables the anonymous access, with the role `Admin`. The README of grafana-infra says the same, and it tells you to use this setting only on your own computer. The screenshot script of grafana-infra saves a dashboard through the API without credentials, and this step passed in the CI workflow on 2026-10-09. You can also sign in as `admin` to edit a dashboard.
 - `grafana.ini` also sets `allow_embedding = true` and the dark theme.
 - The variable `GF_INSTALL_PLUGINS` in `docker-compose.yml` adds the plugin `grafana-pyroscope-app`.
 
@@ -330,7 +334,7 @@ To examine the full pipeline, send sample data and start the verification script
    pnpm verify --summary sample-summary.json
    ```
 
-`scripts/send-sample-data.mjs` uses the OpenTelemetry JS SDK in the same way as a browser. It simulates six page loads of two services, `lag-sample-shop` and `lag-sample-docs`. Each page load has its own `service.instance.id`. The script records each metric of the catalog and sends each lag event. It also posts hang reports in the JSON format of the lag worker, with `fetch`, `keepalive` and the origin `http://localhost:5173`. The options `--duration`, `--interval`, `--pages`, `--seed` and `--endpoint` change the run.
+`scripts/send-sample-data.mjs` uses the OpenTelemetry JS SDK in the same way as a browser. It simulates six page loads of two services, `lag-sample-shop` and `lag-sample-docs`. Each page load has its own `service.instance.id`. The script records each metric of the catalog and sends each lag event, with the line of the event as the body. It also posts hang reports in the JSON format of the lag worker, with `fetch`, `keepalive` and the origin `http://localhost:5173`. The options `--duration`, `--interval`, `--pages`, `--seed` and `--endpoint` change the run.
 
 `scripts/verify-pipeline.mjs` examines these items:
 
@@ -339,10 +343,12 @@ To examine the full pipeline, send sample data and start the verification script
 - Mimir stores each metric of the catalog under its catalog name, and each histogram as a native histogram.
 - The `instance` label is the `service.instance.id`. No series has a `session_id` label.
 - The recording rules are healthy and have data.
-- Loki has only the index labels `service_name` and `event_name`. It has all the lag events with their structured metadata, and the hang reports of the worker.
-- Grafana loads the Lag Monitor dashboard, and each panel query gives data.
+- Loki has only the index labels `service_name` and `event_name`. It has all the lag events with their structured metadata, and the hang reports of the worker. For each event name, Loki has the number of events that the sample sent. The script waits up to 30 seconds for the last events.
+- Grafana loads the Lag Monitor dashboard, each panel query gives data, and each annotation layer finds events.
 
 The exit code is 1 if a check fails. If Grafana uses a different port, add `--grafana http://localhost:3300`. To compare the catalog copy `scripts/lib/lag-catalog.mjs` with the lag catalog, add `--catalog ../lag/packages/lag/src/metric-catalog.ts`.
+
+The script `scripts/screenshot-dashboard.mjs` takes screenshots of the dashboard after the sample data. The CI workflow `.github/workflows/verify.yml` of grafana-infra starts the stack, sends the sample data, starts the verification script and uploads the screenshots. Refer to [the verification workflow](/docs/operations/dashboards#the-verification-workflow).
 
 ### The integration tests
 
@@ -374,7 +380,7 @@ To stop the stack of `node_modules`, use `pnpm run infra:down` in `packages/lag-
 | Problem | Cause | What to do |
 |---|---|---|
 | The histogram panels show no data. | The app sends explicit-bucket histograms. Mimir stores them as `_bucket`, `_sum` and `_count` series, and the dashboard does not use them. | Configure exponential histograms. |
-| The series have no `instance` label. | The app does not set `service.instance.id`. Then many page loads write to the same series, and `rate()` gives incorrect values. | Give each SDK instance a new `service.instance.id`. |
+| The series have no `instance` label. | The app does not set `service.instance.id`. Then many page loads write to the same series, and `rate()` gives incorrect values. The Lag Monitor dashboard also does not show these series, because its Page load variable sends `instance=~".+"`. | Give each SDK instance a new `service.instance.id`. |
 | Mimir rejects samples. | Mimir counts each rejection, with its reason, in `cortex_discarded_samples_total`. | Look at `cortex_discarded_samples_total` at `http://localhost:9009/metrics`. |
 | The browser shows a CORS error. | The origin of the page is not in `allowed_origins`. | Add the origin to `allowed_origins` in `config/alloy/config.alloy`. Then restart Alloy. |
 | A panel shows the error "too many outstanding requests". | The dashboard sends more requests than the limit of the query scheduler. | Increase `max_outstanding_requests_per_tenant` in `config/mimir/mimir.yaml`. |
@@ -388,4 +394,5 @@ To stop the stack of `node_modules`, use `pnpm run infra:down` in `packages/lag-
 - `config/loki/loki.yaml` and `config/tempo/tempo.yaml`: the labels of Loki, and the metrics generator of Tempo.
 - `config/grafana`: `grafana.ini`, the data sources and the dashboard provider.
 - `scripts/send-sample-data.mjs` and `scripts/verify-pipeline.mjs`: the sample data and the verification.
+- `scripts/screenshot-dashboard.mjs` and `.github/workflows/verify.yml`: the screenshots of the dashboard and the CI workflow.
 - The Grafana documentation of [Alloy](https://grafana.com/docs/alloy/latest/), [Mimir](https://grafana.com/docs/mimir/latest/), [Loki](https://grafana.com/docs/loki/latest/) and [Tempo](https://grafana.com/docs/tempo/latest/).
