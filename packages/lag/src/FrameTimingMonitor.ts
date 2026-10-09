@@ -4,7 +4,10 @@ export type RequestAnimationFrameFn = (callback : (time : number) => void) => nu
 export type CancelAnimationFrameFn = (handle : number) => void;
 
 export type FrameMeasurement = {
-    /** The time since the previous frame, from the monotonic clock (`clock.now()`). */
+    /**
+     * The time since the previous frame: the difference between the frame
+     * timestamps that `requestAnimationFrame` gives to the two callbacks.
+     */
     frameDeltaMs : number;
     /** The instantaneous frame rate from this delta: `1000 / frameDeltaMs`. */
     fps : number;
@@ -39,9 +42,17 @@ export const AUTO_FRAME_RATE = "auto";
  * refresh rate.
  */
 const ESTIMATE_WINDOW_FRAMES = 600;
+/**
+ * The estimate is the delta at this position in the sorted window (1 is the
+ * shortest). Thus, fewer short deltas than this value do not lower the
+ * estimate. An example of a short delta is an on-time frame after a late
+ * frame. With an interval below the refresh interval, each normal frame
+ * counts as a dropped frame.
+ */
+const ESTIMATE_RANK = 5;
 /** A shorter delta is timing noise (two callbacks in one frame), not a refresh rate. */
 const MIN_PLAUSIBLE_FRAME_MS = 4;
-/** The estimate before the first frames arrive. */
+/** The estimate until the window has `ESTIMATE_RANK` deltas. */
 const INITIAL_FRAME_MS = 1000 / 60;
 
 /**
@@ -52,11 +63,16 @@ const INITIAL_FRAME_MS = 1000 / 60;
  * consecutive callbacks: `round(delta / frameInterval) - 1`. At 60 Hz, a
  * gap of 50 ms counts as 2 dropped frames.
  *
- * By default (`targetFps = "auto"`), the frame interval is the shortest gap
- * of the last 600 frames. The estimate ignores gaps of less than 4 ms. Thus,
- * the interval follows the real refresh rate, for example of a 120 Hz
- * screen, or the 30 fps limit of a power-saving mode. A fixed `targetFps`
- * uses `1000 / targetFps`.
+ * The gaps come from the frame timestamps, which `requestAnimationFrame`
+ * gives to the callbacks. Thus, a callback that starts late in its frame
+ * does not change the gap. Without a timestamp, the monitor reads `clock`.
+ *
+ * By default (`targetFps = "auto"`), the frame interval is the fifth-shortest
+ * gap of the last 600 frames. Until 5 gaps are available, the interval is
+ * 16.67 ms (60 Hz). The estimate ignores gaps of less than 4 ms. Thus, the
+ * interval follows the real refresh rate, for example of a 120 Hz screen,
+ * or the 30 fps limit of a power-saving mode. One short gap does not lower
+ * the interval. A fixed `targetFps` uses `1000 / targetFps`.
  *
  * **The difference from `LongAnimationFrameMonitor`:**
  * - LoAF measures the *blocking* during the production of a frame (script
@@ -76,9 +92,11 @@ export class FrameTimingMonitor {
     private observedFrames = 0;
     private droppedTotal = 0;
     private readonly fixedFrameTimeMs : number | undefined;
-    /** Recent deltas for the sliding-window minimum: a deque of [frame index, delta] with increasing deltas. */
-    private readonly minimumDeque : Array<[number, number]> = [];
-    private frameIndex = 0;
+    /** The deltas of the window in a ring, in the sequence of the frames. */
+    private readonly recentDeltas : number[] = [];
+    /** The same deltas, sorted from the shortest to the longest. */
+    private readonly sortedDeltas : number[] = [];
+    private deltaCount = 0;
 
     constructor(
         private readonly report : (measurement : FrameMeasurement) => void,
@@ -95,17 +113,17 @@ export class FrameTimingMonitor {
     /** The frame interval that the next drop estimate uses. */
     getFrameIntervalMs() : number {
         if (this.fixedFrameTimeMs !== undefined) return this.fixedFrameTimeMs;
-        return this.minimumDeque[0]?.[1] ?? INITIAL_FRAME_MS;
+        return this.sortedDeltas[ESTIMATE_RANK - 1] ?? INITIAL_FRAME_MS;
     }
 
     private observeDelta(deltaMs : number) : void {
         if (deltaMs < MIN_PLAUSIBLE_FRAME_MS) return;
-        const index = this.frameIndex++;
-        while (this.minimumDeque.length > 0 && this.minimumDeque[this.minimumDeque.length - 1]![1] >= deltaMs) {
-            this.minimumDeque.pop();
-        }
-        this.minimumDeque.push([index, deltaMs]);
-        while (this.minimumDeque[0]![0] <= index - ESTIMATE_WINDOW_FRAMES) this.minimumDeque.shift();
+        const slot = this.deltaCount++ % ESTIMATE_WINDOW_FRAMES;
+        const expired = this.recentDeltas[slot];
+        if (expired !== undefined) this.sortedDeltas.splice(this.sortedDeltas.indexOf(expired), 1);
+        this.recentDeltas[slot] = deltaMs;
+        const longer = this.sortedDeltas.findIndex(delta => delta > deltaMs);
+        this.sortedDeltas.splice(longer < 0 ? this.sortedDeltas.length : longer, 0, deltaMs);
     }
 
     start() : void {
@@ -154,16 +172,20 @@ export class FrameTimingMonitor {
 
     private scheduleNextFrame() : void {
         if (!this.started) return;
-        const handle : number = this.requestAnimationFrameFn(() => this.onFrame(handle));
+        const handle : number = this.requestAnimationFrameFn((time) => this.onFrame(handle, time));
         this.handle = handle;
     }
 
-    /** `handle` identifies the chain of this callback, because `report()` can stop or restart the monitor. */
-    private onFrame(handle : number) : void {
+    /**
+     * `handle` identifies the chain of this callback, because `report()` can
+     * stop or restart the monitor. `time` is the frame timestamp.
+     */
+    private onFrame(handle : number, time : number) : void {
         if (!this.started || this.handle !== handle) return;
 
         try {
-            const now = this.clock.now();
+            // A shim of requestAnimationFrame can call the callback without a frame timestamp
+            const now = Number.isFinite(time) ? time : this.clock.now();
             const lastFrameTime = this.lastFrameTime;
             // Before report(), so a stop() inside it can reset the baseline
             this.lastFrameTime = now;

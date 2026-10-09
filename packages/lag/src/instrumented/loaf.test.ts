@@ -93,4 +93,31 @@ describe("createInstrumentedLoaf", () => {
         }, { time : 1_000_100 });
         expectCatalogEvents(t.events.emit);
     });
+
+    it.each([
+        ["classic-script", "https://shop.example/checkout?session=SECRET#step2", "https://shop.example/checkout"],
+        ["module-script", "https://shop.example/app.mjs?token=1", "https://shop.example/app.mjs"],
+        ["event-listener", "IMG[src=https://cdn.example/a.png?sig=SECRET#x].onload", "IMG[src=https://cdn.example/a.png].onload"],
+        ["event-listener", "BUTTON#buy.onclick", "BUTTON#buy.onclick"],
+        ["user-callback", "Window.setTimeout", "Window.setTimeout"],
+    ])("removes the query string and the fragment from a URL in the invoker of the type %s", (invokerType, invoker, expected) => {
+        const t = setup(true);
+        const entry : LoafEntry = {
+            ...frame(200),
+            scripts : [{
+                name : "script",
+                invoker,
+                invokerType,
+                startTime : 100,
+                executionStart : 101,
+                duration : 180,
+                forcedStyleAndLayoutDuration : 0,
+                sourceURL : "https://shop.example/app.js",
+            }],
+        };
+
+        t.observer.deliver("long-animation-frame", entry);
+
+        expect(t.events.emit.mock.calls[0]![1]["script.invoker"]).toBe(expected);
+    });
 });

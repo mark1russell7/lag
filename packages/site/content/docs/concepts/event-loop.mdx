@@ -58,7 +58,7 @@ Two more monitors measure the delay of the task queue. [MacrotaskLag](/docs/moni
 
 ### Frame delay
 
-`FrameTimingMonitor` measures the time between two `requestAnimationFrame` callbacks. It finds the frame interval from the shortest gap of the last 600 frames, thus it follows a display of 120 Hz and a frame-rate limit. A gap of n frame intervals counts as n − 1 dropped frames, with n rounded to an integer.
+`FrameTimingMonitor` measures the time between the frame timestamps of two `requestAnimationFrame` callbacks. It finds the frame interval from the fifth-shortest gap of the last 600 frames, thus it follows a display of 120 Hz and a frame-rate limit. One short gap does not lower the interval. A gap of n frame intervals counts as n − 1 dropped frames, with n rounded to an integer.
 
 `LongAnimationFrameMonitor` reads the Long Animation Frames API. The browser reports each frame of 50 ms or more, with its blocking duration and the scripts of the frame. Only Chromium has this API, from version 123 ([browser support](/research/browser-support)).
 

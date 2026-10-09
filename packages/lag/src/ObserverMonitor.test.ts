@@ -1,6 +1,8 @@
 import { vi, expect } from "vitest";
 import type { PerformanceEntryLike, PerformanceEntryList, PerformanceObserverInit } from "./perf-types.js";
+import type { Logger } from "./types.js";
 import { ObserverMonitor } from "./ObserverMonitor.js";
+import { createFakePerformanceObserver } from "./vitals/test-fakes.js";
 
 class TestObserverMonitor extends ObserverMonitor {
     public entries : PerformanceEntryLike[] = [];
@@ -8,6 +10,19 @@ class TestObserverMonitor extends ObserverMonitor {
     protected processEntry(entry : PerformanceEntryLike) : void {
         this.entries.push(entry);
     }
+}
+
+/** A subclass whose constructor sets a field after the base constructor, as `EntryObserver` and `EventTimingMonitor` do. */
+class DeliveryMonitor extends ObserverMonitor {
+    constructor(private readonly onDelivery : (entries : readonly PerformanceEntryLike[]) => void, logger : Logger, Ctor : PerformanceObserverInit) {
+        super("layout-shift", logger, Ctor);
+    }
+
+    protected override receive(entries : readonly PerformanceEntryLike[]) : void {
+        this.onDelivery(entries);
+    }
+
+    protected processEntry() : void {}
 }
 
 function createMockPerformanceObserver() {
@@ -176,6 +191,35 @@ describe("ObserverMonitor", () => {
         monitor.takeRecords();
 
         expect(monitor.entries).toEqual([]);
+    });
+
+    it("gives the buffered entries that the browser delivers inside observe() to the subclass in a microtask, as for old Safari", async () => {
+        const fake = createFakePerformanceObserver(["layout-shift"], { synchronousBuffer : true });
+        const entry = { entryType : "layout-shift", name : "", startTime : 5, duration : 0 };
+        fake.buffer("layout-shift", entry);
+        const logger = { log : vi.fn() };
+        const delivered : PerformanceEntryLike[] = [];
+
+        const monitor = new DeliveryMonitor((entries) => delivered.push(...entries), logger, fake.PerformanceObserver);
+        expect(delivered).toEqual([]);
+        await Promise.resolve();
+
+        expect(delivered).toEqual([entry]);
+        expect(logger.log).not.toHaveBeenCalled();
+        monitor.stop();
+        expect(fake.observedTypes()).toEqual([]);
+    });
+
+    it("drops a delivery from inside observe() when stop() comes before the microtask", async () => {
+        const fake = createFakePerformanceObserver(["layout-shift"], { synchronousBuffer : true });
+        fake.buffer("layout-shift", { entryType : "layout-shift", name : "", startTime : 5, duration : 0 });
+        const delivered : PerformanceEntryLike[] = [];
+
+        const monitor = new DeliveryMonitor((entries) => delivered.push(...entries), { log : vi.fn() }, fake.PerformanceObserver);
+        monitor.stop();
+        await Promise.resolve();
+
+        expect(delivered).toEqual([]);
     });
 
     it("stop() works after a start that failed, and the warning names the entry type and the error", () => {

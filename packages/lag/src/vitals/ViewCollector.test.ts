@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { SHORT_INTERACTION_ESTIMATE_MS, ViewCollector, type EventEntryLike, type PageView } from "./ViewCollector.js";
 import type { NavigationType, VitalValue } from "./types.js";
 
@@ -210,9 +210,39 @@ describe("ViewCollector", () => {
         it("names the largest shift of the worst session window", () => {
             const c = collector("soft-navigation", 0);
             c.addLayoutShift({ startTime : 10, value : 0.01, hadRecentInput : false, sources : [{ node : { id : "small" } }] });
-            c.addLayoutShift({ startTime : 20, value : 0.2, hadRecentInput : false, sources : [{ node : null }, { node : { id : "banner" } }] });
+            c.addLayoutShift({ startTime : 20, value : 0.2, hadRecentInput : false, sources : [{ node : null }, { node : { nodeType : 1, id : "banner" } }] });
 
             expect(byName(c.values())["CLS"]!.attribution).toEqual({ largest_shift_target : "#banner" });
+        });
+
+        it("makes the selector of the largest shift at the time of the shift, while the node is in the document", () => {
+            const node = { nodeType : 1, id : "promo", inDocument : true };
+            const selectorOf = vi.fn((target : unknown) => ((target as typeof node).inDocument ? "#app>div.promo" : "div.promo"));
+            const c = new ViewCollector({ id : "view", navigationType : "soft-navigation", startTime : 0 }, selectorOf);
+            c.addLayoutShift({ startTime : 20, value : 0.2, hadRecentInput : false, sources : [{ node }] });
+            // The page removes the node before the report
+            node.inDocument = false;
+
+            expect(byName(c.values())["CLS"]!.attribution).toEqual({ largest_shift_target : "#app>div.promo" });
+            expect(byName(c.values())["CLS"]!.attribution).toEqual({ largest_shift_target : "#app>div.promo" });
+            expect(selectorOf).toHaveBeenCalledTimes(1);
+        });
+
+        it("names the first source with an element node, as web-vitals does, also when a text node comes first", () => {
+            const c = collector("soft-navigation", 0);
+            c.addLayoutShift({ startTime : 20, value : 0.2, hadRecentInput : false, sources : [{ node : { nodeType : 3, id : "text" } }, { node : { nodeType : 1, id : "banner" } }] });
+
+            expect(byName(c.values())["CLS"]!.attribution).toEqual({ largest_shift_target : "#banner" });
+        });
+
+        it("names the first source when no source has an element node, as web-vitals does", () => {
+            const textFirst = collector("soft-navigation", 0);
+            textFirst.addLayoutShift({ startTime : 20, value : 0.2, hadRecentInput : false, sources : [{ node : { nodeType : 3, id : "text" } }, { node : { nodeType : 3, id : "other" } }] });
+            const emptyFirst = collector("soft-navigation", 0);
+            emptyFirst.addLayoutShift({ startTime : 20, value : 0.2, hadRecentInput : false, sources : [{}, { node : { nodeType : 3, id : "text" } }] });
+
+            expect(byName(textFirst.values())["CLS"]!.attribution).toEqual({ largest_shift_target : "#text" });
+            expect(byName(emptyFirst.values())["CLS"]!.attribution).toEqual({});
         });
     });
 
@@ -327,9 +357,9 @@ describe("ViewCollector", () => {
             expect(byName(without.values())["INP"]!.attribution["interaction_target"]).toBe("");
         });
 
-        it("names the first source with a node, also after a source without a node", () => {
+        it("names the first source with an element node, also after a source without a node", () => {
             const c = collector("soft-navigation", 0);
-            c.addLayoutShift({ startTime : 20, value : 0.2, hadRecentInput : false, sources : [{}, { node : { id : "banner" } }] });
+            c.addLayoutShift({ startTime : 20, value : 0.2, hadRecentInput : false, sources : [{}, { node : { nodeType : 1, id : "banner" } }] });
 
             expect(byName(c.values())["CLS"]!.attribution).toEqual({ largest_shift_target : "#banner" });
         });

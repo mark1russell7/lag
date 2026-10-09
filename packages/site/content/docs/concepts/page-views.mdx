@@ -37,7 +37,7 @@ Each page view has these properties:
 - `navigationType`: one of the navigation types above.
 - `startTime`: the start of the page view, in `performance.now()` time.
 - `interactionId`: for a soft navigation, the interaction that caused it.
-- `url`: the URL at the start of the page view, without the query string and the fragment.
+- `url`: the URL at the start of the page view, without the query string and the fragment. For a restore, it is the URL of the document at the `pageshow` event.
 
 ```ts
 import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@lag/core";
@@ -90,9 +90,9 @@ The interaction count comes from `performance.interactionCount` where the browse
 - `stop()` makes a final checkpoint.
 - `flush()` makes a checkpoint that is not final.
 
-After the final checkpoint, the page view has ended, and no report for it comes. For example, a `flush()` after `pagehide` makes no second report.
+After the final checkpoint, the page view has ended, and no report for it comes. For example, a `flush()` after `pagehide` makes no second report. A checkpoint that is not final and has no values makes no report.
 
-At each delivery of the browser and before each checkpoint, `PageViewVitals` also takes the entries that the other observers did not deliver yet. It processes all of them in the sequence of their start times, but it keeps the sequence of the browser for each observer. A `soft-navigation` entry starts a new page view, and the entries after it go to the new page view. The new page view ignores the interaction that caused the soft navigation, also when the browser delivers one of its entries after the `soft-navigation` entry. A checkpoint that is not final and has no values makes no report.
+At each delivery of the browser and before each checkpoint, `PageViewVitals` also takes the entries that the other observers did not deliver yet. It processes all of them in the sequence of their start times, but it keeps the sequence of the browser for each observer. A `soft-navigation` entry starts a new page view, and the entries after it in this sequence go to the new page view. As in web-vitals, an entry that the browser delivered before the `soft-navigation` entry stays in the earlier page view, also if it starts later. The new page view ignores the interaction that caused the soft navigation, also when the browser delivers one of its entries after the `soft-navigation` entry.
 
 <Mermaid
   chart={pageViewChart}

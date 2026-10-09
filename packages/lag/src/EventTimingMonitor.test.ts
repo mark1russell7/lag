@@ -1,6 +1,7 @@
 import { vi, expect } from "vitest";
 import { EventTimingMonitor, interactionType } from "./EventTimingMonitor.js";
 import type { PerformanceEntryList, PerformanceObserverInit, EventTimingEntry } from "./perf-types.js";
+import { createFakePerformanceObserver } from "./vitals/test-fakes.js";
 
 function createMockPerformanceObserver() {
     let capturedCallback : ((list : PerformanceEntryList) => void) | undefined;
@@ -195,6 +196,28 @@ describe("EventTimingMonitor", () => {
         expect(monitor.getINP()).toBe(296);
     });
 
+    it("counts the interactions from the start of the page, as the buffered candidates from before the start do", () => {
+        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
+        // 60 interactions before the start of the monitor
+        let browserCount = 60;
+        const monitor = new EventTimingMonitor(vi.fn(), { log : vi.fn() }, MockCtor, () => browserCount);
+
+        // The buffer of the browser has the two long ones
+        triggerEntries([makeEventEntry({ interactionId : 7, duration : 400 }), makeEventEntry({ interactionId : 14, duration : 120 })]);
+
+        expect(monitor.getInteractionCount()).toBe(60);
+        // 60 interactions: one outlier ignored, as for the lifetime of the page
+        expect(monitor.getINP()).toBe(120);
+
+        // A restart gets the buffered entries again, and the count still starts at the start of the page
+        monitor.stop();
+        browserCount = 80;
+        monitor.start();
+        triggerEntries([makeEventEntry({ interactionId : 7, duration : 400 }), makeEventEntry({ interactionId : 14, duration : 120 })]);
+        expect(monitor.getInteractionCount()).toBe(80);
+        expect(monitor.getINP()).toBe(120);
+    });
+
     it("counts the interactions it saw when the browser count is missing", () => {
         const { MockCtor, triggerEntries } = createMockPerformanceObserver();
         const monitor = new EventTimingMonitor(vi.fn(), { log : vi.fn() }, MockCtor, () => undefined);
@@ -203,6 +226,20 @@ describe("EventTimingMonitor", () => {
 
         expect(monitor.getInteractionCount()).toBe(10);
         expect(monitor.getINP()).toBe(300);
+    });
+
+    it("processes the buffered entries that the browser delivers inside observe(), as old Safari did", async () => {
+        const fake = createFakePerformanceObserver(["event"], { synchronousBuffer : true });
+        fake.buffer("event", makeEventEntry({ interactionId : 3, duration : 240 }));
+        const report = vi.fn();
+        const logger = { log : vi.fn() };
+
+        const monitor = new EventTimingMonitor(report, logger, fake.PerformanceObserver);
+        await Promise.resolve();
+
+        expect(monitor.getINP()).toBe(240);
+        expect(report).toHaveBeenCalledTimes(1);
+        expect(logger.log).not.toHaveBeenCalled();
     });
 
     it.each([

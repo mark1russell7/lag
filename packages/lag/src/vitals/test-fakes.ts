@@ -33,10 +33,16 @@ export function createFakeEventTarget() {
     };
 }
 
-/** A fake `PerformanceObserver`. `deliver` gives entries immediately. `queue` keeps them for `takeRecords`. */
-export function createFakePerformanceObserver(supportedEntryTypes? : readonly string[]) {
+/**
+ * A fake `PerformanceObserver`. `deliver` gives entries immediately. `queue` keeps them for `takeRecords`.
+ * `buffer` adds entries to the buffer of the browser: `observe()` with `buffered: true` queues them for the
+ * observer. With `synchronousBuffer`, `observe()` gives them to the callback at once, as old Safari did
+ * (WebKit bug 247863).
+ */
+export function createFakePerformanceObserver(supportedEntryTypes? : readonly string[], options : { synchronousBuffer? : boolean } = {}) {
     type Callback = (list : PerformanceEntryList, observer : PerformanceObserverInstance) => void;
     const observers = new Set<FakeObserver>();
+    const buffers = new Map<string, PerformanceEntryLike[]>();
 
     class FakeObserver implements PerformanceObserverInstance {
         static readonly supportedEntryTypes = supportedEntryTypes;
@@ -44,10 +50,14 @@ export function createFakePerformanceObserver(supportedEntryTypes? : readonly st
         options : PerformanceObserverOptions & { buffered? : boolean } = {};
         pending : PerformanceEntryLike[] = [];
         constructor(private readonly callback : Callback) {}
-        observe(options : PerformanceObserverOptions & { type : string; buffered? : boolean }) {
-            this.type = options.type;
-            this.options = options;
+        observe(observeOptions : PerformanceObserverOptions & { type : string; buffered? : boolean }) {
+            this.type = observeOptions.type;
+            this.options = observeOptions;
             observers.add(this);
+            const buffered = observeOptions.buffered === true ? [...(buffers.get(observeOptions.type) ?? [])] : [];
+            if (buffered.length === 0) return;
+            if (options.synchronousBuffer === true) this.notify(buffered);
+            else this.pending.push(...buffered);
         }
         disconnect() {
             observers.delete(this);
@@ -69,6 +79,9 @@ export function createFakePerformanceObserver(supportedEntryTypes? : readonly st
         },
         queue(type : string, ...entries : PerformanceEntryLike[]) {
             for (const observer of observers) if (observer.type === type) observer.pending.push(...entries);
+        },
+        buffer(type : string, ...entries : PerformanceEntryLike[]) {
+            buffers.set(type, [...(buffers.get(type) ?? []), ...entries]);
         },
         observedTypes() : string[] {
             return [...observers].map(o => o.type);
@@ -104,20 +117,25 @@ export function createFakeLifecycle(initialVisibility : "visible" | "hidden" = "
 export type FakePage = PageSource & {
     setPrerendering(value : boolean) : void;
     setNavigation(value : NavigationInfo | undefined) : void;
+    /** This method changes the value of `url()`. */
+    setUrl(value : string | undefined) : void;
     activate() : void;
 };
 
-/** A page source with settable state. */
+/** A page source with settable state. Only with the option `url`, the source has `url()`. */
 export function createFakePage(options : {
     navigation? : NavigationInfo | undefined;
     prerendering? : boolean;
     wasDiscarded? : boolean;
     hiddenTimes? : number[];
+    url? : string;
 } = {}) : FakePage {
     let navigation = "navigation" in options ? options.navigation : { type : "navigate" as const, activationStart : 0, responseStart : 200, url : "https://shop.example/cart?item=7#top" };
     let prerendering = options.prerendering === true;
+    let url = options.url;
     const activationListeners = new Set<() => void>();
     return {
+        ...(options.url !== undefined ? { url : () => url } : {}),
         navigation : () => navigation,
         isPrerendering : () => prerendering,
         wasDiscarded : () => options.wasDiscarded === true,
@@ -128,6 +146,7 @@ export function createFakePage(options : {
         },
         setPrerendering(value) { prerendering = value; },
         setNavigation(value) { navigation = value; },
+        setUrl(value) { url = value; },
         activate() {
             prerendering = false;
             for (const listener of [...activationListeners]) listener();

@@ -21,9 +21,12 @@ function setup(options : {
     softNavigations? : boolean;
     interactionCount? : () => number;
     describeNode? : (node : unknown) => string;
+    /** The entries in the buffer of the browser before the start, and whether `observe()` delivers them at once (old Safari). */
+    buffered? : { entries : Record<string, PerformanceEntryLike[]>; synchronous : boolean };
 } = {}) {
     const fake = createFakeLifecycle(options.visibility ?? "visible");
-    const observer = createFakePerformanceObserver("supported" in options ? options.supported : ALL_TYPES);
+    const observer = createFakePerformanceObserver("supported" in options ? options.supported : ALL_TYPES, { synchronousBuffer : options.buffered?.synchronous === true });
+    for (const [type, entries] of Object.entries(options.buffered?.entries ?? {})) observer.buffer(type, ...entries);
     const reports : VitalsReport[] = [];
     const frames : Array<() => void> = [];
     const logger = { log : vi.fn() };
@@ -252,6 +255,18 @@ describe("PageViewVitals", () => {
             expect(valuesOf(t.reports.at(-1))).toEqual({ FCP : 500, CLS : 0 });
         });
 
+        it.each([false, true])("gets the buffered FCP and layout shifts, also when observe() delivers them at once (old Safari: %s)", async (synchronous) => {
+            const t = setup({ buffered : { entries : { "paint" : [paintEntry(500)], "layout-shift" : [shiftEntry(600, 0.2)] }, synchronous } });
+            await Promise.resolve();
+            t.setNow(1_000);
+            t.setVisibility("hidden");
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ FCP : 500, CLS : 0.2 });
+            expect(t.logger.log).not.toHaveBeenCalled();
+            t.vitals.stop();
+            expect(t.observer.observedTypes()).toEqual([]);
+        });
+
         it("makes no report at a checkpoint when there are no values", () => {
             const t = setup({ page : undefined });
             t.setVisibility("hidden");
@@ -419,6 +434,16 @@ describe("PageViewVitals", () => {
 
             expect(valuesOf(t.reports.filter(r => r.view.id === "view-1").at(-1))).not.toHaveProperty("INP");
             expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ INP : 300 });
+        });
+
+        it("keeps an entry that the browser delivered before the soft-navigation entry in the earlier view, also when it starts later, as web-vitals does", () => {
+            const t = setup({ softNavigations : true });
+            t.observer.deliver("event", eventEntry({ interactionId : 90, startTime : 3_500, duration : 300 }));
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9" }));
+            t.setVisibility("hidden", 8_000);
+
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-1").at(-1))).toMatchObject({ INP : 300 });
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).not.toHaveProperty("INP");
         });
 
         it("ignores the paints of the navigation after the next click, as web-vitals makes the LCP final at the next input", () => {
@@ -893,6 +918,29 @@ describe("PageViewVitals", () => {
 
             expect(valuesOf(t.reports.filter(r => r.view.id === "view-1").at(-1))).toMatchObject({ INP : 80 });
             expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ INP : 300 });
+        });
+
+        it("gives a restored view the URL of the document at the restore, without the query string and the fragment", () => {
+            const page = createFakePage({ url : "https://shop.example/cart?item=7#top" });
+            const t = setup({ page });
+            // The page changed its URL (history.pushState) before the user left
+            page.setUrl("https://shop.example/orders/42?token=SECRET#top");
+            t.pagehide(true);
+            t.setNow(5_000);
+            t.pageshow(true, 5_000);
+
+            expect(t.vitals.getView()).toEqual({ id : "view-2", navigationType : "back-forward-cache", startTime : 5_000, url : "https://shop.example/orders/42" });
+        });
+
+        it("gives a restored view the URL of the load when the page source gives no URL", () => {
+            const page = createFakePage({ url : "https://shop.example/cart" });
+            const t = setup({ page });
+            page.setUrl(undefined);
+            t.pagehide(true);
+            t.setNow(5_000);
+            t.pageshow(true, 5_000);
+
+            expect(t.vitals.getView().url).toBe("https://shop.example/cart");
         });
 
         it("gives a restored view no URL when the load had no URL", () => {

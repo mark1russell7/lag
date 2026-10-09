@@ -126,7 +126,8 @@ function defaultCreateId() : string {
  * activation.
  *
  * At each checkpoint, the instance gives the current values of the view to
- * `report`. These are the checkpoints:
+ * `report`. The caller decides what to do with repeated reports. These are
+ * the checkpoints:
  * - The page becomes hidden.
  * - A new view starts.
  * - `flush()`.
@@ -134,10 +135,13 @@ function defaultCreateId() : string {
  *
  * The instance processes the entries of all observers in one sequence, by
  * time. At each delivery of the browser and before each checkpoint, it also
- * takes the entries that the browser did not deliver yet. Thus, each entry
- * goes to the correct view. This is also true when the browser gives the
- * entries to the observers in a different sequence. The caller decides what
- * to do with repeated reports.
+ * takes the entries that the browser did not deliver yet. Thus, the entries
+ * that wait when the instance processes a `soft-navigation` entry go to the
+ * view of their start times. This is also true when the browser gives the
+ * entries to the observers in a different sequence. But an entry that the
+ * browser delivered before the `soft-navigation` entry stays in the earlier
+ * view, also when it starts after the navigation. The web-vitals library
+ * does the same.
  *
  * The load metrics (FCP, LCP) of the first view count only before the page
  * was hidden for the first time. A page that loads in a background tab has
@@ -381,7 +385,9 @@ export class PageViewVitals {
     private onTransition(transition : StateTransition) : void {
         if (!this.started || this.stopped) return;
         if (transition.trigger === "pageshow" && isVisibleState(transition.to)) {
-            this.startView("back-forward-cache", transition.timestamp);
+            // The URL at the restore: the page can change its URL after the load (history.pushState)
+            const url = this.deps.page?.url?.();
+            this.startView("back-forward-cache", transition.timestamp, url !== undefined ? { url : stripUrlParameters(url) } : {});
             return;
         }
         if (isVisibleState(transition.to)) return;

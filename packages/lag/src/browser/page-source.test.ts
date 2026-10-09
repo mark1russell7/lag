@@ -63,6 +63,12 @@ describe("createPageSource", () => {
         expect(setup().source.wasDiscarded()).toBe(false);
     });
 
+    it("gives the URL of the document from location.href, and no URL without a location", () => {
+        expect(setup({}, { location : { href : "https://shop.example/orders/42?token=1#top" } }).source.url!()).toBe("https://shop.example/orders/42?token=1#top");
+        expect(setup({}, { location : null }).source.url!()).toBeUndefined();
+        expect(setup().source.url!()).toBeUndefined();
+    });
+
     it("listens to prerenderingchange in the capture phase, and the return value removes the listener", () => {
         const { source, target } = setup();
         const listener = vi.fn();
