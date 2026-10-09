@@ -27,6 +27,9 @@ const LOAD_MS = 3_000;
  */
 const MIN_IDLE_MESSAGES = 1_000;
 
+/** The lag of the windows after the load, above the idle windows before it, as a part of a window. */
+const AFTER_LOAD_MARGIN = 0.1;
+
 type Window = { at : number; lag : number; windowMs : number };
 
 /**
@@ -83,6 +86,7 @@ async function measureLoad(test : TestContext, kind : "message" | "timer", taskM
 
     const queue = createMessageTaskQueue(MessageChannel);
     const windows : Window[] = [];
+    const monitorStart = performance.now();
     const monitor : DriftLag = new DriftLag(
         100,
         (lag) => windows.push({ at : performance.now(), lag, windowMs : monitor.getLastWindowMs() }),
@@ -103,7 +107,10 @@ async function measureLoad(test : TestContext, kind : "message" | "timer", taskM
         await wait(LOAD_MS + 3_000);
         const loadBaseline = monitor.getBaselineMs();
 
-        // The windows that end in the second half of the load, and the windows that start 1 s after it
+        // The idle windows that start 0.5 s after the start of the monitor (after its first check), the windows
+        // that end in the second half of the load, and the windows that start 1 s after the load
+        const idleWindows = windows.filter(w => w.at - w.windowMs >= monitorStart + 500 && w.at < loadStart);
+        const idleLag = median(idleWindows.map(w => w.lag));
         const late = windows.filter(w => w.at >= loadStart + LOAD_MS / 2 && w.at < loadEnd);
         const lagFraction = late.reduce((sum, w) => sum + w.lag, 0) / late.reduce((sum, w) => sum + w.windowMs, 0);
         const after = windows.filter(w => w.at - w.windowMs >= loadEnd + 1_000);
@@ -111,7 +118,7 @@ async function measureLoad(test : TestContext, kind : "message" | "timer", taskM
         const afterWindowMs = median(after.map(w => w.windowMs));
         console.log(`${kind} tasks of ${taskMs} ms: lag ${(100 * lagFraction).toFixed(0)}% of the late windows, ` +
             `baseline ${idleBaseline.toFixed(1)} ms before and ${loadBaseline.toFixed(1)} ms after, ` +
-            `median lag after ${afterLag.toFixed(1)} ms in windows of ${afterWindowMs.toFixed(0)} ms`);
+            `median lag ${idleLag.toFixed(1)} ms before and ${afterLag.toFixed(1)} ms after, in windows of ${afterWindowMs.toFixed(0)} ms`);
         await recordMeasurement(`drift-load/${kind}-${taskMs}ms/lag_fraction`, "%", [100 * lagFraction], { scenario : `${kind}-${taskMs}ms` });
 
         expect(late.length).toBeGreaterThan(0);
@@ -120,8 +127,17 @@ async function measureLoad(test : TestContext, kind : "message" | "timer", taskM
         // No lag after the load: a baseline that stays too low gave 19% to 34% of each window in
         // Chromium and Chrome. After a load, the steps of Firefox changed between 8 ms and 16 ms for
         // some seconds, thus the median lag of a window was between -9 ms and 8 ms.
+        //
+        // The limit is the median lag of the idle windows before the load, plus 10% of a window. The
+        // idle windows contain the noise of the computer: with four engines in parallel, their median
+        // was up to 11.5 ms. An earlier limit of 10% of a window failed then, for example with 12.1 ms
+        // in a window of 114 ms in Firefox. A negative idle median comes from the calibration (a
+        // baseline a little above most steps), not from the computer. Thus it does not decrease the
+        // limit. In 48 measurements, the lag after the load was not more than 7.4% of a window above
+        // that base (9 October 2026). The error above gave 19% or more, thus the margin finds it.
+        expect(idleWindows.length).toBeGreaterThan(5);
         expect(after.length).toBeGreaterThan(10);
-        expect(afterLag).toBeLessThan(0.1 * afterWindowMs);
+        expect(afterLag).toBeLessThan(Math.max(0, idleLag) + AFTER_LOAD_MARGIN * afterWindowMs);
     } finally {
         monitor.stop();
         queue.close();
