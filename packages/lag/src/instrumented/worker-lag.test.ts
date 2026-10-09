@@ -216,6 +216,54 @@ describe("createInstrumentedWorkerLag with a real worker handler", () => {
     });
 });
 
+describe("createInstrumentedWorkerLag with a real worker handler and a main thread that is not blocked", () => {
+    beforeEach(() => {
+        vi.useFakeTimers();
+        vi.setSystemTime(NOW);
+    });
+
+    afterEach(() => vi.useRealTimers());
+
+    /** The messages in the two directions arrive at once, in a microtask. Thus the main thread acknowledges each heartbeat at once. */
+    function idlePage(heartbeatIntervalMs : number) {
+        const listeners = new Set<(event : { data : WorkerToMainMessage }) => void>();
+        const handler = createWorkerHandler({
+            postMessage : (message) => queueMicrotask(() => { for (const listener of [...listeners]) listener({ data : message }); }),
+            setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+            clearTimeoutFn : (id) => clearTimeout(id),
+            clock : { now : () => Date.now() },
+        });
+        const meter = createRecordingMeter();
+        const handle = createInstrumentedWorkerLag({
+            logger : { log : vi.fn() },
+            clock : { now : () => 0 },
+            meter : meter.meter,
+            worker : {
+                postMessage : (message) => queueMicrotask(() => handler.handleMessage(message)),
+                addEventListener : (_type, listener) => { listeners.add(listener); },
+                removeEventListener : (_type, listener) => { listeners.delete(listener); },
+            },
+            performance : { timeOrigin : 0, now : () => Date.now() },
+            setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+            clearTimeoutFn : (id) => clearTimeout(id),
+            workerHeartbeatIntervalMs : heartbeatIntervalMs,
+        });
+        return { handle, meter };
+    }
+
+    it("counts no hang in 60 s, also with a heartbeat interval of the hang threshold or more", async () => {
+        for (const intervalMs of [1_000, 4_000, 5_000, 10_000]) {
+            const page = idlePage(intervalMs);
+            await vi.advanceTimersByTimeAsync(60_000);
+            page.handle.stop();
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(page.meter.values("lag_worker_main_block_histogram"), `${intervalMs} ms`).toHaveLength(60_000 / intervalMs);
+            expect(page.meter.sum("lag_main_thread_hangs"), `${intervalMs} ms`).toBe(0);
+        }
+    });
+});
+
 describe("createInstrumentedWorkerLag with the messages of a worker", () => {
     beforeEach(() => {
         vi.useFakeTimers();
