@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { SCHEMA_VERSION, type RunReport } from "@lag/report";
 import { reportFileName } from "./project-reporter.js";
-import { mergeIndex, packageSlug, parseResultLines, runFile, runId, suiteKind, suiteMeta, toBudgets, toMeasurements, type ResultRecord } from "./model.js";
+import {
+    mergeIndex,
+    packageSlug,
+    parseResultLines,
+    runExitCode,
+    runFile,
+    runId,
+    suiteKind,
+    suiteMeta,
+    toBudgets,
+    toMeasurements,
+    type ResultRecord,
+} from "./model.js";
 
 function run(id : string, createdAt : string) : RunReport {
     return { schemaVersion : SCHEMA_VERSION, id, createdAt, suites : [], coverage : [], mutation : [], measurements : [], budgets : [] };
@@ -99,5 +111,20 @@ describe("the run index", () => {
         let index = mergeIndex(undefined, run("r0", "2026-10-01T00:00:00.000Z"));
         for (let i = 1; i < 5; i++) index = mergeIndex(index, run(`r${i}`, `2026-10-0${i + 1}T00:00:00.000Z`), 3);
         expect(index.runs.map(r => r.id)).toEqual(["r2", "r3", "r4"]);
+    });
+});
+
+describe("the result of the collector", () => {
+    const passing = { name : "CPU", unit : "%", value : 1, limit : 2, pass : true };
+
+    it("fails when a step gave an exit code that is not 0, also without a failed test", () => {
+        expect(runExitCode(0, [passing], [0, 0])).toBe(0);
+        expect(runExitCode(0, [passing], [0, 1])).toBe(1);
+        expect(runExitCode(0, [], [2])).toBe(1);
+    });
+
+    it("fails when a test or a budget failed", () => {
+        expect(runExitCode(1, [], [0])).toBe(1);
+        expect(runExitCode(0, [{ ...passing, value : 3, pass : false }], [0])).toBe(1);
     });
 });

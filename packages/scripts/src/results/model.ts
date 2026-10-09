@@ -130,6 +130,15 @@ export function toBudgets(records : readonly ResultRecord[]) : BudgetResult[] {
     return [...byName.values()].sort((a, b) => Number(a.pass) - Number(b.pass) || a.name.localeCompare(b.name));
 }
 
+/**
+ * The exit code of the collector. It is 1 when a test or a budget failed, or
+ * when a step gave an exit code that is not 0. A step can fail without a
+ * failed test in the reports, for example when Vitest cannot start.
+ */
+export function runExitCode(failedTests : number, budgets : readonly BudgetResult[], stepExitCodes : readonly number[]) : 0 | 1 {
+    return failedTests > 0 || budgets.some(budget => !budget.pass) || stepExitCodes.some(code => code !== 0) ? 1 : 0;
+}
+
 /** A run ID that sorts by time and shows the commit: "2026-10-07-153012-b492a0a". */
 export function runId(createdAt : Date, commit? : string) : string {
     const iso = createdAt.toISOString();

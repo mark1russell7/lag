@@ -26,6 +26,10 @@ export type VitestJsonReport = {
         name : string;
         startTime? : number;
         endTime? : number;
+        /** "failed" also for an error outside the tests, for example in a hook or at the import of the file. */
+        status? : string;
+        /** The first error of the file outside its tests, or "". */
+        message? : string;
         assertionResults : Array<{
             title : string;
             ancestorTitles? : string[];
@@ -55,17 +59,34 @@ export function relativePath(file : string, rootDir : string) : string {
     return path.toLowerCase().startsWith(root.toLowerCase() + "/") ? path.slice(root.length + 1) : path;
 }
 
+/**
+ * The name of a failed test that stands for the errors of a file or a suite
+ * outside its tests. For example, a hook failed, or the import of the file
+ * failed. Such an error has no failed test of its own.
+ */
+export const ERRORS_OUTSIDE_TESTS = "Errors outside the tests";
+
 export function fromVitestJson(report : VitestJsonReport, meta : SuiteMeta, rootDir : string) : SuiteResult {
-    const files : TestFileResult[] = report.testResults.map((file) => ({
-        file : relativePath(file.name, rootDir),
-        tests : file.assertionResults.map((test) : TestCaseResult => ({
+    const files : TestFileResult[] = report.testResults.map((file) => {
+        const tests = file.assertionResults.map((test) : TestCaseResult => ({
             name : test.title,
             path : [...(test.ancestorTitles ?? []), test.title],
             status : STATUS_MAP[test.status] ?? "failed",
             durationMs : test.duration ?? 0,
             failureMessages : test.failureMessages ?? [],
-        })),
-    }));
+        }));
+        // A failed file without a failed test: the failure must count
+        if (file.status === "failed" && !tests.some(test => test.status === "failed")) {
+            tests.push({
+                name : ERRORS_OUTSIDE_TESTS,
+                path : [ERRORS_OUTSIDE_TESTS],
+                status : "failed",
+                durationMs : 0,
+                failureMessages : [file.message || "The file failed outside its tests, without a message."],
+            });
+        }
+        return { file : relativePath(file.name, rootDir), tests };
+    });
 
     const starts = report.testResults.map(f => f.startTime).filter((t) : t is number => t !== undefined);
     const ends = report.testResults.map(f => f.endTime).filter((t) : t is number => t !== undefined);

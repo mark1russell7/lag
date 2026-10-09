@@ -143,7 +143,9 @@ The stress tests use the workload profiles of `@lag/load` to make main-thread lo
 3. It reads the coverage summary, and the newest Stryker report if one exists.
 4. It writes one run to `packages/site/public/data/results/`. Git ignores this folder.
 
-The results page reads this folder. It shows the tests of each engine, the skips with their reasons, the coverage, the surviving mutants, the measurements and the budgets.
+Some failures have no failed test. A `beforeAll` hook that fails skips the tests of its suite. An `afterAll` hook that fails keeps them passed, and an error at the import of a file gives no tests. Thus the reporter adds a failed test with the name `Errors outside the tests` for each file or suite with such errors. The command fails when a test or a budget failed, or when a step gave an exit code that is not 0.
+
+The results page reads this folder. It shows the tests of each engine, the skips with their reasons, the coverage, the surviving mutants, the measurements and the budgets. A package with only skipped tests, or without tests, does not get the passed icon.
 
 ## Continuous integration
 
