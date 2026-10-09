@@ -14,30 +14,44 @@ import { recordMeasurement } from "./commands.js";
  */
 
 const LOAD_MS = 3_000;
-/** The probe cannot confirm a baseline if it measures more busy time than this on an idle page. */
-const MAX_IDLE_BUSY_MS = 10;
+
+/**
+ * The probe can confirm a baseline only if one probe on an idle page posts
+ * this number of messages in 100 ms, or more. In the WebKit build of
+ * Playwright for Windows, each message waits for a timer of 0 ms of the
+ * system. There, the most messages of three probes were 122 to 278 in 32
+ * runs (9 October 2026, also with four engines in parallel). In Chromium
+ * and Firefox, they were 9,681 to 34,180. An earlier rule used the busy time
+ * of the probe. In WebKit for Windows, that time changed from 0 ms to 87 ms
+ * with the load of the computer. Then the test operated, and it failed.
+ */
+const MIN_IDLE_MESSAGES = 1_000;
 
 type Window = { at : number; lag : number; windowMs : number };
 
 /**
- * The busy time that a probe measures on an idle page, in 100 ms: the least
- * of three measurements. In the WebKit build of Playwright for Windows, a
- * message waits for the next timer tick of the system (approximately 15 ms)
- * after an idle period. The other engines measured 0 ms to 3 ms, and up to
- * 21 ms one time, after a test that logged much text.
+ * The probe on an idle page, three times for 100 ms: the most messages that
+ * one probe posted, and the least busy time.
  */
-async function idleProbeBusyMs() : Promise<number> {
+async function idleProbe() : Promise<{ messages : number; busyMs : number }> {
+    let posted = 0;
     const queue = createMessageTaskQueue(MessageChannel);
-    const probe = new BusyTimeProbe((callback) => queue.post(callback), performance);
-    const results : number[] = [];
+    const probe = new BusyTimeProbe((callback) => {
+        posted++;
+        queue.post(callback);
+    }, performance);
+    const messages : number[] = [];
+    const busyMs : number[] = [];
     for (let i = 0; i < 3; i++) {
         await wait(200);
+        posted = 0;
         probe.start();
         await wait(100);
-        results.push(probe.stop());
+        busyMs.push(probe.stop());
+        messages.push(posted);
     }
     queue.close();
-    return Math.min(...results);
+    return { messages : Math.max(...messages), busyMs : Math.min(...busyMs) };
 }
 
 /** This function starts equal tasks until `endAt`: each task starts the next with a message, or with `setTimeout(0)`. */
@@ -60,10 +74,11 @@ function startLoad(kind : "message" | "timer", taskMs : number, endAt : number) 
 }
 
 async function measureLoad(test : TestContext, kind : "message" | "timer", taskMs : number) : Promise<void> {
-    const idleBusyMs = await idleProbeBusyMs();
-    console.log(`Probe on an idle page: ${idleBusyMs.toFixed(1)} ms of busy time in 100 ms`);
-    await recordMeasurement("drift-load/probe/idle_busy_time", "ms", [idleBusyMs]);
-    test.skip(idleBusyMs > MAX_IDLE_BUSY_MS, `A message waits on an idle page in this browser (${idleBusyMs.toFixed(1)} ms of 100 ms). ` +
+    const idle = await idleProbe();
+    console.log(`Probe on an idle page: ${idle.messages} messages and ${idle.busyMs.toFixed(1)} ms of busy time in 100 ms`);
+    await recordMeasurement("drift-load/probe/idle_messages", "{message}", [idle.messages]);
+    await recordMeasurement("drift-load/probe/idle_busy_time", "ms", [idle.busyMs]);
+    test.skip(idle.messages < MIN_IDLE_MESSAGES, `A message waits on an idle page in this browser (${idle.messages} messages in 100 ms). ` +
         "Thus the probe cannot confirm a baseline, and DriftLag uses the recent steps, as without a probe.");
 
     const queue = createMessageTaskQueue(MessageChannel);
