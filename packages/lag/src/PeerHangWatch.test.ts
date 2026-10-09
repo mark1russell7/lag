@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isPeerMessage, PEER_CHANNEL_NAME, PeerHangWatch, peerLockName, type PeerHangWatchOptions } from "./PeerHangWatch.js";
 import { SimulatedOrigin, type SimulatedPage } from "./test-peers.js";
-import { createMemoryHangJournal, type HangRecord } from "./hang-journal.js";
+import { createMemoryHangJournal, type HangJournal, type HangRecord } from "./hang-journal.js";
 
 type Watched = { page : SimulatedPage; watch : PeerHangWatch; hangs : HangRecord[]; sources : string[] };
 
@@ -283,6 +283,33 @@ describe("PeerHangWatch", () => {
         b.page.kill();
         await advance(2_000);
         expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+    });
+
+    it("reports nothing and puts the record back when it stops while it takes the record from the journal", async () => {
+        const memory = createMemoryHangJournal();
+        let release : () => void = () => {};
+        const journal : HangJournal = {
+            ...memory,
+            take : (pageId, latestSeenAt) => new Promise(resolve => { release = () => resolve(memory.take(pageId, latestSeenAt)); }),
+        };
+        const a = open("a", { journal });
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        const record = { pageId : "b", startedAt : Date.now() - 200, lastSeenAt : Date.now() + 6_000, attributes : {} };
+        await memory.put(record);
+        await advance(8_000);
+        b.page.kill();
+        // The wait for the last messages ends, and a takes the record
+        await advance(2_000);
+        a.watch.stop();
+        release();
+        await advance(10);
+
+        expect(a.hangs).toEqual([]);
+        expect(await memory.list()).toEqual([record]);
+        expect(origin.heldBy(a.page)).toEqual([]);
+        expect(a.page.logs).toEqual([]);
     });
 
     it("watches the others while hidden, but sends no heartbeat and holds no lock", async () => {

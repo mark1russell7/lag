@@ -351,7 +351,13 @@ export class PeerHangWatch {
         this.request(claimLockName(pageId), { ifAvailable : true }, async (lock) => {
             if (lock === null || this.stopped) return;
             // The record of the worker of the page, if the worker could write it
-            const record = await this.options.journal?.take(pageId, Number.POSITIVE_INFINITY).catch(() => undefined);
+            const journal = this.options.journal;
+            const record = await journal?.take(pageId, Number.POSITIVE_INFINITY).catch(() => undefined);
+            if (this.stopped) {
+                // Keep the record for the next page
+                if (journal && record) await journal.put(record).catch(() => {});
+                return;
+            }
             this.options.onAbandonedHang(record ?? { pageId, startedAt : peer.lastBeatAt, lastSeenAt : endedAt, attributes : peer.attributes }, "peer");
             // No other page may report the same hang. Thus this page keeps the claim.
             await this.stoppedPromise;
