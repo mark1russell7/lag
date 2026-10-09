@@ -25,17 +25,22 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      # Incremental mode: Stryker tests again only the mutants whose code or tests changed
+      # Incremental mode: Stryker tests again only the mutants whose code or tests changed.
+      # A run takes the newest file of its own branch, or else the newest file of main. The
+      # file of another branch can keep the result of a mutant that is not true on this
+      # branch (a stale kill). The run ID in the key lets each run save its own file.
       - name: Restore the incremental file
         uses: actions/cache@v4
         with:
           path: packages/lag/reports/stryker-incremental.json
-          key: stryker-incremental-${{ github.ref_name }}-${{ github.sha }}
+          key: stryker-incremental-${{ github.ref_name }}-${{ github.sha }}-${{ github.run_id }}
           restore-keys: |
             stryker-incremental-${{ github.ref_name }}-
-            stryker-incremental-
+            stryker-incremental-main-
+      # The weekly run tests all mutants again (--force) and writes a new incremental file.
+      # Thus a stale kill stays for one week at most. A manual run stays incremental and fast.
       - name: Stryker
-        run: pnpm mutation
+        run: pnpm --filter @lag/core run mutation ${{ github.event_name == 'schedule' && '--force' || '' }}
       - name: Upload the mutation report
         if: always()
         uses: actions/upload-artifact@v4
