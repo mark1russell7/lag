@@ -17,6 +17,7 @@ import {
     queryMimirCount,
     wait,
     waitForMimirCount,
+    waitUntil,
     type TeeMeter,
 } from "./harness.js";
 import { features } from "./features.js";
@@ -193,7 +194,9 @@ describe("Lag Monitor Integration", () => {
     });
 
     it("MacrotaskLag, SchedulingFairness and idle monitors sample within one 5s cycle", async () => {
-        await wait(5_500);
+        // A sample comes in each cycle of 5 s. The iOS Simulator can stop the timers of the page for some
+        // seconds (a wait of 5.5 s took 16.9 s in CI), thus the test waits for the first sample, up to 20 s.
+        await waitUntil(() => tee.values("lag_macrotask_histogram").length > 0 && tee.values("lag_scheduling_message_channel_histogram").length > 0, 20_000);
 
         expect(tee.values("lag_macrotask_histogram").length).toBeGreaterThan(0);
         expect(tee.values("lag_scheduling_message_channel_histogram").length).toBeGreaterThan(0);
