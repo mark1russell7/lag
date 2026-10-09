@@ -34,6 +34,8 @@ At its start, the monitor makes one `PerformanceObserver`, with `buffered: true`
 - `paint` and `largest-contentful-paint`, for FCP and LCP.
 - `soft-navigation` and `interaction-contentful-paint`, only with `softNavigations: true` and only if the browser has the two types.
 
+Usually the browser delivers the buffered entries in a later task. Old Safari gave them to the callback inside `observe()` (WebKit bug 247863). Then the observer gives them to the monitor in a microtask, as web-vitals does. Thus no FCP or layout shift from the buffer is lost.
+
 The monitor makes no observer, and logs no warning, for a type that is not in `PerformanceObserver.supportedEntryTypes`. A vital whose entry type the browser does not have gets no value, as in web-vitals. INP needs `event`, CLS needs `layout-shift`, LCP needs `largest-contentful-paint`, and FCP needs `paint`. This rule also applies after a restore from the back/forward cache. TTFB needs the navigation entry instead.
 
 `ViewCollector` calculates the values of one page view. `InpCalculator` and `ClsCalculator` give INP and CLS, with the rules of the [Event Timing](/docs/monitors/event-timing) and [layout shift](/docs/monitors/layout-shift) monitors.
@@ -289,7 +291,7 @@ Connect `flush()` to the exporter, so that the last export of a page has the fin
 
 Unit tests:
 
-- `vitals/PageViewVitals.test.ts`, a load: the five vitals at the first hide, and the event threshold of 16 ms. The last LCP candidate of the browser stays, also when its start time is earlier. The interactions of the load count from the start of the page. The final values at `terminated`, and no paints after the first hide. The first hidden time from the `visibility-state` entries, and the types `restore` and `navigate`.
+- `vitals/PageViewVitals.test.ts`, a load: the five vitals at the first hide, and the event threshold of 16 ms. The last LCP candidate of the browser stays, also when its start time is earlier. The interactions of the load count from the start of the page. The final values at `terminated`, and no paints after the first hide. The first hidden time from the `visibility-state` entries, and the types `restore` and `navigate`. The buffered FCP and layout shifts count, also when `observe()` delivers them at once, as in old Safari.
 - `vitals/PageViewVitals.test.ts`, LCP finalization: a click or a key press makes the LCP final. This occurs through the entry of the input or through the DOM event, also for a fast click without an entry. A synthetic click does not, and `stop()` removes the listeners.
 - `vitals/PageViewVitals.test.ts`, prerender and restores: a prerendered page starts at the activation and measures from it. A restore ends the page view and starts a new one, with TTFB 0 and the paint times from two animation frames. The new page view also starts with the event sequence of Chromium. Without entries, the INP of a restore is 8 ms.
 - `vitals/PageViewVitals.test.ts`, soft navigations: they are off by default, start a new page view, and operate only when the browser has the two entry types. The paints and the interactions that the browser did not deliver yet go to the correct page view. A click makes the LCP of the navigation final.

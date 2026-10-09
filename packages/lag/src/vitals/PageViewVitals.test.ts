@@ -21,9 +21,12 @@ function setup(options : {
     softNavigations? : boolean;
     interactionCount? : () => number;
     describeNode? : (node : unknown) => string;
+    /** The entries in the buffer of the browser before the start, and whether `observe()` delivers them at once (old Safari). */
+    buffered? : { entries : Record<string, PerformanceEntryLike[]>; synchronous : boolean };
 } = {}) {
     const fake = createFakeLifecycle(options.visibility ?? "visible");
-    const observer = createFakePerformanceObserver("supported" in options ? options.supported : ALL_TYPES);
+    const observer = createFakePerformanceObserver("supported" in options ? options.supported : ALL_TYPES, { synchronousBuffer : options.buffered?.synchronous === true });
+    for (const [type, entries] of Object.entries(options.buffered?.entries ?? {})) observer.buffer(type, ...entries);
     const reports : VitalsReport[] = [];
     const frames : Array<() => void> = [];
     const logger = { log : vi.fn() };
@@ -250,6 +253,18 @@ describe("PageViewVitals", () => {
             t.setVisibility("hidden");
 
             expect(valuesOf(t.reports.at(-1))).toEqual({ FCP : 500, CLS : 0 });
+        });
+
+        it.each([false, true])("gets the buffered FCP and layout shifts, also when observe() delivers them at once (old Safari: %s)", async (synchronous) => {
+            const t = setup({ buffered : { entries : { "paint" : [paintEntry(500)], "layout-shift" : [shiftEntry(600, 0.2)] }, synchronous } });
+            await Promise.resolve();
+            t.setNow(1_000);
+            t.setVisibility("hidden");
+
+            expect(valuesOf(t.reports.at(-1))).toMatchObject({ FCP : 500, CLS : 0.2 });
+            expect(t.logger.log).not.toHaveBeenCalled();
+            t.vitals.stop();
+            expect(t.observer.observedTypes()).toEqual([]);
         });
 
         it("makes no report at a checkpoint when there are no values", () => {

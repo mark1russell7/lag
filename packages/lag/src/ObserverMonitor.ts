@@ -13,9 +13,13 @@ export abstract class ObserverMonitor {
     /**
      * The constructor starts the observation immediately. In this base class,
      * that is safe, but in `LagMonitor` it is not. `start()` changes only the
-     * fields of this class. Also, `PerformanceObserver` delivers entries
-     * asynchronously. Thus, no entry comes before the construction of the
-     * subclass is complete.
+     * fields of this class.
+     *
+     * Usually, `PerformanceObserver` delivers entries asynchronously. Old
+     * Safari gave the buffered entries to the callback inside `observe()`
+     * (WebKit bug 247863), before the subclass set its fields. Thus `start()`
+     * moves such a delivery to a microtask, as web-vitals does. No entry comes
+     * before the construction of the subclass is complete.
      */
     constructor(
         protected readonly entryType : string,
@@ -38,10 +42,21 @@ export abstract class ObserverMonitor {
             return;
         }
         try {
-            const observer = new this.PerformanceObserverCtor(
-                (list : PerformanceEntryList) => this.receive(list.getEntries()),
-            );
+            let observing = true;
+            const observer = new this.PerformanceObserverCtor((list : PerformanceEntryList) => {
+                const entries = list.getEntries();
+                if (!observing) {
+                    this.receive(entries);
+                    return;
+                }
+                // A delivery inside observe(): give it to the subclass after the construction.
+                // A stop() before the microtask discards it, because a restart gets the buffer again.
+                void Promise.resolve().then(() => {
+                    if (this.observer === observer) this.receive(entries);
+                });
+            });
             observer.observe({ ...this.observeOptions, type : this.entryType, buffered : true });
+            observing = false;
             this.observer = observer;
         } catch (error) {
             this.logger.log("warn", `PerformanceObserver type "${this.entryType}" not supported.`, {
