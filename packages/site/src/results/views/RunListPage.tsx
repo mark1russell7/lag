@@ -11,7 +11,7 @@ import { useThemeColors } from "../../theme/colors";
 import { runLabel, runTrendChart, statusColors } from "../charts";
 import { ChartLegend } from "../components/ChartLegend";
 import { ErrorState, Loading, NoResults } from "../components/States";
-import { STATUS_ORDER } from "../model/tests";
+import { runSummaryStatus, STATUS_ORDER } from "../model/tests";
 import { runTrend, sortRunsNewestFirst } from "../model/trend";
 import { useReportSource } from "../ReportSourceContext";
 import styles from "./Results.module.css";
@@ -54,6 +54,7 @@ function RunList({ index } : { index : RunIndex }) {
                         <thead>
                             <tr>
                                 <th scope="col">Run</th>
+                                <th scope="col">Status</th>
                                 <th scope="col">Date</th>
                                 <th scope="col">Commit</th>
                                 <th scope="col">Branch</th>
@@ -61,6 +62,7 @@ function RunList({ index } : { index : RunIndex }) {
                                 <th scope="col" data-align="right">Failed</th>
                                 <th scope="col" data-align="right">Skipped</th>
                                 <th scope="col" data-align="right">To do</th>
+                                <th scope="col" data-align="right">Failed budgets</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -69,6 +71,7 @@ function RunList({ index } : { index : RunIndex }) {
                                     <th scope="row">
                                         <Link to={encodeURIComponent(run.id)}>{run.id}</Link>
                                     </th>
+                                    <td><StatusIcon kind={runSummaryStatus(run)} /></td>
                                     <td>{formatDateTime(run.createdAt)}</td>
                                     <td>{run.git ? <code>{shortCommit(run.git.commit)}</code> : "–"}</td>
                                     <td>{run.git ? <code>{run.git.branch}</code> : "–"}</td>
@@ -80,6 +83,12 @@ function RunList({ index } : { index : RunIndex }) {
                                     </td>
                                     <td data-align="right">{run.counts.skipped}</td>
                                     <td data-align="right">{run.counts.todo}</td>
+                                    <td data-align="right">
+                                        {/* An index from before the budget counts has no value */}
+                                        {run.budgets === undefined ? "–" : <>
+                                            {run.budgets.fail > 0 ? <StatusIcon kind="failed" showLabel={false} /> : null} {run.budgets.fail}
+                                        </>}
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>

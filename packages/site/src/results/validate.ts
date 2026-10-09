@@ -28,11 +28,18 @@ export function parseRunIndex(value : unknown) : RunIndex {
             || typeof run["id"] !== "string"
             || typeof run["file"] !== "string"
             || typeof run["createdAt"] !== "string"
-            || !isRecord(run["counts"])) {
+            || !isRecord(run["counts"])
+            || !isBudgetCounts(run["budgets"])) {
             throw new ReportDataError(`Run ${index + 1} in the run index is not valid.`);
         }
     });
     return value as RunIndex;
+}
+
+/** The budget counts of a run summary. A summary from before the field has none, and that is valid. */
+function isBudgetCounts(value : unknown) : boolean {
+    if (value === undefined) return true;
+    return isRecord(value) && typeof value["pass"] === "number" && typeof value["fail"] === "number";
 }
 
 const REPORT_LISTS = ["suites", "coverage", "mutation", "measurements", "budgets"] as const;
