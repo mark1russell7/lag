@@ -24,6 +24,7 @@ export type LoadActionId =
     | "block-50"
     | "block-200"
     | "block-800"
+    | "block-6000"
     | "layout-thrash"
     | "gc-pressure"
     | "long-animation-frame"
@@ -36,6 +37,7 @@ const ACTIONS : Readonly<Record<LoadActionId, () => Promise<void>>> = {
     "block-50" : () => syncBusyWait(50),
     "block-200" : () => syncBusyWait(200),
     "block-800" : () => syncBusyWait(800),
+    "block-6000" : () => syncBusyWait(6_000),
     "layout-thrash" : () => layoutThrash(150),
     "gc-pressure" : () => gcPressure(300),
     "long-animation-frame" : () => longAnimationFrame(150)(150),
