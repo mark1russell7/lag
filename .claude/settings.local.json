@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Read(//c/Users/markt/git/grafana-infra/**)",
-      "Bash(docker compose:*)"
-    ]
-  }
-}
