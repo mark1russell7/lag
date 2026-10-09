@@ -22,12 +22,16 @@ Compare it with [Long animation frames](/docs/monitors/long-animation-frames) in
 
 ## How it works
 
-1. The monitor asks for an animation frame. In the callback, it reads the clock (`performance.now()`) and asks for the next frame.
-2. From the second callback, it calculates the delta: the time since the previous callback.
+1. The monitor asks for an animation frame. In the callback, it keeps the frame timestamp, which `requestAnimationFrame` gives to the callback, and asks for the next frame.
+2. From the second callback, it calculates the delta: the time between the frame timestamps of this callback and of the previous callback.
 3. It calculates the dropped frames: `max(1, round(delta / interval)) − 1`. At 60 Hz, a gap of 33 ms is 1 dropped frame, and a gap of 100 ms is 5.
 4. It reports the delta, the frame rate (`1000 / delta`), the dropped frames and the interval that it used.
 
-The default frame interval is automatic. It is the shortest delta of the last 600 frames (approximately 10 s at 60 Hz). The monitor ignores a delta of less than 4 ms, because two callbacks in one frame are noise, not a refresh rate. Before the first frames, the interval is 16.67 ms (60 Hz). A burst of jank does not raise the interval, because the shortest delta stays in the window.
+The frame timestamp is the start of the frame, not the time at which the callback starts. Thus a callback that starts late in its frame does not change the delta. If the callback gets no timestamp, for example from a shim of `requestAnimationFrame`, the monitor reads the clock (`performance.now()`).
+
+The default frame interval is automatic. It is the fifth-shortest delta of the last 600 frames (approximately 10 s at 60 Hz). The monitor ignores a delta of less than 4 ms, because two callbacks in one frame are noise, not a refresh rate. Until the window has 5 deltas, the interval is 16.67 ms (60 Hz). A burst of jank does not raise the interval, because the short deltas stay in the window.
+
+The fifth-shortest delta, not the shortest delta, prevents false dropped frames. For example, at 60 Hz, a late frame and then an on-time frame give one delta of 10.67 ms. With an interval of 10.67 ms, each normal delta of 16.67 ms is 1 dropped frame, for the next 600 frames. With the fifth-shortest delta, 4 short deltas in the window do not change the interval.
 
 The factory records each delta in `lag_frame_delta_histogram`. It adds 1 to `lag_frames` with `outcome="delivered"`, and the dropped frames to `lag_frames` with `outcome="dropped"`. The class also gives `getDroppedFrameRate()`: the dropped frames divided by the expected frames (delivered plus dropped).
 
@@ -85,12 +89,12 @@ if (deps.requestAnimationFrame && deps.cancelAnimationFrame) {
 - **Callbacks:** one animation frame callback for each frame: approximately 60 each second at 60 Hz, and 120 at 120 Hz.
 - **CPU:** the overhead benchmark measured approximately 14 ms of main-thread time each second for the loop alone, because the page then renders each frame. It used Chromium in the new headless mode on a desktop computer (the comment of `overhead/overhead.test.ts`).
 - **Records:** one histogram value and one or two counter values for each frame.
-- **Memory:** a window of at most 600 deltas for the shortest delta.
+- **Memory:** two arrays of at most 600 deltas each: the window in the sequence of the frames, and the same deltas in sorted sequence.
 - **Side effects:** a loop of animation frames keeps the render steps of the browser active in each frame. It also makes the idle periods of the main thread shorter ([clocks and timers](/research/clocks-and-timers)).
 
 ## Limits
 
-- **Callbacks, not presentation.** The delta is the time between two callbacks on the main thread. It does not measure when the frame was on the screen.
+- **Frame starts, not presentation.** The delta is the time between the frame timestamps of two callbacks. It does not measure when the frame was on the screen.
 - **The dropped frames are estimates.** The monitor divides each gap by the interval. A frame interval that changes in less than 600 frames, for example a variable refresh rate, makes the estimate less accurate.
 - **The first frame gives no value.** The first frame has no previous frame.
 - **The monitor changes the page.** The loop of animation frames keeps the render steps active and makes the idle periods shorter. The [idle availability](/docs/monitors/idle-availability) monitor shows this effect.
@@ -100,7 +104,8 @@ if (deps.requestAnimationFrame && deps.cancelAnimationFrame) {
 Unit tests:
 
 - `FrameTimingMonitor.test.ts`: the first frame gives no report, an on-time frame has 0 dropped frames, and a 100 ms gap at 60 Hz has 5 dropped frames. A slightly late frame (17 ms) is on time. The monitor counts the dropped frames and the dropped-frame rate, and `stop()` cancels the pending frame. A fixed `targetFps` sets the interval. One chain of frames after `stop()` and `start()` in the report function, and no gap across the pause.
-- `FrameTimingMonitor.test.ts`, the automatic interval: it agrees with a 120 Hz display. It does not count a 30 fps limit as dropped frames. It keeps its value through a burst of jank, and it ignores deltas of less than 4 ms.
+- `FrameTimingMonitor.test.ts`, the automatic interval: it agrees with a 120 Hz display. It does not count a 30 fps limit as dropped frames. It keeps its value through a burst of jank, and it ignores deltas of less than 4 ms. One short delta, from a late frame and an on-time frame, gives no dropped frames. The delta comes from the frame timestamps, also when some callbacks start 6 ms late. Without a timestamp, the monitor reads the clock.
+- `FrameTimingMonitor.test.ts`, the rules of the interval: 16.67 ms until the window has 5 deltas, and then the fifth-shortest delta. The interval follows a change from 60 Hz to 120 Hz at the fifth short delta, and from 120 Hz to 60 Hz after 600 frames.
 - `setup-all-monitors.test.ts`: the monitor pauses while the page is hidden.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
