@@ -108,10 +108,15 @@ describe("Lag Monitor Integration", () => {
         await wait(300);
         const before = tee.values("lag_drift_histogram").length;
         blockMainThread(300);
-        await wait(300);
+        const blockEnd = performance.now();
+        // The window of the block ends after the block. The first window of the page can be long: in WebKit
+        // on Windows, it had up to 30 steps of 15.6 ms and the blocking of the start of the page. A read
+        // 300 ms after the block found no window in 2 of 37 runs with four engines in parallel.
+        const ended = await waitUntil(() => tee.records("lag_drift_histogram").some(r => r.time >= blockEnd), 2_000);
 
         const max = tee.max("lag_drift_histogram");
         console.log(`DriftLag max after a 300ms block: ${max.toFixed(1)}ms`);
+        expect(ended, "a DriftLag window ends in 2 s after the block").toBe(true);
         await recordMeasurement("integration/block-300ms/lag_drift_histogram", "ms", tee.values("lag_drift_histogram").slice(before), { scenario : "block-300ms" });
         expect(max).toBeGreaterThan(200);
     });
