@@ -5,6 +5,7 @@ import { LiveChart } from "./LiveChart";
 import { LoadPanel } from "./LoadPanel";
 import type { PlaygroundSession, PlaygroundSnapshot } from "./session";
 import { StatePanel } from "./StatePanel";
+import { SessionTimeline } from "./timeline/SessionTimeline";
 import { useSession } from "./use-session";
 import styles from "./Playground.module.css";
 
@@ -72,6 +73,19 @@ function Charts({ snapshot } : { snapshot : PlaygroundSnapshot }) {
     );
 }
 
+function Timeline({ snapshot } : { snapshot : PlaygroundSnapshot }) {
+    return (
+        <section className={styles.section} aria-labelledby="timeline-heading">
+            <h2 id="timeline-heading">Session timeline</h2>
+            <p className={styles.lead}>
+                The timeline shows what the monitors recorded in this session: their metrics, their events and their spans, on
+                one time axis. Make load above, and look for the long frames, the lag and the hangs that it causes.
+            </p>
+            <SessionTimeline model={snapshot.timeline} />
+        </section>
+    );
+}
+
 /** A live demo that runs the real monitors in this page. */
 export function PlaygroundPage() {
     const { session, snapshot, error } = useSession("full");
@@ -103,6 +117,7 @@ export function PlaygroundPage() {
             {session && snapshot ? (
                 <>
                     <LoadPanel session={session} snapshot={snapshot} />
+                    <Timeline snapshot={snapshot} />
                     <Charts snapshot={snapshot} />
                     <StatePanel snapshot={snapshot} />
                 </>

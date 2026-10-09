@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ScrollTable } from "../ScrollTable/ScrollTable";
 import styles from "./DataTable.module.css";
 
@@ -50,12 +51,22 @@ export function DataTable({ spec, label } : { spec : DataTableSpec; label : stri
     );
 }
 
+export type DataTableDisclosureProps = {
+    /** The table, or a function that makes it. With `lazy`, the function operates only while the disclosure is open. */
+    spec : DataTableSpec | (() => DataTableSpec);
+    title : string;
+    /** When true, the table renders only while the disclosure is open. A live chart that updates frequently uses it. */
+    lazy? : boolean;
+};
+
 /** A data table behind a disclosure, under a chart. */
-export function DataTableDisclosure({ spec, title } : { spec : DataTableSpec; title : string }) {
+export function DataTableDisclosure({ spec, title, lazy = false } : DataTableDisclosureProps) {
+    const [open, setOpen] = useState(false);
+    const show = !lazy || open;
     return (
-        <details className={styles.disclosure}>
+        <details className={styles.disclosure} onToggle={(event) => setOpen(event.currentTarget.open)}>
             <summary>Show the data as a table</summary>
-            <DataTable spec={spec} label={`Data: ${title}`} />
+            {show ? <DataTable spec={typeof spec === "function" ? spec() : spec} label={`Data: ${title}`} /> : null}
         </details>
     );
 }
