@@ -9,7 +9,7 @@ import { lifecycleMetrics } from "./metrics.data";
 
 `LifecycleStateMachine` monitors the Page Lifecycle state of the page: `active`, `passive`, `hidden`, `frozen` or `terminated`. It counts each transition in `lag_lifecycle_transitions`.
 
-The state machine is the npm package [`page-lifecycle-tracker`](https://mark1russell7.github.io/page-lifecycle-tracker/). It came from lag. `@lag/core` exports its class `PageLifecycle` as `LifecycleStateMachine`.
+The state machine is the npm package [`page-lifecycle-tracker`](https://mark1russell7.github.io/page-lifecycle-tracker/). It came from lag. `@mark1russell7/lag` exports its class `PageLifecycle` as `LifecycleStateMachine`.
 
 In a page, `createBrowserDeps()` gives the tracker that the page shares (`getPageLifecycle()`). An exporter can subscribe to the same tracker in the `export` phase. Then its subscribers start after the subscribers of the monitors, also at the end of the page in Chromium. The option `sharedLifecycle: false` gives the monitors their own tracker. The other monitors use it: the measurement conditions pause and validate with it, and the page-view vitals make their checkpoints with it. [Page lifecycle](/docs/concepts/page-lifecycle) explains the states and why the monitors pause.
 
@@ -140,7 +140,7 @@ The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `LifecycleDeps` (`d
 
 ```ts
 import { metrics } from "@opentelemetry/api";
-import { createBrowserDeps, createInstrumentedLifecycle } from "@lag/core";
+import { createBrowserDeps, createInstrumentedLifecycle } from "@mark1russell7/lag";
 
 const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
 const lifecycle = createInstrumentedLifecycle(deps);

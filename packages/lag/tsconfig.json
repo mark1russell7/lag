@@ -4,6 +4,7 @@
   "exclude": [
     "node_modules",
     "dist",
+    "src/worker",
     "**/*.spec.ts",
     "**/*.test.ts",
     "**/test-*.ts"

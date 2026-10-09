@@ -1,0 +1,49 @@
+name: Release
+
+# Publishes @mark1russell7/lag (packages/lag) to npm when a version tag (for example v0.2.0) is pushed.
+# npm trusted publishing uses the OIDC token of GitHub Actions: the workflow needs no npm token,
+# and the package gets a provenance statement. The trusted publisher is set one time, after the
+# first version is on npm: npm trust github @mark1russell7/lag --file release.yml
+# --repo mark1russell7/lag --allow-publish
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Test and publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+      - name: The tag agrees with the version of the package
+        run: test "v$(node -p 'require("./packages/lag/package.json").version')" = "$GITHUB_REF_NAME"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
+      # pnpm pack runs prepack (a clean build of dist) and packs the files of "files" in package.json
+      - name: Pack
+        working-directory: packages/lag
+        run: pnpm pack --pack-destination "$RUNNER_TEMP"
+      # npm publishes the tarball. Trusted publishing (OIDC) needs npm 11.5.1 or later.
+      - run: npm install --global npm@latest
+      - name: Publish
+        run: npm publish "$RUNNER_TEMP"/mark1russell7-lag-*.tgz --access public --provenance

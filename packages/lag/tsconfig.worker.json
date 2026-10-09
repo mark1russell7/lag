@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // The export "./worker": createLagWorker() and the worker module. Only these files use the DOM types.
+  // The other modules of the package get each browser API as an argument (tsconfig.json has no DOM types).
+  "extends": "../../ts/config/ts.json",
+  "compilerOptions": {
+    "lib": ["esnext", "dom"],
+    "tsBuildInfoFile": "${configDir}/dist/worker/.tsbuildinfo"
+  },
+  "include": ["src/worker/**/*"],
+  "exclude": ["**/*.test.ts"],
+  "references": [
+    {
+      "path": "./tsconfig.json"
+    }
+  ]
+}

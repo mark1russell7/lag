@@ -255,7 +255,7 @@ function coverage(random : () => number, shift : number) : CoverageReport[] {
     const adjust = (files : Array<[string, number, number]>) : Array<[string, number, number]> =>
         files.map(([file, lines, ratio]) => [file, lines, Math.min(1, ratio + shift)]);
     return [
-        coverageReport("@lag/core", adjust(core), random),
+        coverageReport("@mark1russell7/lag", adjust(core), random),
         coverageReport("@lag/load", adjust(load), random),
         coverageReport("@lag/report", adjust(report), random),
     ];
@@ -290,7 +290,7 @@ function mutation(random : () => number) : MutationReport[] {
         detected : acc.detected + (file.counts.Killed ?? 0) + (file.counts.Timeout ?? 0),
         valid : acc.valid + (file.counts.Killed ?? 0) + (file.counts.Timeout ?? 0) + (file.counts.Survived ?? 0) + (file.counts.NoCoverage ?? 0),
     }), { detected : 0, valid : 0 });
-    return [{ packageName : "@lag/core", score : round((sum.detected / sum.valid) * 100, 2), files }];
+    return [{ packageName : "@mark1russell7/lag", score : round((sum.detected / sum.valid) * 100, 2), files }];
 }
 
 /** Values with a long tail: a log-normal body and some large spikes. */
@@ -343,7 +343,7 @@ function budgets(workerP99 : number, driftOverhead : number) : BudgetResult[] {
         ({ name, unit, value, limit, pass : value <= limit });
     return [
         budget("DriftLag CPU overhead", "%", driftOverhead, 2),
-        budget("Bundle size of @lag/core (gzip)", "kB", 18.4, 20),
+        budget("Bundle size of @mark1russell7/lag (gzip)", "kB", 18.4, 20),
         budget("p95 drift, light profile", "ms", 6.2, 10),
         budget("p99 worker heartbeat delay, idle page", "ms", workerP99, 20),
     ];
@@ -364,7 +364,7 @@ function makeRun(options : {
 }) : RunReport {
     const random = createRandom(options.seed);
     const specs : SuiteSpec[] = [
-        { id : "core-unit-node", packageName : "@lag/core", kind : "unit", environment : "node", files : CORE_FILES, durationMs : 6, outcomes : options.coreOutcomes },
+        { id : "core-unit-node", packageName : "@mark1russell7/lag", kind : "unit", environment : "node", files : CORE_FILES, durationMs : 6, outcomes : options.coreOutcomes },
         { id : "load-unit-node", packageName : "@lag/load", kind : "unit", environment : "node", files : LOAD_FILES, durationMs : 9 },
         { id : "report-unit-node", packageName : "@lag/report", kind : "unit", environment : "node", files : REPORT_FILES, durationMs : 3 },
         ...browserSuites(options.browserFailures),

@@ -13,10 +13,9 @@
   "dependencies": {
     "@fontsource-variable/atkinson-hyperlegible-mono": "^5.3.0",
     "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
-    "@lag/core": "workspace:*",
     "@lag/load": "workspace:*",
     "@lag/report": "workspace:*",
-    "@lag/worker": "workspace:*",
+    "@mark1russell7/lag": "workspace:*",
     "@observablehq/plot": "^0.6.17",
     "@xyflow/react": "^12.12.0",
     "mermaid": "^11.17.2",

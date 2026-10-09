@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { METRIC_CATALOG } from "@lag/core";
+import { METRIC_CATALOG } from "@mark1russell7/lag";
 import { END_MARKER, START_MARKER, renderMetricTable, replaceBetweenMarkers } from "./readme-metrics.js";
 
 describe("readme-metrics", () => {

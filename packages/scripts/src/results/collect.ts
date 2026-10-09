@@ -2,7 +2,7 @@
  * The `pnpm results` script does one run of the test program and writes the
  * results for the site.
  *
- * 1. The unit tests of @lag/core (with coverage), @lag/load, @lag/report and
+ * 1. The unit tests of @mark1russell7/lag (with coverage), @lag/load, @lag/report and
  *    @lag/scripts.
  * 2. The browser tests of @lag/integration-tests in every engine (the
  *    browser, cdp and coi projects), then the overhead benchmark alone.
@@ -93,7 +93,7 @@ type Step = {
 
 const steps : Step[] = [
     ...(has("--skip-unit") ? [] : [
-        { title : "Unit tests and coverage of @lag/core", packageName : "@lag/core", dir : "packages/lag", args : ["--coverage"] },
+        { title : "Unit tests and coverage of @mark1russell7/lag", packageName : "@mark1russell7/lag", dir : "packages/lag", args : ["--coverage"] },
         { title : "Unit tests of @lag/load", packageName : "@lag/load", dir : "packages/load", args : [] },
         { title : "Unit tests of @lag/report", packageName : "@lag/report", dir : "packages/report", args : [] },
         { title : "Unit tests of @lag/scripts", packageName : "@lag/scripts", dir : "packages/scripts", args : [] },
@@ -177,7 +177,7 @@ function exportReports(dir : string, temp : string, resultsDir : string) : void 
 }
 
 /**
- * The coverage of @lag/core, only if the unit tests of this run wrote it. A
+ * The coverage of @mark1russell7/lag, only if the unit tests of this run wrote it. A
  * file from an earlier run (for example with --skip-unit) is not a result of
  * this run.
  */
@@ -190,7 +190,7 @@ function coverageReports(runStart : Date) : CoverageReport[] {
         return [];
     }
     const summary = readJson<IstanbulSummary>(file);
-    return summary ? [fromIstanbulSummary(summary, "@lag/core", root)] : [];
+    return summary ? [fromIstanbulSummary(summary, "@mark1russell7/lag", root)] : [];
 }
 
 function mutationReports() : MutationReport[] {
@@ -204,7 +204,7 @@ function mutationReports() : MutationReport[] {
     console.log(`Mutation report: ${path.relative(root, file)} from ${origin.createdAt}${origin.commit ? `, commit ${origin.commit.slice(0, 7)}` : ""}`);
     // Stryker names the files relative to the package
     const files = Object.fromEntries(Object.entries(report.files).map(([name, value]) => [path.resolve(root, "packages/lag", name), value]));
-    return [fromStrykerReport({ files }, "@lag/core", root, origin)];
+    return [fromStrykerReport({ files }, "@mark1russell7/lag", root, origin)];
 }
 
 function main() : void {

@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { isVisibleState } from "@lag/core";
+import { isVisibleState } from "@mark1russell7/lag";
 import { cdp, recordMeasurement } from "../commands.js";
 import { wait, waitUntil } from "../harness.js";
 import { PAUSED_METRICS, hiddenInterval, startMonitors } from "./monitors.js";

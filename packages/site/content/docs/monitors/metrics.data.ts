@@ -1,6 +1,6 @@
 /**
  * The metrics of each monitor, for `<MetricTable>`. All rows come from the
- * metric catalog of `@lag/core` (`METRIC_CATALOG`). The factories make their
+ * metric catalog of `@mark1russell7/lag` (`METRIC_CATALOG`). The factories make their
  * instruments from the same catalog, thus the documentation and the code
  * always agree.
  */

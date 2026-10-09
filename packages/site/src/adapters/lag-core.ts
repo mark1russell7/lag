@@ -1,7 +1,10 @@
 /**
- * The only module of the site that uses `@lag/core` and `@lag/worker`.
+ * The only module of the site that uses `@mark1russell7/lag` and its export
+ * `@mark1russell7/lag/worker`. The site imports the source of the package in
+ * this repository (refer to the aliases in `vite.config.ts`), not the release
+ * on npm.
  *
- * When the API of the core changes, update this file and nothing else. The
+ * When the API of the package changes, update this file and nothing else. The
  * site uses `setupAllMonitors`, `createBrowserDeps`, the metric catalog, the
  * `Meter` type and `createLagWorker`.
  */
@@ -14,10 +17,10 @@ import {
     setupAllMonitors,
     type AllMonitorDeps,
     type Meter,
-} from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+} from "@mark1russell7/lag";
+import { createLagWorker } from "@mark1russell7/lag/worker";
 
-export type { Attributes, Counter, Histogram, Meter, MetricDefinition, EventDefinition, SpanDefinition } from "@lag/core";
+export type { Attributes, Counter, Histogram, Meter, MetricDefinition, EventDefinition, SpanDefinition } from "@mark1russell7/lag";
 
 /** Every metric, event and span that the monitors emit: the single source for the documentation. */
 export { METRIC_CATALOG, EVENT_CATALOG, SPAN_CATALOG };

@@ -1,5 +1,5 @@
 import { expect, type TestContext } from "vitest";
-import { BusyTimeProbe, DriftLag, createMessageTaskQueue } from "@lag/core";
+import { BusyTimeProbe, DriftLag, createMessageTaskQueue } from "@mark1russell7/lag";
 import { blockMainThread, median, wait } from "./harness.js";
 import { recordMeasurement } from "./commands.js";
 

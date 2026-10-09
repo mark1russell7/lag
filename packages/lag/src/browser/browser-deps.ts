@@ -62,7 +62,7 @@ export type BrowserDepsOptions = {
     events? : EventSink;
     /** The span sink, for example `createOtelSpanSink()`. Without it, the monitors make no spans. */
     spans? : SpanSink;
-    /** The worker in which the `@lag/worker` handler operates. Without it, the worker monitors stay off. */
+    /** The worker in which the `@mark1russell7/lag/worker` handler operates. Without it, the worker monitors stay off. */
     worker? : WorkerLike;
     workerHeartbeatIntervalMs? : number;
     workerHangReport? : HangReportTarget;

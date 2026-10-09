@@ -1,6 +1,6 @@
 ---
 title: Architecture
-description: The packages, the parts of @lag/core, the worker, and the design rules that keep each part replaceable and testable.
+description: The packages, the parts of @mark1russell7/lag, the worker, and the design rules that keep each part replaceable and testable.
 order: 40
 status: draft
 ---
@@ -28,7 +28,7 @@ flowchart TB
 
 Only the browser adapter reads the browser globals. All other parts get their dependencies as arguments. Thus a test can give a fake clock, fake timers and a fake `PerformanceObserver`, and examine each rule with exact values.
 
-## Inside @lag/core
+## Inside @mark1russell7/lag
 
 | Part | Files | What it does |
 |---|---|---|
@@ -54,12 +54,12 @@ The core depends on small interfaces (ports). Adapters connect the ports to real
 | `Clock`, `WallClock`, `AbsoluteClock` | `performance.now()`, `Date.now()`, and the absolute time of the context | `createAbsoluteClock(performance)` |
 | `PageSource` | The navigation entry, the prerender state, the hidden times and the URL of the document | `createPageSource(document, performance)` |
 | `HangJournal` | Storage for hangs in progress | `createIndexedDbHangJournal(indexedDB)`, `createMemoryHangJournal()` |
-| `WorkerLike` | The message channel to the worker | `createLagWorker()` of `@lag/worker` |
+| `WorkerLike` | The message channel to the worker | `createLagWorker()` of `@mark1russell7/lag/worker` |
 | `CrashReportContextLike` | The crash-report context of Chromium | `window.crashReport` |
 
 ## The worker
 
-The worker bundle (`@lag/worker`) operates `createWorkerHandler()` of the core. The main thread and the worker talk with these messages:
+The worker bundle (`@mark1russell7/lag/worker`) operates `createWorkerHandler()` of the core. The main thread and the worker talk with these messages:
 
 | Direction | Message | What it does |
 |---|---|---|

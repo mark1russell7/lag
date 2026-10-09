@@ -1,4 +1,4 @@
-import { createBrowserDeps, createNoopMeter, peerLockName, PEER_CHANNEL_NAME, setupAllMonitors } from "@lag/core";
+import { createBrowserDeps, createNoopMeter, peerLockName, PEER_CHANNEL_NAME, setupAllMonitors } from "@mark1russell7/lag";
 import { closePeerPage, evaluateInPeerPage, leaveAndReturnToPeerPage, openPeerPage } from "../commands.js";
 import { wait } from "../harness.js";
 import type { BackForwardResult } from "../command-types.js";

@@ -33,14 +33,14 @@ The [worker monitor](/docs/monitors/worker-lag) sends a heartbeat from its own t
   caption="The worker reports the start of the hang while the main thread is blocked. The first message of the main thread after the block stops the hang."
 />
 
-The bundled worker of `@lag/worker` sends each hang report as an OTLP/HTTP JSON log record, with the event name `lag.main_thread.hang`. The record has the context of the page, the `phase` (`started` or `ended`) and `duration_ms`. A worker has no `navigator.sendBeacon()`, thus the worker uses `fetch()` with `keepalive: true`. With `keepalive`, the request can complete after the page closes. In WebKit and Safari, the request completes only when the main thread operates again ([experiment E4](/research/local-experiments)). The Fetch standard limits the body of all `keepalive` requests in progress to 64 KiB ([RUM landscape](/research/rum-landscape)).
+The bundled worker of `@mark1russell7/lag/worker` sends each hang report as an OTLP/HTTP JSON log record, with the event name `lag.main_thread.hang`. The record has the context of the page, the `phase` (`started` or `ended`) and `duration_ms`. A worker has no `navigator.sendBeacon()`, thus the worker uses `fetch()` with `keepalive: true`. With `keepalive`, the request can complete after the page closes. In WebKit and Safari, the request completes only when the main thread operates again ([experiment E4](/research/local-experiments)). The Fetch standard limits the body of all `keepalive` requests in progress to 64 KiB ([RUM landscape](/research/rum-landscape)).
 
 The worker sends the reports only when you give the target, with `workerHangReport`:
 
 ```ts
 import { createInstanceId, init } from "@mark1russell7/otel-ts";
-import { createBrowserDeps, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+import { createBrowserDeps, createOtelLoggerAdapter, setupAllMonitors } from "@mark1russell7/lag";
+import { createLagWorker } from "@mark1russell7/lag/worker";
 
 const endpoint = "http://localhost:4318";
 const serviceInstanceId = createInstanceId();

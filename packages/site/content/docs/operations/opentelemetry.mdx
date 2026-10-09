@@ -74,11 +74,11 @@ The monitors can also send spans: the page view, the hangs, the stalls, the long
 ```ts
 import * as api from "@opentelemetry/api";
 import { init } from "@mark1russell7/otel-ts";
-import { createBrowserDeps, createOtelSpanSink, setupAllMonitors } from "@lag/core";
+import { createBrowserDeps, createOtelSpanSink, setupAllMonitors } from "@mark1russell7/lag";
 
 // otel-ts registers its tracer provider as the global provider
 const otel = init({ serviceName : "shop", endpoint : "https://collector.example.com" });
-const spans = createOtelSpanSink(api.trace.getTracer("@lag/core"), api);
+const spans = createOtelSpanSink(api.trace.getTracer("@mark1russell7/lag"), api);
 const monitors = setupAllMonitors(createBrowserDeps(window, { logger, meter, events, spans }));
 ```
 

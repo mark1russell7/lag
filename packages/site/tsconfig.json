@@ -19,7 +19,7 @@
       "path": "../lag"
     },
     {
-      "path": "../lag-worker"
+      "path": "../lag/tsconfig.worker.json"
     },
     {
       "path": "../load"

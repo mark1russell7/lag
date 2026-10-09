@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { DriftLag } from "@lag/core";
+import { DriftLag } from "@mark1russell7/lag";
 import { blockMainThread, median, wait } from "./harness.js";
 import { recordMeasurement } from "./commands.js";
 

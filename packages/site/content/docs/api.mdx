@@ -1,11 +1,27 @@
 ---
 title: API reference
-description: The exported functions, classes and types of @lag/core, @lag/worker, @lag/load and @lag/report.
+description: The exported functions, classes and types of @mark1russell7/lag, @mark1russell7/lag/worker, @lag/load and @lag/report.
 order: 41
 status: draft
 ---
 
 This page lists the public API of each package. The TSDoc comment of each export gives the details. The links go to the source on GitHub.
+
+## Install
+
+```bash
+npm install @mark1russell7/lag
+```
+
+The package has three entry points:
+
+| Entry point | What it contains |
+|---|---|
+| `@mark1russell7/lag` | The exports of the sections from [Setup](#setup) to [Utilities](#utilities). |
+| `@mark1russell7/lag/worker` | `createLagWorker()` and the worker module that it starts. Refer to the section `@mark1russell7/lag/worker`. |
+| `@mark1russell7/lag/event-line.js` | `formatEventLine()`, which makes the line of each event. |
+
+`@lag/load` and `@lag/report` are private packages of the repository. They are not on npm.
 
 ## Setup
 
@@ -100,7 +116,7 @@ Refer to [measurement validity](/docs/concepts/measurement-validity).
 | `Meter`, `Histogram`, `Counter`, `Attributes` | The meter port. An OpenTelemetry `Meter` fits it. |
 | `createNoopMeter()` | A meter that records nothing. |
 | `EventSink`, `EventOptions`, `createNoopEventSink()`, `withEventContext(sink, context)` | The event port, the options of an event (`time`, the time of the occurrence in Unix milliseconds), a sink that sends nothing, and a sink that adds context attributes to each event. |
-| `createOtelEventSink(logger, options?)` | Sends each event as an OpenTelemetry log record with an event name. The body is the line of the event: the name and the sorted `key=value` pairs (`formatEventLine` in `@lag/core/event-line.js`). The time of the occurrence becomes the time of the record. The options are `maxTimeOffsetMs` (refer to `MAX_EVENT_TIME_OFFSET_MS`) and `now`. |
+| `createOtelEventSink(logger, options?)` | Sends each event as an OpenTelemetry log record with an event name. The body is the line of the event: the name and the sorted `key=value` pairs (`formatEventLine` in `@mark1russell7/lag/event-line.js`). The time of the occurrence becomes the time of the record. The options are `maxTimeOffsetMs` (refer to `MAX_EVENT_TIME_OFFSET_MS`) and `now`. |
 | `placeEventTime(time, now, maxOffsetMs?)`, `MAX_EVENT_TIME_OFFSET_MS`, `EVENT_TIME_ATTRIBUTE` | The rule for the time of a record: the time of the occurrence when it is no more than 30 minutes from the time of the call, else the time of the call and the attribute `lag.event.time`. |
 | `SPANS`, `SPAN_CATALOG` | Every span: name, monitor, description and attributes. |
 | `SpanSink`, `SpanIdentity`, `SpanOptions`, `OpenSpan`, `createNoopSpanSink()` | The span port: a span that stays open until `end()` (a page view), or a span that ended already (a hang). A span has a parent and links. The times are Unix milliseconds. |
@@ -133,7 +149,7 @@ Refer to [measurement validity](/docs/concepts/measurement-validity).
 | Export | What it does |
 |---|---|
 | `WorkerLagMonitor` | The main-thread half of the worker monitor: acknowledgements, the clock sync, the context, the watchdog. `stop()` keeps the listener for `hang-ended`, and `dispose()` removes it. |
-| `createWorkerHandler(deps)` | The worker half: the heartbeats, the hang detection and the hang journal. `@lag/worker` operates it. |
+| `createWorkerHandler(deps)` | The worker half: the heartbeats, the hang detection and the hang journal. `@mark1russell7/lag/worker` operates it. |
 | `MainToWorkerMessage`, `WorkerToMainMessage` and the message types | The worker protocol. Refer to [architecture](/docs/architecture#the-worker). |
 | `HangJournal`, `createIndexedDbHangJournal(indexedDB)`, `createMemoryHangJournal()` | The storage of hangs in progress: `put()`, `remove()`, `list()` and `take()`. `take()` removes and gives a stale record in one atomic operation. |
 | `HangReportMarks`, `createStorageHangReportMarks(localStorage)`, `HANG_REPORT_MARK_PREFIX`, `StorageLike` | The marks of the hangs that a page reported itself or for another page. The journal reader skips the record of a marked hang. The marks are synchronous, thus a closing page can write them. |
@@ -152,7 +168,9 @@ Refer to [measurement validity](/docs/concepts/measurement-validity).
 | `MonitorRegistry`, `MonitorHandle` | The registry of handles. |
 | `LagMonitor`, `LagLogger` | The base class of the timer monitors, and the logger of sustained lag. `LagLogger` measures its periods in time: the sum of the intervals of the measurements (`LagMeasurement.intervalMs`). |
 
-## @lag/worker
+## @mark1russell7/lag/worker
+
+This entry point is separate from the main entry point, because only this module starts a `Worker`. The worker module uses relative imports only. Thus the bundler of the app makes one file for the worker (refer to the [quick start](/docs/getting-started#install)).
 
 | Export | What it does |
 |---|---|

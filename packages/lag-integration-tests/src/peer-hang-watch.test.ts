@@ -1,5 +1,5 @@
 import { expect, inject } from "vitest";
-import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@lag/core";
+import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@mark1russell7/lag";
 import { closePeerPage, environment, evaluateInPeerPage, openPeerPage } from "./commands.js";
 import { wait } from "./harness.js";
 import type { PeerEvent } from "./pages/peer-watch-page.js";

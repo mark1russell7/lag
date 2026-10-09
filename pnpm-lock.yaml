@@ -45,15 +45,12 @@ importers:
 
   packages/lag-integration-tests:
     dependencies:
-      '@lag/core':
-        specifier: workspace:*
-        version: link:../lag
       '@lag/load':
         specifier: workspace:*
         version: link:../load
-      '@lag/worker':
+      '@mark1russell7/lag':
         specifier: workspace:*
-        version: link:../lag-worker
+        version: link:../lag
       '@mark1russell7/otel-ts':
         specifier: github:mark1russell7/otel-ts
         version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.1)
@@ -89,16 +86,6 @@ importers:
         specifier: ^9.32.0
         version: 9.32.0
 
-  packages/lag-worker:
-    dependencies:
-      '@lag/core':
-        specifier: workspace:*
-        version: link:../lag
-    devDependencies:
-      vite:
-        specifier: ^7.3.1
-        version: 7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1)
-
   packages/load:
     devDependencies:
       vite:
@@ -119,12 +106,12 @@ importers:
       '@clack/prompts':
         specifier: ^0.9.1
         version: 0.9.1
-      '@lag/core':
-        specifier: workspace:*
-        version: link:../lag
       '@lag/report':
         specifier: workspace:*
         version: link:../report
+      '@mark1russell7/lag':
+        specifier: workspace:*
+        version: link:../lag
     devDependencies:
       '@types/node':
         specifier: ^25.2.3
@@ -144,18 +131,15 @@ importers:
       '@fontsource-variable/atkinson-hyperlegible-next':
         specifier: ^5.3.0
         version: 5.3.0
-      '@lag/core':
-        specifier: workspace:*
-        version: link:../lag
       '@lag/load':
         specifier: workspace:*
         version: link:../load
       '@lag/report':
         specifier: workspace:*
         version: link:../report
-      '@lag/worker':
+      '@mark1russell7/lag':
         specifier: workspace:*
-        version: link:../lag-worker
+        version: link:../lag
       '@observablehq/plot':
         specifier: ^0.6.17
         version: 0.6.17
