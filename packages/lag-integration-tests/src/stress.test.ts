@@ -15,10 +15,12 @@ import {
     burstyLoad,
     evolutionaryLoad,
     kitchenSink,
+    type WorkloadOptions,
     type WorkloadResult,
 } from "@lag/load";
 import { createBrowserDeps, createConsoleLogger, createTeeMeter, waitForMimirCount, type TeeMeter } from "./harness.js";
 import { recordMeasurement } from "./commands.js";
+import { pageState, watchAnimationFrames, type FrameStats } from "./animation-frames.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
 const SERVICE_NAME = "lag-stress-test";
@@ -76,11 +78,21 @@ const MEASURED = [
     ["lag_scheduling_message_channel_histogram", "ms"],
 ] as const;
 
-async function logResult(profile : string, result : WorkloadResult, tee : TeeMeter) : Promise<void> {
+type ProfileResult = WorkloadResult & { frames : FrameStats };
+
+/** This function runs a profile, and it counts the animation frames of the browser in the same time. */
+async function runProfile(options : WorkloadOptions) : Promise<ProfileResult> {
+    const watch = watchAnimationFrames();
+    const result = await runWorkload(options);
+    return { ...result, frames : watch.stop() };
+}
+
+async function logResult(profile : string, result : ProfileResult, tee : TeeMeter) : Promise<void> {
     console.log(
         `[${profile}] seed=${result.seed} events=${result.eventCount} totalLagMs=${result.totalLagMs.toFixed(0)} ` +
         `runDurationMs=${result.durationMs.toFixed(0)} byName=${JSON.stringify(result.eventsByName)} ` +
-        `driftMax=${tee.max("lag_drift_histogram").toFixed(0)} workerBlockMax=${tee.max("lag_worker_main_block_histogram").toFixed(0)}`,
+        `driftMax=${tee.max("lag_drift_histogram").toFixed(0)} workerBlockMax=${tee.max("lag_worker_main_block_histogram").toFixed(0)} ` +
+        `frames=${result.frames.count} frameGapMax=${result.frames.maxGapMs.toFixed(0)}`,
     );
     for (const [metric, unit] of MEASURED) {
         await recordMeasurement(`stress/${profile}/${metric}`, unit, tee.values(metric), { profile });
@@ -88,36 +100,49 @@ async function logResult(profile : string, result : WorkloadResult, tee : TeeMet
 }
 
 /**
- * A browser can slow the timers of a page that it does not show, for example
- * Safari on a CI runner (its window had no focus). Then a profile cannot
- * operate in its time, and its assertions say nothing about the workload.
- * The monitors find this case: DriftLag sees a long timer delay, and the
- * worker sees that the main thread was free. This function skips the test
- * in that case, and the skip gives the reason.
+ * A browser can slow the timers of a page that it does not show, or render
+ * no frames for it, for example Safari on a CI runner (its window had no
+ * focus). Then a profile cannot operate in its time, and its assertions say
+ * nothing about the workload. This function skips the test in these cases,
+ * and the skip gives the reason:
  *
- * The limit of the timer delay is 2 s. A block of a profile (1.5 s or less)
- * does not cause a skip, because the worker sees the block (100 ms or more). In Safari on a CI runner, one run had
- * a timer delay of 4,058 ms while the worker saw 18 ms of block. Then the
- * kitchen-sink profile made only 16 events in 10 s.
+ * - The profile took more than 1.5 times its time.
+ * - DriftLag saw a timer delay of more than 2 s while the worker saw less
+ *   than 100 ms of block. In one run of Safari on a CI runner, the delay was
+ *   4,058 ms with 18 ms of block.
+ * - The browser rendered no frame for more than 2 s longer than the longest
+ *   block that the worker saw. A generator that waits for an animation frame
+ *   then waits until the end of the profile. In two runs of Safari on a CI
+ *   runner, the kitchen-sink profile stopped after 15 or 16 events.
+ *
+ * A block of a profile (1.5 s or less) does not cause a skip, because the
+ * worker sees the block.
  */
-const THROTTLED_TIMER_DELAY_MS = 2_000;
+const THROTTLED_DELAY_MS = 2_000;
 
-function skipIfThrottled(test : TestContext, result : WorkloadResult, tee : TeeMeter) : void {
+function skipIfThrottled(test : TestContext, result : ProfileResult, tee : TeeMeter) : void {
     const timerDelay = tee.max("lag_drift_histogram");
     const blocked = tee.max("lag_worker_main_block_histogram");
-    const slow = result.durationMs > PROFILE_DURATION_MS * 1.5 || (timerDelay > THROTTLED_TIMER_DELAY_MS && blocked < 100);
-    if (!slow) return;
-    const state = `visibilityState "${document.visibilityState}", hasFocus ${document.hasFocus()}, window ${window.innerWidth}x${window.innerHeight}`;
-    console.log(`The browser slowed the timers of the page (${state})`);
-    test.skip(true, `The browser slowed the timers of the page: the profile took ${Math.round(result.durationMs)} ms for ${PROFILE_DURATION_MS} ms, ` +
-        `with a timer delay of ${Math.round(timerDelay)} ms while the main thread was free (${state}).`);
+    const reasons : string[] = [];
+    if (result.durationMs > PROFILE_DURATION_MS * 1.5) {
+        reasons.push(`the profile took ${Math.round(result.durationMs)} ms for ${PROFILE_DURATION_MS} ms`);
+    }
+    if (timerDelay > THROTTLED_DELAY_MS && blocked < 100) {
+        reasons.push(`a timer delay of ${Math.round(timerDelay)} ms while the main thread was free`);
+    }
+    if (result.frames.maxGapMs > blocked + THROTTLED_DELAY_MS) {
+        reasons.push(`no animation frame for ${Math.round(result.frames.maxGapMs)} ms (${result.frames.count} frames), with a longest block of ${Math.round(blocked)} ms`);
+    }
+    if (reasons.length === 0) return;
+    console.log(`The browser slowed the page: ${reasons.join("; ")} (${pageState()})`);
+    test.skip(true, `The browser slowed the page: ${reasons.join("; ")} (${pageState()}).`);
 }
 
 describe("Lag Monitor Stress Tests", () => {
     it("light load profile completes and reports few events", async (test) => {
         const ctx = makeContext(`${SERVICE_NAME}-light`);
         try {
-            const result = await runWorkload(lightLoad(PROFILE_DURATION_MS, 11));
+            const result = await runProfile(lightLoad(PROFILE_DURATION_MS, 11));
             await logResult("light", result, ctx.tee);
             skipIfThrottled(test, result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(0);
@@ -138,7 +163,7 @@ describe("Lag Monitor Stress Tests", () => {
     it("moderate load profile triggers measurable lag", async (test) => {
         const ctx = makeContext(`${SERVICE_NAME}-moderate`);
         try {
-            const result = await runWorkload(moderateLoad(PROFILE_DURATION_MS, 22));
+            const result = await runProfile(moderateLoad(PROFILE_DURATION_MS, 22));
             await logResult("moderate", result, ctx.tee);
             skipIfThrottled(test, result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(10);
@@ -153,7 +178,7 @@ describe("Lag Monitor Stress Tests", () => {
     it("heavy load profile drives the system hard", async (test) => {
         const ctx = makeContext(`${SERVICE_NAME}-heavy`);
         try {
-            const result = await runWorkload(heavyLoad(PROFILE_DURATION_MS, 33));
+            const result = await runProfile(heavyLoad(PROFILE_DURATION_MS, 33));
             await logResult("heavy", result, ctx.tee);
             skipIfThrottled(test, result, ctx.tee);
             expect(result.eventCount).toBeGreaterThan(5);
@@ -173,7 +198,7 @@ describe("Lag Monitor Stress Tests", () => {
             const events : number[] = [];
             const opts = burstyLoad(PROFILE_DURATION_MS, 44);
             opts.onEvent = (e) => events.push(e.durationMs);
-            const result = await runWorkload(opts);
+            const result = await runProfile(opts);
             await logResult("bursty", result, ctx.tee);
             skipIfThrottled(test, result, ctx.tee);
 
@@ -198,7 +223,7 @@ describe("Lag Monitor Stress Tests", () => {
             const events : Array<{ elapsedMs : number; durationMs : number }> = [];
             const opts = evolutionaryLoad(PROFILE_DURATION_MS, 55);
             opts.onEvent = (e) => events.push({ elapsedMs : e.elapsedMs, durationMs : e.durationMs });
-            const result = await runWorkload(opts);
+            const result = await runProfile(opts);
             await logResult("evolutionary", result, ctx.tee);
             skipIfThrottled(test, result, ctx.tee);
 
@@ -220,7 +245,7 @@ describe("Lag Monitor Stress Tests", () => {
     it("kitchen sink profile exercises all generators", async (test) => {
         const ctx = makeContext(`${SERVICE_NAME}-kitchen`);
         try {
-            const result = await runWorkload(kitchenSink(PROFILE_DURATION_MS, 66));
+            const result = await runProfile(kitchenSink(PROFILE_DURATION_MS, 66));
             await logResult("kitchen-sink", result, ctx.tee);
             skipIfThrottled(test, result, ctx.tee);
 

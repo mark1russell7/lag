@@ -21,6 +21,7 @@ import {
     type TeeMeter,
 } from "./harness.js";
 import { features } from "./features.js";
+import { pageState, watchAnimationFrames } from "./animation-frames.js";
 import { environment, recordMeasurement } from "./commands.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
@@ -139,8 +140,14 @@ describe("Lag Monitor Integration", () => {
         expect(tee.max("lag_worker_self_lag_histogram")).toBeLessThan(100);
     });
 
-    it("FrameTimingMonitor records frames", async () => {
-        await wait(500);
+    it("FrameTimingMonitor records frames", async (ctx) => {
+        // The browser itself: Safari on a CI runner sometimes renders no frames for its window
+        const watch = watchAnimationFrames();
+        const recorded = await waitUntil(() => tee.values("lag_frame_delta_histogram").length > 5, 3_000);
+        const frames = watch.stop();
+        // A skip only when the browser also rendered almost no frames: else the monitor missed them
+        ctx.skip(!recorded && frames.count <= 5, `The browser rendered ${frames.count} animation frames in 3 s (${pageState()}). ` +
+            "Then no frame monitor can record frames.");
         expect(tee.values("lag_frame_delta_histogram").length).toBeGreaterThan(5);
     });
 
