@@ -9,7 +9,7 @@ import {
     type LayoutShiftReport,
     type PressureMeasurement,
     type PressureObserverInit,
-} from "@lag/core";
+} from "@mark1russell7/lag";
 import { createRecordingLogger, nextFrames, wait, waitUntil } from "./harness.js";
 import { features } from "./features.js";
 import { recordMeasurement } from "./commands.js";

@@ -35,7 +35,7 @@ export type TestFileResult = {
 export type SuiteResult = {
     /** A unique ID in the run, for example "lag-unit-node". */
     id : string;
-    /** The package name, for example "@lag/core". */
+    /** The package name, for example "@mark1russell7/lag". */
     packageName : string;
     kind : SuiteKind;
     environment : Environment;

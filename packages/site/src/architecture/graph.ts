@@ -40,7 +40,7 @@ export type ArchEdgeSpec = {
 
 export const LAYER_LABELS : Readonly<Record<ArchLayer, string>> = {
     package : "Package",
-    module : "Module of @lag/core",
+    module : "Module of @mark1russell7/lag",
     runtime : "Runtime",
     backend : "Backend",
 };
@@ -56,7 +56,7 @@ export const LAYER_SHAPES : Readonly<Record<ArchLayer, string>> = {
 // Five columns, 170 units apart. Rows are 90 units apart.
 const C = [0, 170, 340, 510, 680] as const;
 
-/** The vertical offset of the runtime and backend rows, under the box of @lag/core. */
+/** The vertical offset of the runtime and backend rows, under the box of @mark1russell7/lag. */
 const R = 70;
 
 export const architectureNodes : readonly ArchNodeSpec[] = [
@@ -65,7 +65,7 @@ export const architectureNodes : readonly ArchNodeSpec[] = [
         id : "site",
         label : "@lag/site",
         layer : "package",
-        description : "This website. It shows the documentation, the test results and a live playground. The playground uses `@lag/core`, `@lag/worker` and `@lag/load`.",
+        description : "This website. It shows the documentation, the test results and a live playground. The playground uses `@mark1russell7/lag`, `@mark1russell7/lag/worker` and `@lag/load`.",
         docs : "/docs/architecture",
         position : { x : C[0], y : 0 },
     },
@@ -95,16 +95,16 @@ export const architectureNodes : readonly ArchNodeSpec[] = [
     },
     {
         id : "worker",
-        label : "@lag/worker",
+        label : "@mark1russell7/lag/worker",
         layer : "package",
-        description : "`createLagWorker()` starts the Web Worker for the worker-lag monitor. The worker sends heartbeats, detects hangs, and keeps the hang journal. The caller owns the worker and stops it with `terminate()`.",
+        description : "The export `./worker` of the package. `createLagWorker()` starts the Web Worker for the worker-lag monitor. The worker sends heartbeats, detects hangs, and keeps the hang journal. The caller owns the worker and stops it with `terminate()`.",
         docs : "/docs/monitors/worker-lag",
         position : { x : C[4], y : 0 },
     },
-    // @lag/core and its main modules
+    // @mark1russell7/lag and its main modules
     {
         id : "core",
-        label : "@lag/core",
+        label : "@mark1russell7/lag",
         layer : "package",
         description : "The monitors, their OpenTelemetry wiring and `setupAllMonitors()`. The caller gives every browser API, thus the package has no DOM or OpenTelemetry dependency.",
         docs : "/docs",

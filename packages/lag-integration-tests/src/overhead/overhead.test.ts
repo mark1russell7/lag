@@ -1,6 +1,6 @@
 import { expect } from "vitest";
-import { createNoopMeter, setupAllMonitors } from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+import { createNoopMeter, setupAllMonitors } from "@mark1russell7/lag";
+import { createLagWorker } from "@mark1russell7/lag/worker";
 import { cdp, recordBudget, recordMeasurement } from "../commands.js";
 import { countWorkerMessages, createBrowserDeps, createRecordingLogger, createTeeMeter, createTimerAccounting, median, wait } from "../harness.js";
 

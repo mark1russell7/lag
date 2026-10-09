@@ -187,7 +187,7 @@ export class WorkerLagMonitor {
                 this.startWatchdog(checks - 1);
                 return;
             }
-            this.logger.log("warn", "The worker sent no heartbeat. Make sure that the worker loads and runs the @lag/worker handler.", {
+            this.logger.log("warn", "The worker sent no heartbeat. Make sure that the worker loads and runs the @mark1russell7/lag/worker handler.", {
                 type : "WorkerLagMonitor",
                 waitedMs : 2 * delay,
             });

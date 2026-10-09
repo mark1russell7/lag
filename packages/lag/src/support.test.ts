@@ -34,7 +34,7 @@ describe("OTLP JSON encoding", () => {
     });
 
     it("encodes log records as an ExportLogsServiceRequest", () => {
-        const body = JSON.parse(encodeOtlpLogs({ "service.name" : "shop" }, "@lag/worker", [{
+        const body = JSON.parse(encodeOtlpLogs({ "service.name" : "shop" }, "@mark1russell7/lag/worker", [{
             timeMs : 1_000,
             eventName : "lag.main_thread.hang",
             severityText : "WARN",
@@ -45,7 +45,7 @@ describe("OTLP JSON encoding", () => {
 
         const record = body.resourceLogs[0].scopeLogs[0].logRecords[0];
         expect(body.resourceLogs[0].resource.attributes).toEqual([{ key : "service.name", value : { stringValue : "shop" } }]);
-        expect(body.resourceLogs[0].scopeLogs[0].scope).toEqual({ name : "@lag/worker" });
+        expect(body.resourceLogs[0].scopeLogs[0].scope).toEqual({ name : "@mark1russell7/lag/worker" });
         expect(record).toEqual({
             timeUnixNano : "1000000000",
             observedTimeUnixNano : "1000000000",
@@ -63,7 +63,7 @@ describe("OTLP JSON encoding", () => {
     });
 
     it("gives a record the observed time of the input, or the time of the occurrence", () => {
-        const body = JSON.parse(encodeOtlpLogs({}, "@lag/worker", [
+        const body = JSON.parse(encodeOtlpLogs({}, "@mark1russell7/lag/worker", [
             { timeMs : 1_000, observedTimeMs : 9_000, eventName : "a", severityText : "INFO", severityNumber : 9, body : "a", attributes : {} },
         ]));
         const record = body.resourceLogs[0].scopeLogs[0].logRecords[0];
@@ -80,7 +80,7 @@ describe("OTLP JSON encoding", () => {
             beyondInt64 : 1e21,
             negativeBeyondInt64 : -1e21,
         };
-        const body = JSON.parse(encodeOtlpLogs({}, "@lag/worker", [{
+        const body = JSON.parse(encodeOtlpLogs({}, "@mark1russell7/lag/worker", [{
             timeMs : 0, eventName : "e", severityText : "INFO", severityNumber : 9, body : "", attributes : values,
         }]));
 

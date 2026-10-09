@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   stryker:
-    name: Stryker on @lag/core
+    name: Stryker on @mark1russell7/lag
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -40,7 +40,7 @@ jobs:
       # The weekly run tests all mutants again (--force) and writes a new incremental file.
       # Thus a stale kill stays for one week at most. A manual run stays incremental and fast.
       - name: Stryker
-        run: pnpm --filter @lag/core run mutation ${{ github.event_name == 'schedule' && '--force' || '' }}
+        run: pnpm --filter @mark1russell7/lag run mutation ${{ github.event_name == 'schedule' && '--force' || '' }}
       - name: Upload the mutation report
         if: always()
         uses: actions/upload-artifact@v4

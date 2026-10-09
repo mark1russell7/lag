@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { LifecycleStateMachine, isVisibleState, type StateTransition } from "@lag/core";
+import { LifecycleStateMachine, isVisibleState, type StateTransition } from "@mark1russell7/lag";
 import { cdp, recordMeasurement } from "../commands.js";
 import { createRecordingLogger, wait, waitUntil } from "../harness.js";
 import { PAUSED_METRICS, hiddenInterval, startMonitors } from "./monitors.js";
@@ -74,7 +74,7 @@ describe("A frozen page (CDP Page.setWebLifecycleState)", () => {
                 expect(page.between(metric, hiddenAt, visibleAt), metric).toEqual([]);
             }
             // 2. The 2 s freeze is not lag. The worker measures the true blocking of the main thread.
-            //    (DriftLag can show false lag here: see DriftLag.granularity.test.ts in @lag/core.)
+            //    (DriftLag can show false lag here: see DriftLag.granularity.test.ts in @mark1russell7/lag.)
             expect(Math.max(...workerAfter)).toBeLessThan(200);
             expect(Math.max(...driftAfter)).toBeLessThan(frozenMs / 2);
             expect(page.tee.values("lag_stalls")).toEqual([]);

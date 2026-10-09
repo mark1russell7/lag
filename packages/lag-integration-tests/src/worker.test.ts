@@ -1,6 +1,6 @@
 import { expect, vi } from "vitest";
-import { createLagWorker, type LagWorker } from "@lag/worker";
-import { WorkerLagMonitor, createAbsoluteClock, type WorkerLagMeasurement } from "@lag/core";
+import { createLagWorker, type LagWorker } from "@mark1russell7/lag/worker";
+import { WorkerLagMonitor, createAbsoluteClock, type WorkerLagMeasurement } from "@mark1russell7/lag";
 import { blockMainThread, wait } from "./harness.js";
 import { recordMeasurement } from "./commands.js";
 

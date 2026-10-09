@@ -5,8 +5,8 @@ import {
     type AllMonitorHandles,
     type EventAttributes,
     type StateTransition,
-} from "@lag/core";
-import { createLagWorker, type LagWorker } from "@lag/worker";
+} from "@mark1russell7/lag";
+import { createLagWorker, type LagWorker } from "@mark1russell7/lag/worker";
 import { createBrowserDeps, createRecordingLogger, createTeeMeter, type RecordedValue, type TeeMeter } from "../harness.js";
 
 /** The histograms of the monitors that pause while the page is hidden or frozen. */

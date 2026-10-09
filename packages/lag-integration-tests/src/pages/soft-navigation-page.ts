@@ -8,7 +8,7 @@
  * main thread for 60 ms, changes the URL with `history.pushState`, and adds
  * the content of the next page.
  */
-import { createBrowserDeps, setupAllMonitors, type Meter } from "@lag/core";
+import { createBrowserDeps, setupAllMonitors, type Meter } from "@mark1russell7/lag";
 
 /** The result of `finishProbe()`. */
 export type SoftNavigationResult = {

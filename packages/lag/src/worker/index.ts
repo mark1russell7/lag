@@ -1,4 +1,4 @@
-import type { WorkerLike } from "@lag/core/WorkerLagMonitor.js";
+import type { WorkerLike } from "../WorkerLagMonitor.js";
 
 export type LagWorker = WorkerLike & {
     /**
@@ -8,6 +8,12 @@ export type LagWorker = WorkerLike & {
     terminate() : void;
 };
 
+/**
+ * This function starts the Web Worker of the worker-lag monitor. Give the
+ * result to `createBrowserDeps()` as `worker`. The bundler of the app must
+ * support module workers with `new Worker(new URL(...), { type: "module" })`,
+ * for example Vite or webpack 5.
+ */
 export function createLagWorker() : LagWorker {
     const worker = new Worker(
         new URL("./bundled-worker.js", import.meta.url),

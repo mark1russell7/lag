@@ -7,8 +7,8 @@ import {
     type BrowserGlobals,
     type Logger,
     type Meter,
-} from "@lag/core";
-import type { LagWorker } from "@lag/worker";
+} from "@mark1russell7/lag";
+import type { LagWorker } from "@mark1russell7/lag/worker";
 
 /** Block the main thread synchronously for `ms` milliseconds. */
 export function blockMainThread(ms : number) : void {

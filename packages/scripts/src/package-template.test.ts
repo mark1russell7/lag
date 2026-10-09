@@ -19,8 +19,8 @@ describe("pnpm new", () => {
     });
 
     it("refuses the name of a package in another folder, also with --force", () => {
-        // packages/lag has the name @lag/core
-        expect(refusal("core", false, manifests, true)).toBe("Another folder has the package @lag/core already.");
+        // packages/lag-integration-tests has the name @lag/integration-tests
+        expect(refusal("integration-tests", false, manifests, true)).toBe("Another folder has the package @lag/integration-tests already.");
     });
 
     it("adds the devDependencies that the types of each TypeScript config need, with the versions of the workspace", () => {

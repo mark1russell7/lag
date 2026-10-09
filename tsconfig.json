@@ -6,10 +6,10 @@
       "path": "packages/lag"
     },
     {
-      "path": "packages/lag-integration-tests"
+      "path": "packages/lag/tsconfig.worker.json"
     },
     {
-      "path": "packages/lag-worker"
+      "path": "packages/lag-integration-tests"
     },
     {
       "path": "packages/load"
