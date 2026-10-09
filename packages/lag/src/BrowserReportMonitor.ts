@@ -47,9 +47,17 @@ function readBody(body : unknown) : Omit<BrowserReport, "type"> {
  *
  * Crash reports (for example "oom" or "unresponsive") go only to the server
  * endpoints in the `Reporting-Endpoints` header, because the page is gone.
+ *
+ * Only the first observer asks for the buffered reports (the reports from
+ * before the start). The browser keeps all reports of the page in its
+ * buffer. With `buffered: true`, an observer after `stop()` and `start()`
+ * gets the earlier reports again, and the monitor counts them two times.
+ * The monitor does not get the reports during a stop.
  */
 export class BrowserReportMonitor {
     private observer : ReportingObserverInstance | undefined;
+    /** True after the first observer started: the buffer has no new reports for the monitor. */
+    private observedBuffer = false;
 
     constructor(
         private readonly report : (report : BrowserReport) => void,
@@ -72,9 +80,10 @@ export class BrowserReportMonitor {
                         this.logger.log("error", "Error processing browser report.", { error, type : "BrowserReportMonitor" });
                     }
                 }
-            }, { types : [...this.types], buffered : true });
+            }, { types : [...this.types], buffered : !this.observedBuffer });
             observer.observe();
             this.observer = observer;
+            this.observedBuffer = true;
         } catch (error) {
             this.logger.log("warn", "ReportingObserver not available in this browser.", { error, type : "BrowserReportMonitor" });
         }
