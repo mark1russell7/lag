@@ -385,7 +385,9 @@ export class PageViewVitals {
     private onTransition(transition : StateTransition) : void {
         if (!this.started || this.stopped) return;
         if (transition.trigger === "pageshow" && isVisibleState(transition.to)) {
-            this.startView("back-forward-cache", transition.timestamp);
+            // The URL at the restore: the page can change its URL after the load (history.pushState)
+            const url = this.deps.page?.url?.();
+            this.startView("back-forward-cache", transition.timestamp, url !== undefined ? { url : stripUrlParameters(url) } : {});
             return;
         }
         if (isVisibleState(transition.to)) return;
