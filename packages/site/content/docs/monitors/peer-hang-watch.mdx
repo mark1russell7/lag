@@ -51,11 +51,11 @@ sequenceDiagram
 ### Another page sees the end of a hung page
 
 1. A page that becomes visible requests the lock `lag-page:<page ID>`. When it has the lock, it sends a `beat` message through the channel `lag-peer-hang-watch`, and then one each 1000 ms (`PEER_BEAT_INTERVAL_MS`). The beat has the page ID, the wall-clock time (`Date.now()`) and the page context, for example `lag.page_view.id`.
-2. A page that becomes hidden, goes into the back/forward cache or closes sends `away`. Then it releases its lock. Thus a hidden page holds no lock and sends no beats. A page in the back/forward cache and a frozen page also close their channel (refer to [cost](#cost)).
+2. A page that becomes hidden, goes into the back/forward cache or closes sends `away`. Then it releases its lock. Thus a hidden page sends no beats, and it holds no lock except a claim (step 6). A page in the back/forward cache and a frozen page also close their channel (refer to [cost](#cost)).
 3. Each page listens on the channel. For each page that it sees for the first time, it requests the lock of that page. The browser gives that lock when the other page releases it, or when the browser stops the other page. A hung page cannot release its lock.
 4. When the lock comes free, the watch waits 1000 ms (`PEER_GRACE_MS`) for the last messages of the page. A message and a lock take different paths through the browser, thus an `away` can arrive after the lock.
 5. If the page did not say `away`, and its last beat is 5000 ms old or older (`PEER_HANG_THRESHOLD_MS`), the browser stopped the page during a hang.
-6. The watch then requests `lag-page-claim:<page ID>` with `ifAvailable`. Only the first page gets it, and it keeps the claim until it stops. Thus one page only reports the hang, also when many pages watch.
+6. The watch then requests `lag-page-claim:<page ID>` with `ifAvailable`. Only the first page gets it. It keeps the claim for 60 000 ms (`PEER_CLAIM_HOLD_MS`), and the other pages try the claim after their wait of 1000 ms. Thus one page only reports the hang, also when many pages watch. The page releases the claim earlier when it goes into the back/forward cache, freezes or stops.
 7. The page that has the claim takes the record of the hung page from the [hang journal](/docs/monitors/worker-lag), if the worker of that page wrote one. Then it reports the hang with the times of the record. Without a record, it uses its own times: from the last beat to the end of the page. If the watch stops during the take, it reports nothing and puts the record back for the next page.
 
 ### The page reports its own hang at its close
@@ -139,11 +139,11 @@ The channel name and the lock names are a protocol between the pages of an origi
 
 - **A visible page:** one `BroadcastChannel` message each second, and one held Web Lock.
 - **Each page:** one waiting lock request for each visible page of the origin, and one message handler.
-- **For each page that ends:** one timeout of 1000 ms. For an abandoned hang, one claim lock until the watch stops, and one `take()` of the journal.
+- **For each page that ends:** one timeout of 1000 ms. For an abandoned hang, one claim lock and one timeout for 60 s, and one `take()` of the journal.
 
-A hidden page holds no lock. In Chromium 145, two parts of the watch can keep a page out of the back/forward cache:
+A hidden page holds no lock, except a claim for at most 60 s after it reports a hang. In Chromium 145, two parts of the watch can keep a page out of the back/forward cache:
 
-- **A held Web Lock.** Chromium does not put a page that holds a lock into the cache (the reason `lock`). Thus the page releases its lock in `pagehide`, before it goes into the cache. A waiting lock request does not stop the cache.
+- **A held Web Lock.** Chromium does not put a page that holds a lock into the cache (the reason `lock`). Thus the page releases its lock and its claims in `pagehide`, before it goes into the cache. A waiting lock request does not stop the cache.
 - **A BroadcastChannel message.** Chromium removes a page from the cache when a message arrives for it (the reason `broadcastchannel-message`). The other visible pages send a beat each second. Thus the page closes its channel when it goes into the cache or the browser freezes it. It opens the channel again when it operates again.
 
 While its channel is closed, the page does not get the `away` messages of the other pages. Thus it forgets the other pages, and it ignores their locks. Then a page that closes normally in that time does not seem to be a page that closed during a hang. A browser test examines this in Chromium with the cache (refer to [tests](#tests)). The research did not measure the cache of Firefox and WebKit.
@@ -165,7 +165,7 @@ While its channel is closed, the page does not get the `away` messages of the ot
 Unit tests:
 
 - `PeerHangWatch.test.ts`: the tests use a simulated origin (`test-peers.ts`). It has a `BroadcastChannel` hub, and a Web Lock manager with a queue for each lock name. The tests examine the lock of a visible page, and its release when the page becomes hidden. A page that the browser stops during a hang gives a report, with the time of its last beat.
-- `PeerHangWatch.test.ts`, no report of another page: the page survives, closes normally, becomes hidden, or ends less than 5 s after its last beat. One report only, also with four pages and after the reporter stops. The wait for a late `away`, with a delay of the messages.
+- `PeerHangWatch.test.ts`, no report of another page: the page survives, closes normally, becomes hidden, or ends less than 5 s after its last beat. One report only, also with four pages and after the reporter stops. The reporter keeps the claim for 60 s, and releases it when it stops or goes into the cache. The wait for a late `away`, with a delay of the messages.
 - `PeerHangWatch.test.ts`, the own page at its close: a close at the end of a hang, with and without a heartbeat before the close. The limits of exactly 5 s. No report for a normal close or for a close some time after a hang. No report for a hang that the worker monitor counted, or for a page that becomes hidden.
 - `PeerHangWatch.test.ts`, the back/forward cache: the page closes its channel while it is in the cache, and gets no messages. No report for a page that closes normally in that time. The page opens its channel again after the restore, and watches again.
 - `PeerHangWatch.test.ts`, other cases: the record of the worker from the journal, and the own times when the journal fails. A stop during the take puts the record back. A hidden page watches. The protocol names. The checks of the messages.

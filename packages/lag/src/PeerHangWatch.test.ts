@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isPeerMessage, PEER_CHANNEL_NAME, PeerHangWatch, peerLockName, type PeerHangWatchOptions } from "./PeerHangWatch.js";
+import { isPeerMessage, PEER_CHANNEL_NAME, PEER_CLAIM_HOLD_MS, PeerHangWatch, peerLockName, type PeerHangWatchOptions } from "./PeerHangWatch.js";
 import { SimulatedOrigin, type SimulatedPage } from "./test-peers.js";
 import { createMemoryHangJournal, type HangJournal, type HangRecord } from "./hang-journal.js";
 
@@ -243,6 +243,9 @@ describe("PeerHangWatch", () => {
         reporter.watch.stop();
         await advance(3_000);
         expect([...a.hangs, ...b.hangs, ...c.hangs].map(hang => hang.pageId)).toEqual(["d"]);
+        // The other pages also do not report it after the time of the claim
+        await advance(PEER_CLAIM_HOLD_MS);
+        expect([...a.hangs, ...b.hangs, ...c.hangs].map(hang => hang.pageId)).toEqual(["d"]);
     });
 
     it("waits for the last messages of a page after its lock comes free", async () => {
@@ -392,6 +395,72 @@ describe("PeerHangWatch", () => {
         await advance(2_000);
         expect(origin.heldBy(a.page)).toContain("lag-page-claim:b");
         a.watch.stop();
+        await advance(10);
+        expect(origin.heldBy(a.page)).toEqual([]);
+        // The stop also stops the timer of the claim
+        b.watch.stop();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("keeps the claim for PEER_CLAIM_HOLD_MS, and then releases it", async () => {
+        expect(PEER_CLAIM_HOLD_MS).toBe(60_000);
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        // The claim starts after the wait of 1000 ms for the last messages
+        b.page.kill();
+        await advance(1_000 + PEER_CLAIM_HOLD_MS - 10);
+        expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+        expect(origin.heldBy(a.page)).toEqual([peerLockName("a"), "lag-page-claim:b"]);
+        await advance(20);
+        expect(origin.heldBy(a.page)).toEqual([peerLockName("a")]);
+    });
+
+    it("reports the hang, but does not keep the claim, when it goes into the back/forward cache during the take of the record", async () => {
+        const memory = createMemoryHangJournal();
+        let release : () => void = () => {};
+        const journal : HangJournal = {
+            ...memory,
+            take : (pageId, latestSeenAt) => new Promise(resolve => { release = () => resolve(memory.take(pageId, latestSeenAt)); }),
+        };
+        const a = open("a", { journal });
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        a.watch.suspend();
+        release();
+        await advance(10);
+        expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+        expect(origin.heldBy(a.page)).toEqual([]);
+    });
+
+    it("does not keep the claim when the watch stops in the report", async () => {
+        const b = open("b");
+        const a = open("a", { onAbandonedHang : () => a.watch.stop() });
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        expect(origin.heldBy(a.page)).toEqual([]);
+        expect(vi.getTimerCount()).toBe(1);
+    });
+
+    it("releases the claim when it goes into the back/forward cache", async () => {
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        expect(origin.heldBy(a.page)).toContain("lag-page-claim:b");
+        a.watch.suspend();
         await advance(10);
         expect(origin.heldBy(a.page)).toEqual([]);
     });
