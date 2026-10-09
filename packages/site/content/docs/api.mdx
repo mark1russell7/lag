@@ -95,7 +95,7 @@ Refer to [measurement validity](/docs/concepts/measurement-validity).
 |---|---|
 | `METRICS`, `METRIC_CATALOG` | Every metric: name, type, unit, monitor, description and permitted attribute values. |
 | `EVENTS`, `EVENT_CATALOG` | Every event: name, monitor, description and attributes. |
-| `createHistogram(meter, definition)`, `createCounter(meter, definition)` | Make an instrument from a catalog definition. They fail if the type does not agree. |
+| `createHistogram(meter, definition)`, `createCounter(meter, definition)` | Make an instrument from a catalog definition. They fail if the type does not agree. A histogram gets the bucket boundaries of its definition as advice (`HISTOGRAM_BOUNDARIES`, by unit). An SDK with explicit-bucket histograms uses them. |
 | `Meter`, `Histogram`, `Counter`, `Attributes` | The meter port. An OpenTelemetry `Meter` fits it. |
 | `createNoopMeter()` | A meter that records nothing. |
 | `EventSink`, `EventOptions`, `createNoopEventSink()`, `withEventContext(sink, context)` | The event port, the options of an event (`time`, the time of the occurrence in Unix milliseconds), a sink that sends nothing, and a sink that adds context attributes to each event. |
@@ -135,7 +135,7 @@ Refer to [measurement validity](/docs/concepts/measurement-validity).
 | `PEER_CLAIM_HOLD_MS`, `AbortControllerLike`, `AbortSignalLike`, `AbortControllerConstructor` | The time for which the peer hang watch holds the claim of a report (60 s), and the parts of `AbortController` with which it cancels its waiting lock requests. |
 | `findAbandonedHangs(records, now, ownPageId)` | The records of pages that did not survive their hang. `now` is a wall-clock time, as the times of the records are. |
 | `SharedLivenessMonitor`, `LivenessWatcher`, `createLivenessBeacon`, `beatingSetTimeout` | The shared-memory liveness watcher. |
-| `createForwardingMeter`, `createMeterReceiver` | Send the records of a meter from one context to another context, in batches. |
+| `createForwardingMeter`, `createMeterReceiver` | Send the records of a meter from one context to another context, in batches. Each batch has the ID of its sender (`senderId`) and the definitions of its new instruments. Thus one receiver can get the records of many senders, also when its listener starts late. |
 
 ## Utilities
 

@@ -8,6 +8,7 @@ import {
     summarizeRun,
     type BudgetResult,
     type Measurement,
+    type MutationOrigin,
     type RunIndex,
     type RunReport,
     type RunSummary,
@@ -128,6 +129,46 @@ export function toBudgets(records : readonly ResultRecord[]) : BudgetResult[] {
         byName.set(name, { name, unit, value, limit, pass : value <= limit });
     }
     return [...byName.values()].sort((a, b) => Number(a.pass) - Number(b.pass) || a.name.localeCompare(b.name));
+}
+
+/**
+ * The exit code of the collector. It is 1 when a test or a budget failed, or
+ * when a step gave an exit code that is not 0. A step can fail without a
+ * failed test in the reports, for example when Vitest cannot start.
+ */
+export function runExitCode(failedTests : number, budgets : readonly BudgetResult[], stepExitCodes : readonly number[]) : 0 | 1 {
+    return failedTests > 0 || budgets.some(budget => !budget.pass) || stepExitCodes.some(code => code !== 0) ? 1 : 0;
+}
+
+/** The tolerance for file systems that keep the change time in whole seconds. */
+const FILE_TIME_TOLERANCE_MS = 2_000;
+
+/**
+ * True if a file changed during the run that started at `runStart`. A file
+ * from before the run, for example the coverage of an earlier run with
+ * `--skip-unit`, is not a result of this run.
+ */
+export function changedDuringRun(modified : Date, runStart : Date) : boolean {
+    return modified.getTime() >= runStart.getTime() - FILE_TIME_TOLERANCE_MS;
+}
+
+/** The name of the file next to `mutation.json` with the commit and the time of the Stryker run. */
+export const MUTATION_ORIGIN_FILE = "mutation-run.json";
+
+/**
+ * The commit and the time of a Stryker report. The Pages workflow writes them
+ * into `MUTATION_ORIGIN_FILE` when it downloads the report of the mutation
+ * workflow. Without this file, for example after a local `pnpm mutation`, the
+ * time is the time of the change to `mutation.json`, and the commit is not
+ * known.
+ */
+export function mutationOrigin(origin : unknown, reportModified : Date) : MutationOrigin {
+    const value = typeof origin === "object" && origin !== null ? origin as Record<string, unknown> : {};
+    const commit = typeof value["commit"] === "string" && value["commit"] !== "" ? value["commit"] : undefined;
+    const createdAt = typeof value["createdAt"] === "string" && !Number.isNaN(Date.parse(value["createdAt"]))
+        ? new Date(value["createdAt"]).toISOString()
+        : reportModified.toISOString();
+    return { ...(commit !== undefined ? { commit } : {}), createdAt };
 }
 
 /** A run ID that sorts by time and shows the commit: "2026-10-07-153012-b492a0a". */

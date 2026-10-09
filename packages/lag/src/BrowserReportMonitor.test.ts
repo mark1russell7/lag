@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { BrowserReportMonitor, type ReportingObserverInit, type ReportLike } from "./BrowserReportMonitor.js";
+import { BrowserReportMonitor, type BrowserReport, type ReportingObserverInit, type ReportLike } from "./BrowserReportMonitor.js";
 
 function createObserver() {
     let callback : ((reports : ReportLike[]) => void) | undefined;
@@ -23,7 +23,67 @@ function createObserver() {
     };
 }
 
+/**
+ * A fake of the Reporting API as the specification tells: the global keeps
+ * each report in a buffer, and `observe()` of an observer with
+ * `buffered: true` delivers the reports of the buffer again.
+ */
+function createSpecReporting() {
+    const buffer : ReportLike[] = [];
+    const connected = new Set<{ deliver : (reports : ReportLike[]) => void }>();
+    class SpecReportingObserver {
+        private readonly entry : { deliver : (reports : ReportLike[]) => void };
+        constructor(callback : (reports : ReportLike[]) => void, private readonly options? : { buffered? : boolean }) {
+            this.entry = { deliver : callback };
+        }
+        observe() {
+            connected.add(this.entry);
+            if (this.options?.buffered) this.entry.deliver([...buffer]);
+        }
+        disconnect() {
+            connected.delete(this.entry);
+        }
+    }
+    return {
+        Ctor : SpecReportingObserver as unknown as ReportingObserverInit,
+        queueReport(report : ReportLike) {
+            buffer.push(report);
+            for (const entry of connected) entry.deliver([report]);
+        },
+    };
+}
+
 describe("BrowserReportMonitor", () => {
+    it("gets the reports from before its start, and after stop() and start() no report a second time", () => {
+        const reporting = createSpecReporting();
+        const report = vi.fn();
+        reporting.queueReport({ type : "intervention", url : "", body : { id : "before-start" } });
+
+        const monitor = new BrowserReportMonitor(report, { log : vi.fn() }, reporting.Ctor);
+        reporting.queueReport({ type : "deprecation", url : "", body : { id : "first" } });
+        monitor.stop();
+        reporting.queueReport({ type : "deprecation", url : "", body : { id : "while-stopped" } });
+        monitor.start();
+        reporting.queueReport({ type : "deprecation", url : "", body : { id : "after-restart" } });
+
+        expect(report.mock.calls.map(c => (c[0] as BrowserReport).id)).toEqual(["before-start", "first", "after-restart"]);
+    });
+
+    it("asks for the buffered reports again when the first start failed", () => {
+        const o = createObserver();
+        let fail = true;
+        const Flaky = class {
+            constructor(cb : (reports : ReportLike[]) => void, opts : unknown) {
+                if (fail) throw new Error("no");
+                return new (o.Ctor as unknown as new (cb : unknown, opts : unknown) => object)(cb, opts);
+            }
+        } as unknown as ReportingObserverInit;
+        const monitor = new BrowserReportMonitor(vi.fn(), { log : vi.fn() }, Flaky);
+        fail = false;
+        monitor.start();
+        expect(o.options).toHaveBeenCalledWith({ types : ["intervention", "deprecation"], buffered : true });
+    });
+
     it("observes interventions and deprecations, including buffered reports", () => {
         const o = createObserver();
         new BrowserReportMonitor(vi.fn(), { log : vi.fn() }, o.Ctor);
@@ -70,13 +130,17 @@ describe("BrowserReportMonitor", () => {
         expect(logger.log).toHaveBeenCalledWith("error", "Error processing browser report.", expect.anything());
     });
 
-    it("disconnects on stop and can start again", () => {
+    it("disconnects on stop and can start again, without the buffered reports", () => {
         const o = createObserver();
         const monitor = new BrowserReportMonitor(vi.fn(), { log : vi.fn() }, o.Ctor);
         monitor.stop();
         expect(o.disconnect).toHaveBeenCalled();
         monitor.start();
         expect(o.observe).toHaveBeenCalledTimes(2);
+        expect(o.options.mock.calls).toEqual([
+            [{ types : ["intervention", "deprecation"], buffered : true }],
+            [{ types : ["intervention", "deprecation"], buffered : false }],
+        ]);
     });
 
     it("start() while the monitor observes makes no second observer, and stop() works after a start that failed", () => {

@@ -7,7 +7,7 @@ import { formatMeasurementValue, LINE_DASHES, measurementEcdf, measurementHistog
 import { ChartLegend } from "../components/ChartLegend";
 import { EmptySection } from "../components/States";
 import {
-    defaultGroupingKey,
+    familyGroupingKey,
     GROUP_BY_MEASUREMENT,
     GROUP_BY_SUITE,
     groupingKeys,
@@ -18,7 +18,11 @@ import {
 import { useRunContext } from "./run-context";
 import styles from "./Results.module.css";
 
+/** The value of the grouping select for the default grouping of each family. */
+const DEFAULT_GROUPING = "";
+
 function keyLabel(key : string) : string {
+    if (key === DEFAULT_GROUPING) return "The default of each metric";
     if (key === GROUP_BY_MEASUREMENT) return "Measurement name";
     if (key === GROUP_BY_SUITE) return "Suite";
     return `Label: ${key}`;
@@ -96,7 +100,8 @@ export function MeasurementsView() {
     const families = measurementFamilies(run);
     const keys = groupingKeys(run.measurements);
     const requestedGroup = params.get("group");
-    const groupBy = requestedGroup && keys.includes(requestedGroup) ? requestedGroup : defaultGroupingKey(run.measurements);
+    // Without a valid selection, each family takes its own default: a label that the family has
+    const selectedGroup = requestedGroup && keys.includes(requestedGroup) ? requestedGroup : DEFAULT_GROUPING;
     const requestedMetric = params.get("metric") ?? "";
     const shown = families.filter(family => requestedMetric === "" || family.key === requestedMetric);
 
@@ -114,8 +119,8 @@ export function MeasurementsView() {
             <div className={styles.filters}>
                 <div className={styles.field}>
                     <label htmlFor={groupId}>Group and color by</label>
-                    <select id={groupId} className="control" value={groupBy} onChange={(event) => update("group", event.target.value)}>
-                        {keys.map(key => <option key={key} value={key}>{keyLabel(key)}</option>)}
+                    <select id={groupId} className="control" value={selectedGroup} onChange={(event) => update("group", event.target.value)}>
+                        {[DEFAULT_GROUPING, ...keys].map(key => <option key={key} value={key}>{keyLabel(key)}</option>)}
                     </select>
                 </div>
                 <div className={styles.field}>
@@ -126,7 +131,7 @@ export function MeasurementsView() {
                     </select>
                 </div>
             </div>
-            {shown.map(family => <FamilySection key={family.key} family={family} groupBy={groupBy} />)}
+            {shown.map(family => <FamilySection key={family.key} family={family} groupBy={familyGroupingKey(family, requestedGroup, keys)} />)}
         </>
     );
 }

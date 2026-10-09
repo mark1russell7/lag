@@ -140,10 +140,14 @@ The stress tests use the workload profiles of `@lag/load` to make main-thread lo
 
 1. It builds all packages.
 2. It operates the unit tests with coverage, the browser tests, the overhead benchmark and the site tests. A reporter writes each test with its project and its engine.
-3. It reads the coverage summary, and the newest Stryker report if one exists.
+3. It reads the coverage summary, if the unit tests of this run wrote it. With `--skip-unit`, the run has no coverage. It also reads the newest Stryker report if one exists, with the commit and the time of its Stryker run.
 4. It writes one run to `packages/site/public/data/results/`. Git ignores this folder.
 
-The results page reads this folder. It shows the tests of each engine, the skips with their reasons, the coverage, the surviving mutants, the measurements and the budgets.
+Some failures have no failed test. A `beforeAll` hook that fails skips the tests of its suite. An `afterAll` hook that fails keeps them passed, and an error at the import of a file gives no tests. Thus the reporter adds a failed test with the name `Errors outside the tests` for each file or suite with such errors. The command fails when a test or a budget failed, or when a step gave an exit code that is not 0.
+
+The results page reads this folder. It shows the tests of each engine, the skips with their reasons, the coverage, the surviving mutants, the measurements and the budgets. A package with only skipped tests, or without tests, does not get the passed icon. A run with a failed budget shows as failed in the list of runs and on the home page, as in the collector.
+
+The mutation report comes from the weekly mutation workflow, thus it is usually older than the run. The mutation view shows the commit and the date of the Stryker run. The Pages workflow also takes a run whose score is below the break threshold, thus a score that falls shows on the site.
 
 ## Continuous integration
 
@@ -151,8 +155,8 @@ The results page reads this folder. It shows the tests of each engine, the skips
 |---|---|---|
 | `ci.yml` | Each push and each pull request | The build, the type check, the unit tests, the coverage, the browser tests in each engine, Safari on a macOS runner, Safari in the iOS Simulator, and the tests and the build of the site |
 | `e2e.yml` | Each week, or manually | The Grafana stack in Docker, and the E2E tests |
-| `mutation.yml` | Each week, or manually | Stryker, with the incremental file from the cache |
-| `pages.yml` | Each push to `main`, or manually | Safari and Safari in the iOS Simulator on a macOS runner, then `pnpm results` with their reports, the build of this site and its deployment to GitHub Pages |
+| `mutation.yml` | Each week, or manually | Stryker. A manual run uses the incremental file of its branch, or of `main`, from the cache. The weekly run tests all mutants again (`--force`). |
+| `pages.yml` | Each push to `main`, or manually | Safari and Safari in the iOS Simulator on a macOS runner, then `pnpm results` with their reports and the mutation report of the newest completed `mutation.yml` run of `main`, the build of this site and its deployment to GitHub Pages |
 
 ## Limits
 
@@ -161,7 +165,7 @@ The results page reads this folder. It shows the tests of each engine, the skips
   In the simulator, the click of safaridriver gives no INP, also in web-vitals. Thus the two INP tests skip themselves there.
 - **Low Power Mode.** A macOS runner refuses Low Power Mode on AC power. Thus no browser test operates in Low Power Mode. `DriftLag.power.test.ts` uses the timer rule of the WebKit source instead: a grid of 30 ms for nested timers.
 - **Safari on a shared runner.** Safari on a macOS runner of GitHub sometimes slows the timers of its window, for example by 9 s. Then a timing test fails for a reason that is not in the code. Thus the Safari job of CI reports its results, but it does not block a pull request. A stress profile that the browser slowed skips itself with the reason.
-- **Safari and the collector.** Only macOS has Safari. Thus a macOS job exports its reports (`--export-reports`), and the Linux job of the site imports them (`--import-reports`).
+- **Safari and the collector.** Only macOS has Safari. Thus a macOS job exports its reports (`--export-reports`), and the Linux job of the site imports them (`--import-reports`). The converter removes the checkout folder of the macOS runner from the file names, thus a test file has the same name in each engine.
 - **The E2E tests need a free port.** The Grafana stack uses port 3000 by default. Set `GRAFANA_PORT` when another program uses that port.
 - **Mimir labels.** Mimir puts `service.name` into the `job` label. The E2E query accepts `job` or `service_name`, and a native or a classic histogram.
 - **Mimir and CORS.** Mimir sends no CORS headers, thus a test page cannot read the answer of a query. A Vitest command sends the query from Node (`commands/mimir.ts`).

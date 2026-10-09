@@ -47,7 +47,21 @@ import {
     type SuiteResult,
 } from "@lag/report";
 import { PROJECT_REPORT_DIR_ENV } from "./project-reporter.js";
-import { mergeIndex, parseResultLines, runFile, runId, suiteMeta, toBudgets, toMeasurements, type ProjectReport, type ResultRecord } from "./model.js";
+import {
+    changedDuringRun,
+    MUTATION_ORIGIN_FILE,
+    mergeIndex,
+    mutationOrigin,
+    parseResultLines,
+    runExitCode,
+    runFile,
+    runId,
+    suiteMeta,
+    toBudgets,
+    toMeasurements,
+    type ProjectReport,
+    type ResultRecord,
+} from "./model.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../../..");
@@ -162,20 +176,35 @@ function exportReports(dir : string, temp : string, resultsDir : string) : void 
     console.log(`\nExported ${count} reports to ${dir}.`);
 }
 
-function coverageReports() : CoverageReport[] {
-    const summary = readJson<IstanbulSummary>(path.join(root, "packages/lag/coverage/coverage-summary.json"));
+/**
+ * The coverage of @lag/core, only if the unit tests of this run wrote it. A
+ * file from an earlier run (for example with --skip-unit) is not a result of
+ * this run.
+ */
+function coverageReports(runStart : Date) : CoverageReport[] {
+    const file = path.join(root, "packages/lag/coverage/coverage-summary.json");
+    if (!existsSync(file)) return [];
+    const modified = statSync(file).mtime;
+    if (!changedDuringRun(modified, runStart)) {
+        console.log(`Coverage: ${path.relative(root, file)} is from ${modified.toISOString()}, before this run. The run has no coverage report.`);
+        return [];
+    }
+    const summary = readJson<IstanbulSummary>(file);
     return summary ? [fromIstanbulSummary(summary, "@lag/core", root)] : [];
 }
 
 function mutationReports() : MutationReport[] {
-    const file = path.join(root, "packages/lag/reports/mutation/mutation.json");
+    const dir = path.join(root, "packages/lag/reports/mutation");
+    const file = path.join(dir, "mutation.json");
     if (has("--no-mutation") || !existsSync(file)) return [];
     const report = readJson<StrykerReport>(file);
     if (!report) return [];
-    console.log(`Mutation report: ${path.relative(root, file)} from ${statSync(file).mtime.toISOString()}`);
+    // The commit and the time of the Stryker run, usually from an earlier day than this run
+    const origin = mutationOrigin(readJson<unknown>(path.join(dir, MUTATION_ORIGIN_FILE)), statSync(file).mtime);
+    console.log(`Mutation report: ${path.relative(root, file)} from ${origin.createdAt}${origin.commit ? `, commit ${origin.commit.slice(0, 7)}` : ""}`);
     // Stryker names the files relative to the package
     const files = Object.fromEntries(Object.entries(report.files).map(([name, value]) => [path.resolve(root, "packages/lag", name), value]));
-    return [fromStrykerReport({ files }, "@lag/core", root)];
+    return [fromStrykerReport({ files }, "@lag/core", root, origin)];
 }
 
 function main() : void {
@@ -201,7 +230,7 @@ function main() : void {
     if (exportDir) {
         exportReports(exportDir, temp, resultsDir);
         if (!has("--keep-temp")) rmSync(temp, { recursive : true, force : true });
-        process.exitCode = exitCodes.some(([, code]) => code !== 0) ? 1 : 0;
+        process.exitCode = runExitCode(0, [], exitCodes.map(([, code]) => code));
         return;
     }
 
@@ -223,7 +252,7 @@ function main() : void {
         createdAt : createdAt.toISOString(),
         ...(info ? { git : info } : {}),
         suites : suites.sort((a, b) => a.id.localeCompare(b.id)),
-        coverage : coverageReports(),
+        coverage : coverageReports(createdAt),
         mutation : mutationReports(),
         measurements : toMeasurements(records, "@lag/integration-tests"),
         budgets : toBudgets(records),
@@ -241,7 +270,8 @@ function main() : void {
         `coverage reports: ${run.coverage.length}; mutation reports: ${run.mutation.length}; measurements: ${run.measurements.length}; budgets: ${run.budgets.length} ` +
         `(${run.budgets.filter(b => !b.pass).length} failed).`);
     for (const [title, code] of exitCodes) if (code !== 0) console.log(`Exit code ${code}: ${title}`);
-    process.exitCode = counts.failed > 0 || run.budgets.some(b => !b.pass) ? 1 : 0;
+    // A step can fail without a failed test, for example when Vitest cannot start
+    process.exitCode = runExitCode(counts.failed, run.budgets, exitCodes.map(([, code]) => code));
 }
 
 main();

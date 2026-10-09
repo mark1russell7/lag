@@ -202,9 +202,11 @@ export function shortPath(file : string) : string {
     return segments.slice(-2).join("/");
 }
 
-/** The mutation score of each file, the lowest score first. */
+/** The mutation score of each file, the lowest score first. A file without a score has no bar. */
 export function mutationChart(rows : readonly MutationFileRow[], limit = 20) : ChartBuilder {
-    const data = rows.slice(0, limit).map(row => ({ label : shortPath(row.file), value : row.score }));
+    const data = rows
+        .flatMap(row => (row.score === undefined ? [] : [{ label : shortPath(row.file), value : row.score }]))
+        .slice(0, limit);
     return horizontalPercentBars(data, "Mutation score (%)");
 }
 
@@ -226,6 +228,17 @@ export function symlogTicks(max : number) : number[] {
     return ticks;
 }
 
+const tickNumber = new Intl.NumberFormat("en", { maximumSignificantDigits : 3 });
+
+/**
+ * The label of a tick of `symlogTicks`. Without it, Plot takes the precision
+ * of the labels from the domain. A domain of almost equal values then gives
+ * labels, for example "1,000.00000000000000".
+ */
+export function formatTick(value : number) : string {
+    return tickNumber.format(value);
+}
+
 function maxValue(groups : readonly MeasurementGroup[]) : number {
     return groups.reduce((max, group) => Math.max(max, group.summary.max ?? 0), 0);
 }
@@ -240,7 +253,7 @@ export function measurementHistogram(groups : readonly MeasurementGroup[], unit 
             height : 48 + groups.length * 92,
             marginLeft : 48,
             marginRight : 16,
-            x : { type : "symlog", label : unit, grid : true, ticks : symlogTicks(maxValue(groups)) },
+            x : { type : "symlog", label : unit, grid : true, ticks : symlogTicks(maxValue(groups)), tickFormat : formatTick },
             y : { label : "Values", ticks : 3, grid : true },
             fy : { domain : names, axis : null, padding : 0.22 },
             color : { domain : names, range : names.map((_, index) => seriesColor(theme, index)) },
@@ -308,7 +321,7 @@ export function measurementEcdf(groups : readonly MeasurementGroup[], unit : str
             height : 300,
             marginLeft : 52,
             marginRight : 44,
-            x : { type : "symlog", label : unit, grid : true, ticks : symlogTicks(maxValue(groups)) },
+            x : { type : "symlog", label : unit, grid : true, ticks : symlogTicks(maxValue(groups)), tickFormat : formatTick },
             y : { domain : [0, 1], label : "Fraction of values", tickFormat : "%", grid : true },
             marks,
         };

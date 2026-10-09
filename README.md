@@ -21,11 +21,14 @@ The website in `packages/site` has the documentation, the thesis, the research a
 ## Usage
 
 ```ts
-import { init } from "@mark1russell7/otel-ts";
+import { createInstanceId, init } from "@mark1russell7/otel-ts";
 import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
 import { createLagWorker } from "@lag/worker";
 
-const otel = init({ serviceName : "shop", endpoint : "http://localhost:4318", histogramAggregation : "exponential" });
+const endpoint = "http://localhost:4318";
+const serviceInstanceId = createInstanceId();
+
+const otel = init({ serviceName : "shop", serviceInstanceId, endpoint, histogramAggregation : "exponential" });
 
 const worker = createLagWorker();
 const monitors = setupAllMonitors(createBrowserDeps(window, {
@@ -33,7 +36,11 @@ const monitors = setupAllMonitors(createBrowserDeps(window, {
     logger : createOtelLoggerAdapter(otel.getLogger("lag")),
     events : createOtelEventSink(otel.getLogger("lag-events")),
     worker,
-    workerHangReport : { url : "http://localhost:4318/v1/logs", resource : { "service.name" : "shop" } },
+    workerHangReport : {
+        url : `${endpoint}/v1/logs`,
+        resource : { "service.name" : "shop", "service.instance.id" : serviceInstanceId },
+    },
+    pageContext : () => ({ "session.id" : otel.getSessionId() }),
 }));
 
 // Record the pending values of the monitors before each export
@@ -45,6 +52,8 @@ worker.terminate();
 ```
 
 `createBrowserDeps()` examines each browser API. Thus each browser gets the monitors that it can support. For example, Safari has no `requestIdleCallback`, so the idle monitor does not start there.
+
+The worker sends its hang reports without the OpenTelemetry SDK, because the main thread cannot operate during a hang. `workerHangReport.resource` gives the reports the same `service.instance.id` as the page, and `pageContext` gives them the session ID. Then a query can join the hang reports with the telemetry of the page.
 
 You can also use each monitor alone, as a class (`new DriftLag(...)`) or through its factory (`createInstrumentedDriftLag(deps, conditions)`). A factory gives a `MonitorHandle` with an error boundary and a `stop()`.
 
@@ -123,7 +132,7 @@ pnpm lint:ste           # the writing rules of the README, the site and the TSDo
 
 `pnpm lint:ste` starts [`@mark1russell7/ste-lint`](https://github.com/mark1russell7/ste-lint), a linter for the writing rules of ASD-STE100 Simplified Technical English. It has its own repository, because other repositories use it too.
 
-To add a package, use `pnpm new --name <name> --config <config>`. Do not write `package.json` files yourself.
+To add a package, use `pnpm new --name <name> --config <config>`, then `pnpm install`. Do not write `package.json` files yourself. The command adds the devDependencies that the config needs, for example `@types/node` for `node`. It does not write into an existing folder, except with `--force`.
 
 The Grafana stack (Alloy, Mimir, Loki, Tempo and Grafana) is in [grafana-infra](https://github.com/mark1russell7/grafana-infra). The OpenTelemetry setup is in [otel-ts](https://github.com/mark1russell7/otel-ts).
 

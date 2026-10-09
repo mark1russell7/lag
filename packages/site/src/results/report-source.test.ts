@@ -62,6 +62,16 @@ describe("HttpReportSource", () => {
         await expect(badJson.listRuns()).rejects.toThrow("is not valid JSON");
     });
 
+    it("accepts a run without budget counts, and refuses budget counts that are not numbers", async () => {
+        const run = { id : "r", file : "runs/r.json", createdAt : "2026-10-08T00:00:00.000Z", counts : { passed : 1, failed : 0, skipped : 0, todo : 0 } };
+        const read = (runs : unknown[]) => new HttpReportSource({
+            baseUrl : "/",
+            fetch : fakeFetch({ "/data/results/index.json" : response(200, { schemaVersion : SCHEMA_VERSION, runs }) }),
+        }).listRuns();
+        await expect(read([run, { ...run, id : "s", budgets : { pass : 1, fail : 1 } }])).resolves.toMatchObject({ runs : [{ id : "r" }, { id : "s" }] });
+        await expect(read([{ ...run, budgets : { pass : "1", fail : 0 } }])).rejects.toBeInstanceOf(ReportDataError);
+    });
+
     it("fails for an old schema version", async () => {
         const fetch = fakeFetch({ "/data/results/index.json" : response(200, { schemaVersion : 0, runs : [] }) });
         await expect(new HttpReportSource({ baseUrl : "/", fetch }).listRuns()).rejects.toBeInstanceOf(ReportDataError);
@@ -98,6 +108,7 @@ describe("MemoryReportSource", () => {
         const runIndex = await source.listRuns();
         expect(runIndex.runs.map(run => run.file)).toEqual(SAMPLE_RUNS.map(run => run.file));
         expect(runIndex.runs[1]?.counts.failed).toBe(3);
+        expect(runIndex.runs[1]?.budgets?.fail).toBeGreaterThan(0);
         await expect(source.getRun(SAMPLE_RUNS[0]!.file)).resolves.toBe(SAMPLE_RUNS[0]!.report);
         await expect(source.getRun("nope.json")).rejects.toBeInstanceOf(ReportDataError);
     });

@@ -83,22 +83,25 @@ export function symlogBins(values : readonly number[], binCount = 24) : Bin[] {
     if (sorted.length === 0) return [];
     const min = sorted[0]!;
     const max = sorted[sorted.length - 1]!;
-    if (min === max) return [{ x0 : min, x1 : min + 1, count : sorted.length }];
+    const count = Math.max(1, Math.floor(binCount));
 
     const t0 = toSymlog(min);
-    const step = (toSymlog(max) - t0) / binCount;
-    const bins : Bin[] = Array.from({ length : binCount }, (_, index) => ({
+    const step = (toSymlog(max) - t0) / count;
+    // Equal values, or values so near that log(1 + x) is the same (for example the difference of two clock readings)
+    if (!(step > 0)) return [{ x0 : min, x1 : Math.max(max, min + 1), count : sorted.length }];
+
+    const bins : Bin[] = Array.from({ length : count }, (_, index) => ({
         x0 : fromSymlog(t0 + index * step),
         x1 : fromSymlog(t0 + (index + 1) * step),
         count : 0,
     }));
     for (const value of sorted) {
-        const index = Math.min(binCount - 1, Math.floor((toSymlog(value) - t0) / step));
+        const index = Math.min(count - 1, Math.max(0, Math.floor((toSymlog(value) - t0) / step)));
         bins[index]!.count++;
     }
     // Make the outer edges exact (the inverse transform can round).
     bins[0]!.x0 = min;
-    bins[binCount - 1]!.x1 = max;
+    bins[count - 1]!.x1 = max;
     return bins;
 }
 
