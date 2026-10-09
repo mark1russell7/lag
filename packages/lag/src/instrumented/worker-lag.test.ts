@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import { createInstrumentedWorkerLag } from "./worker-lag.js";
 import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "../test-utils.js";
-import { createMemoryHangJournal, HANG_JOURNAL_STALE_MS, type HangJournal, type HangRecord } from "../hang-journal.js";
+import { createMemoryHangJournal, createStorageHangReportMarks, HANG_JOURNAL_STALE_MS, type HangJournal, type HangRecord, type HangReportMarks } from "../hang-journal.js";
+import { MemoryStorage } from "../test-peers.js";
 import { createIndexedDbHangJournal } from "../browser/indexeddb-journal.js";
 import { createMeasurementConditions, type MeasurementConditions } from "../measurement-conditions.js";
 import { createWorkerHandler } from "../lag-worker.js";
@@ -275,6 +276,7 @@ describe("createInstrumentedWorkerLag with the messages of a worker", () => {
     /** A monitor on a worker whose messages the test sends. The absolute time of the main thread is `NOW`. */
     function withWorker(options : {
         journal? : HangJournal;
+        marks? : HangReportMarks;
         events? : boolean;
         wallClock? : boolean;
         conditions? : MeasurementConditions;
@@ -299,6 +301,7 @@ describe("createInstrumentedWorkerLag with the messages of a worker", () => {
             clearTimeoutFn : (id) => clearTimeout(id),
             pageId : "this-page",
             ...(options.journal ? { hangJournal : options.journal } : {}),
+            ...(options.marks ? { hangReportMarks : options.marks } : {}),
             ...(options.events === false ? {} : { events }),
             ...(options.wallClock === false ? {} : { wallClock : { now : () => NOW } }),
             ...(options.workerHangReport ? { workerHangReport : options.workerHangReport } : {}),
@@ -427,6 +430,42 @@ describe("createInstrumentedWorkerLag with the messages of a worker", () => {
 
         expect(t.events.emit).not.toHaveBeenCalled();
         expect((await journal.list()).map(r => r.pageId)).toEqual(["closed-page"]);
+    });
+
+    it("removes the record of a hang that the peer hang watch reported, but does not count the hang again", async () => {
+        const journal = createMemoryHangJournal();
+        await journal.put(record("self-reported", NOW - 60_000));
+        await journal.put(record("closed-page", NOW - 60_000));
+        const storage = new MemoryStorage();
+        const marks = createStorageHangReportMarks(storage);
+        // The hung page reported its own hang at its close, and its worker did not remove the record
+        marks.add("self-reported", NOW - 59_000);
+        const t = withWorker({ journal, marks });
+        await vi.advanceTimersByTimeAsync(0);
+        t.handle.stop();
+
+        expect(t.meter.sum("lag_main_thread_hangs")).toBe(1);
+        expect(t.events.emit).toHaveBeenCalledTimes(1);
+        expect(t.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ "lag.hang.page_id" : "closed-page" }));
+        expect(await journal.list()).toEqual([]);
+        expect(storage.keys()).toEqual([]);
+    });
+
+    it("removes the old marks of pages without a record, and keeps the marks that the journal can still need", async () => {
+        const journal = createMemoryHangJournal();
+        // The worker of this page updated its record 500 ms ago: the hang continues
+        await journal.put(record("live-page", NOW - 500));
+        const storage = new MemoryStorage();
+        const marks = createStorageHangReportMarks(storage);
+        marks.add("live-page", NOW - 40_000);
+        marks.add("old-mark", NOW - HANG_JOURNAL_STALE_MS - 1);
+        marks.add("recent-mark", NOW - 1_000);
+        const t = withWorker({ journal, marks });
+        await vi.advanceTimersByTimeAsync(0);
+        t.handle.stop();
+
+        expect(t.meter.sum("lag_main_thread_hangs")).toBe(0);
+        expect(storage.keys()).toEqual(["lag-hang-reported:live-page", "lag-hang-reported:recent-mark"]);
     });
 
     it("logs a warning when it cannot read the hang journal", async () => {

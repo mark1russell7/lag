@@ -1,5 +1,6 @@
 import type { AbortSignalLike, BroadcastChannelLike, LockManagerLike, PeerHangWatchDeps } from "./PeerHangWatch.js";
 import type { Logger } from "./types.js";
+import type { StorageLike } from "./hang-journal.js";
 
 type LockRequest = {
     page : SimulatedPage;
@@ -16,6 +17,8 @@ type LockState = { holder : LockRequest | undefined; queue : LockRequest[] };
  * lock name, as a browser has. A request with an aborted signal does not
  * wait, and an abort removes a waiting request from its queue.
  *
+ * The pages also share one synchronous storage (`localStorage`).
+ *
  * The tests use the fake timers of Vitest: the pages share the virtual
  * clock and the timer queue. A page can hang (`hang()`). Then its callbacks
  * wait until `recover()`, and its interval callbacks do not start. A page
@@ -29,6 +32,8 @@ export class SimulatedOrigin {
      * a message can arrive after a lock that the sender released later.
      */
     messageDelayMs = 0;
+    /** The `localStorage` of the origin. */
+    readonly localStorage : MemoryStorage = new MemoryStorage();
     private readonly channels = new Set<SimulatedChannel>();
     private readonly lockStates = new Map<string, LockState>();
 
@@ -140,6 +145,36 @@ export class SimulatedOrigin {
             state.holder = undefined;
             this.grantNext(name);
         });
+    }
+}
+
+/** A `localStorage` in memory. */
+export class MemoryStorage implements StorageLike {
+    private readonly items = new Map<string, string>();
+
+    get length() : number {
+        return this.items.size;
+    }
+
+    key(index : number) : string | null {
+        return [...this.items.keys()][index] ?? null;
+    }
+
+    getItem(key : string) : string | null {
+        return this.items.get(key) ?? null;
+    }
+
+    setItem(key : string, value : string) : void {
+        this.items.set(key, value);
+    }
+
+    removeItem(key : string) : void {
+        this.items.delete(key);
+    }
+
+    /** All keys, for the assertions of the tests. */
+    keys() : string[] {
+        return [...this.items.keys()];
     }
 }
 

@@ -43,7 +43,7 @@ import type {
 import type { FinalizationRegistryConstructor } from "./GCSignalDetector.js";
 import type { WorkerLike } from "./WorkerLagMonitor.js";
 import type { HangReportTarget } from "./worker-protocol.js";
-import type { HangJournal } from "./hang-journal.js";
+import type { HangJournal, HangReportMarks } from "./hang-journal.js";
 import type { AbortControllerConstructor, BroadcastChannelConstructor, LockManagerLike } from "./PeerHangWatch.js";
 import type { ReportingObserverInit } from "./BrowserReportMonitor.js";
 import type { PageSource } from "./vitals/types.js";
@@ -131,6 +131,12 @@ export type WorkerMonitorDeps = {
      * hang watch takes the record of a hung page from it.
      */
     hangJournal? : HangJournal;
+    /**
+     * The marks of the hangs that the peer hang watch reported
+     * (`createStorageHangReportMarks(localStorage)`). The watch writes them,
+     * and the monitor does not count a marked hang of the journal again.
+     */
+    hangReportMarks? : HangReportMarks;
     /** The ID of this page instance. The default is a new random ID. */
     pageId? : string;
 };
