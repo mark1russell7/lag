@@ -36,6 +36,8 @@ export function ThemeToggle() {
         <button
             type="button"
             className={styles.toggle}
+            // The HTML from the build shows the system theme. A page with a stored theme hides the button until the app starts.
+            data-theme-toggle=""
             onClick={() => setPreference(next)}
             aria-label={`Theme: ${themeLabel(preference)}. Select to use the ${themeLabel(next).toLowerCase()} theme.`}
         >
