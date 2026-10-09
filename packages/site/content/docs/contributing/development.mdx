@@ -48,6 +48,37 @@ The scaffold makes the folder, the `package.json` and `tsconfig.json` files, and
 
 The [test strategy](/docs/testing/strategy) explains each type of test.
 
+## The site build
+
+`pnpm --filter @lag/site build` makes the site in `packages/site/dist`. After the Vite build, the plugin in `build/static-site-plugin.ts` does these steps:
+
+1. It opens each page of the site in Chromium. The pages are the home page, each MDX page, the playground, the list of test runs and the views of each run.
+2. It waits until the page is ready. A page is ready when no element has `aria-busy="true"` and the page does not change for 200 ms.
+3. It writes the HTML of the page into the HTML file of the page. Search engines and link previews read this HTML without JavaScript.
+4. It adds the head tags of the page (`build/head-tags.ts`): the title, the description, the canonical URL, Open Graph and the Twitter card. It also adds the structured data (JSON-LD).
+5. It makes an Open Graph image of 1200 × 630 pixels for each page, in `dist/og/` (`build/og-image.ts`). The image shows the group, the title and the description of the page, with a lag chart. Each page gets different bars in the chart.
+6. It writes `sitemap.xml`, `robots.txt` and `404.html`. The pages of a test run and `404.html` have `noindex`, and the sitemap does not contain them.
+
+When the app starts in the browser, it renders the page into a hidden element. When that page is ready, the app removes the HTML from the build and shows its own page (`src/app/prerender-handoff.ts`). Thus the reader sees the full page from the start, and the charts and the playground operate after the change.
+
+During the prerender, the monitors of the playground and of the home page do not start. Thus the HTML does not contain the values of the build machine.
+
+A component that loads code or data must have `aria-busy="true"` while it loads. If it does not, the build can keep the HTML of a page that is not complete.
+
+| Variable | What it does |
+|---|---|
+| `SITE_BASE` | The path of the site below the host, for example `lag` for `/lag/`. |
+| `SITE_URL` | The absolute address of the site, for the canonical links, Open Graph and the sitemap. The default is the address of the site on GitHub Pages. |
+| `SITE_PRERENDER` | `0` builds without Chromium. Then the pages have no HTML from the build, and the build makes no images. |
+
+The build needs Chromium. Install it one time:
+
+```bash
+pnpm --filter @lag/site exec playwright install chromium
+```
+
+The social preview of the repository is `.github/social-preview.png` (1280 × 640 pixels). To make it again, use `pnpm --filter @lag/site social-preview`. Then upload the file in the settings of the repository on GitHub.
+
 ## Rules for a change
 
 - Give each new part its dependencies as arguments. Do not read browser globals outside the browser adapter.
