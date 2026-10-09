@@ -79,10 +79,7 @@ export class SchedulingFairnessMonitor {
         try {
             tasks = createMessageTaskQueue(this.MessageChannelCtor);
         } catch (error) {
-            this.logger.log("error", "Error in scheduling fairness measurement.", {
-                error,
-                type : "SchedulingFairnessMonitor",
-            });
+            this.logError(error);
             return;
         }
         this.tasks = tasks;
@@ -112,6 +109,7 @@ export class SchedulingFairnessMonitor {
             const generation = this.generation;
             const result : Partial<SchedulingMeasurement> = {};
 
+            // The callbacks of the three primitives start outside this try/catch
             const checkComplete = () : void => {
                 if (
                     this.started &&
@@ -120,7 +118,11 @@ export class SchedulingFairnessMonitor {
                     result.microtaskMs !== undefined &&
                     result.messageChannelMs !== undefined
                 ) {
-                    this.report(result as SchedulingMeasurement);
+                    try {
+                        this.report(result as SchedulingMeasurement);
+                    } catch (error) {
+                        this.logError(error);
+                    }
                 }
             };
 
@@ -142,10 +144,14 @@ export class SchedulingFairnessMonitor {
                 checkComplete();
             });
         } catch (error) {
-            this.logger.log("error", "Error in scheduling fairness measurement.", {
-                error,
-                type : "SchedulingFairnessMonitor",
-            });
+            this.logError(error);
         }
+    }
+
+    private logError(error : unknown) : void {
+        this.logger.log("error", "Error in scheduling fairness measurement.", {
+            error,
+            type : "SchedulingFairnessMonitor",
+        });
     }
 }
