@@ -31,7 +31,7 @@ export function LoadPanel({ session, snapshot } : LoadPanelProps) {
             <h2 id="load-heading">Make load</h2>
             <p className={styles.lead}>
                 Each button loads the main thread of this page. A button that blocks the main thread also makes a long
-                interaction, so the event chart shows it too.
+                interaction and a long animation frame. The timeline below shows them.
             </p>
             <ul className={styles.actions}>
                 {LOAD_ACTIONS.map(action => (
