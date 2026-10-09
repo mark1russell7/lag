@@ -422,6 +422,56 @@ describe("LifecycleStateMachine", () => {
         });
     });
 
+    describe("handle()", () => {
+        it("handles an event before the listener of the machine, and the listener then ignores that event", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            const seen : string[] = [];
+            sm.subscribe(({ from, to }) => seen.push(`${from}>${to}`));
+            const pagehide = { type : "pagehide", persisted : false };
+
+            // As the before-flush hook of an exporter whose listener starts first
+            sm.handle(pagehide);
+            expect(sm.getState()).toBe("terminated");
+            m.fireWin("pagehide", pagehide);
+
+            expect(seen).toEqual(["active>terminated"]);
+        });
+
+        it("gives one restore transition when the same pageshow event comes two times", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            m.fireWin("pagehide", { persisted : true });
+            const seen : string[] = [];
+            sm.subscribe(({ to, trigger }) => seen.push(`${trigger}:${to}`));
+            const pageshow = { type : "pageshow", persisted : true };
+
+            sm.handle(pageshow);
+            sm.handle(pageshow);
+            m.fireWin("pageshow", pageshow);
+
+            expect(seen).toEqual(["pageshow:active"]);
+        });
+
+        it("handles a visibilitychange, and ignores other events, values that are not events, and all events after dispose()", () => {
+            const m = createMocks();
+            const sm = new LifecycleStateMachine(m.document, m.window, m.clock, { log : vi.fn() });
+            m.setVisibilitySilently("hidden");
+            sm.handle({ type : "click" });
+            sm.handle(undefined);
+            sm.handle("pagehide");
+            sm.handle({ type : 7 });
+            expect(sm.getTotalTransitions()).toBe(0);
+
+            sm.handle({ type : "visibilitychange" });
+            expect(sm.getTotalTransitions()).toBe(1);
+
+            sm.dispose();
+            sm.handle({ type : "pagehide", persisted : false });
+            expect(sm.getTotalTransitions()).toBe(1);
+        });
+    });
+
     describe("listener phases and event times", () => {
         function setupTargets() {
             const document = Object.assign(createFakeEventTarget(), { visibilityState : "visible", hasFocus : () => true });

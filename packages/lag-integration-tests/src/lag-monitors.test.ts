@@ -84,7 +84,7 @@ describe("Lag Monitor Integration", () => {
             memoryIntervalMs : 5_000,
         }));
         // The monitors record their pending values before each export
-        otel.onBeforeFlush(() => handles.flush());
+        otel.onBeforeFlush((cause) => handles.flush(cause.event));
     });
 
     afterAll(async () => {

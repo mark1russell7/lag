@@ -141,8 +141,15 @@ export type AllMonitorHandles = {
      * hook of the exporter. Then the final export of a page contains these
      * values, also when the exporter gets the `pagehide` event before the
      * monitors.
+     *
+     * Give it the browser event that started the flush, for example the
+     * `pagehide` event of otel-ts (`onBeforeFlush((cause) =>
+     * monitors.flush(cause.event))`). The lifecycle state machine then
+     * handles that event first. Thus the transition to `terminated`, its
+     * event, and the own hang report of the peer hang watch go into the
+     * final export too.
      */
-    flush() : void;
+    flush(event? : unknown) : void;
 
     // Typed accessors — each is lazy via getter so they stay in sync with the registry
     readonly conditions : MeasurementConditions | undefined;
@@ -380,7 +387,10 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
     return {
         registry,
         stop : () => registry.stopAll(),
-        flush : () => monitorOf<PageViewVitals>(registry, "page-view-vitals")?.flush(),
+        flush : (event? : unknown) => {
+            if (event !== undefined) lifecycle?.handle(event);
+            monitorOf<PageViewVitals>(registry, "page-view-vitals")?.flush();
+        },
 
         get conditions() { return monitorOf<MeasurementConditions>(registry, "measurement-conditions"); },
         get vitals() { return monitorOf<PageViewVitals>(registry, "page-view-vitals"); },

@@ -58,7 +58,7 @@ sequenceDiagram
     participant M as Monitors
     participant L as Lifecycle state machine
     B->>O: pagehide (listener added first)
-    O->>M: onBeforeFlush: monitors.flush()
+    O->>M: onBeforeFlush: monitors.flush(pagehide)
     M->>O: record the values of the page view
     O->>O: export the telemetry and stop
     B->>L: pagehide (capture listener)
