@@ -38,6 +38,15 @@ const MAX_GRANULARITY_MS = 40;
 /** A row of longer steps starts a probe after this number of steps. */
 const PROBE_ROW_STEPS = 5;
 
+/**
+ * The steps after `start()` that are a warm-up. WebKit aligns a timer only
+ * from the nesting level 10 (`DOMTimer.cpp`). A chain that starts outside a
+ * timer task has the level 0, thus its first 10 steps are not aligned. The
+ * 11th step starts at a time that is not aligned, thus its duration is
+ * between 5 ms and 35 ms on the grid of 30 ms.
+ */
+const WARM_UP_STEPS = 11;
+
 /** The probe of a monitor with `postTask`, and the confirmed idle duration of one step. */
 type Probing = {
     readonly probe : BusyTimeProbe;
@@ -70,6 +79,13 @@ type Probing = {
  *
  * A long step is a block, not jitter. Thus, a block does not change the
  * baseline.
+ *
+ * WebKit aligns only the timers of the nesting level 10 or more. `start()`
+ * starts a new chain at a low level, for example in a `visibilitychange`
+ * task. Thus, the first 11 steps after `start()` are a warm-up. They are not
+ * recent steps, and they are not in a row. A warm-up step adds only its
+ * duration above the baseline to the lag. A probe does not start during the
+ * warm-up.
  *
  * The timer granularity can change while the monitor operates. For example,
  * Windows can change the timer resolution of the browser process on battery
@@ -145,12 +161,16 @@ export class DriftLag extends LagMonitor {
      */
     private changeStep : number | undefined;
     /**
-     * The first steps of the window that do not get the baseline of the end of
-     * the window: the steps before an accepted row.
+     * The first steps of the window: the warm-up steps, and the steps before
+     * an accepted row. They do not get the baseline of the end of the window.
      */
     private earlySteps = 0;
     /** The idle duration of the steps before an accepted row, at the old baseline. */
     private preRowIdleMs = 0;
+    /** The durations of the warm-up steps in the window. */
+    private readonly warmUpSteps : number[] = [];
+    /** The number of warm-up steps that did not end. */
+    private warmUpLeft = 0;
     /** The probed steps and the steps after a probe in the window. They are not in a row. */
     private skippedSteps = 0;
     private readonly probing : Probing | undefined;
@@ -179,6 +199,7 @@ export class DriftLag extends LagMonitor {
         const now = this.clock.now();
         this.lastStepAt = now;
         this.startWindow(now);
+        this.warmUpLeft = WARM_UP_STEPS;
         this.endRow();
         this.step();
     }
@@ -204,7 +225,9 @@ export class DriftLag extends LagMonitor {
      * The length of the last window that `measure()` ended, with its lag.
      * The window is near `expectedElapsedTimeMs` only when the baseline
      * divides it. In Firefox and WebKit on Windows, a window has 6 steps of
-     * 15.6 ms (93 ms). The first window has 20 steps.
+     * 15.6 ms (93 ms). The first window has 20 steps. With steps of 15.6 ms,
+     * it has 21 steps, because it waits for the row of these steps after the
+     * warm-up.
      */
     getLastWindowMs() : number {
         return this.lastWindowMs;
@@ -213,7 +236,8 @@ export class DriftLag extends LagMonitor {
     /**
      * This method gives the lag of the window that ends at this time, and
      * starts the next window. Each step of the window gets the baseline,
-     * except the early steps. The steps before an accepted row get the old
+     * except the early steps. A warm-up step gets its duration, but not more
+     * than the baseline. The steps before an accepted row get the old
      * baseline.
      */
     measure() : number {
@@ -225,7 +249,8 @@ export class DriftLag extends LagMonitor {
             if (window.probe) this.probing.wanted = true;
         }
         this.lastWindowMs = now - this.windowStart;
-        const idleMs = this.preRowIdleMs + (this.stepsInWindow - this.earlySteps) * baseline;
+        let idleMs = this.preRowIdleMs + (this.stepsInWindow - this.earlySteps) * baseline;
+        for (const durationMs of this.warmUpSteps) idleMs += Math.min(durationMs, baseline);
         this.startWindow(now);
         this.windowBaseline = baseline;
         return this.lastWindowMs - idleMs;
@@ -236,6 +261,7 @@ export class DriftLag extends LagMonitor {
         this.stepsInWindow = 0;
         this.earlySteps = 0;
         this.preRowIdleMs = 0;
+        this.warmUpSteps.length = 0;
         this.skippedSteps = 0;
         this.rowStart = -1;
     }
@@ -331,9 +357,14 @@ export class DriftLag extends LagMonitor {
         const handle : number = this.setTimeoutFn(() => {
             const now = this.clock.now();
             const durationMs = now - this.lastStepAt;
-            // A probe that operated during this step gives the busy time of the thread. A probe also
-            // changes the next step: in Chromium, the thread woke 3 ms later after a probe.
-            if (this.probing?.probe.isRunning()) {
+            // A warm-up step is not a recent step (refer to the class description). A probe that operated
+            // during this step gives the busy time of the thread. A probe also changes the next step: in
+            // Chromium, the thread woke 3 ms later after a probe.
+            if (this.warmUpLeft > 0) {
+                this.warmUpLeft--;
+                this.warmUpSteps.push(durationMs);
+                this.earlySteps++;
+            } else if (this.probing?.probe.isRunning()) {
                 this.addProbedStep(durationMs, this.probing.probe.stop(), this.probing);
                 this.probing.afterProbe = true;
                 this.skippedSteps++;
@@ -370,7 +401,7 @@ export class DriftLag extends LagMonitor {
             }
         }, this.stepMs);
         this.handle = handle;
-        if (this.probing?.wanted) {
+        if (this.probing?.wanted && this.warmUpLeft === 0) {
             this.probing.wanted = false;
             this.probing.probe.start();
         }

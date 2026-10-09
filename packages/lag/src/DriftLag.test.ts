@@ -70,8 +70,11 @@ describe("DriftLag", () => {
 
     it("changes the number of steps so that a window stays near the expected length", () => {
         const d = createDriftLag({ granularityMs : 11 });
-        // The first window: 20 steps of 16 ms. Then round(100 / 16) = 6 steps of 16 ms.
+        // The first window: 21 steps of 16 ms. After the 11 warm-up steps, the window waits for the
+        // row of 10 steps that changes the baseline from 5 ms to 16 ms. Then round(100 / 16) = 6 steps of 16 ms.
         vi.advanceTimersByTime(20 * 16);
+        expect(d.report).not.toHaveBeenCalled();
+        vi.advanceTimersByTime(16);
         expect(d.report).toHaveBeenCalledTimes(1);
         vi.advanceTimersByTime(6 * 16);
         expect(d.report).toHaveBeenCalledTimes(2);
