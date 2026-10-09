@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import { createInstrumentedWorkerLag } from "./worker-lag.js";
-import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "../test-utils.js";
+import { createRecordingMeter, createRecordingSpanSink, expectCatalogEvents, expectCatalogInstruments, expectCatalogSpans } from "../test-utils.js";
+import { PAGE_VIEW_SPAN_ID, PAGE_VIEW_TRACE_ID } from "./shared.js";
+import type { PageViewSpans } from "./page-view-spans.js";
 import { createMemoryHangJournal, createStorageHangReportMarks, HANG_JOURNAL_STALE_MS, type HangJournal, type HangRecord, type HangReportMarks } from "../hang-journal.js";
 import { MemoryStorage } from "../test-peers.js";
 import { createIndexedDbHangJournal } from "../browser/indexeddb-journal.js";
@@ -12,6 +14,10 @@ import type { WorkerLike } from "../WorkerLagMonitor.js";
 import type { MainToWorkerMessage, WorkerToMainMessage } from "../worker-protocol.js";
 
 const NOW = 1_700_000_000_000;
+
+const THIS_VIEW = { traceId : "a".repeat(32), spanId : "b".repeat(16) };
+const HUNG_VIEW = { traceId : "c".repeat(32), spanId : "d".repeat(16) };
+const pageViewSpans : PageViewSpans = { viewStarted() {}, viewHidden() {}, viewEnded() {}, current : () => THIS_VIEW };
 
 function setup(records : HangRecord[]) {
     const journal = createMemoryHangJournal();
@@ -24,10 +30,13 @@ function setup(records : HangRecord[]) {
     };
     const meter = createRecordingMeter();
     const events = { emit : vi.fn() };
+    const spans = createRecordingSpanSink();
     const handle = createInstrumentedWorkerLag({
         logger : { log : vi.fn() },
         clock : { now : () => 0 },
         meter : meter.meter,
+        spans,
+        pageViewSpans,
         worker,
         performance : { timeOrigin : NOW - 7_200_000, now : () => 0 },
         setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
@@ -38,7 +47,7 @@ function setup(records : HangRecord[]) {
         // The monotonic clock of this page is far behind the wall clock, as after a sleep on macOS
         wallClock : { now : () => NOW },
     });
-    return { handle, journal, meter, events, sent };
+    return { handle, journal, meter, events, spans, sent };
 }
 
 const record = (pageId : string, lastSeenAt : number, durationMs = 12_000) : HangRecord => ({
@@ -73,6 +82,27 @@ describe("createInstrumentedWorkerLag with a hang journal", () => {
         expect((await t.journal.list()).map(r => r.pageId).sort()).toEqual(["live-page", "this-page"]);
         expectCatalogInstruments(t.meter);
         expectCatalogEvents(t.events.emit);
+        // The record of the page has no span identity: the span is in the current view of this page
+        expect(t.spans.spans).toEqual([expect.objectContaining({
+            name : "lag.main_thread.hang",
+            startTime : NOW - HANG_JOURNAL_STALE_MS - 1 - 12_000,
+            endTime : NOW - HANG_JOURNAL_STALE_MS - 1,
+            parent : THIS_VIEW,
+        })]);
+        expectCatalogSpans(t.spans.spans);
+        t.handle.stop();
+    });
+
+    it("puts the span of an abandoned hang into the trace of the page view that hung, with a link to this view", async () => {
+        const closed = record("closed-page", NOW - HANG_JOURNAL_STALE_MS - 1);
+        const t = setup([{ ...closed, attributes : { ...closed.attributes, [PAGE_VIEW_TRACE_ID] : HUNG_VIEW.traceId, [PAGE_VIEW_SPAN_ID] : HUNG_VIEW.spanId } }]);
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(t.spans.spans).toEqual([expect.objectContaining({
+            attributes : { phase : "abandoned", duration_ms : 12_000, "lag.hang.page_id" : "closed-page", "lag.hang.source" : "journal" },
+            parent : HUNG_VIEW,
+            links : [THIS_VIEW],
+        })]);
         t.handle.stop();
     });
 
@@ -286,9 +316,12 @@ describe("createInstrumentedWorkerLag with the messages of a worker", () => {
         const sent : MainToWorkerMessage[] = [];
         const meter = createRecordingMeter();
         const events = { emit : vi.fn() };
+        const spans = createRecordingSpanSink();
         const logger = { log : vi.fn() };
         const handle = createInstrumentedWorkerLag({
             logger,
+            spans,
+            pageViewSpans,
             clock : { now : () => 0 },
             meter : meter.meter,
             worker : {
@@ -311,6 +344,7 @@ describe("createInstrumentedWorkerLag with the messages of a worker", () => {
             sent,
             meter,
             events,
+            spans,
             logger,
             deliver(message : WorkerToMainMessage) {
                 for (const listener of [...listeners]) listener({ data : message });
@@ -337,6 +371,15 @@ describe("createInstrumentedWorkerLag with the messages of a worker", () => {
         expect(t.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", { phase : "ended", duration_ms : 8_000 }, { time : NOW - 9_000 });
         expectCatalogInstruments(t.meter);
         expectCatalogEvents(t.events.emit);
+        // The span has the real start and end of the hang, in the current view
+        expect(t.spans.spans).toEqual([expect.objectContaining({
+            name : "lag.main_thread.hang",
+            startTime : NOW - 9_000,
+            endTime : NOW - 1_000,
+            attributes : { phase : "ended", duration_ms : 8_000 },
+            parent : THIS_VIEW,
+        })]);
+        expectCatalogSpans(t.spans.spans);
     });
 
     it("handles a system stall and the end of a hang without measurement conditions and without an event sink", () => {

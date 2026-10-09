@@ -3,7 +3,7 @@
  * follows the code that it shows. The comment of each diagram names the
  * source file in `packages/lag/src`.
  */
-import { EVENT_CATALOG, METRIC_CATALOG } from "../../../src/adapters/lag-core";
+import { EVENT_CATALOG, METRIC_CATALOG, SPAN_CATALOG } from "../../../src/adapters/lag-core";
 import type { DataTableSpec } from "../../../src/components/DataTable/DataTable";
 
 /** The event loop, simplified: one task, then all microtasks, then sometimes a rendering update. */
@@ -207,6 +207,23 @@ export const eventTable : DataTableSpec = {
         name : event.name,
         monitor : event.monitor,
         attributes : event.attributes.join(", "),
+    })),
+};
+
+/** The spans of `SPAN_CATALOG`, for a `DataTable`. */
+export const spanTable : DataTableSpec = {
+    caption : "The spans of the monitors, from the span catalog",
+    columns : [
+        { key : "name", label : "Span" },
+        { key : "monitor", label : "Monitor" },
+        { key : "description", label : "Period" },
+        { key : "attributes", label : "Attributes" },
+    ],
+    rows : SPAN_CATALOG.map(span => ({
+        name : span.name,
+        monitor : span.monitor,
+        description : span.description,
+        attributes : span.attributes.join(", "),
     })),
 };
 

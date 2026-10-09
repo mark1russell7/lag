@@ -38,6 +38,7 @@ The function gets the dependencies from the browser globals. It examines each op
 |---|---|---|
 | `logger`, `meter` | necessary | The diagnostic logger and the OpenTelemetry meter. |
 | `events` | none | The event sink (`createOtelEventSink`). Without it, the monitors send no events. |
+| `spans` | none | The span sink (`createOtelSpanSink`). Without it, the monitors make no spans. |
 | `worker` | none | The worker from `createLagWorker()`. Without it, the worker monitors do not start. |
 | `workerHeartbeatIntervalMs` | 1000 | The time between two heartbeats of the worker. |
 | `workerHangReport` | none | The OTLP logs URL and the resource for the hang reports of the worker. |
@@ -101,6 +102,10 @@ Refer to [measurement validity](/docs/concepts/measurement-validity).
 | `EventSink`, `EventOptions`, `createNoopEventSink()`, `withEventContext(sink, context)` | The event port, the options of an event (`time`, the time of the occurrence in Unix milliseconds), a sink that sends nothing, and a sink that adds context attributes to each event. |
 | `createOtelEventSink(logger, options?)` | Sends each event as an OpenTelemetry log record with an event name. The body is the line of the event: the name and the sorted `key=value` pairs (`formatEventLine` in `@lag/core/event-line.js`). The time of the occurrence becomes the time of the record. The options are `maxTimeOffsetMs` (refer to `MAX_EVENT_TIME_OFFSET_MS`) and `now`. |
 | `placeEventTime(time, now, maxOffsetMs?)`, `MAX_EVENT_TIME_OFFSET_MS`, `EVENT_TIME_ATTRIBUTE` | The rule for the time of a record: the time of the occurrence when it is no more than 30 minutes from the time of the call, else the time of the call and the attribute `lag.event.time`. |
+| `SPANS`, `SPAN_CATALOG` | Every span: name, monitor, description and attributes. |
+| `SpanSink`, `SpanIdentity`, `SpanOptions`, `OpenSpan`, `createNoopSpanSink()` | The span port: a span that stays open until `end()` (a page view), or a span that ended already (a hang). A span has a parent and links. The times are Unix milliseconds. |
+| `createOtelSpanSink(tracer, api)` | Sends each span through an OpenTelemetry tracer. `api` is the module `@opentelemetry/api`. A span that the sampler did not sample gets the identity `sampled: false`, and the spans in it are not sampled either. |
+| `createPageViewSpans(spans, clock)`, `PageViewSpans` | The span of each page view. `setupAllMonitors()` makes it when the dependencies have `spans`. |
 | `createOtelLoggerAdapter(logger)`, `createTeeLogger(...loggers)` | Send the diagnostic messages to OpenTelemetry logs, or to more than one logger. |
 | `encodeOtlpLogs(...)` | Makes the OTLP/HTTP JSON body of log records. The worker uses it for its hang reports. |
 

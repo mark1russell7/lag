@@ -5,6 +5,7 @@ import { createRecordingMeter } from "../test-utils.js";
 import { createFakeEventTarget, createFakePerformanceObserver } from "../vitals/test-fakes.js";
 import type { WorkerLike } from "../WorkerLagMonitor.js";
 import { MemoryStorage } from "../test-peers.js";
+import { createNoopSpanSink } from "../spans.js";
 
 /** Browser globals whose functions throw without their `this` value, as some browser functions do. */
 function createGlobals(extra : Record<string, unknown> = {}) {
@@ -97,10 +98,12 @@ describe("createBrowserDeps", () => {
     it("passes the options through", () => {
         const worker : WorkerLike = { postMessage : vi.fn(), addEventListener : vi.fn(), removeEventListener : vi.fn() };
         const events = { emit : vi.fn() };
+        const spans = createNoopSpanSink();
         const pageContext = () => ({ "session.id" : "session-a" });
         const deps = createBrowserDeps(createGlobals(), {
             ...options(),
             events,
+            spans,
             worker,
             workerHeartbeatIntervalMs : 100,
             workerHangReport : { url : "https://otel.example/v1/logs" },
@@ -111,6 +114,7 @@ describe("createBrowserDeps", () => {
 
         expect(deps).toMatchObject({
             events,
+            spans,
             worker,
             workerHeartbeatIntervalMs : 100,
             workerHangReport : { url : "https://otel.example/v1/logs" },

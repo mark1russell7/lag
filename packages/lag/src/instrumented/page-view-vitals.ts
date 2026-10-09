@@ -1,6 +1,6 @@
-import type { AbsoluteClockDeps, CoreDeps, EventDeps, FrameDeps, LifecycleDeps, ObserverDeps, PageDeps, PerformanceDeps } from "../dep-groups.js";
+import type { AbsoluteClockDeps, CoreDeps, EventDeps, FrameDeps, LifecycleDeps, ObserverDeps, PageDeps, PerformanceDeps, SpanDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import type { LifecycleStateMachine } from "../LifecycleStateMachine.js";
+import { isVisibleState, type LifecycleStateMachine } from "../LifecycleStateMachine.js";
 import type { Histogram } from "../meter.js";
 import { PageViewVitals } from "../vitals/PageViewVitals.js";
 import { rateVital, type NavigationType, type VitalName, type VitalValue } from "../vitals/types.js";
@@ -35,9 +35,13 @@ type VitalAttributes = { navigation_type : NavigationType };
  * The time of an event is the time of the occurrence that gave the value
  * (`VitalValue.time`), not the time of the report. Each page view also
  * emits a `lag.page_view.start` event at its start.
+ *
+ * With `deps.pageViewSpans`, the factory starts the span of each view at its
+ * start. The span ends when the page is hidden for the first time in the
+ * view, or at the final report of the view (refer to `PageViewSpans`).
  */
 export function createInstrumentedPageViewVitals(
-    deps : CoreDeps & ObserverDeps & Partial<PerformanceDeps> & Partial<AbsoluteClockDeps> & Partial<EventDeps> & Partial<Pick<FrameDeps, "requestAnimationFrame">> & Partial<PageDeps> & Partial<Pick<LifecycleDeps, "window">>,
+    deps : CoreDeps & ObserverDeps & Partial<PerformanceDeps> & Partial<AbsoluteClockDeps> & Partial<EventDeps> & Partial<Pick<SpanDeps, "pageViewSpans">> & Partial<Pick<FrameDeps, "requestAnimationFrame">> & Partial<PageDeps> & Partial<Pick<LifecycleDeps, "window">>,
     lifecycle : LifecycleStateMachine,
 ) : MonitorHandle<PageViewVitals> {
     return createHandle("page-view-vitals", deps.logger, () => {
@@ -64,6 +68,7 @@ export function createInstrumentedPageViewVitals(
                 for (const key of [...reported.keys()]) {
                     if (key.startsWith(`${view.id}:`)) reported.delete(key);
                 }
+                deps.pageViewSpans?.viewEnded(view, values);
             }
         }, {
             logger : deps.logger,
@@ -79,21 +84,29 @@ export function createInstrumentedPageViewVitals(
             ...(deps.window ? { inputTarget : deps.window } : {}),
         });
 
-        const events = deps.events;
-        let unsubscribe = () : void => {};
-        if (events) {
+        const { events, pageViewSpans } = deps;
+        const unsubscribers : Array<() => void> = [];
+        if (pageViewSpans) {
+            // After the subscription of the monitor: the values are the values of the checkpoint of the transition
+            unsubscribers.push(lifecycle.subscribe(({ to, timestamp }) => {
+                if (!isVisibleState(to)) pageViewSpans.viewHidden(monitor.getView(), monitor.getValues(), timestamp);
+            }));
+        }
+        if (events || pageViewSpans) {
             let previous = monitor.getView();
-            emitViewStart(events, previous, undefined, clock);
-            unsubscribe = monitor.subscribe((view) => {
-                emitViewStart(events, view, previous, clock);
+            pageViewSpans?.viewStarted(previous);
+            if (events) emitViewStart(events, previous, undefined, clock);
+            unsubscribers.push(monitor.subscribe((view) => {
+                pageViewSpans?.viewStarted(view);
+                if (events) emitViewStart(events, view, previous, clock);
                 previous = view;
-            });
+            }));
         }
 
         return {
             monitor,
             stop : () => {
-                unsubscribe();
+                for (const unsubscribe of unsubscribers) unsubscribe();
                 monitor.stop();
             },
         };

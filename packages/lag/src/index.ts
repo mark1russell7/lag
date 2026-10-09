@@ -57,10 +57,28 @@ export {
     type EventOptions,
 } from "./events.js";
 export {
+    createNoopSpanSink,
+    isSpanIdentity,
+    type SpanSink,
+    type SpanIdentity,
+    type SpanOptions,
+    type OpenSpan,
+} from "./spans.js";
+export {
+    createOtelSpanSink,
+    type OtelTracerLike,
+    type OtelTraceApiLike,
+    type OtelSpanLike,
+    type OtelSpanContext,
+} from "./otel-span-adapter.js";
+export { createPageViewSpans, type PageViewSpans } from "./instrumented/page-view-spans.js";
+export {
     METRICS,
     METRIC_CATALOG,
     EVENTS,
     EVENT_CATALOG,
+    SPANS,
+    SPAN_CATALOG,
     HISTOGRAM_BOUNDARIES,
     createCounter,
     createHistogram,
@@ -69,6 +87,8 @@ export {
     type MetricKey,
     type EventDefinition,
     type EventKey,
+    type SpanDefinition,
+    type SpanKey,
 } from "./metric-catalog.js";
 export { encodeOtlpLogs, millisToUnixNanoString, type OtlpLogRecordInput, type OtlpAttributeValue } from "./otlp-json.js";
 export { RateLimiter, stripUrlParameters } from "./rate-limiter.js";
@@ -107,6 +127,7 @@ export type {
     PerformanceDeps,
     WallClockDeps,
     EventDeps,
+    SpanDeps,
     ReportingDeps,
     SharedMemoryDeps,
     PageDeps,

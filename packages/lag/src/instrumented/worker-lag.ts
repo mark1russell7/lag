@@ -1,10 +1,10 @@
-import type { AbsoluteClockDeps, CoreDeps, EventDeps, PerformanceDeps, TimerDeps, WallClockDeps, WorkerMonitorDeps } from "../dep-groups.js";
+import type { AbsoluteClockDeps, CoreDeps, EventDeps, PerformanceDeps, SpanDeps, TimerDeps, WallClockDeps, WorkerMonitorDeps } from "../dep-groups.js";
 import { createAbsoluteClock } from "../absolute-clock.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { WorkerLagMonitor } from "../WorkerLagMonitor.js";
 import type { MeasurementConditions } from "../measurement-conditions.js";
 import { EVENTS, METRICS, createCounter, createHistogram } from "../metric-catalog.js";
-import { createHandle, validatedRecorder } from "./shared.js";
+import { createHandle, recordHangSpan, validatedRecorder } from "./shared.js";
 import { findAbandonedHangs, HANG_JOURNAL_STALE_MS } from "../hang-journal.js";
 import { createRandomId } from "../random-id.js";
 
@@ -44,7 +44,7 @@ const DEFAULT_HANG_THRESHOLD_MS = 5_000;
  * pages that have no record.
  */
 export function createInstrumentedWorkerLag(
-    deps : CoreDeps & WorkerMonitorDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & Partial<WallClockDeps> & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<EventDeps>,
+    deps : CoreDeps & WorkerMonitorDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & Partial<WallClockDeps> & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<EventDeps> & Partial<SpanDeps>,
     conditions? : MeasurementConditions,
 ) : MonitorHandle<WorkerLagMonitor> {
     return createHandle("worker-lag", deps.logger, () => {
@@ -80,6 +80,7 @@ export function createInstrumentedWorkerLag(
                         hangDurationHist.record(durationMs, { outcome : "ended" });
                         // The absolute times of the worker and of the page share the Unix epoch
                         deps.events?.emit(EVENTS.hang.name, { phase : "ended", duration_ms : durationMs }, { time : startedAt });
+                        recordHangSpan(deps, { startedAt, durationMs, attributes : { phase : "ended", duration_ms : durationMs } });
                     },
                     onClockSync : ({ offsetMs }) => offsetHist.record(Math.abs(offsetMs)),
                 },
@@ -116,6 +117,13 @@ export function createInstrumentedWorkerLag(
                         "lag.hang.page_id" : record.pageId,
                         "lag.hang.source" : "journal",
                     }, { time : record.startedAt });
+                    // In the trace of the page that hung, when its record has the identity of its page view
+                    recordHangSpan(deps, {
+                        startedAt : record.startedAt,
+                        durationMs,
+                        attributes : { phase : "abandoned", duration_ms : durationMs, "lag.hang.page_id" : record.pageId, "lag.hang.source" : "journal" },
+                        hungPage : record.attributes,
+                    });
                 }
                 // A mark is necessary only while the journal can have a record of its page
                 marks?.prune(wallNow - HANG_JOURNAL_STALE_MS, new Set(records.map(record => record.pageId)));

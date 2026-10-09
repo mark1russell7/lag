@@ -337,6 +337,64 @@ export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
 
 export const EVENT_CATALOG : readonly EventDefinition[] = Object.values(EVENTS);
 
+/** The definition of one span of the monitors. */
+export type SpanDefinition = {
+    name : string;
+    monitor : string;
+    description : string;
+    /** The attribute names of the span. */
+    attributes : readonly string[];
+};
+
+export type SpanKey = "pageView" | "hang" | "stall" | "longAnimationFrame" | "hidden" | "frozen";
+
+/**
+ * The spans of the monitors (refer to `SpanSink`): the periods that they
+ * measure, with the real start and end. Each page view is a trace. The other
+ * spans are in the span of their page view. A hang that another page
+ * reports is in the trace of the page that hung.
+ */
+export const SPANS : Readonly<Record<SpanKey, SpanDefinition>> = {
+    pageView : {
+        name : "lag.page_view",
+        monitor : "PageViewVitals",
+        description : "One page view, from its start to the first time that the page is hidden in the view, or to its final report. It has the values of the Web Vitals at its end. The root of the trace of the view.",
+        attributes : ["lag.page_view.id", "navigation_type", "lag.page_view.url", "lag.web_vital.*"],
+    },
+    hang : {
+        name : "lag.main_thread.hang",
+        monitor : "WorkerLagMonitor",
+        description : "A main-thread hang, from its start to its end. An abandoned hang is in the page view of the page that hung, when its record has the identity of that span. Then it has a link to the page view of the page that reported it.",
+        attributes : ["phase", "duration_ms", "lag.hang.page_id", "lag.hang.source"],
+    },
+    stall : {
+        name : "lag.stall",
+        monitor : "MeasurementConditions",
+        description : "One stall episode, from the start of its first window to the end of its longest sample.",
+        attributes : ["kind", "duration_ms"],
+    },
+    longAnimationFrame : {
+        name : "lag.long_animation_frame",
+        monitor : "LongAnimationFrameMonitor",
+        description : "A long animation frame above the attribution threshold, with the script that blocked it most.",
+        attributes : ["duration_ms", "blocking_duration_ms", "script.invoker", "script.invoker_type", "script.source_url", "script.duration_ms"],
+    },
+    hidden : {
+        name : "lag.page.hidden",
+        monitor : "LifecycleStateMachine",
+        description : "A period in which the page was hidden, from the transition to hidden to the next transition.",
+        attributes : ["trigger"],
+    },
+    frozen : {
+        name : "lag.page.frozen",
+        monitor : "LifecycleStateMachine",
+        description : "A period in which the browser froze the page or kept it in the back/forward cache, to the next transition.",
+        attributes : ["trigger"],
+    },
+};
+
+export const SPAN_CATALOG : readonly SpanDefinition[] = Object.values(SPANS);
+
 function assertKind(definition : MetricDefinition, kind : MetricKind) : void {
     if (definition.kind !== kind) {
         throw new Error(`${definition.name} is a ${definition.kind}, not a ${kind}.`);
