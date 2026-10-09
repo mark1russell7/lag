@@ -30,6 +30,10 @@
       "types": "./dist/event-line.d.ts",
       "import": "./dist/event-line.js"
     },
+    "./events.js": {
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.js"
+    },
     "./browser/indexeddb-journal.js": {
       "types": "./dist/browser/indexeddb-journal.d.ts",
       "import": "./dist/browser/indexeddb-journal.js"

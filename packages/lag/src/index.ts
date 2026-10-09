@@ -43,8 +43,18 @@ export {
     createOtelEventSink,
     createTeeLogger,
     type OtelLogger,
+    type OtelEventSinkOptions,
 } from "./otel-logger-adapter.js";
-export { createNoopEventSink, withEventContext, type EventSink, type EventAttributes } from "./events.js";
+export {
+    createNoopEventSink,
+    withEventContext,
+    placeEventTime,
+    MAX_EVENT_TIME_OFFSET_MS,
+    EVENT_TIME_ATTRIBUTE,
+    type EventSink,
+    type EventAttributes,
+    type EventOptions,
+} from "./events.js";
 export {
     METRICS,
     METRIC_CATALOG,

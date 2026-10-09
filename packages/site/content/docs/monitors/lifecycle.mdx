@@ -114,17 +114,19 @@ Refer to [measurement validity](/docs/concepts/measurement-validity).
 
 <MetricTable metrics={lifecycleMetrics} />
 
-The state machine sends no events.
+With an event sink, the factory also sends a `lag.lifecycle.transition` event for each transition, with `from`, `to` and `trigger`. The time of the event is the time stamp of the browser event. Thus a chart can show the transitions on the metrics, for example a hidden period or a restore from the back/forward cache. A restore gives an event also when the state does not change.
+
+`setupAllMonitors()` adds `lag.page_view.id`. At a restore, the transition event has the ID of the page view that ends, because the new page view starts after the transition. The `lag.page_view.start` event of the new view comes next.
 
 ## Configuration
 
 ```ts
 function createInstrumentedLifecycle(
-    deps : CoreDeps & LifecycleDeps,
+    deps : CoreDeps & LifecycleDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
 ) : MonitorHandle<LifecycleStateMachine>;
 ```
 
-The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `LifecycleDeps` (`document`, `window`). It has no options. `setupAllMonitors()` makes the state machine first, thus its last-in, first-out stop stops the state machine last.
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `LifecycleDeps` (`document`, `window`). It has no options. `EventDeps` is optional: without it, the factory sends no events. `AbsoluteClockDeps` (`absoluteClock`) and `PerformanceDeps` (`performance`) are optional: they give the events their times. Without both, the events get the time of the call. `setupAllMonitors()` makes the state machine first, thus its last-in, first-out stop stops the state machine last.
 
 ```ts
 import { metrics } from "@opentelemetry/api";
@@ -162,7 +164,8 @@ Unit tests:
 - `LifecycleStateMachine.test.ts`, the states: the start in `active`, `passive` or `hidden`. The transitions on `blur`, `focus`, `visibilitychange`, `freeze`, `resume`, `pagehide` and `pageshow`. A restore at `pageshow` is a transition also when the page is visible already, as in the event sequence of Chromium. A hidden page before the `visibilitychange` event. `terminated` stays after a `visibilitychange`.
 - `LifecycleStateMachine.test.ts`, the API: marks and their compaction, `summarizeTransitions()`, subscriptions and an error in a subscriber. No `beforeunload` listener, and `dispose()` removes each listener with its phase.
 - `LifecycleStateMachine.test.ts`, listener phases: the listeners are in the capture phase, except for `focus` and `blur`. The subscribers start before a bubble listener that the page added earlier. A transition has the time of its event.
-- `setup-all-monitors.test.ts`: the counter gets `active` to `hidden` and `hidden` to `active`, with the trigger `visibilitychange`.
+- `instrumented/lifecycle.test.ts`: the counter and the `lag.lifecycle.transition` event of each transition. The time of the event is the time stamp of the browser event. For an event without a time stamp, it is the time at which the machine handled the event. Without a clock, the events have no time. After `stop()`, no events.
+- `setup-all-monitors.test.ts`: the counter gets `active` to `hidden` and `hidden` to `active`, with the trigger `visibilitychange`. The transition event has the ID of the page view and a time of the absolute clock.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
 

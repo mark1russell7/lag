@@ -1,9 +1,9 @@
-import type { CoreDeps, EventDeps, ReportingDeps } from "../dep-groups.js";
+import type { AbsoluteClockDeps, CoreDeps, EventDeps, PerformanceDeps, ReportingDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { BrowserReportMonitor, type BrowserReportType } from "../BrowserReportMonitor.js";
 import { EVENTS, METRICS, createCounter } from "../metric-catalog.js";
 import { RateLimiter, stripUrlParameters } from "../rate-limiter.js";
-import { createHandle } from "./shared.js";
+import { createHandle, eventClock } from "./shared.js";
 
 const MAX_EVENTS_PER_MINUTE = 10;
 
@@ -14,11 +14,12 @@ const MAX_EVENTS_PER_MINUTE = 10;
  * its ID, message and source (no more than 10 events each minute).
  */
 export function createInstrumentedBrowserReports(
-    deps : CoreDeps & ReportingDeps & Partial<EventDeps>,
+    deps : CoreDeps & ReportingDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
 ) : MonitorHandle<BrowserReportMonitor> {
     return createHandle("browser-reports", deps.logger, () => {
         const reports = createCounter<{ type : BrowserReportType }>(deps.meter, METRICS.browserReports);
         const limiter = new RateLimiter(deps.clock, MAX_EVENTS_PER_MINUTE, 60_000);
+        const clock = eventClock(deps);
 
         const monitor = new BrowserReportMonitor(
             (report) => {
@@ -30,7 +31,8 @@ export function createInstrumentedBrowserReports(
                         message : report.message,
                         source_file : stripUrlParameters(report.sourceFile),
                         line_number : report.lineNumber,
-                    });
+                    // A report has no time of its own: the time of the delivery
+                    }, clock ? { time : clock.now() } : {});
                 }
             },
             deps.logger,

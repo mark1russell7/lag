@@ -54,7 +54,8 @@ describe("createInstrumentedClockDrift", () => {
         t.advance(1_000);
         t.advance(1_000, -5_000);
 
-        expect(t.events.emit).toHaveBeenCalledWith("lag.clock.jump", expect.objectContaining({ kind : "step", direction : "backward" }));
+        // At the time at which the monitor found the jump
+        expect(t.events.emit).toHaveBeenCalledWith("lag.clock.jump", expect.objectContaining({ kind : "step", direction : "backward" }), { time : 1_700_000_002_000 });
         expect(t.conditions.tracker.getIntervalCount()).toBe(0);
         t.handle.stop();
     });

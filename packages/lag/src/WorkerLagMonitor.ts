@@ -36,8 +36,8 @@ export type SystemStall = {
 export type WorkerLagEvents = {
     /** The worker did not operate for `systemStallThresholdMs` or more. This is evidence of a system suspend. */
     onSystemStall? : (stall : SystemStall) => void;
-    /** A hang that the worker detected ended. */
-    onHangEnded? : (durationMs : number) => void;
+    /** A hang that the worker detected ended. `startedAt` is the start of the hang, in the absolute time of the worker. */
+    onHangEnded? : (durationMs : number, startedAt : number) => void;
     onClockSync? : (result : ClockSyncResult) => void;
 };
 
@@ -218,7 +218,7 @@ export class WorkerLagMonitor {
                     break;
                 }
                 case "hang-ended": {
-                    this.options.events?.onHangEnded?.(message.durationMs);
+                    this.options.events?.onHangEnded?.(message.durationMs, message.startedAt);
                     break;
                 }
             }

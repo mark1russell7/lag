@@ -70,10 +70,11 @@ export function createInstrumentedWorkerLag(
                 },
                 events : {
                     onSystemStall : (stall) => conditions?.tracker.add(stall.start, stall.end, "suspend"),
-                    onHangEnded : (durationMs) => {
+                    onHangEnded : (durationMs, startedAt) => {
                         hangs.add(1, { outcome : "ended" });
                         hangDurationHist.record(durationMs, { outcome : "ended" });
-                        deps.events?.emit(EVENTS.hang.name, { phase : "ended", duration_ms : durationMs });
+                        // The absolute times of the worker and of the page share the Unix epoch
+                        deps.events?.emit(EVENTS.hang.name, { phase : "ended", duration_ms : durationMs }, { time : startedAt });
                     },
                     onClockSync : ({ offsetMs }) => offsetHist.record(Math.abs(offsetMs)),
                 },
@@ -106,7 +107,7 @@ export function createInstrumentedWorkerLag(
                         duration_ms : durationMs,
                         "lag.hang.page_id" : record.pageId,
                         "lag.hang.source" : "journal",
-                    });
+                    }, { time : record.startedAt });
                 }
             }).catch((error : unknown) => {
                 deps.logger.log("warn", "Could not read the hang journal.", { error, type : "WorkerLagMonitor" });

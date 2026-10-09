@@ -34,12 +34,13 @@ import type {
     CrashReportDeps,
     PeerDeps,
 } from "./dep-groups.js";
-import { withEventContext, type EventSink } from "./events.js";
+import { withEventContext, type EventAttributes, type EventSink } from "./events.js";
 import { createAbsoluteClock } from "./absolute-clock.js";
 import { LIVENESS_BUFFER_BYTES, beatingSetTimeout, createLivenessBeacon } from "./shared-liveness.js";
 import { MonitorRegistry } from "./monitor-registry.js";
 import { createMeasurementConditions, type MeasurementConditions, type StallKind } from "./measurement-conditions.js";
 import { EVENTS, METRICS, createCounter, createHistogram } from "./metric-catalog.js";
+import { occurredAtClockTime } from "./instrumented/shared.js";
 
 // Monitor class types (for typed accessors on AllMonitorHandles)
 import type { DriftLag } from "./DriftLag.js";
@@ -174,9 +175,9 @@ export type AllMonitorHandles = {
  */
 function observeHangEnds(sink : EventSink | undefined, onEnded : () => void) : EventSink {
     return {
-        emit : (name, attributes) => {
+        emit : (name, attributes, ...options) => {
             if (name === EVENTS.hang.name && attributes["phase"] === "ended") onEnded();
-            sink?.emit(name, attributes);
+            sink?.emit(name, attributes, ...options);
         },
     };
 }
@@ -200,10 +201,10 @@ function createConditions(deps : AllMonitorDeps, lifecycle : LifecycleStateMachi
         clearTimeoutFn : deps.clearTimeoutFn,
         ...(lifecycle ? { lifecycle } : {}),
         onDiscard : (reason) => discarded.add(1, { reason }),
-        onStall : (kind, valueMs) => {
+        onStall : (kind, valueMs, startTime) => {
             stalls.add(1, { kind });
             stallDuration.record(valueMs, { kind });
-            deps.events?.emit(EVENTS.stall.name, { kind, duration_ms : valueMs });
+            deps.events?.emit(EVENTS.stall.name, { kind, duration_ms : valueMs }, occurredAtClockTime(deps.absoluteClock, deps.clock, startTime));
         },
     });
 }
@@ -211,18 +212,14 @@ function createConditions(deps : AllMonitorDeps, lifecycle : LifecycleStateMachi
 export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles {
     const registry = new MonitorRegistry();
 
-    // 1. Lifecycle first: registered first, so the LIFO teardown stops it last
-    const lifecycle = registry.add(createInstrumentedLifecycle(rootDeps)).monitor;
-
-    // 2. Page-view vitals. Every event of the other monitors gets the ID of the current page view.
-    const vitals = rootDeps.PerformanceObserver && lifecycle
-        ? registry.add(createInstrumentedPageViewVitals({ ...rootDeps, PerformanceObserver : rootDeps.PerformanceObserver }, lifecycle)).monitor
-        : undefined;
-    const events = rootDeps.events && vitals
-        ? withEventContext(rootDeps.events, () => ({ "lag.page_view.id" : vitals.getView().id }))
-        : rootDeps.events;
-    // One absolute clock for the page: it reads `timeOrigin` only one time
+    // One absolute clock for the page: it reads `timeOrigin` only one time. The times of all events come from it.
     const absoluteClock = rootDeps.performance ? createAbsoluteClock(rootDeps.performance) : undefined;
+    // Every event gets the ID of the current page view. The context reads the vitals at each event:
+    // the vitals start after the lifecycle, but the lifecycle emits events too.
+    let vitals : PageViewVitals | undefined;
+    const events = rootDeps.events
+        ? withEventContext(rootDeps.events, () : EventAttributes => vitals ? { "lag.page_view.id" : vitals.getView().id } : {})
+        : undefined;
     const deps : AllMonitorDeps = {
         ...rootDeps,
         // One ID for the page instance: the hang journal of the worker and the peer hang watch use it
@@ -230,6 +227,14 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
         ...(events ? { events } : {}),
         ...(absoluteClock ? { absoluteClock } : {}),
     };
+
+    // 1. Lifecycle first: registered first, so the LIFO teardown stops it last
+    const lifecycle = registry.add(createInstrumentedLifecycle(deps)).monitor;
+
+    // 2. Page-view vitals
+    vitals = deps.PerformanceObserver && lifecycle
+        ? registry.add(createInstrumentedPageViewVitals({ ...deps, PerformanceObserver : deps.PerformanceObserver }, lifecycle)).monitor
+        : undefined;
 
     // 3. Measurement conditions, shared by the timer-driven monitors
     const conditions = createConditions(deps, lifecycle);

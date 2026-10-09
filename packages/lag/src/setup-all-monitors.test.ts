@@ -339,11 +339,11 @@ describe("setupAllMonitors", () => {
             blocking_duration_ms : 173,
             "script.invoker" : "BUTTON#buy.onclick",
             "script.source_url" : "https://shop.example/app.js",
-        }));
+        }), { time : expect.any(Number) });
         expect(browser.events.emit).toHaveBeenCalledWith("lag.browser_report", expect.objectContaining({
             id : "HeavyAdIntervention",
             source_file : "https://ads.example/ad.js",
-        }));
+        }), { time : expect.any(Number) });
     });
 
     it("gives the ID of the current page view to the worker, for its hang reports", () => {
@@ -364,7 +364,7 @@ describe("setupAllMonitors", () => {
 
         expect(browser.events.emit).toHaveBeenCalledWith("lag.long_animation_frame", expect.objectContaining({
             "lag.page_view.id" : handles.vitals!.getView().id,
-        }));
+        }), { time : expect.any(Number) });
     });
 
     it("flush() records the pending Web Vitals, for the before-flush hook of an exporter", async () => {
@@ -399,7 +399,7 @@ describe("setupAllMonitors", () => {
             "lag.page_view.id" : view.id,
             "lag.page_view.url" : "https://shop.example/cart",
             "lag.web_vital.interaction_type" : "keyboard",
-        }));
+        }), { time : expect.any(Number) });
         // An unchanged value sends no second event
         const inpEvents = browser.events.emit.mock.calls.filter(([name, a]) =>
             name === "browser.web_vital" && (a as Record<string, unknown>)["browser.web_vital.name"] === "inp");
@@ -457,8 +457,8 @@ describe("setupAllMonitors", () => {
         expect(browser.meter.sum("lag_main_thread_hangs")).toBe(1);
         expect(Math.max(...browser.meter.values("lag_main_thread_hang_duration_histogram"))).toBeGreaterThanOrEqual(5_000);
         expect(Math.max(...browser.meter.values("lag_worker_main_block_histogram"))).toBeGreaterThanOrEqual(7_000);
-        expect(browser.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ phase : "ended" }));
-        expect(browser.events.emit).toHaveBeenCalledWith("lag.stall", expect.objectContaining({ kind : "hang" }));
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ phase : "ended" }), { time : expect.any(Number) });
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.stall", expect.objectContaining({ kind : "hang" }), { time : expect.any(Number) });
         expectCatalogInstruments(browser.meter);
         expectCatalogEvents(browser.events.emit, ["lag.page_view.id"]);
     });
@@ -479,7 +479,7 @@ describe("setupAllMonitors", () => {
         await advance(10_000);
 
         expect(browser.meter.records().get("lag_clock_jumps")?.map(r => r.attributes)).toEqual([{ direction : "backward", kind : "step" }]);
-        expect(browser.events.emit).toHaveBeenCalledWith("lag.clock.jump", expect.objectContaining({ direction : "backward", kind : "step" }));
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.clock.jump", expect.objectContaining({ direction : "backward", kind : "step" }), { time : expect.any(Number) });
     });
 
     it("stop() releases every timer, listener, observer and worker loop", async () => {
@@ -602,6 +602,20 @@ describe("setupAllMonitors", () => {
             { from : "active", to : "hidden", trigger : "visibilitychange" },
             { from : "hidden", to : "active", trigger : "visibilitychange" },
         ]);
+    });
+
+    it("emits the start of the page view and each lifecycle transition, with the page-view ID and a time of the absolute clock", () => {
+        const view = handles.vitals!.getView();
+        browser.setVisibility("hidden");
+
+        const calls = browser.events.emit.mock.calls.filter(([name]) => name === "lag.page_view.start" || name === "lag.lifecycle.transition");
+        expect(calls).toEqual([
+            // The load starts at the time origin of the page
+            ["lag.page_view.start", expect.objectContaining({ "lag.page_view.id" : view.id, navigation_type : "navigate" }), { time : 1_700_000_000_000 }],
+            // The fake performance clock gives Date.now() after the time origin
+            ["lag.lifecycle.transition", { "lag.page_view.id" : view.id, from : "active", to : "hidden", trigger : "visibilitychange" }, { time : 1_700_000_000_000 + Date.now() }],
+        ]);
+        expectCatalogEvents(browser.events.emit, ["lag.page_view.id"]);
     });
 });
 
@@ -746,7 +760,7 @@ describe("setupAllMonitors degradation", () => {
         browser.addLag(6_000);
         await advance(5_000);
 
-        expect(browser.events.emit).toHaveBeenCalledWith("lag.stall", { kind : "hang", duration_ms : expect.any(Number) });
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.stall", { kind : "hang", duration_ms : expect.any(Number) }, { time : expect.any(Number) });
         handles.stop();
     });
 });
@@ -821,7 +835,7 @@ describe("setupAllMonitors with BroadcastChannel and the Web Locks API", () => {
         await hangJournal.put({ pageId : "closed-page", startedAt : Date.now() - 100_000, lastSeenAt : Date.now() - 90_000, attributes : {} });
         const handles = setupAllMonitors({ ...browser.deps, BroadcastChannel, locks, hangJournal });
         await advance(10);
-        expect(browser.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ phase : "abandoned" }));
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ phase : "abandoned" }), { time : expect.any(Number) });
         expect(noteHangEnded).not.toHaveBeenCalled();
         await advance(1_000);
         browser.blockMain();

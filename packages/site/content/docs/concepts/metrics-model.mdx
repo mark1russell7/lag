@@ -58,11 +58,19 @@ The body of the record is the line of the event (`formatEventLine()`): the event
 
 <DataTable spec={eventTable} label="Events" />
 
+## The time of an event
+
+Each event has the time of its occurrence (`EventOptions.time`, in Unix milliseconds). For an event with a duration, for example a hang, a stall or a long animation frame, it is the start. The time of a Web Vital is the time of the occurrence that gave the value ([page-view vitals](/docs/monitors/page-view-vitals)). The monitors calculate the times from the absolute clock of the page (`createAbsoluteClock`). The OpenTelemetry SDK gives the metric points times on the same clock. Thus an event and a metric point of the same time are at the same place on a chart.
+
+The OTel event sink puts the time of the occurrence into the `timestamp` of the record. The observed time of the record is the time of the call. Loki keeps the events of one name in one stream for all pages of a service. It rejects a record that is older than the newest record of its stream by more than `max_chunk_age / 2`: 1 hour by default.
+
+Some occurrences are reported much later. Examples are an LCP that the page reports when it becomes hidden after some hours, and an abandoned hang that the next page finds. Thus the sink uses the time of the occurrence only when it is no more than 30 minutes from the time of the call (`MAX_EVENT_TIME_OFFSET_MS`). Otherwise, the record gets the time of the call, and the attribute `lag.event.time` keeps the time of the occurrence. The hang reports of the worker use the same rule.
+
 The monitors keep the volume of events small. For example, the long-animation-frame monitor sends an event only for a frame that blocks for 150 ms or more, and at most 10 events each minute.
 
 ## The page-view ID on each event
 
-`setupAllMonitors()` wraps the event sink with `withEventContext()`, when the page-view vitals operate. Then each event gets the attribute `lag.page_view.id`, with the ID of the current page view:
+`setupAllMonitors()` wraps the event sink with `withEventContext()`. When the page-view vitals operate, each event gets the attribute `lag.page_view.id`, with the ID of the current page view:
 
 ```ts
 import { withEventContext, type EventSink } from "@lag/core";

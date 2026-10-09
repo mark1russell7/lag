@@ -58,17 +58,17 @@ The monitor does not pause while the page is hidden, and it uses no `SampleValid
 
 <MetricTable metrics={pressureMetrics} />
 
-The monitor sends no events.
+With an event sink, the factory sends a `lag.pressure.change` event for each change of the state of a source, with `source`, `state` and `previous_state`. The time of the event is the time of the record. The first record of a source gives an event without `previous_state`. A record with the same state as the record before it gives no event. Thus a chart can show the changes of the pressure on the lag metrics.
 
 ## Configuration
 
 ```ts
 function createInstrumentedComputePressure(
-    deps : CoreDeps & PressureDeps,
+    deps : CoreDeps & PressureDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
 ) : MonitorHandle<ComputePressureMonitor>;
 ```
 
-The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `PressureDeps`:
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `PressureDeps`. `EventDeps` is optional: without it, the factory sends no events. `AbsoluteClockDeps` (`absoluteClock`) and `PerformanceDeps` (`performance`) are optional: they give the events their times. Without both, the events get the time of the call. The `PressureDeps` are these:
 
 | Option | Default | What it does |
 |---|---|---|
@@ -109,6 +109,7 @@ if (deps.PressureObserver) {
 Unit tests:
 
 - `ComputePressureMonitor.test.ts`: the monitor makes one observer and asks for the configured sources, with a `sampleInterval` of 1000 ms. It reports each record with its ordinal, and keeps the latest state of each source. `getWorstStateOrdinal()` gives the highest state, or −1 before the first record. A rejected source and a failed constructor give a warning. `stop()` disconnects the observer and clears the state.
+- `instrumented/compute-pressure.test.ts`: each record goes into the histogram. Each change of the state of a source gives a `lag.pressure.change` event at the time of the record. After the first record, the event has the previous state. A record with the same state gives no event.
 - `browser/browser-deps.test.ts`: the adapter uses the `cpu` source by default.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy)):

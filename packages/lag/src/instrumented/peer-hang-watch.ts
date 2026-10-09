@@ -49,7 +49,7 @@ export function createInstrumentedPeerHangWatch(
                     duration_ms : durationMs,
                     "lag.hang.page_id" : record.pageId,
                     "lag.hang.source" : source,
-                });
+                }, { time : record.startedAt });
             },
         });
         // A page in the back/forward cache or a frozen page closes its channel: Chrome removes a page from

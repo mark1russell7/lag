@@ -53,6 +53,11 @@ function createConditions(options : Partial<MeasurementConditionsOptions> = {}, 
     return { conditions, lifecycle, page, onStall, onDiscard };
 }
 
+/** The kind and the value of each stall episode, without its start time. */
+function kindsAndValues(onStall : ReturnType<typeof vi.fn>) : unknown[][] {
+    return onStall.mock.calls.map(([kind, value]) => [kind, value]);
+}
+
 describe("createMeasurementConditions", () => {
     beforeEach(() => {
         vi.useFakeTimers();
@@ -123,7 +128,8 @@ describe("createMeasurementConditions", () => {
             // The episode waits for the stall samples of the other monitors
             expect(onStall).not.toHaveBeenCalled();
             vi.advanceTimersByTime(2_000);
-            expect(onStall).toHaveBeenCalledWith("hang", 8_000);
+            // The window of 8100 ms ended at 10 000
+            expect(onStall).toHaveBeenCalledWith("hang", 8_000, 1_900);
         });
 
         it("reports the stall samples of one block as one episode, with the longest sample", () => {
@@ -140,7 +146,8 @@ describe("createMeasurementConditions", () => {
             vi.advanceTimersByTime(10_000);
 
             expect(record).toHaveBeenCalledTimes(4);
-            expect(onStall.mock.calls).toEqual([["hang", 30_000]]);
+            // The episode starts at the start of its first window: the DriftLag window of 30 100 ms that ended at 10 000
+            expect(onStall.mock.calls).toEqual([["hang", 30_000, -20_100]]);
         });
 
         it("reports separate blocks as separate episodes", () => {
@@ -151,7 +158,7 @@ describe("createMeasurementConditions", () => {
             validator.submit(7_000, 7_000, vi.fn());
             vi.advanceTimersByTime(20_000);
 
-            expect(onStall.mock.calls).toEqual([["hang", 6_000], ["hang", 7_000]]);
+            expect(kindsAndValues(onStall)).toEqual([["hang", 6_000], ["hang", 7_000]]);
         });
 
         it("gives an episode the kind suspend when one of its samples gets suspend evidence during the wait", () => {
@@ -166,7 +173,7 @@ describe("createMeasurementConditions", () => {
             conditions.tracker.add(now - 9_000, now - 4_000, "suspend");
             vi.advanceTimersByTime(10_000);
 
-            expect(onStall.mock.calls).toEqual([["suspend", 9_000]]);
+            expect(kindsAndValues(onStall)).toEqual([["suspend", 9_000]]);
         });
 
         it("discards a sample at once when the evidence exists before the sample, and counts a suspend stall", () => {
@@ -179,7 +186,7 @@ describe("createMeasurementConditions", () => {
 
             expect(record).not.toHaveBeenCalled();
             expect(onDiscard).toHaveBeenCalledWith("suspend");
-            expect(onStall.mock.calls).toEqual([["suspend", 9_000]]);
+            expect(kindsAndValues(onStall)).toEqual([["suspend", 9_000]]);
         });
 
         it("gives the same result when the sample comes before the suspend evidence or after it", () => {
@@ -193,7 +200,7 @@ describe("createMeasurementConditions", () => {
                 if (!evidenceFirst) conditions.tracker.add(now - 60_050, now + 20, "suspend");
                 vi.advanceTimersByTime(10_000);
                 conditions.dispose();
-                return onStall.mock.calls;
+                return kindsAndValues(onStall);
             };
             expect(order(true)).toEqual([["suspend", 60_000]]);
             expect(order(false)).toEqual([["suspend", 60_000]]);
@@ -208,7 +215,7 @@ describe("createMeasurementConditions", () => {
             vi.advanceTimersByTime(10_000);
 
             expect(onDiscard).toHaveBeenCalledWith("suspend");
-            expect(onStall.mock.calls).toEqual([["suspend", 9_000]]);
+            expect(kindsAndValues(onStall)).toEqual([["suspend", 9_000]]);
         });
 
         it("counts no stall for a long sample in a hidden interval", () => {
@@ -229,7 +236,7 @@ describe("createMeasurementConditions", () => {
             expect(onStall).not.toHaveBeenCalled();
 
             conditions.dispose();
-            expect(onStall).toHaveBeenCalledWith("hang", 8_000);
+            expect(onStall).toHaveBeenCalledWith("hang", 8_000, expect.any(Number));
             expect(vi.getTimerCount()).toBe(0);
         });
 
@@ -245,7 +252,7 @@ describe("createMeasurementConditions", () => {
             vi.advanceTimersByTime(4_000);
 
             expect(record).not.toHaveBeenCalled();
-            expect(onStall).toHaveBeenCalledWith("suspend", 60_000);
+            expect(onStall).toHaveBeenCalledWith("suspend", 60_000, expect.any(Number));
             expect(onDiscard).toHaveBeenCalledWith("suspend");
         });
 
@@ -292,7 +299,7 @@ describe("createMeasurementConditions", () => {
             conditions.createValidator().submit(5_000, 5_000, vi.fn());
             vi.advanceTimersByTime(3_000);
 
-            expect(onStall.mock.calls).toEqual([["suspend", 5_000]]);
+            expect(kindsAndValues(onStall)).toEqual([["suspend", 5_000]]);
         });
 
         it("reports a stall sample that does not overlap the waiting episode as a separate episode", () => {
@@ -305,7 +312,7 @@ describe("createMeasurementConditions", () => {
             validator.submit(7_000, 500, vi.fn());
             vi.advanceTimersByTime(10_000);
 
-            expect(onStall.mock.calls).toEqual([["hang", 6_000], ["hang", 7_000]]);
+            expect(kindsAndValues(onStall)).toEqual([["hang", 6_000], ["hang", 7_000]]);
         });
 
         it("adds a stall sample whose window starts at the end of the waiting episode to the episode", () => {
@@ -317,7 +324,7 @@ describe("createMeasurementConditions", () => {
             validator.submit(7_000, 1_000, vi.fn());
             vi.advanceTimersByTime(10_000);
 
-            expect(onStall.mock.calls).toEqual([["hang", 7_000]]);
+            expect(kindsAndValues(onStall)).toEqual([["hang", 7_000]]);
         });
 
         it("extends an episode with each sample that it gets, so that a later sample can overlap the extension", () => {
@@ -333,7 +340,7 @@ describe("createMeasurementConditions", () => {
             validator.submit(6_000, 600, vi.fn());
             vi.advanceTimersByTime(10_000);
 
-            expect(onStall.mock.calls).toEqual([["hang", 6_000]]);
+            expect(kindsAndValues(onStall)).toEqual([["hang", 6_000]]);
         });
 
         it("gives a hang episode the kind suspend when a sample with suspend evidence joins it", () => {
@@ -348,7 +355,7 @@ describe("createMeasurementConditions", () => {
             validator.submit(6_000, 3_000, vi.fn());
             vi.advanceTimersByTime(10_000);
 
-            expect(onStall.mock.calls).toEqual([["suspend", 6_000]]);
+            expect(kindsAndValues(onStall)).toEqual([["suspend", 6_000]]);
         });
 
         it("works without stall and discard listeners", () => {

@@ -17,9 +17,9 @@ export class ClsCalculator {
     private sessionStart = -1;
     private lastShiftTime = -1;
     private worstSessionValue = 0;
-    /** The largest single shift in the worst session window, with its sources. */
-    private largestShift : { value : number; sources : readonly unknown[] } | undefined;
-    private largestShiftInSession : { value : number; sources : readonly unknown[] } | undefined;
+    /** The largest single shift in the worst session window, with its sources and its time. */
+    private largestShift : { value : number; sources : readonly unknown[]; time : number } | undefined;
+    private largestShiftInSession : { value : number; sources : readonly unknown[]; time : number } | undefined;
 
     /** This method adds one shift and gives the score of its session window. */
     add(startTime : number, value : number, sources : readonly unknown[] = []) : number {
@@ -37,7 +37,7 @@ export class ClsCalculator {
         this.lastShiftTime = startTime;
         // As web-vitals: of two shifts with the same score, the later one is the largest
         if (!this.largestShiftInSession || value >= this.largestShiftInSession.value) {
-            this.largestShiftInSession = { value, sources };
+            this.largestShiftInSession = { value, sources, time : startTime };
         }
 
         if (this.sessionValue > this.worstSessionValue) {
@@ -54,6 +54,11 @@ export class ClsCalculator {
     /** The sources of the largest shift in the worst session window (for attribution). */
     getLargestShiftSources() : readonly unknown[] {
         return this.largestShift?.sources ?? [];
+    }
+
+    /** The start time of the largest shift in the worst session window, as `largestShiftTime` of web-vitals. */
+    getLargestShiftTime() : number | undefined {
+        return this.largestShift?.time;
     }
 
     reset() : void {
