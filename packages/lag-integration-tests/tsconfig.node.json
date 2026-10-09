@@ -13,6 +13,6 @@
     "types": ["node"],
     "rootDir": "."
   },
-  "include": ["vitest.config.ts", "commands/**/*.ts", "src/command-types.ts"],
+  "include": ["vitest.config.ts", "free-port.ts", "commands/**/*.ts", "src/command-types.ts"],
   "exclude": ["node_modules", "dist"]
 }
