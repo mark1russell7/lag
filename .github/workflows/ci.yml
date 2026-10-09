@@ -183,9 +183,25 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Install Chromium for the browser tests of the site
+      # The browser tests of the site and the prerender of the site build use Chromium
+      - name: Install Chromium for the site
         working-directory: packages/site
         run: pnpm exec playwright install --with-deps chromium
       - run: pnpm --filter @lag/site typecheck
       - run: pnpm --filter @lag/site test
-      - run: pnpm --filter @lag/site build
+      - name: Build the site, as the Pages workflow does
+        run: pnpm --filter @lag/site build
+        env:
+          SITE_BASE: lag
+          SITE_URL: https://mark1russell7.github.io/lag/
+      # The HTML of each page must contain the text of the page, the head tags and the image
+      - name: The prerendered pages are complete
+        shell: bash
+        run: |
+          page=packages/site/dist/docs/getting-started.html
+          grep -q '<h1[^>]*>Quick start</h1>' "$page"
+          grep -q '<link rel="canonical" href="https://mark1russell7.github.io/lag/docs/getting-started" />' "$page"
+          grep -q '"@type":"TechArticle"' "$page"
+          test -s packages/site/dist/og/docs/getting-started.png
+          grep -q '<loc>https://mark1russell7.github.io/lag/docs/getting-started</loc>' packages/site/dist/sitemap.xml
+          grep -q 'content="noindex"' packages/site/dist/404.html

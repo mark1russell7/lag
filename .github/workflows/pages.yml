@@ -132,10 +132,18 @@ jobs:
           fi
           node -e 'const i = require("./" + process.argv[1]); if (!Array.isArray(i.runs) || i.runs.length === 0) { console.error("index.json has no runs"); process.exit(1); }' "$index"
 
+      # The site build renders each page and each Open Graph image in Chromium. The step above
+      # installed the browsers of the integration tests; this step installs the Chromium of the
+      # Playwright version of the site, if the versions are not the same.
+      - name: Install Chromium for the site build
+        run: pnpm --filter @lag/site exec playwright install chromium
+
       - name: Build the site
         run: pnpm --filter @lag/site build
         env:
           SITE_BASE: ${{ github.event.repository.name }}
+          # The absolute URL of the site, for the canonical links, Open Graph and the sitemap
+          SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
       - uses: actions/upload-pages-artifact@v3
         with:
