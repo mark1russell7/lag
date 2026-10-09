@@ -7,6 +7,7 @@ import { durationBins } from "./durations";
 import { compareEnvironments, environmentMatrix } from "./matrix";
 import {
     defaultGroupingKey,
+    familyGroupingKey,
     GROUP_BY_MEASUREMENT,
     groupingKeys,
     groupMeasurements,
@@ -228,6 +229,29 @@ describe("measurements model", () => {
         expect(groupingKeys(run.measurements)).toEqual([GROUP_BY_MEASUREMENT, "suite", "browser", "profile"]);
         expect(defaultGroupingKey(run.measurements)).toBe("profile");
         expect(defaultGroupingKey([])).toBe(GROUP_BY_MEASUREMENT);
+    });
+
+    it("groups each family by a label that the family has, with browser as the fallback", () => {
+        const measurement = (name : string, labels : Record<string, string>) => ({ suiteId : "s", name, unit : "ms", values : [1], labels });
+        const stress = { key : "a", metric : "lag_drift_histogram", unit : "ms", measurements : [
+            measurement("stress/heavy/lag_drift_histogram", { profile : "heavy", browser : "chromium" }),
+            measurement("stress/light/lag_drift_histogram", { profile : "light", browser : "firefox" }),
+        ] };
+        const worker = { key : "b", metric : "lag_worker_main_block_histogram", unit : "ms", measurements : [
+            measurement("worker/lag_worker_main_block_histogram", { browser : "chromium" }),
+            measurement("worker/lag_worker_main_block_histogram", { browser : "webkit" }),
+        ] };
+        const keys = groupingKeys([...stress.measurements, ...worker.measurements]);
+
+        expect(familyGroupingKey(stress, null, keys)).toBe("profile");
+        // Not "profile": all values of the family would go into one group "(none)", for all engines
+        expect(familyGroupingKey(worker, null, keys)).toBe("browser");
+        expect(groupMeasurements(worker.measurements, familyGroupingKey(worker, null, keys)).map(group => group.group)).toEqual(["chromium", "webkit"]);
+        // A selection of the reader applies to each family, and an unknown key gives the default
+        expect(familyGroupingKey(worker, "profile", keys)).toBe("profile");
+        expect(familyGroupingKey(worker, "nope", keys)).toBe("browser");
+        // A label that only some measurements of the family have comes after a label that all have
+        expect(defaultGroupingKey([...worker.measurements, stress.measurements[0]!])).toBe("browser");
     });
 
     it("joins the values of each group and summarizes them", () => {
