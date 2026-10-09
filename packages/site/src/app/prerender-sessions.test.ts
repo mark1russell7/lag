@@ -4,6 +4,7 @@ import { sessionsWithoutStart } from "./prerender-sessions";
 
 const METRICS = {
     driftLag : "drift",
+    macrotaskLag : "macrotask",
     workerMainBlock : "worker",
     frameDelta : "frame",
     eventDuration : "event",
