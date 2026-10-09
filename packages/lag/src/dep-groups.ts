@@ -43,8 +43,8 @@ import type {
 import type { FinalizationRegistryConstructor } from "./GCSignalDetector.js";
 import type { WorkerLike } from "./WorkerLagMonitor.js";
 import type { HangReportTarget } from "./worker-protocol.js";
-import type { HangJournal } from "./hang-journal.js";
-import type { BroadcastChannelConstructor, LockManagerLike } from "./PeerHangWatch.js";
+import type { HangJournal, HangReportMarks } from "./hang-journal.js";
+import type { AbortControllerConstructor, BroadcastChannelConstructor, LockManagerLike } from "./PeerHangWatch.js";
 import type { ReportingObserverInit } from "./BrowserReportMonitor.js";
 import type { PageSource } from "./vitals/types.js";
 import type { AbsoluteClock } from "./absolute-clock.js";
@@ -127,9 +127,16 @@ export type WorkerMonitorDeps = {
     /**
      * The hang journal (`createIndexedDbHangJournal(indexedDB)`). With it, the
      * monitor reports the hangs that earlier pages of the origin did not
-     * survive. The worker must have a journal of the same storage.
+     * survive. The worker must have a journal of the same storage. The peer
+     * hang watch takes the record of a hung page from it.
      */
     hangJournal? : HangJournal;
+    /**
+     * The marks of the hangs that the peer hang watch reported
+     * (`createStorageHangReportMarks(localStorage)`). The watch writes them,
+     * and the monitor does not count a marked hang of the journal again.
+     */
+    hangReportMarks? : HangReportMarks;
     /** The ID of this page instance. The default is a new random ID. */
     pageId? : string;
 };
@@ -141,6 +148,8 @@ export type WorkerMonitorDeps = {
 export type PeerDeps = {
     BroadcastChannel : BroadcastChannelConstructor;
     locks : LockManagerLike;
+    /** With it, the watch cancels its waiting lock requests when the page is frozen, goes into the back/forward cache or stops. */
+    AbortController? : AbortControllerConstructor;
 };
 
 /** The crash-report context of Chromium (`window.crashReport`, Chrome 145). */

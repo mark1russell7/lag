@@ -4,6 +4,7 @@ import { setupAllMonitors } from "../setup-all-monitors.js";
 import { createRecordingMeter } from "../test-utils.js";
 import { createFakeEventTarget, createFakePerformanceObserver } from "../vitals/test-fakes.js";
 import type { WorkerLike } from "../WorkerLagMonitor.js";
+import { MemoryStorage } from "../test-peers.js";
 
 /** Browser globals whose functions throw without their `this` value, as some browser functions do. */
 function createGlobals(extra : Record<string, unknown> = {}) {
@@ -119,7 +120,7 @@ describe("createBrowserDeps", () => {
         });
     });
 
-    it("uses IndexedDB for the hang journal only with a worker, and only if the option permits it", () => {
+    it("uses IndexedDB for the hang journal only with a worker or the peer hang watch, and only if the option permits it", () => {
         const worker : WorkerLike = { postMessage : vi.fn(), addEventListener : vi.fn(), removeEventListener : vi.fn() };
         const indexedDB = { open : vi.fn() };
         const globals = createGlobals({ indexedDB });
@@ -128,8 +129,36 @@ describe("createBrowserDeps", () => {
         expect(createBrowserDeps(globals, options()).hangJournal).toBeUndefined();
         expect(createBrowserDeps(globals, { ...options(), worker, hangJournal : false }).hangJournal).toBeUndefined();
         expect(createBrowserDeps(createGlobals(), { ...options(), worker }).hangJournal).toBeUndefined();
+
+        // Without a worker, the peer hang watch takes the record of a hung page from the journal
+        const peerGlobals = createGlobals({
+            indexedDB,
+            BroadcastChannel : class { onmessage = null; postMessage() : void {} close() : void {} },
+            navigator : { locks : { request : vi.fn() } },
+        });
+        expect(createBrowserDeps(peerGlobals, options()).hangJournal).toBeDefined();
+        expect(createBrowserDeps(peerGlobals, { ...options(), peerHangWatch : false }).hangJournal).toBeUndefined();
+        expect(createBrowserDeps(peerGlobals, { ...options(), hangJournal : false }).hangJournal).toBeUndefined();
         // The database opens only at the first operation
         expect(indexedDB.open).not.toHaveBeenCalled();
+    });
+
+    it("marks the reports of the peer hang watch in localStorage, with the conditions of the hang journal", () => {
+        const worker : WorkerLike = { postMessage : vi.fn(), addEventListener : vi.fn(), removeEventListener : vi.fn() };
+        const localStorage = new MemoryStorage();
+
+        const marks = createBrowserDeps(createGlobals({ localStorage }), { ...options(), worker }).hangReportMarks;
+        marks!.add("page", 5);
+        expect(localStorage.getItem("lag-hang-reported:page")).toBe("5");
+
+        expect(createBrowserDeps(createGlobals({ localStorage }), options()).hangReportMarks).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ localStorage }), { ...options(), worker, hangJournal : false }).hangReportMarks).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ localStorage : {} }), { ...options(), worker }).hangReportMarks).toBeUndefined();
+        expect(createBrowserDeps(createGlobals(), { ...options(), worker }).hangReportMarks).toBeUndefined();
+        // In a sandboxed frame, the read of localStorage throws
+        const blocked = createGlobals();
+        Object.defineProperty(blocked, "localStorage", { get : () => { throw new Error("SecurityError"); } });
+        expect(createBrowserDeps(blocked, { ...options(), worker }).hangReportMarks).toBeUndefined();
     });
 
     it("uses BroadcastChannel and the Web Locks API for the peer hang watch, if the option permits it", async () => {
@@ -149,6 +178,10 @@ describe("createBrowserDeps", () => {
         expect(deps.BroadcastChannel).toBe(BroadcastChannel);
         await deps.locks!.request("name", {}, () => {});
         expect(request).toHaveBeenCalledWith("name", {}, expect.any(Function));
+        // AbortController cancels the waiting lock requests of the watch
+        expect(deps.AbortController).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ BroadcastChannel, navigator, AbortController }), options()).AbortController).toBe(AbortController);
+        expect(createBrowserDeps(createGlobals({ navigator, AbortController }), options()).AbortController).toBeUndefined();
 
         expect(createBrowserDeps(createGlobals({ BroadcastChannel, navigator }), { ...options(), peerHangWatch : false }).locks).toBeUndefined();
         expect(createBrowserDeps(createGlobals({ navigator }), options()).locks).toBeUndefined();

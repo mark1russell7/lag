@@ -1,5 +1,6 @@
-import type { BroadcastChannelLike, LockManagerLike, PeerHangWatchDeps } from "./PeerHangWatch.js";
+import type { AbortSignalLike, BroadcastChannelLike, LockManagerLike, PeerHangWatchDeps } from "./PeerHangWatch.js";
 import type { Logger } from "./types.js";
+import type { StorageLike } from "./hang-journal.js";
 
 type LockRequest = {
     page : SimulatedPage;
@@ -13,7 +14,10 @@ type LockState = { holder : LockRequest | undefined; queue : LockRequest[] };
 /**
  * The pages of one origin, for the tests of `PeerHangWatch`. The origin has
  * a BroadcastChannel hub and a Web Lock manager with a FIFO queue for each
- * lock name, as a browser has.
+ * lock name, as a browser has. A request with an aborted signal does not
+ * wait, and an abort removes a waiting request from its queue.
+ *
+ * The pages also share one synchronous storage (`localStorage`).
  *
  * The tests use the fake timers of Vitest: the pages share the virtual
  * clock and the timer queue. A page can hang (`hang()`). Then its callbacks
@@ -28,6 +32,8 @@ export class SimulatedOrigin {
      * a message can arrive after a lock that the sender released later.
      */
     messageDelayMs = 0;
+    /** The `localStorage` of the origin. */
+    readonly localStorage : MemoryStorage = new MemoryStorage();
     private readonly channels = new Set<SimulatedChannel>();
     private readonly lockStates = new Map<string, LockState>();
 
@@ -43,6 +49,11 @@ export class SimulatedOrigin {
     /** The names of the locks that a page holds. */
     heldBy(page : SimulatedPage) : string[] {
         return [...this.lockStates.entries()].filter(([, state]) => state.holder?.page === page).map(([name]) => name);
+    }
+
+    /** The names of the locks that a page waits for: one name for each waiting request. */
+    waitingBy(page : SimulatedPage) : string[] {
+        return [...this.lockStates.entries()].flatMap(([name, state]) => state.queue.filter(request => request.page === page).map(() => name));
     }
 
     /** @internal */
@@ -66,8 +77,19 @@ export class SimulatedOrigin {
     }
 
     /** @internal */
-    request(page : SimulatedPage, name : string, options : { ifAvailable? : boolean }, callback : (lock : unknown) => unknown) : Promise<unknown> {
+    request(
+        page : SimulatedPage,
+        name : string,
+        options : { ifAvailable? : boolean; signal? : AbortSignalLike },
+        callback : (lock : unknown) => unknown,
+    ) : Promise<unknown> {
         return new Promise((resolve, reject) => {
+            const { signal } = options;
+            const aborted = () => new DOMException("The lock request was aborted.", "AbortError");
+            if (signal?.aborted) {
+                reject(aborted());
+                return;
+            }
             const state = this.lockStates.get(name) ?? { holder : undefined, queue : [] };
             this.lockStates.set(name, state);
             const request : LockRequest = { page, callback, resolve, reject };
@@ -76,6 +98,11 @@ export class SimulatedOrigin {
                 return;
             }
             state.queue.push(request);
+            signal?.addEventListener("abort", () => {
+                if (!state.queue.includes(request)) return;
+                state.queue = state.queue.filter(other => other !== request);
+                reject(aborted());
+            });
             this.grantNext(name);
         });
     }
@@ -118,6 +145,36 @@ export class SimulatedOrigin {
             state.holder = undefined;
             this.grantNext(name);
         });
+    }
+}
+
+/** A `localStorage` in memory. */
+export class MemoryStorage implements StorageLike {
+    private readonly items = new Map<string, string>();
+
+    get length() : number {
+        return this.items.size;
+    }
+
+    key(index : number) : string | null {
+        return [...this.items.keys()][index] ?? null;
+    }
+
+    getItem(key : string) : string | null {
+        return this.items.get(key) ?? null;
+    }
+
+    setItem(key : string, value : string) : void {
+        this.items.set(key, value);
+    }
+
+    removeItem(key : string) : void {
+        this.items.delete(key);
+    }
+
+    /** All keys, for the assertions of the tests. */
+    keys() : string[] {
+        return [...this.items.keys()];
     }
 }
 
@@ -200,6 +257,7 @@ export class SimulatedPage {
                 }
             },
             locks,
+            AbortController,
             wallClock : { now : () => Date.now() },
             // The simulated pages have one clock: the fake time of Vitest
             clock : { now : () => Date.now() },

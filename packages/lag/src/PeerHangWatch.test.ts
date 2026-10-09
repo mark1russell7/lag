@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isPeerMessage, PEER_CHANNEL_NAME, PeerHangWatch, peerLockName, type PeerHangWatchOptions } from "./PeerHangWatch.js";
+import { isPeerMessage, PEER_CHANNEL_NAME, PEER_CLAIM_HOLD_MS, PeerHangWatch, peerLockName, type PeerHangWatchOptions } from "./PeerHangWatch.js";
 import { SimulatedOrigin, type SimulatedPage } from "./test-peers.js";
-import { createMemoryHangJournal, type HangRecord } from "./hang-journal.js";
+import { createMemoryHangJournal, createStorageHangReportMarks, type HangJournal, type HangRecord } from "./hang-journal.js";
 
 type Watched = { page : SimulatedPage; watch : PeerHangWatch; hangs : HangRecord[]; sources : string[] };
 
@@ -243,6 +243,9 @@ describe("PeerHangWatch", () => {
         reporter.watch.stop();
         await advance(3_000);
         expect([...a.hangs, ...b.hangs, ...c.hangs].map(hang => hang.pageId)).toEqual(["d"]);
+        // The other pages also do not report it after the time of the claim
+        await advance(PEER_CLAIM_HOLD_MS);
+        expect([...a.hangs, ...b.hangs, ...c.hangs].map(hang => hang.pageId)).toEqual(["d"]);
     });
 
     it("waits for the last messages of a page after its lock comes free", async () => {
@@ -258,9 +261,9 @@ describe("PeerHangWatch", () => {
         expect(a.hangs).toEqual([]);
     });
 
-    it("takes the record of the worker of the hung page from the journal", async () => {
+    it("takes the record of the worker of the hung page from the journal, and then needs no mark", async () => {
         const journal = createMemoryHangJournal();
-        const a = open("a", { journal });
+        const a = open("a", { journal, marks : createStorageHangReportMarks(origin.localStorage) });
         const b = open("b");
         await advance(1_500);
         b.page.hang();
@@ -271,18 +274,73 @@ describe("PeerHangWatch", () => {
         await advance(2_000);
         expect(a.hangs).toEqual([record]);
         expect(await journal.list()).toEqual([]);
+        expect(origin.localStorage.keys()).toEqual([]);
     });
 
-    it("uses its own times when the journal fails", async () => {
+    it("uses its own times when the journal fails, and marks the report, because the journal can still have the record", async () => {
         const journal = { ...createMemoryHangJournal(), take : () => Promise.reject(new Error("no IndexedDB")) };
-        const a = open("a", { journal });
+        const a = open("a", { journal, marks : createStorageHangReportMarks(origin.localStorage) });
         const b = open("b");
         await advance(1_500);
         b.page.hang();
         await advance(8_000);
         b.page.kill();
+        const endedAt = Date.now();
         await advance(2_000);
         expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+        expect(origin.localStorage.getItem("lag-hang-reported:b")).toBe(String(endedAt));
+    });
+
+    it("reports nothing and puts the record back when it stops while it takes the record from the journal", async () => {
+        const memory = createMemoryHangJournal();
+        let release : () => void = () => {};
+        const journal : HangJournal = {
+            ...memory,
+            take : (pageId, latestSeenAt) => new Promise(resolve => { release = () => resolve(memory.take(pageId, latestSeenAt)); }),
+        };
+        const a = open("a", { journal });
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        const record = { pageId : "b", startedAt : Date.now() - 200, lastSeenAt : Date.now() + 6_000, attributes : {} };
+        await memory.put(record);
+        await advance(8_000);
+        b.page.kill();
+        // The wait for the last messages ends, and a takes the record
+        await advance(2_000);
+        a.watch.stop();
+        release();
+        await advance(10);
+
+        expect(a.hangs).toEqual([]);
+        expect(await memory.list()).toEqual([record]);
+        expect(origin.heldBy(a.page)).toEqual([]);
+        expect(a.page.logs).toEqual([]);
+    });
+
+    it("logs nothing when it stops during the take, and the journal has no record or cannot put the record back", async () => {
+        for (const [pageId, withRecord] of [["b", true], ["c", false]] as const) {
+            const memory = createMemoryHangJournal();
+            if (withRecord) await memory.put({ pageId, startedAt : Date.now(), lastSeenAt : Date.now(), attributes : {} });
+            let release : () => void = () => {};
+            const journal : HangJournal = {
+                ...memory,
+                put : () => Promise.reject(new Error("no IndexedDB")),
+                take : (id, latestSeenAt) => new Promise(resolve => { release = () => resolve(memory.take(id, latestSeenAt)); }),
+            };
+            const a = open(`watcher-of-${pageId}`, { journal });
+            const hung = open(pageId);
+            await advance(1_500);
+            hung.page.hang();
+            await advance(8_000);
+            hung.page.kill();
+            await advance(2_000);
+            a.watch.stop();
+            release();
+            await advance(10);
+            expect(a.hangs).toEqual([]);
+            expect(a.page.logs).toEqual([]);
+        }
     });
 
     it("watches the others while hidden, but sends no heartbeat and holds no lock", async () => {
@@ -311,6 +369,38 @@ describe("PeerHangWatch", () => {
         b.page.kill();
         await advance(2_000);
         expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+    });
+
+    it("watches a page again at once when the page becomes visible again during the wait for its last messages", async () => {
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        b.watch.hide();
+        await advance(100);
+        b.watch.show();
+        await advance(300);
+        expect(origin.waitingBy(a.page)).toEqual([peerLockName("b")]);
+        b.page.hang();
+        await advance(10_000);
+        b.page.kill();
+        await advance(3_000);
+        expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+    });
+
+    it("keeps a late heartbeat that the page sent before its lock came free with the earlier entry", async () => {
+        origin.messageDelayMs = 500;
+        const a = open("a", { graceMs : 1_000 });
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.recover();
+        // The heartbeat at 10 000 ms, and then the close. Both messages arrive after the lock.
+        await advance(600);
+        b.watch.stop();
+        await advance(3_000);
+        expect(a.hangs).toEqual([]);
+        expect(origin.waitingBy(a.page)).toEqual([]);
     });
 
     it("does not use a lock that it got after the page became hidden again", async () => {
@@ -365,6 +455,72 @@ describe("PeerHangWatch", () => {
         await advance(2_000);
         expect(origin.heldBy(a.page)).toContain("lag-page-claim:b");
         a.watch.stop();
+        await advance(10);
+        expect(origin.heldBy(a.page)).toEqual([]);
+        // The stop also stops the timer of the claim
+        b.watch.stop();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("keeps the claim for PEER_CLAIM_HOLD_MS, and then releases it", async () => {
+        expect(PEER_CLAIM_HOLD_MS).toBe(60_000);
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        // The claim starts after the wait of 1000 ms for the last messages
+        b.page.kill();
+        await advance(1_000 + PEER_CLAIM_HOLD_MS - 10);
+        expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+        expect(origin.heldBy(a.page)).toEqual([peerLockName("a"), "lag-page-claim:b"]);
+        await advance(20);
+        expect(origin.heldBy(a.page)).toEqual([peerLockName("a")]);
+    });
+
+    it("reports the hang, but does not keep the claim, when it goes into the back/forward cache during the take of the record", async () => {
+        const memory = createMemoryHangJournal();
+        let release : () => void = () => {};
+        const journal : HangJournal = {
+            ...memory,
+            take : (pageId, latestSeenAt) => new Promise(resolve => { release = () => resolve(memory.take(pageId, latestSeenAt)); }),
+        };
+        const a = open("a", { journal });
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        a.watch.suspend();
+        release();
+        await advance(10);
+        expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+        expect(origin.heldBy(a.page)).toEqual([]);
+    });
+
+    it("does not keep the claim when the watch stops in the report", async () => {
+        const b = open("b");
+        const a = open("a", { onAbandonedHang : () => a.watch.stop() });
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        expect(origin.heldBy(a.page)).toEqual([]);
+        expect(vi.getTimerCount()).toBe(1);
+    });
+
+    it("releases the claim when it goes into the back/forward cache", async () => {
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        expect(origin.heldBy(a.page)).toContain("lag-page-claim:b");
+        a.watch.suspend();
         await advance(10);
         expect(origin.heldBy(a.page)).toEqual([]);
     });
@@ -467,6 +623,77 @@ describe("PeerHangWatch in the back/forward cache", () => {
         expect(a.hangs).toEqual([]);
     });
 
+    it("cancels its waiting lock requests when it is suspended, thus it has one request for each page", async () => {
+        const a = open("a");
+        open("b");
+        await advance(1_500);
+        for (let i = 0; i < 3; i++) {
+            a.watch.suspend();
+            await advance(10);
+            a.watch.resume();
+            await advance(1_500);
+        }
+        expect(origin.waitingBy(a.page)).toEqual([peerLockName("b")]);
+        // A cancelled request rejects with an AbortError. The watch does not log it.
+        expect(a.page.logs).toEqual([]);
+    });
+
+    it("gets no lock while it is frozen, thus a page that becomes hidden and visible again gets its own lock", async () => {
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        // The browser freezes a: its callbacks wait
+        a.watch.suspend();
+        a.page.hang();
+        b.watch.hide();
+        b.watch.show();
+        await advance(1_500);
+        expect(origin.heldBy(a.page)).toEqual([]);
+        expect(origin.heldBy(b.page)).toEqual([peerLockName("b")]);
+        a.page.recover();
+    });
+
+    it("cancels its waiting lock requests when it stops", async () => {
+        const a = open("a");
+        open("b");
+        await advance(1_500);
+        expect(origin.waitingBy(a.page)).toEqual([peerLockName("b")]);
+        a.watch.stop();
+        await advance(10);
+        expect(origin.waitingBy(a.page)).toEqual([]);
+        expect(a.page.logs).toEqual([]);
+    });
+
+    it("watches without AbortController, but then it cannot cancel its waiting lock requests", async () => {
+        const page = origin.page();
+        const deps = page.deps();
+        delete deps.AbortController;
+        const hangs : HangRecord[] = [];
+        const a = new PeerHangWatch(deps, { pageId : "a", visible : true, onAbandonedHang : (hang) => hangs.push(hang) });
+        watches.push(a);
+        const b = open("b");
+        await advance(1_500);
+        a.suspend();
+        await advance(10);
+        expect(origin.waitingBy(page)).toEqual([peerLockName("b")]);
+        a.resume();
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        expect(hangs.map(hang => hang.pageId)).toEqual(["b"]);
+
+        // After a stop, a lock that the watch could not cancel has no effect
+        const c = open("c");
+        await advance(1_500);
+        a.stop();
+        c.watch.stop();
+        await advance(10);
+        expect(origin.heldBy(page)).toEqual([]);
+        expect(vi.getTimerCount()).toBe(1);
+    });
+
     it("opens its channel again when it resumes, and watches again", async () => {
         const a = open("a");
         await advance(10);
@@ -515,6 +742,37 @@ describe("PeerHangWatch in the back/forward cache", () => {
 });
 
 describe("PeerHangWatch, the own page at its close", () => {
+    it("removes the record of its worker from the journal, and marks its report, as in Firefox", async () => {
+        const journal = createMemoryHangJournal();
+        const a = open("a", { journal, marks : createStorageHangReportMarks(origin.localStorage) });
+        await advance(1_500);
+        a.page.hang();
+        // The worker writes its record during the hang. The browser can stop the worker before it removes the record.
+        await journal.put({ pageId : "a", startedAt : Date.now() - 500, lastSeenAt : Date.now() + 7_000, attributes : {} });
+        await advance(8_000);
+        a.page.recover();
+        a.watch.hide(true);
+        const reportedAt = Date.now();
+        await advance(0);
+
+        expect(a.sources).toEqual(["self"]);
+        expect(await journal.list()).toEqual([]);
+        expect(origin.localStorage.getItem("lag-hang-reported:a")).toBe(String(reportedAt));
+    });
+
+    it("reports its own hang also when the journal cannot remove the record", async () => {
+        const journal = { ...createMemoryHangJournal(), remove : () => Promise.reject(new Error("no IndexedDB")) };
+        const a = open("a", { journal });
+        await advance(1_500);
+        a.page.hang();
+        await advance(8_000);
+        a.page.recover();
+        a.watch.hide(true);
+        await advance(0);
+        expect(a.sources).toEqual(["self"]);
+        expect(a.page.logs).toEqual([]);
+    });
+
     it("reports its own hang when it closes at the end of a hang, as in Safari", async () => {
         const a = open("a");
         a.watch.setContext({ "lag.page_view.id" : "view-a" });

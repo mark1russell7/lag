@@ -131,6 +131,8 @@ Refer to [measurement validity](/docs/concepts/measurement-validity).
 | `createWorkerHandler(deps)` | The worker half: the heartbeats, the hang detection and the hang journal. `@lag/worker` operates it. |
 | `MainToWorkerMessage`, `WorkerToMainMessage` and the message types | The worker protocol. Refer to [architecture](/docs/architecture#the-worker). |
 | `HangJournal`, `createIndexedDbHangJournal(indexedDB)`, `createMemoryHangJournal()` | The storage of hangs in progress: `put()`, `remove()`, `list()` and `take()`. `take()` removes and gives a stale record in one atomic operation. |
+| `HangReportMarks`, `createStorageHangReportMarks(localStorage)`, `HANG_REPORT_MARK_PREFIX`, `StorageLike` | The marks of the hangs that a page reported itself or for another page. The journal reader skips the record of a marked hang. The marks are synchronous, thus a closing page can write them. |
+| `PEER_CLAIM_HOLD_MS`, `AbortControllerLike`, `AbortSignalLike`, `AbortControllerConstructor` | The time for which the peer hang watch holds the claim of a report (60 s), and the parts of `AbortController` with which it cancels its waiting lock requests. |
 | `findAbandonedHangs(records, now, ownPageId)` | The records of pages that did not survive their hang. `now` is a wall-clock time, as the times of the records are. |
 | `SharedLivenessMonitor`, `LivenessWatcher`, `createLivenessBeacon`, `beatingSetTimeout` | The shared-memory liveness watcher. |
 | `createForwardingMeter`, `createMeterReceiver` | Send the records of a meter from one context to another context, in batches. |

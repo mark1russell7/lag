@@ -269,12 +269,16 @@ export {
     PEER_BEAT_INTERVAL_MS,
     PEER_HANG_THRESHOLD_MS,
     PEER_GRACE_MS,
+    PEER_CLAIM_HOLD_MS,
     type PeerMessage,
     type PeerHangWatchDeps,
     type PeerHangWatchOptions,
     type BroadcastChannelLike,
     type BroadcastChannelConstructor,
     type LockManagerLike,
+    type AbortSignalLike,
+    type AbortControllerLike,
+    type AbortControllerConstructor,
 } from "./PeerHangWatch.js";
 export type {
     MainToWorkerMessage,
@@ -304,8 +308,12 @@ export {
     findAbandonedHangs,
     HANG_JOURNAL_STALE_MS,
     HANG_JOURNAL_WRITE_INTERVAL_MS,
+    createStorageHangReportMarks,
+    HANG_REPORT_MARK_PREFIX,
     type HangJournal,
     type HangRecord,
+    type HangReportMarks,
+    type StorageLike,
 } from "./hang-journal.js";
 export { createRandomId } from "./random-id.js";
 

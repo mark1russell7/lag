@@ -125,7 +125,7 @@ The research on the engine source code ([clocks and timers](/research/clocks-and
 
 The worker sends a heartbeat from its own timer. The main thread acknowledges it. The delay until the main thread handles a heartbeat is the time that the main thread could not handle messages. In the browser tests, a 500 ms block gives heartbeat delays of more than 300 ms, while the timer of the worker stays on time.
 
-When the main thread does not acknowledge heartbeats for 5 s, the worker reports a hang itself, through `fetch` with `keepalive`. It also writes the hang to a journal in IndexedDB, and writes it again each second.
+When a heartbeat of the worker waits 5 s for its acknowledgement from the main thread, the worker reports a hang itself, through `fetch` with `keepalive`. It also writes the hang to a journal in IndexedDB, and writes it again each second.
 
 A browser test blocks the main thread for 6.5 s. It stops the worker with `terminate()` before the hang ends, and it finds the record of the hang in IndexedDB. The next page of the origin reports such a record as a hang with the outcome `abandoned`. Two pages of the origin can start at the same time. Only one of them gets the record, because the journal removes it in one IndexedDB transaction.
 

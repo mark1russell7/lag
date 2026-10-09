@@ -11,7 +11,11 @@ export type HangReportTarget = {
 };
 
 export type HangOptions = {
-    /** A main thread that does not acknowledge heartbeats for this long is hung. */
+    /**
+     * A main thread is hung when a heartbeat waits this long for its
+     * acknowledgement. The wait starts at the send of the heartbeat, thus the
+     * value can be less than the heartbeat interval.
+     */
     thresholdMs : number;
     report? : HangReportTarget;
 };
