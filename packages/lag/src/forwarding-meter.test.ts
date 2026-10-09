@@ -156,6 +156,24 @@ describe("forwarding meter", () => {
         expect(recording.values("lag_drift_histogram")).toEqual([5]);
     });
 
+    it("creates each instrument one time, also when a batch comes two times", () => {
+        const recording = createRecordingMeter();
+        const createHistogram = vi.spyOn(recording.meter, "createHistogram");
+        const receiver = createMeterReceiver(recording.meter);
+        const message : ForwardedMetricMessage = {
+            type : "records",
+            sender : "page-1",
+            instruments : [{ id : 1, kind : "histogram", name : "h", options : { unit : "ms" } }],
+            records : [[1, 4, undefined]],
+        };
+
+        receiver.handleMessage(structuredClone(message));
+        receiver.handleMessage(structuredClone(message));
+
+        expect(createHistogram).toHaveBeenCalledTimes(1);
+        expect(recording.values("h")).toEqual([4, 4]);
+    });
+
     it("ignores the records after dispose()", () => {
         const { forwarding, sent } = createPair();
         const histogram = forwarding.meter.createHistogram("h", { unit : "ms" });
