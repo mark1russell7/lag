@@ -268,10 +268,8 @@ describe("DriftLag with a probe when the timer granularity changes", () => {
         d.monitor.stop();
     });
 
-    it("adds the first step after the 11 warm-up steps to the recent steps", () => {
+    it("adds the first step to the recent steps", () => {
         const d = createDriftLag(1);
-        d.thread.advance(11 * 6);
-        expect(d.monitor.getBaselineMs()).toBe(5);
         d.thread.advance(6);
 
         expect(d.monitor.getBaselineMs()).toBe(6);
@@ -319,7 +317,9 @@ describe("DriftLag when the granularity changes at any time in a window", () => 
     }
 
     // The same bug hid a block. For a coarser granularity, the window gave the new baseline of 15.6 ms to
-    // its steps of 5.7 ms before the row. Thus its lag was negative, and the factory recorded it as 0.
+    // its steps of 5.7 ms before the row. Thus its lag was negative, and the factory recorded it as 0. The
+    // step of the block is outside the old baseline, thus it gets the new baseline: the lag can be up to
+    // 15.6 ms less than the block.
     it("measures a block of 100 ms just before a change to a coarser granularity", () => {
         const recorded : number[] = [];
         for (const offsetMs of CHANGE_OFFSETS) {
@@ -334,31 +334,63 @@ describe("DriftLag when the granularity changes at any time in a window", () => 
             d.monitor.stop();
         }
 
-        expect(Math.min(...recorded)).toBeGreaterThan(100 - 5.7 - 1);
+        expect(Math.min(...recorded)).toBeGreaterThan(100 - 15.6 - 1);
         expect(Math.max(...recorded)).toBeLessThan(100 + 1);
     });
 });
 
-describe("DriftLag probe rules", () => {
-    it("starts no probe during the 11 warm-up steps after a restart", () => {
-        // Each message waits 3 ms, thus no check confirms a value, and each window asks for a probe
-        const d = createDriftLag(11);
-        d.thread.messageDelayMs = 3;
-        d.thread.advance(3_000);
-        d.thread.post(() => d.monitor.stop());
-        d.thread.advance(500);
-        d.thread.post(() => d.monitor.start());
-        const posted = d.thread.postedMessages;
-        // The message of start() waits 3 ms. A window of 6 steps of 16 ms ends during the warm-up.
-        d.thread.advance(3 + 11 * 16 - 1);
-        expect(d.thread.postedMessages).toBe(posted);
+describe("DriftLag with the timer tick of Windows after a start", () => {
+    // These tests found a library bug in the browser test of WebKit on Windows (steps of 15.6 ms). The
+    // warm-up left out all of the first 11 steps. Thus the steps after the warm-up were a row, because
+    // the first window compared them with the requested delay of 5 ms. A block ended the row, thus the
+    // first window waited for 10 more steps (810 ms), and it gave the 7 steps of 15.6 ms before the block
+    // a baseline of 5 ms: 436 ms of lag for a block of 300 ms.
+    for (const probe of [true, false]) {
+        it(`measures a block in the first window, and ends the first window after 20 steps (probe: ${probe})`, () => {
+            // The block starts before the 20th step ends, thus it is in the first window
+            for (let blockAt = 0; blockAt < 20 * 15.6; blockAt += 10) {
+                const d = createDriftLag(10.6, probe);
+                d.thread.advance(blockAt);
+                d.thread.post(() => d.thread.busy(300));
+                d.thread.advance(1_000);
 
-        // The 11th step ends the warm-up, and the probe starts
-        d.thread.advance(2);
-        expect(d.thread.postedMessages).toBeGreaterThan(posted);
-        d.monitor.stop();
+                const first = d.windows[0]!;
+                // 20 steps of 15.6 ms, and the block
+                expect(first.windowMs).toBeLessThan(20 * 15.6 + 300 + 15.6 + 1);
+                expect(first.lag).toBeGreaterThan(300 - 15.6 - 1);
+                expect(first.lag).toBeLessThan(300 + 1);
+                d.monitor.stop();
+            }
+        });
+    }
+
+    // The warm-up left out the first 11 steps after the restart, also when they were longer than the old
+    // baseline of 5.7 ms. A window that ended before the row of 15.6 ms steps gave each of these steps
+    // 9.9 ms of lag: 318 ms for a block of 150 ms.
+    it("measures a block after a restart in which the granularity changed", () => {
+        for (let stepsBeforeBlock = 0; stepsBeforeBlock < 25; stepsBeforeBlock++) {
+            const d = createDriftLag(0.7, false);
+            d.thread.advance(3_000);
+            d.thread.post(() => d.monitor.stop());
+            d.thread.advance(500);
+            d.thread.timerExtraMs = 10.6;
+            const restart = d.thread.now;
+            d.thread.post(() => d.monitor.start());
+            d.thread.advance(stepsBeforeBlock * 15.6 + 5);
+            d.thread.post(() => d.thread.busy(150));
+            d.thread.advance(2_000);
+
+            const recorded = d.windows.filter(w => w.endAt >= restart).reduce((sum, w) => sum + Math.max(0, w.lag), 0);
+            // A block before the row of 15.6 ms steps can lose up to the new baseline
+            expect(recorded).toBeGreaterThan(150 - 15.6 - 1);
+            expect(recorded).toBeLessThan(150 + 1);
+            expect(d.monitor.getBaselineMs()).toBeCloseTo(15.6, 1);
+            d.monitor.stop();
+        }
     });
+});
 
+describe("DriftLag probe rules", () => {
     it("probes the step after the 5th step of a row of longer steps", () => {
         const d = createDriftLag(1);
         d.thread.advance(3_000);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changeStepMs, idleStepMs, interpretCheck, isIdleStep, spreadMs, stepsUpTo, usedBaselineMs } from "./drift-baseline.js";
+import { idleStepMs, interpretCheck, isIdleStep, outsideStepMs, spreadMs, stepsUpTo, usedBaselineMs } from "./drift-baseline.js";
 
 describe("idleStepMs", () => {
     it("is the step when there is one step", () => {
@@ -27,17 +27,17 @@ describe("spreadMs", () => {
     });
 });
 
-describe("changeStepMs", () => {
+describe("outsideStepMs", () => {
     it("is the step between the two baselines, for a coarser and for a finer granularity", () => {
-        expect(changeStepMs(20, 8, 30)).toBe(20);
-        expect(changeStepMs(20, 30, 8)).toBe(20);
+        expect(outsideStepMs(20, 8, 30)).toBe(20);
+        expect(outsideStepMs(20, 30, 8)).toBe(20);
     });
 
     it("is not less than the shorter baseline and not more than the longer baseline", () => {
-        expect(changeStepMs(6, 8, 30)).toBe(8);
-        expect(changeStepMs(6, 30, 8)).toBe(8);
-        expect(changeStepMs(38, 8, 30)).toBe(30);
-        expect(changeStepMs(38, 30, 8)).toBe(30);
+        expect(outsideStepMs(6, 8, 30)).toBe(8);
+        expect(outsideStepMs(6, 30, 8)).toBe(8);
+        expect(outsideStepMs(38, 8, 30)).toBe(30);
+        expect(outsideStepMs(38, 30, 8)).toBe(30);
     });
 });
 

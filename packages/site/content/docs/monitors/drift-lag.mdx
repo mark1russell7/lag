@@ -37,7 +37,7 @@ The timer granularity can change while the page is open. For example, Windows ca
 - At a new granularity, the baseline comes only from the steps of the row.
 - A window that ends during such a row continues until the row ends or the monitor accepts the new granularity. It continues for at most 10 more steps.
 - In the window of the change, the steps before the row keep the old baseline. The other steps get the new baseline. Thus the change gives no lag.
-- The granularity can change during a step. That step is outside the old baseline, but it does not agree with the row. Its idle duration is its duration, but not less than the shorter baseline and not more than the longer baseline.
+- A step before the row that is outside the old baseline can have the new granularity. It can also be the step in which the granularity changed, or a block. Its idle duration is its duration, but not less than the shorter baseline and not more than the longer baseline. Thus no step before the row gives false lag. A block immediately before the row can lose up to the difference of the two baselines.
 - A step of more than 40 ms is not a granularity, thus it ends the row. Two ticks of the Windows timer (31.25 ms) and the 30 ms grid of WebKit in Low Power Mode are shorter.
 
 The CDP tests found this case. In Chromium on Windows, the steps changed from 5.5 ms to 15.6 ms after the page was hidden and shown again. Before this rule, DriftLag reported windows of 160 ms of lag on an idle page ([testing strategy](/docs/testing/strategy)).
@@ -48,15 +48,15 @@ A code review found a second error. The window of the change used the new baseli
 
 Safari aligns only the timers of the nesting level 10 or more (refer to [browser support](#browser-support)). `start()` starts a new chain at the level 0, for example in the task of a `visibilitychange` event. Thus the first 10 steps after a start are not aligned, and they take 5 ms. The 11th step goes from a time that is not aligned to the next boundary. On the grid of 30 ms, it takes between 5 ms and 35 ms.
 
-Thus the first 11 steps after each start are a warm-up:
+Thus the first 11 steps after each start are a warm-up. A warm-up step that is shorter than the baseline is not a step of the window. It is not a recent step, it is not in a row, and it gives no lag.
 
-- A warm-up step is not a recent step, and it is not in a row.
-- A warm-up step adds only its duration above the baseline to the lag. Thus a short step does not decrease the lag of its window.
-- A probe does not start during the warm-up.
+A longer warm-up step is a usual step, because the granularity can change while the monitor is stopped. For example, the steps of Chromium on Windows changed from 5.5 ms to 15.6 ms after the page was hidden and shown again. At the first start, the baseline is the requested delay, and no step is shorter.
 
 A code review found this error with a test on the simulated thread. After a restart on the grid of 4 ms, the steps of 5 ms decreased the baseline. Then five windows had approximately 4 ms of lag each on an idle thread. On the grid of 30 ms, each step of 5 ms subtracted 30 ms. Thus only 25 ms of a 150 ms block showed, and the next 22 windows had approximately 9 ms of lag each.
 
-The first start also has a warm-up. In Firefox and WebKit on Windows, the first window thus has 21 steps. It waits for the row of 15.6 ms steps after the warm-up.
+A first version of the warm-up left out all of the 11 steps, also at the first start. The browser test `lag-monitors.test.ts` then failed in WebKit on Windows, with 4 browsers in parallel. The first window compared the steps of 15.6 ms after the warm-up with the requested delay of 5 ms, thus they were a row. A block ended the row, and the first window waited for 10 more steps. The test read the histogram before the window ended.
+
+With that version, a restart could also give false lag. When the steps changed from 5.7 ms to 15.6 ms during the stop, a window could end before the row. Then each of the 11 steps got 9.9 ms of false lag.
 
 ### A sustained load
 
@@ -95,7 +95,7 @@ Before the change, the lag of each case decreased to less than 15% within 4 s. I
 
 ### Windows and records
 
-A window has a whole number of steps. Thus its length is 100 ms only when the baseline divides 100 ms. In Firefox and WebKit on Windows, a window has 6 steps of 15.6 ms, thus approximately 93 ms. The first window has 21 steps there, thus approximately 330 ms (refer to [the warm-up after a start](#the-warm-up-after-a-start)). `getLastWindowMs()` gives the measured length of the last window, with its lag.
+A window has a whole number of steps. Thus its length is 100 ms only when the baseline divides 100 ms. In Firefox and WebKit on Windows, a window has 6 steps of 15.6 ms, thus approximately 93 ms. The first window has 20 steps, thus approximately 310 ms there. `getLastWindowMs()` gives the measured length of the last window, with its lag.
 
 For each window, the factory gives the lag and the measured window length to the sample validator. For a valid sample, the factory records the lag in `lag_drift_histogram` and the current baseline in `lag_drift_baseline_histogram`. A negative lag is jitter around the baseline, thus the factory records it as 0.
 
@@ -219,25 +219,27 @@ The callbacks of the monitor are also tasks on the main thread. Thus the monitor
 - **The resolution is one step.** A block can start immediately after a step. Thus the lag of a block can be less than its duration by up to one step: 16 ms in Firefox on Windows (experiment E3). In Safari without focus, some steps are late, thus the baseline is longer than the usual step. Then the other steps of a window decrease its lag a little. One time on a CI runner, the decrease was 12.4 ms in a window with a block of 300 ms.
 - **One sample for each block.** The chain is closed-loop: a long block gives one long window, not many samples. In a histogram of windows, a 30 s block is one value among hundreds of normal windows ([clocks and timers](/research/clocks-and-timers), coordinated omission). The sum of the histogram contains the full length of the block. Thus use the sum for the blocked time, and the quantiles only for the typical window.
 - **Idle noise.** The factory records a negative lag as 0. Thus an idle page gives small positive values, for example a p90 of 3.1 ms in Chromium (experiment E3).
-- **A change of the timer granularity.** A row of 10 steps that agree with each other starts a new baseline. Thus the baseline follows a change, for example to battery power, after 10 steps of the new granularity: approximately 160 ms with steps of 16 ms. The step in which the granularity changes can be in the jitter limit of the old baseline. Then it gives up to max(4 ms, half of the old baseline) of lag.
+- **A change of the timer granularity.** A row of 10 steps that agree with each other starts a new baseline. Thus the baseline follows a change, for example to battery power, after 10 steps of the new granularity: approximately 160 ms with steps of 16 ms. The step in which the granularity changes can be in the jitter limit of the old baseline. Then it gives up to max(4 ms, half of the old baseline) of lag. A block immediately before the row can lose up to the difference of the two baselines.
+- **The first start in Safari.** At the first start, the baseline is the requested delay. Thus the 10 steps that Safari does not align are recent steps. On the simulated grid of 4 ms, the first windows had up to 18 ms of lag for approximately 0.8 s.
 - **No samples from hidden pages.** The monitor pauses there, and so does the worker monitor. The [timer throttling](/docs/monitors/timer-throttle) detector and the [clock drift](/docs/monitors/clock-drift) monitor continue in hidden pages.
 
 ## Tests
 
 Unit tests (Vitest, fake timers):
 
-- `DriftLag.test.ts`, the calibration: no lag with exact timers. No lag with 16 ms steps, and a baseline of 16 ms. A first window of 21 steps of 16 ms, then windows of 6 steps. A 300 ms block gives a lag of 300 ms. A long step does not change the baseline.
+- `DriftLag.test.ts`, the calibration: no lag with exact timers. No lag with 16 ms steps, and a baseline of 16 ms. A window of 20 steps, then of 6 steps of 16 ms. A 300 ms block gives a lag of 300 ms. A long step does not change the baseline.
 - `DriftLag.test.ts`, the timer chain: one chain after `stop()` and `start()`, also from inside the report function. A window of 103 ms has 20 steps of 5 ms.
 - `DriftLag.granularity.test.ts`, a change of the granularity: steps that change from 6 ms to 16 ms on an idle thread give a lag of less than 20 ms. The baseline follows the change, also when the change comes at the end of a window. In the window of a change to a finer granularity, the steps before the row keep the old baseline. After that change, a 300 ms block gives a lag of 300 ms. A row of steps of more than 40 ms, and a row of steps that do not agree, stay lag.
-- `DriftLag.granularity.test.ts`, the baseline: the mean of the steps that are not longer than the median plus max(4 ms, half of the median). A block does not count, also when it comes before shorter steps. The 11 warm-up steps after the start do not count.
-- `drift-baseline.test.ts`: the rules of the baseline at their limits. An increase of max(1 ms, 10%) needs no check. A probed step is idle below max(2 ms, half of its extra duration). The findings of a check, and the steps that it removes. The value of the step in which the granularity changes stays between the two baselines.
+- `DriftLag.granularity.test.ts`, the baseline: the mean of the steps that are not longer than the median plus max(4 ms, half of the median). A block does not count, also when it comes before shorter steps.
+- `drift-baseline.test.ts`: the rules of the baseline at their limits. An increase of max(1 ms, 10%) needs no check. A probed step is idle below max(2 ms, half of its extra duration). The findings of a check, and the steps that it removes. The value of a step before an accepted row that is outside the old baseline stays between the two baselines.
 - `BaselineConfirmation.test.ts`: a check of an idle probe, 3 steps and a second idle probe. The first value, the decrease to the highest recent baseline of 3 windows, a busy closing probe and a probe of a row.
 - `BusyTimeProbe.test.ts`: no busy time on an idle thread. Each task delays one message. A wait of 2 ms or less does not count, and a message of an earlier measurement does nothing.
 - `DriftLag.load.test.ts` uses a simulated thread with a timer queue and a message queue. Equal message tasks of 20 ms and timer tasks of 30 ms stay lag for 5 s, also with steps of 15.6 ms. Without a probe, the same load gives less than 5% lag. After the load, there is no lag.
-- `DriftLag.load.test.ts` also simulates three behaviors of browsers. In Chromium, a probed step is shorter and the next step is longer. In WebKit for Windows, a message waits also on an idle thread. No probe starts during the warm-up after a restart.
-- `DriftLag.load.test.ts`, a change of the granularity at 240 times in a window. The steps change from 15.6 ms to 5.7 ms and from 5.7 ms to 15.6 ms, with and without a probe. Each change gives less than 1 ms of lag on an idle thread. A block of 100 ms before a change to 15.6 ms gives more than 93 ms of lag.
+- `DriftLag.load.test.ts` also simulates three behaviors of browsers. In Chromium, a probed step is shorter and the next step is longer. In WebKit for Windows, a message waits also on an idle thread.
+- `DriftLag.load.test.ts`, the timer tick of Windows (steps of 15.6 ms): a block of 300 ms in the first window gives its duration minus up to one step. The first window has 20 steps. A restart can change the steps from 5.7 ms to 15.6 ms. Then a block of 150 ms after the restart gives its duration minus up to one step.
+- `DriftLag.load.test.ts`, a change of the granularity at 240 times in a window. The steps change from 15.6 ms to 5.7 ms and from 5.7 ms to 15.6 ms, with and without a probe. Each change gives less than 1 ms of lag on an idle thread. A block of 100 ms before a change to 15.6 ms gives more than 83 ms of lag.
 - `DriftLag.power.test.ts`: the timer alignment of WebKit on the simulated thread, with three offsets of the grid. A grid of 4 ms gives a baseline of 8 ms. A grid of 30 ms (Low Power Mode) gives a baseline of 30 ms, an idle lag near 0, and the lag of a 300 ms block. A change into Low Power Mode and out of it. A change out of Low Power Mode at 120 times in a window gives less than 2 ms of lag. A change into it gives not more than the jitter limit of 4 ms.
-- `DriftLag.power.test.ts`, the warm-up: after a start and after a restart, no window has more lag than the extra duration of the 11th step. A block of 150 ms during the warm-up after a restart gives its duration minus the baseline.
+- `DriftLag.power.test.ts`, the warm-up: after a restart, no window has more lag than the extra duration of the 11th step. A block of 150 ms during the warm-up after a restart gives its duration minus the baseline.
 - `LagLogger.test.ts`: the thresholds of the 2 s and 5 s periods, the reset after each report, and no log for a hidden tab. The logger uses the interval of each measurement, for example windows of 93 ms.
 - `setup-all-monitors.test.ts`: a 250 ms lag goes into `lag_drift_histogram`. The validator discards a window that overlaps a system suspend. The monitor pauses while the page is hidden, and it keeps the first window after the page is visible again.
 
