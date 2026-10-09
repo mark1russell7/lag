@@ -97,6 +97,8 @@ export type PeerHangWatchOptions = {
 type Peer = {
     /** The wall-clock time of the last heartbeat of the page. */
     lastBeatAt : number;
+    /** The wall-clock time at which the watch got the lock of the page. */
+    endedAt? : number;
     /** The page said that it became hidden or closes. */
     away : boolean;
     attributes : Readonly<Record<string, string>>;
@@ -333,12 +335,14 @@ export class PeerHangWatch {
             if (known) known.away = true;
             return;
         }
-        if (known) {
+        // A late heartbeat, which the page sent before its lock came free, belongs to the known entry
+        if (known && (known.endedAt === undefined || data.sentAt < known.endedAt)) {
             known.lastBeatAt = Math.max(known.lastBeatAt, data.sentAt);
             known.away = false;
             known.attributes = data.attributes;
             return;
         }
+        // A new page, or a page that operates after its lock came free (for example after a short hide)
         const peer : Peer = { lastBeatAt : data.sentAt, away : false, attributes : data.attributes };
         this.peers.set(data.pageId, peer);
         // The browser gives the lock when the page releases it: when it becomes hidden, closes or stops
@@ -351,9 +355,11 @@ export class PeerHangWatch {
         // The lock of a page that the watch forgot (refer to `suspend()`)
         if (this.peers.get(pageId) !== peer) return;
         const endedAt = this.deps.wallClock.now();
+        peer.endedAt = endedAt;
         const timer = this.deps.setTimeoutFn(() => {
             this.graceTimers.delete(timer);
-            // A later heartbeat of the page makes a new entry and a new lock request
+            // A heartbeat after the lock grant made a new entry, thus the page operates. Or the watch forgot the page.
+            if (this.peers.get(pageId) !== peer) return;
             this.peers.delete(pageId);
             if (peer.away || endedAt - peer.lastBeatAt < this.thresholdMs) return;
             this.claim(pageId, peer, endedAt);

@@ -45,6 +45,11 @@ export class SimulatedOrigin {
         return [...this.lockStates.entries()].filter(([, state]) => state.holder?.page === page).map(([name]) => name);
     }
 
+    /** The names of the locks that a page waits for: one name for each waiting request. */
+    waitingBy(page : SimulatedPage) : string[] {
+        return [...this.lockStates.entries()].flatMap(([name, state]) => state.queue.filter(request => request.page === page).map(() => name));
+    }
+
     /** @internal */
     open(channel : SimulatedChannel) : void {
         this.channels.add(channel);

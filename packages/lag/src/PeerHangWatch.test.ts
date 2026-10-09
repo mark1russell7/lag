@@ -343,6 +343,38 @@ describe("PeerHangWatch", () => {
         expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
     });
 
+    it("watches a page again at once when the page becomes visible again during the wait for its last messages", async () => {
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        b.watch.hide();
+        await advance(100);
+        b.watch.show();
+        await advance(300);
+        expect(origin.waitingBy(a.page)).toEqual([peerLockName("b")]);
+        b.page.hang();
+        await advance(10_000);
+        b.page.kill();
+        await advance(3_000);
+        expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+    });
+
+    it("keeps a late heartbeat that the page sent before its lock came free with the earlier entry", async () => {
+        origin.messageDelayMs = 500;
+        const a = open("a", { graceMs : 1_000 });
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.recover();
+        // The heartbeat at 10 000 ms, and then the close. Both messages arrive after the lock.
+        await advance(600);
+        b.watch.stop();
+        await advance(3_000);
+        expect(a.hangs).toEqual([]);
+        expect(origin.waitingBy(a.page)).toEqual([]);
+    });
+
     it("does not use a lock that it got after the page became hidden again", async () => {
         const a = open("a");
         a.watch.hide();
