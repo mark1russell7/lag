@@ -47,7 +47,18 @@ import {
     type SuiteResult,
 } from "@lag/report";
 import { PROJECT_REPORT_DIR_ENV } from "./project-reporter.js";
-import { mergeIndex, parseResultLines, runFile, runId, suiteMeta, toBudgets, toMeasurements, type ProjectReport, type ResultRecord } from "./model.js";
+import {
+    mergeIndex,
+    parseResultLines,
+    runExitCode,
+    runFile,
+    runId,
+    suiteMeta,
+    toBudgets,
+    toMeasurements,
+    type ProjectReport,
+    type ResultRecord,
+} from "./model.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "../../../..");
@@ -201,7 +212,7 @@ function main() : void {
     if (exportDir) {
         exportReports(exportDir, temp, resultsDir);
         if (!has("--keep-temp")) rmSync(temp, { recursive : true, force : true });
-        process.exitCode = exitCodes.some(([, code]) => code !== 0) ? 1 : 0;
+        process.exitCode = runExitCode(0, [], exitCodes.map(([, code]) => code));
         return;
     }
 
@@ -241,7 +252,8 @@ function main() : void {
         `coverage reports: ${run.coverage.length}; mutation reports: ${run.mutation.length}; measurements: ${run.measurements.length}; budgets: ${run.budgets.length} ` +
         `(${run.budgets.filter(b => !b.pass).length} failed).`);
     for (const [title, code] of exitCodes) if (code !== 0) console.log(`Exit code ${code}: ${title}`);
-    process.exitCode = counts.failed > 0 || run.budgets.some(b => !b.pass) ? 1 : 0;
+    // A step can fail without a failed test, for example when Vitest cannot start
+    process.exitCode = runExitCode(counts.failed, run.budgets, exitCodes.map(([, code]) => code));
 }
 
 main();

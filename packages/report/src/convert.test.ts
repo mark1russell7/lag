@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+    ERRORS_OUTSIDE_TESTS,
     countStatuses,
     fromIstanbulSummary,
     fromStrykerReport,
@@ -48,6 +49,29 @@ describe("fromVitestJson", () => {
         expect(suite.files[0]!.tests[0]!.path).toEqual(["DriftLag", "reports lag"]);
         expect(suite.files[0]!.tests[1]!.durationMs).toBe(0);
         expect(suite.files[0]!.tests[2]!.failureMessages).toEqual(["boom"]);
+    });
+
+    it("adds a failed test for a file that failed without a failed test, as Vitest's JSON reporter writes it", () => {
+        const meta = { id : "lag-unit-node", packageName : "@lag/core", kind : "unit", environment : "node" } as const;
+        const suite = fromVitestJson({
+            testResults : [
+                // An error at the import: no tests
+                { name : "/repo/a.test.ts", status : "failed", message : "import broke", assertionResults : [] },
+                // A failed beforeAll hook of a suite: the tests are skipped, and the file has no message
+                { name : "/repo/b.test.ts", status : "failed", message : "", assertionResults : [{ title : "x", status : "skipped" }] },
+                // A failed test: the file needs no other failed test
+                { name : "/repo/c.test.ts", status : "failed", message : "", assertionResults : [{ title : "y", status : "failed" }] },
+                { name : "/repo/d.test.ts", status : "passed", message : "", assertionResults : [{ title : "z", status : "passed" }] },
+            ],
+        }, meta, "/repo");
+
+        expect(suite.files.map(file => file.tests.map(test => [test.name, test.status, test.failureMessages]))).toEqual([
+            [[ERRORS_OUTSIDE_TESTS, "failed", ["import broke"]]],
+            [["x", "skipped", []], [ERRORS_OUTSIDE_TESTS, "failed", ["The file failed outside its tests, without a message."]]],
+            [["y", "failed", []]],
+            [["z", "passed", []]],
+        ]);
+        expect(countStatuses([suite])).toEqual({ passed : 1, failed : 3, skipped : 1, todo : 0 });
     });
 });
 

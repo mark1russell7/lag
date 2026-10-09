@@ -1,5 +1,4 @@
 import { Link } from "react-router";
-import type { StatusCounts } from "../../adapters/lag-report";
 import { PlotFigure } from "../../components/PlotFigure/PlotFigure";
 import { ScrollTable } from "../../components/ScrollTable/ScrollTable";
 import { StatusIcon } from "../../components/StatusIcon/StatusIcon";
@@ -8,26 +7,19 @@ import { durationChart } from "../charts";
 import { StatTiles } from "../components/StatTiles";
 import { durationBins } from "../model/durations";
 import { environmentMatrix, type MatrixCell } from "../model/matrix";
-import { failingTests, runCounts, slowestTests, testDurations, totalSuiteDuration, totalTests, type TestRow } from "../model/tests";
+import { countsText, failingTests, groupStatus, runCounts, slowestTests, testDurations, totalSuiteDuration, totalTests, type TestRow } from "../model/tests";
 import { useRunContext } from "./run-context";
 import styles from "./Results.module.css";
 
-function cellText(counts : StatusCounts) : string {
-    const total = totalTests(counts);
-    const parts = [counts.failed > 0 ? `${counts.failed} failed of ${total}` : `${counts.passed} passed`];
-    if (counts.skipped > 0) parts.push(`${counts.skipped} skipped`);
-    if (counts.todo > 0) parts.push(`${counts.todo} to do`);
-    return parts.join(", ");
-}
-
 function MatrixCellView({ cell, packageName, environment } : { cell : MatrixCell | undefined; packageName : string; environment : string }) {
     if (!cell) return <span className={styles.muted}>No suite</span>;
-    const failed = cell.counts.failed > 0;
+    // A cell with only skipped tests, or without tests, does not show the passed icon
+    const status = groupStatus(cell.counts);
     const query = new URLSearchParams({ q : packageName, env : environment });
     return (
-        <Link to={`tests?${query.toString()}`} className={styles.cellLink} data-failed={failed ? "true" : undefined}>
-            <StatusIcon kind={failed ? "failed" : "passed"} showLabel={false} />
-            <span>{cellText(cell.counts)}</span>
+        <Link to={`tests?${query.toString()}`} className={styles.cellLink} data-failed={status === "failed" ? "true" : undefined}>
+            <StatusIcon kind={status} showLabel={false} />
+            <span>{countsText(cell.counts)}</span>
         </Link>
     );
 }
@@ -112,7 +104,9 @@ export function RunOverview() {
 
             <section className={styles.block} aria-labelledby="failures-heading">
                 <h2 id="failures-heading">Failed tests</h2>
-                {failures.length === 0 ? (
+                {totalTests(counts) === 0 ? (
+                    <p><StatusIcon kind="none" showLabel={false} /> The run has no tests.</p>
+                ) : failures.length === 0 ? (
                     <p><StatusIcon kind="passed" showLabel={false} /> No test failed in this run.</p>
                 ) : (
                     <>

@@ -16,7 +16,7 @@ import {
 } from "./measurements";
 import { mutationFileRows, mutationPackageRows } from "./mutation";
 import { nextSort, sortRows } from "./sort";
-import { failingTests, filterSuites, flattenTests, matchesFilter, parseStatusFilter, slowestTests } from "./tests";
+import { countsText, failingTests, filterSuites, flattenTests, groupStatus, matchesFilter, parseStatusFilter, slowestTests } from "./tests";
 import { runTrend, sortRunsNewestFirst } from "./trend";
 
 const run = SAMPLE_RUNS[1]!.report;
@@ -69,6 +69,25 @@ describe("tests model", () => {
         expect(groups.map(group => group.suite.id).sort()).toEqual(["core-unit-node", "integration-browser-firefox", "integration-browser-webkit"]);
         expect(groups.every(group => group.counts.failed === group.files.reduce((sum, file) => sum + file.tests.length, 0))).toBe(true);
         expect(filterSuites(run, { query : "", status : "all" }, "load-unit-node")).toHaveLength(1);
+    });
+});
+
+describe("group status", () => {
+    const counts = (passed : number, failed : number, skipped : number, todo : number) => ({ passed, failed, skipped, todo });
+
+    it("shows a group with only skipped tests as skipped, and a group without tests as none, not as passed", () => {
+        expect(groupStatus(counts(0, 0, 3, 0))).toBe("skipped");
+        expect(groupStatus(counts(0, 0, 0, 0))).toBe("none");
+        expect(groupStatus(counts(0, 0, 0, 2))).toBe("todo");
+        expect(groupStatus(counts(5, 0, 3, 1))).toBe("passed");
+        expect(groupStatus(counts(5, 1, 0, 0))).toBe("failed");
+    });
+
+    it("gives the counts as text", () => {
+        expect(countsText(counts(0, 0, 3, 0))).toBe("3 skipped");
+        expect(countsText(counts(0, 0, 0, 0))).toBe("No tests");
+        expect(countsText(counts(5, 0, 3, 1))).toBe("5 passed, 3 skipped, 1 to do");
+        expect(countsText(counts(5, 2, 0, 0))).toBe("2 failed of 7");
     });
 });
 
