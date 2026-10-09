@@ -94,11 +94,18 @@ async function logResult(profile : string, result : WorkloadResult, tee : TeeMet
  * The monitors find this case: DriftLag sees a long timer delay, and the
  * worker sees that the main thread was free. This function skips the test
  * in that case, and the skip gives the reason.
+ *
+ * The limit of the timer delay is 2 s. A block of a profile (1.5 s or less)
+ * does not cause a skip, because the worker sees the block (100 ms or more). In Safari on a CI runner, one run had
+ * a timer delay of 4,058 ms while the worker saw 18 ms of block. Then the
+ * kitchen-sink profile made only 16 events in 10 s.
  */
+const THROTTLED_TIMER_DELAY_MS = 2_000;
+
 function skipIfThrottled(test : TestContext, result : WorkloadResult, tee : TeeMeter) : void {
     const timerDelay = tee.max("lag_drift_histogram");
     const blocked = tee.max("lag_worker_main_block_histogram");
-    const slow = result.durationMs > PROFILE_DURATION_MS * 1.5 || (timerDelay > 5_000 && blocked < 100);
+    const slow = result.durationMs > PROFILE_DURATION_MS * 1.5 || (timerDelay > THROTTLED_TIMER_DELAY_MS && blocked < 100);
     if (!slow) return;
     const state = `visibilityState "${document.visibilityState}", hasFocus ${document.hasFocus()}, window ${window.innerWidth}x${window.innerHeight}`;
     console.log(`The browser slowed the timers of the page (${state})`);
