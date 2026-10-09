@@ -116,9 +116,21 @@ jobs:
           path: safari-reports
 
       # The results viewer of the site reads packages/site/public/data/results
+      # Failed tests do not stop the deploy: the site shows them
       - name: Make the test results
         run: pnpm results --import-reports=safari-reports
         continue-on-error: true
+
+      # A crash of the collector must not deploy a site without results, as a green run
+      - name: The test results exist
+        shell: bash
+        run: |
+          index=packages/site/public/data/results/index.json
+          if [ ! -s "$index" ]; then
+            echo "::error::The collector wrote no $index. Thus the site would deploy without test results."
+            exit 1
+          fi
+          node -e 'const i = require("./" + process.argv[1]); if (!Array.isArray(i.runs) || i.runs.length === 0) { console.error("index.json has no runs"); process.exit(1); }' "$index"
 
       - name: Build the site
         run: pnpm --filter @lag/site build
