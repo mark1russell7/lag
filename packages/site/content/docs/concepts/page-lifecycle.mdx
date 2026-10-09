@@ -109,7 +109,7 @@ const monitors = setupAllMonitors(createBrowserDeps(window, {
 }));
 
 // Record the values of the page view before each export
-otel.onBeforeFlush(() => monitors.flush());
+otel.onBeforeFlush((cause) => monitors.flush(cause.event));
 ```
 
 With the hook, the export contains the values in all engines, and the sequence of the listeners is not important. A unit test of `setupAllMonitors()` makes sure that `flush()` records the pending Web Vitals. With a different exporter, use `monitors.flush()` in the same way before each flush of the exporter.

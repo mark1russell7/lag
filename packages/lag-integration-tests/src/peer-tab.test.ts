@@ -36,6 +36,11 @@ function listen(id : string) : { arrivals : Arrival[]; close() : void } {
     return { arrivals, close : () => channel.close() };
 }
 
+/** True when a heartbeat of `source` arrived in [from, to). */
+function arrivedIn(arrivals : readonly Arrival[], source : PeerHeartbeat["source"], from : number, to : number) : boolean {
+    return arrivals.some(arrival => arrival.source === source && arrival.arrivedAt >= from && arrival.arrivedAt < to);
+}
+
 /** The largest gap between consecutive times in [from, to]. */
 function largestGap(times : readonly number[], from : number, to : number) : number {
     const inside = [from, ...times.filter(time => time > from && time < to), to];
@@ -53,6 +58,8 @@ async function lockHeld(name : string) : Promise<boolean> {
 
 describe("experiment E7: another page of the origin watches a hang", () => {
     it("sees the silence of the main thread, while the lock of the page stays held", async (ctx) => {
+        // In CI, no heartbeat of the peer page arrived before the block on iOS: earlier runs measured nothing there
+        ctx.skip(environment() === "ios", "Safari on iOS operates only the visible tab: the peer page sends no heartbeats while the test page is visible.");
         const id = `hang-${Math.random().toString(36).slice(2)}`;
         const heartbeats = listen(id);
         const peer = await openPeerPage(`src/pages/peer.html?id=${id}`);
@@ -77,6 +84,12 @@ describe("experiment E7: another page of the origin watches a hang", () => {
             console.log(`E7 (${engine}, test page ${visibility}): main heartbeats gap ${mainGap} ms, worker heartbeats gap ${workerGap} ms, ` +
                 `lock checks during the block ${duringBlock.map(check => String(check.held)).join(",")}`);
             ctx.skip(duringBlock.length === 0, SHARED_THREAD_NOTE);
+            // A gap is a measurement only when the heartbeats of the source arrived before and after the block.
+            // Without heartbeats, the gap is the full interval, and the checks below would pass for no reason.
+            for (const source of ["main", "worker"] as const) {
+                expect(arrivedIn(heartbeats.arrivals, source, blockStart - 1_000, blockStart), `${source} heartbeats before the block`).toBe(true);
+                expect(arrivedIn(heartbeats.arrivals, source, blockStart + BLOCK_MS, end), `${source} heartbeats after the block`).toBe(true);
+            }
             await recordMeasurement("peer-tab/main_heartbeat_gap", "ms", [mainGap], { engine });
             await recordMeasurement("peer-tab/worker_heartbeat_gap", "ms", [workerGap], { engine });
 
@@ -127,6 +140,8 @@ describe("experiment E7: another page of the origin watches a hang", () => {
                 `after the start of the close: lock granted ${after(grantedAt)}, pagehide ${after(pagehideAt)}, end of the block ${after(hangEnd)}`);
             ctx.skip(!operatedDuringHang, SHARED_THREAD_NOTE);
 
+            // The channel of the peer page operated before the block: thus "no pagehide" below is a result, not a lost channel
+            expect(arrivedIn(heartbeats.arrivals, "main", 0, hangStart)).toBe(true);
             expect(grantedDuringHang).toBe(false);
             expect(grantedAt).toBeDefined();
             await recordMeasurement("peer-tab/lock_granted_after_close", "ms", [grantedAt! - closed!.startedAt], { engine });

@@ -43,7 +43,7 @@ The scaffold makes the folder, the `package.json` and `tsconfig.json` files, and
 | Command | What it does |
 |---|---|
 | `pnpm test` | The unit tests of `@lag/core`. |
-| `pnpm test:integration` | The browser tests. They start the Grafana stack first. |
+| `pnpm test:integration` | The browser tests in each engine, the CDP tests, the back/forward cache tests and the cross-origin-isolated tests. `pnpm test:e2e` starts the Grafana stack first. |
 | `pnpm --filter @lag/site test` | The tests of the site, in Node and in Chromium. |
 | `pnpm lint:ste` | The writing rules. The linter [`@mark1russell7/ste-lint`](https://github.com/mark1russell7/ste-lint) has its own repository and tests. |
 

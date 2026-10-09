@@ -8,7 +8,7 @@ status: draft
 The monitors record into an OpenTelemetry `Meter` and send events to an OpenTelemetry `Logger`. The SDK settings decide if the metrics of many browsers are correct after aggregation. The research note [OpenTelemetry metrics in the browser](/research/otel-browser-metrics) gives the evidence for each setting.
 
 <Callout type="note" title="The version of otel-ts">
-  This page uses the otel-ts features `serviceInstanceId`, `createInstanceId()`, `histogramAggregation` and `onBeforeFlush`. They are in otel-ts from commit `a4a7722` (the `main` branch on 2026-10-08), and the lockfile of this repository has that commit. An earlier version puts `session.id` on the resource, sets no `service.instance.id`, uses explicit-bucket histograms and has no `onBeforeFlush`.
+  This page uses the otel-ts features `serviceInstanceId`, `createInstanceId()`, `histogramAggregation` and `onBeforeFlush`. They are in otel-ts from commit `a4a7722` (the `main` branch on 2026-10-08). The page event of a flush (`cause.event` of `onBeforeFlush`) is in otel-ts from commit `57dd0c1`, and the browser attributes from commit `327e625`. The lockfile of this repository has that commit. An earlier version puts `session.id` on the resource, sets no `service.instance.id`, uses explicit-bucket histograms and has no `onBeforeFlush`.
 </Callout>
 
 ## The settings
@@ -37,7 +37,7 @@ const otel = init({
 });
 
 // After setupAllMonitors()
-otel.onBeforeFlush(() => monitors.flush());
+otel.onBeforeFlush((cause) => monitors.flush(cause.event));
 ```
 
 otel-ts has these defaults:
@@ -46,6 +46,7 @@ otel-ts has these defaults:
 - an export every 15 s, with cumulative temporality
 - `session.id` on each log record and span
 - a flush each time the page becomes hidden
+- the browser attributes of the semantic conventions on the resource: `browser.brands`, `browser.platform`, `browser.mobile` (only Chromium has these three), `browser.language` and `user_agent.original`. Mimir copies `browser.platform` and `browser.mobile` onto each series. Each value is constant for one SDK instance, thus they add no series. `browserAttributes: false` removes them.
 
 `onBeforeFlush` starts its listeners at the start of each flush.
 
@@ -61,7 +62,7 @@ The monitors work with each OpenTelemetry SDK for JavaScript. Make sure that you
 2. Use cumulative temporality.
 3. Use the exponential histogram aggregation, if the backend has native histograms.
 4. Flush at `visibilitychange` to hidden and at `pagehide`.
-5. Before each flush, use `monitors.flush()`.
+5. Before each flush, use `monitors.flush(event)`. Give it the `visibilitychange` or `pagehide` event that started the flush, if there is one.
 6. Put the session ID on log records, not on the resource.
 
 ## The hang reports of the worker
