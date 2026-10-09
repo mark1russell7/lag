@@ -436,6 +436,16 @@ describe("PageViewVitals", () => {
             expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ INP : 300 });
         });
 
+        it("keeps an entry that the browser delivered before the soft-navigation entry in the earlier view, also when it starts later, as web-vitals does", () => {
+            const t = setup({ softNavigations : true });
+            t.observer.deliver("event", eventEntry({ interactionId : 90, startTime : 3_500, duration : 300 }));
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9" }));
+            t.setVisibility("hidden", 8_000);
+
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-1").at(-1))).toMatchObject({ INP : 300 });
+            expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).not.toHaveProperty("INP");
+        });
+
         it("ignores the paints of the navigation after the next click, as web-vitals makes the LCP final at the next input", () => {
             const t = setup({ softNavigations : true });
             t.observer.deliver("soft-navigation", softNavigation({
