@@ -1,26 +1,76 @@
 {
   "name": "@mark1russell7/lag",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Main-thread lag monitors for browser apps, on the devices of real users: blocked time, hangs, long animation frames, INP and the Core Web Vitals of each page view, as OpenTelemetry metrics, events and spans.",
+  "keywords": [
+    "main thread",
+    "main thread lag",
+    "event loop lag",
+    "long tasks",
+    "long animation frames",
+    "loaf",
+    "inp",
+    "interaction to next paint",
+    "web vitals",
+    "web-vitals",
+    "core web vitals",
+    "opentelemetry",
+    "otel",
+    "rum",
+    "real-user-monitoring",
+    "browser",
+    "performance",
+    "performance monitoring",
+    "jank",
+    "web worker"
+  ],
+  "license": "MIT",
+  "author": "Mark Russell",
+  "homepage": "https://mark1russell7.github.io/lag/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mark1russell7/lag.git",
+    "directory": "packages/lag"
+  },
+  "bugs": {
+    "url": "https://github.com/mark1russell7/lag/issues"
+  },
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "sideEffects": [
+    "./dist/worker/bundled-worker.js"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "default": "./dist/index.js"
     },
     "./worker": {
       "types": "./dist/worker/index.d.ts",
-      "import": "./dist/worker/index.js"
+      "default": "./dist/worker/index.js"
     },
     "./event-line.js": {
       "types": "./dist/event-line.d.ts",
-      "import": "./dist/event-line.js"
-    }
+      "default": "./dist/event-line.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "!dist/**/.tsbuildinfo",
+    "src",
+    "!src/**/*.test.ts",
+    "!src/**/test-*.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -b tsconfig.json tsconfig.worker.json",
+    "prepack": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -b tsconfig.json tsconfig.worker.json",
     "typecheck": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
