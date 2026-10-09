@@ -32,6 +32,8 @@ The monitor makes a `PerformanceObserver` for the entry type `long-animation-fra
 
 The factory records `blockingDuration` and `duration` for each frame. For a frame that blocks for 150 ms or more, it also sends a `lag.long_animation_frame` event with the longest script. It sends at most 10 events in each period of 60 s, and it removes the query string and the fragment from the script URL.
 
+The invoker can also contain a URL, and the factory removes its query string and its fragment too. For `classic-script` and `module-script`, the invoker is the URL of the script. For an inline script, it is the URL of the document, which can contain tokens. For an event listener on an element without an ID, the invoker contains the `src` attribute, for example `IMG[src=https://cdn.example/a.png].onload`.
+
 When the browser does not list `long-animation-frame` in `PerformanceObserver.supportedEntryTypes`, the monitor logs a warning and gets no entries.
 
 ## Browser support
@@ -67,7 +69,7 @@ The monitor does not pause while the page is hidden, and it uses no `SampleValid
 |---|---|
 | `duration_ms` | The duration of the frame. |
 | `blocking_duration_ms` | The blocking duration of the frame. |
-| `script.invoker` | The invoker of the longest script, for example `BUTTON#buy.onclick`. |
+| `script.invoker` | The invoker of the longest script, for example `BUTTON#buy.onclick`. A URL in the invoker has no query string and no fragment. |
 | `script.invoker_type` | For example `event-listener` or `user-callback`. |
 | `script.source_url` | The URL of the script, without the query string and the fragment. |
 | `script.duration_ms` | The duration of the longest script. |
@@ -120,6 +122,7 @@ Unit tests:
 
 - `LongAnimationFrameMonitor.test.ts`: the monitor reports the blocking duration and the duration of the entry. It calculates the render duration from `renderStart`, and 0 for a frame that did not render. It finds the forced layout of the scripts.
 - `ObserverMonitor.test.ts`: the observer uses `buffered: true`. The monitor skips a type that is not in `supportedEntryTypes`, and it logs a warning when `observe()` fails. An error in one entry does not stop the other entries.
+- `instrumented/loaf.test.ts`: the factory sends an event only for a frame that blocks for 150 ms or more, and at most 10 events each minute. The script URL and a URL in the invoker (`classic-script`, `module-script`, and `[src=…]` of an event listener) have no query string and no fragment.
 - `setup-all-monitors.test.ts`: the event has the blocking duration, the invoker, the script URL without its query string, and the page-view ID.
 
 Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
