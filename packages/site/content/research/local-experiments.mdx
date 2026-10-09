@@ -165,7 +165,9 @@ In WebKit on Linux and in Safari on macOS, a probe on an idle page measured 0 ms
 
 After the load, the median lag of a window was between −9 ms and 8 ms, in windows of approximately 100 ms. In Firefox on Windows, an idle step already takes 15.6 ms. Thus a step that waits for a task of 20 ms gives only 4.4 ms of lag.
 
-**Check in the repository.** `drift-load.test.ts` expects more than 10% lag in the second half of each load. After the load, it expects a median lag of less than 10% of a window. It skips itself if a probe on an idle page measures more than 10 ms of busy time in 100 ms. The unit tests of `DriftLag.load.test.ts` use a simulated thread with a timer queue and a message queue. They simulate the three behaviors above.
+**Check in the repository.** `drift-load.test.ts` expects more than 10% lag in the second half of each load. After the load, it expects a median lag of less than the idle median lag before the load plus 10% of a window. A negative idle median counts as 0. It skips itself if a probe on an idle page posts fewer than 400 messages in 100 ms. The WebKit build for Windows posts 122 to 278 messages, and the other WebKit builds in CI post 580 to 920.
+
+The unit tests of `DriftLag.load.test.ts` use a simulated thread with a timer queue and a message queue. They simulate the three behaviors above.
 
 ## E6: the other output APIs of a worker during a block
 
