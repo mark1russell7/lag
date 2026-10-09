@@ -149,6 +149,10 @@ describe("createBrowserDeps", () => {
         expect(deps.BroadcastChannel).toBe(BroadcastChannel);
         await deps.locks!.request("name", {}, () => {});
         expect(request).toHaveBeenCalledWith("name", {}, expect.any(Function));
+        // AbortController cancels the waiting lock requests of the watch
+        expect(deps.AbortController).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ BroadcastChannel, navigator, AbortController }), options()).AbortController).toBe(AbortController);
+        expect(createBrowserDeps(createGlobals({ navigator, AbortController }), options()).AbortController).toBeUndefined();
 
         expect(createBrowserDeps(createGlobals({ BroadcastChannel, navigator }), { ...options(), peerHangWatch : false }).locks).toBeUndefined();
         expect(createBrowserDeps(createGlobals({ navigator }), options()).locks).toBeUndefined();

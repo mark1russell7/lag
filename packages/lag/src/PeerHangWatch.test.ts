@@ -595,6 +595,68 @@ describe("PeerHangWatch in the back/forward cache", () => {
         expect(a.hangs).toEqual([]);
     });
 
+    it("cancels its waiting lock requests when it is suspended, thus it has one request for each page", async () => {
+        const a = open("a");
+        open("b");
+        await advance(1_500);
+        for (let i = 0; i < 3; i++) {
+            a.watch.suspend();
+            await advance(10);
+            a.watch.resume();
+            await advance(1_500);
+        }
+        expect(origin.waitingBy(a.page)).toEqual([peerLockName("b")]);
+        // A cancelled request rejects with an AbortError. The watch does not log it.
+        expect(a.page.logs).toEqual([]);
+    });
+
+    it("gets no lock while it is frozen, thus a page that becomes hidden and visible again gets its own lock", async () => {
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        // The browser freezes a: its callbacks wait
+        a.watch.suspend();
+        a.page.hang();
+        b.watch.hide();
+        b.watch.show();
+        await advance(1_500);
+        expect(origin.heldBy(a.page)).toEqual([]);
+        expect(origin.heldBy(b.page)).toEqual([peerLockName("b")]);
+        a.page.recover();
+    });
+
+    it("cancels its waiting lock requests when it stops", async () => {
+        const a = open("a");
+        open("b");
+        await advance(1_500);
+        expect(origin.waitingBy(a.page)).toEqual([peerLockName("b")]);
+        a.watch.stop();
+        await advance(10);
+        expect(origin.waitingBy(a.page)).toEqual([]);
+        expect(a.page.logs).toEqual([]);
+    });
+
+    it("watches without AbortController, but then it cannot cancel its waiting lock requests", async () => {
+        const page = origin.page();
+        const deps = page.deps();
+        delete deps.AbortController;
+        const hangs : HangRecord[] = [];
+        const a = new PeerHangWatch(deps, { pageId : "a", visible : true, onAbandonedHang : (hang) => hangs.push(hang) });
+        watches.push(a);
+        const b = open("b");
+        await advance(1_500);
+        a.suspend();
+        await advance(10);
+        expect(origin.waitingBy(page)).toEqual([peerLockName("b")]);
+        a.resume();
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        expect(hangs.map(hang => hang.pageId)).toEqual(["b"]);
+    });
+
     it("opens its channel again when it resumes, and watches again", async () => {
         const a = open("a");
         await advance(10);
