@@ -3,10 +3,12 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <meta name="description" content="Main-thread responsiveness monitoring for browser apps, exported as OpenTelemetry metrics." />
+        <meta name="description" content="Measure main-thread lag in real browsers: blocked time, long tasks, Long Animation Frames, hangs, INP and the Web Vitals, as OpenTelemetry metrics." />
         <meta name="color-scheme" content="light dark" />
+        <meta name="theme-color" content="#f5f6f9" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#0e1220" media="(prefers-color-scheme: dark)" />
         <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-        <title>lag: main-thread responsiveness</title>
+        <title>lag: browser main-thread lag monitoring with OpenTelemetry</title>
         <script>
             // Apply the stored theme before the first paint, so the page does not flash.
             (function () {
@@ -21,7 +23,7 @@
     </head>
     <body>
         <div id="root"></div>
-        <noscript>This site needs JavaScript. The live playground runs real monitors in the page.</noscript>
+        <noscript>The playground and the live charts need JavaScript. They operate real monitors in the page.</noscript>
         <script type="module" src="/src/main.tsx"></script>
     </body>
 </html>
