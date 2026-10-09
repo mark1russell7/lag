@@ -142,7 +142,7 @@ describe("WorkerLagMonitor", () => {
         const onHangEnded = vi.fn();
         const m = createMonitor(1000, { onHangEnded });
         m.deliver({ type : "hang-ended", startedAt : 1, durationMs : 7_500 });
-        expect(onHangEnded).toHaveBeenCalledWith(7_500);
+        expect(onHangEnded).toHaveBeenCalledWith(7_500, 1);
     });
 
     it("stops the worker loop and the sync timer on stop, keeps one listener, and can restart", () => {
@@ -172,7 +172,7 @@ describe("WorkerLagMonitor", () => {
         m.deliver({ type : "hang-ended", startedAt : 1, durationMs : 8_000 });
         m.deliver({ type : "heartbeat", seq : 9, sentAt : 10_000, workerSelfLagMs : 0 });
 
-        expect(onHangEnded).toHaveBeenCalledWith(8_000);
+        expect(onHangEnded).toHaveBeenCalledWith(8_000, 1);
         expect(m.report).not.toHaveBeenCalled();
         expect(m.sent("ack").length).toBe(acks);
     });

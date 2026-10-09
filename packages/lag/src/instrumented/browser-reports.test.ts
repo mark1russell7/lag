@@ -3,7 +3,7 @@ import { createInstrumentedBrowserReports } from "./browser-reports.js";
 import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "../test-utils.js";
 import type { ReportingObserverInit, ReportLike } from "../BrowserReportMonitor.js";
 
-function setup(withEvents : boolean) {
+function setup(withEvents : boolean, withClock = true) {
     let callback : ((reports : ReportLike[]) => void) | undefined;
     class FakeReportingObserver {
         constructor(cb : (reports : ReportLike[]) => void) { callback = cb; }
@@ -18,6 +18,7 @@ function setup(withEvents : boolean) {
         clock : { now : () => 0 },
         meter : meter.meter,
         ReportingObserver : FakeReportingObserver as unknown as ReportingObserverInit,
+        ...(withClock ? { performance : { timeOrigin : 1_000_000, now : () => 25 } } : {}),
         ...(withEvents ? { events } : {}),
     });
     const report = (type : string) : ReportLike => ({ type, url : "https://shop.example/", body : { id : "id", message : "message", sourceFile : "https://shop.example/app.js?v=3", lineNumber : 7 } });
@@ -40,9 +41,16 @@ describe("createInstrumentedBrowserReports", () => {
             message : "message",
             source_file : "https://shop.example/app.js",
             line_number : 7,
-        });
+        // A report has no time: the time of the delivery
+        }, { time : 1_000_025 });
         expectCatalogInstruments(t.meter);
         expectCatalogEvents(t.events.emit);
+    });
+
+    it("sends an event without a time when it has no clock", () => {
+        const t = setup(true, false);
+        t.emit(t.report("intervention"));
+        expect(t.events.emit).toHaveBeenCalledWith("lag.browser_report", expect.objectContaining({ type : "intervention" }), {});
     });
 
     it("sends no more than 10 events each minute, but counts all reports", () => {

@@ -8,8 +8,10 @@
 export type OtlpAttributeValue = string | number | boolean;
 
 export type OtlpLogRecordInput = {
-    /** The absolute time, in milliseconds since the Unix epoch. */
+    /** The time of the occurrence, in milliseconds since the Unix epoch. */
     timeMs : number;
+    /** The time of the record, in milliseconds since the Unix epoch. The default is `timeMs`. */
+    observedTimeMs? : number;
     eventName : string;
     severityText : string;
     severityNumber : number;
@@ -55,7 +57,7 @@ export function encodeOtlpLogs(
                 scope : { name : scopeName },
                 logRecords : records.map(r => ({
                     timeUnixNano : millisToUnixNanoString(r.timeMs),
-                    observedTimeUnixNano : millisToUnixNanoString(r.timeMs),
+                    observedTimeUnixNano : millisToUnixNanoString(r.observedTimeMs ?? r.timeMs),
                     eventName : r.eventName,
                     severityNumber : r.severityNumber,
                     severityText : r.severityText,

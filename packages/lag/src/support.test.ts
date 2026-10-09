@@ -61,6 +61,14 @@ describe("OTLP JSON encoding", () => {
             ],
         });
     });
+
+    it("gives a record the observed time of the input, or the time of the occurrence", () => {
+        const body = JSON.parse(encodeOtlpLogs({}, "@lag/worker", [
+            { timeMs : 1_000, observedTimeMs : 9_000, eventName : "a", severityText : "INFO", severityNumber : 9, body : "a", attributes : {} },
+        ]));
+        const record = body.resourceLogs[0].scopeLogs[0].logRecords[0];
+        expect([record.timeUnixNano, record.observedTimeUnixNano]).toEqual(["1000000000", "9000000000"]);
+    });
 });
 
 describe("event sinks", () => {
@@ -90,6 +98,36 @@ describe("event sinks", () => {
         const bodies = otelLogger.emit.mock.calls.map(([record]) => (record as { body : string }).body);
         expect(new Set(bodies).size).toBe(4);
         expect(bodies[3]).toBe('lag.stall empty="" kind=hang note="say \\"hi\\"" ok=true target="#a b"');
+    });
+
+    it("the OTel event sink gives the time of the occurrence to the record", () => {
+        const otelLogger = { emit : vi.fn() };
+        createOtelEventSink(otelLogger, { now : () => 1_000_000 }).emit("lag.stall", { kind : "hang" }, { time : 990_000 });
+
+        expect(otelLogger.emit).toHaveBeenCalledWith(expect.objectContaining({ timestamp : 990_000, attributes : { kind : "hang" } }));
+    });
+
+    it("the OTel event sink keeps the time of the call for an occurrence that is too old for Loki, and keeps its time as an attribute", () => {
+        const otelLogger = { emit : vi.fn() };
+        const sink = createOtelEventSink(otelLogger, { now : () => 1_000_000, maxTimeOffsetMs : 5_000 });
+        sink.emit("browser.web_vital", { "browser.web_vital.name" : "lcp" }, { time : 994_000 });
+        sink.emit("lag.stall", { kind : "hang" });
+
+        const [old, untimed] = otelLogger.emit.mock.calls.map(([record]) => record as Record<string, unknown>);
+        expect(old).not.toHaveProperty("timestamp");
+        expect(old!["attributes"]).toEqual({ "browser.web_vital.name" : "lcp", "lag.event.time" : 994_000 });
+        expect(old!["body"]).toBe("browser.web_vital browser.web_vital.name=lcp lag.event.time=994000");
+        expect(untimed).not.toHaveProperty("timestamp");
+    });
+
+    it("the OTel event sink compares the times with Date.now by default", () => {
+        const otelLogger = { emit : vi.fn() };
+        const now = Date.now();
+        createOtelEventSink(otelLogger).emit("lag.stall", {}, { time : now - 1_000 });
+        createOtelEventSink(otelLogger).emit("lag.stall", {}, { time : now - 3_600_000 });
+
+        expect(otelLogger.emit.mock.calls[0]![0]).toHaveProperty("timestamp", now - 1_000);
+        expect(otelLogger.emit.mock.calls[1]![0]).not.toHaveProperty("timestamp");
     });
 
     it("the OTel event sink leaves out the attributes that are null", () => {

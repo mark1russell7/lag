@@ -59,11 +59,13 @@ The monitor does not pause while the page is hidden, and it uses no `SampleValid
 
 ```ts
 function createInstrumentedBrowserReports(
-    deps : CoreDeps & ReportingDeps & Partial<EventDeps>,
+    deps : CoreDeps & ReportingDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
 ) : MonitorHandle<BrowserReportMonitor>;
 ```
 
 The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `ReportingDeps` (`ReportingObserver`). `EventDeps` is optional: without it, the factory sends no events. The event limit (10 each minute) is a constant of the factory. The class takes the list of report types as its last argument.
+
+`AbsoluteClockDeps` (`absoluteClock`) and `PerformanceDeps` (`performance`) are optional: they give the events their times. Without both, the events get the time of the call. A report has no time of its own, thus the time of an event is the time of the delivery.
 
 ```ts
 import { metrics } from "@opentelemetry/api";

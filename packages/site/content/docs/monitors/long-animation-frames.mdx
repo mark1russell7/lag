@@ -78,11 +78,11 @@ A frame without script attribution gives only `duration_ms` and `blocking_durati
 
 ```ts
 function createInstrumentedLoaf(
-    deps : CoreDeps & ObserverDeps & Partial<EventDeps>,
+    deps : CoreDeps & ObserverDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
 ) : MonitorHandle<LongAnimationFrameMonitor>;
 ```
 
-The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `ObserverDeps` (`PerformanceObserver`). `EventDeps` (`events`) is optional: without it, the factory sends no events. The attribution threshold (150 ms) and the event limit (10 each minute) are constants of the factory.
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `ObserverDeps` (`PerformanceObserver`). `EventDeps` (`events`) is optional: without it, the factory sends no events. `AbsoluteClockDeps` (`absoluteClock`) and `PerformanceDeps` (`performance`) are optional: they give the events their times. Without both, the events get the time of the call. The time of an event is the start of its frame. The attribution threshold (150 ms) and the event limit (10 each minute) are constants of the factory.
 
 ```ts
 import { metrics } from "@opentelemetry/api";

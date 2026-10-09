@@ -203,13 +203,27 @@ export type EventDefinition = {
     attributes : readonly string[];
 };
 
-export type EventKey = "webVital" | "hang" | "clockJump" | "longAnimationFrame" | "browserReport" | "stall";
+export type EventKey =
+    | "webVital"
+    | "hang"
+    | "clockJump"
+    | "longAnimationFrame"
+    | "browserReport"
+    | "stall"
+    | "lifecycleTransition"
+    | "pageViewStart"
+    | "pressureChange";
 
 /**
  * Events carry the details that metrics must not carry: IDs, URLs, CSS
  * selectors and script names. The `browser.web_vital` event follows the
  * OpenTelemetry semantic conventions for browsers. `setupAllMonitors` adds
  * `lag.page_view.id`, the ID of the current page view, to each event.
+ *
+ * Each event has the time of its occurrence (`EventOptions.time`). For an
+ * event with a duration, it is the start. Thus a chart can show the events
+ * at the times of the metric values. The OTel event sink can add
+ * `lag.event.time` (refer to `createOtelEventSink`).
  */
 export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
     webVital : {
@@ -255,8 +269,26 @@ export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
     stall : {
         name : "lag.stall",
         monitor : "MeasurementConditions",
-        description : "One stall episode, with its classification as a hang or a suspend and its longest sample.",
+        description : "One stall episode, with its classification as a hang or a suspend and its longest sample. The time is the start of the episode.",
         attributes : ["kind", "duration_ms", "lag.page_view.id"],
+    },
+    lifecycleTransition : {
+        name : "lag.lifecycle.transition",
+        monitor : "LifecycleStateMachine",
+        description : "One transition of the lifecycle state of the page, with the browser event that caused it. A restore from the back/forward cache gives a transition also when the state does not change.",
+        attributes : ["from", "to", "trigger", "lag.page_view.id"],
+    },
+    pageViewStart : {
+        name : "lag.page_view.start",
+        monitor : "PageViewVitals",
+        description : "The start of one page view: the load, a restore from the back/forward cache, or a soft navigation. The time is the start of the view.",
+        attributes : ["navigation_type", "lag.page_view.id", "lag.page_view.url", "lag.page_view.previous_id"],
+    },
+    pressureChange : {
+        name : "lag.pressure.change",
+        monitor : "ComputePressureMonitor",
+        description : "One change of the compute pressure state of one source. The first record of a source is a change from no state.",
+        attributes : ["source", "state", "previous_state", "lag.page_view.id"],
     },
 };
 

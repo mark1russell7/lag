@@ -1,9 +1,9 @@
-import type { CoreDeps, EventDeps, ObserverDeps } from "../dep-groups.js";
+import type { AbsoluteClockDeps, CoreDeps, EventDeps, ObserverDeps, PerformanceDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { LongAnimationFrameMonitor } from "../LongAnimationFrameMonitor.js";
 import { EVENTS, METRICS, createHistogram } from "../metric-catalog.js";
 import { RateLimiter, stripUrlParameters } from "../rate-limiter.js";
-import { createHandle } from "./shared.js";
+import { createHandle, eventClock, occurredAt } from "./shared.js";
 
 /** Frames that block at least this long get an attribution event. */
 const ATTRIBUTION_THRESHOLD_MS = 150;
@@ -15,16 +15,18 @@ const MAX_EVENTS_PER_MINUTE = 10;
  * `lag_loaf_duration_histogram`).
  *
  * With `deps.events`, a frame that blocks for 150 ms or more also emits a
- * `lag.long_animation_frame` event that names the longest script. The
- * factory sends no more than 10 events each minute.
+ * `lag.long_animation_frame` event that names the longest script. The time
+ * of the event is the start of the frame. The factory sends no more than 10
+ * events each minute.
  */
 export function createInstrumentedLoaf(
-    deps : CoreDeps & ObserverDeps & Partial<EventDeps>,
+    deps : CoreDeps & ObserverDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
 ) : MonitorHandle<LongAnimationFrameMonitor> {
     return createHandle("loaf", deps.logger, () => {
         const blockingHist = createHistogram(deps.meter, METRICS.loafBlocking);
         const durationHist = createHistogram(deps.meter, METRICS.loafDuration);
         const limiter = new RateLimiter(deps.clock, MAX_EVENTS_PER_MINUTE, 60_000);
+        const clock = eventClock(deps);
 
         const monitor = new LongAnimationFrameMonitor(
             (entry) => {
@@ -41,7 +43,7 @@ export function createInstrumentedLoaf(
                             "script.source_url" : stripUrlParameters(script.sourceURL),
                             "script.duration_ms" : script.duration,
                         } : {}),
-                    });
+                    }, occurredAt(clock, entry.startTime));
                 }
             },
             deps.logger,

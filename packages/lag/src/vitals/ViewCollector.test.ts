@@ -216,6 +216,36 @@ describe("ViewCollector", () => {
         });
     });
 
+    describe("the time of each value", () => {
+        it("is the time of the occurrence that gave the value, also in a view that starts later", () => {
+            const c = collector("back-forward-cache", 5_000, () => 2);
+            c.setTtfb(0);
+            c.setFcp(40);
+            c.setLcp(120);
+            // The INP interaction: its first entry starts at 6000
+            c.addEvent(event({ interactionId : 7, startTime : 6_000, duration : 300 }));
+            c.addEvent(event({ interactionId : 7, startTime : 6_004, duration : 280, name : "click" }));
+            c.addEvent(event({ interactionId : 9, startTime : 7_000, duration : 100 }));
+            // The largest shift of the worst window is at 8200
+            c.addLayoutShift({ startTime : 8_000, value : 0.05, hadRecentInput : false });
+            c.addLayoutShift({ startTime : 8_200, value : 0.1, hadRecentInput : false });
+            c.addLayoutShift({ startTime : 20_000, value : 0.02, hadRecentInput : false });
+
+            const times = Object.fromEntries(c.values().map(v => [v.name, v.time]));
+            expect(times).toEqual({ TTFB : 5_000, FCP : 5_040, LCP : 5_120, INP : 6_000, CLS : 8_200 });
+        });
+
+        it("is undefined for an INP estimate and for a CLS without shifts", () => {
+            // A restored view counts the interactions from its start: one interaction without an entry
+            let count = 3;
+            const c = collector("back-forward-cache", 5_000, () => count);
+            count = 4;
+            const values = byName(c.values());
+            expect(values["INP"]).toEqual({ name : "INP", value : SHORT_INTERACTION_ESTIMATE_MS, attribution : {} });
+            expect(values["CLS"]).toEqual({ name : "CLS", value : 0, attribution : {} });
+        });
+    });
+
     describe("paint and network metrics", () => {
         it("keeps the first FCP, the last LCP, and never a value below 0", () => {
             const c = collector();
@@ -227,7 +257,7 @@ describe("ViewCollector", () => {
 
             const values = byName(c.values());
             expect(values["FCP"]!.value).toBe(0);
-            expect(values["LCP"]).toEqual({ name : "LCP", value : 900, attribution : { target : "#footer" } });
+            expect(values["LCP"]).toEqual({ name : "LCP", value : 900, attribution : { target : "#footer" }, time : 900 });
             expect(values["TTFB"]!.value).toBe(0);
         });
 
@@ -317,7 +347,7 @@ describe("ViewCollector", () => {
             c.setLcp(1_000, { target : "#title" }, 1_000);
             c.setLcp(1_200, { target : "#late" }, 1_200);
 
-            expect(byName(c.values())["LCP"]).toEqual({ name : "LCP", value : 1_000, attribution : { target : "#title" } });
+            expect(byName(c.values())["LCP"]).toEqual({ name : "LCP", value : 1_000, attribution : { target : "#title" }, time : 1_000 });
         });
     });
 });

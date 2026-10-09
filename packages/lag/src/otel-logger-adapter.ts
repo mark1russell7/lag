@@ -1,6 +1,6 @@
 import type { Logger } from "./types.js";
 import type { AttributeValue } from "./meter.js";
-import type { EventSink } from "./events.js";
+import { MAX_EVENT_TIME_OFFSET_MS, placeEventTime, type EventSink } from "./events.js";
 import { formatEventLine } from "./event-line.js";
 
 // Duck-typed OTel Logger interface — matches @opentelemetry/api-logs Logger
@@ -12,7 +12,10 @@ export type OtelLogger = {
         severityNumber? : number;
         body? : string;
         attributes? : Record<string, AttributeValue>;
+        /** The time of the occurrence, in Unix milliseconds. */
         timestamp? : number;
+        /** The time at which the record was made, in Unix milliseconds. */
+        observedTimestamp? : number;
     }) : void;
 };
 
@@ -84,25 +87,43 @@ export function createOtelLoggerAdapter(otelLogger : OtelLogger) : Logger {
     };
 }
 
+export type OtelEventSinkOptions = {
+    /** Refer to `MAX_EVENT_TIME_OFFSET_MS`. */
+    maxTimeOffsetMs? : number;
+    /** The wall clock that the sink compares the times with. The default is `Date.now`. */
+    now? : () => number;
+};
+
 /**
  * This function makes an event sink that sends each event as an OTel log
  * record with `eventName`. The OpenTelemetry conventions for events make
  * `eventName` necessary. The sink removes the attributes that have no value.
  * The body has the name and the attributes (refer to `formatEventLine`).
+ *
+ * The time of the occurrence (`options.time`) becomes the `timestamp` of the
+ * record. The SDK sets the observed time to the time of the call. An
+ * occurrence that is more than `maxTimeOffsetMs` before or after the call
+ * keeps the time of the call, and gets the attribute `lag.event.time`
+ * (refer to `placeEventTime`).
  */
-export function createOtelEventSink(otelLogger : OtelLogger) : EventSink {
+export function createOtelEventSink(otelLogger : OtelLogger, sinkOptions : OtelEventSinkOptions = {}) : EventSink {
+    const maxOffsetMs = sinkOptions.maxTimeOffsetMs ?? MAX_EVENT_TIME_OFFSET_MS;
+    const now = sinkOptions.now ?? Date.now;
     return {
-        emit(name, attributes) {
+        emit(name, attributes, options) {
             const clean : Record<string, AttributeValue> = {};
             for (const [key, value] of Object.entries(attributes)) {
                 if (value !== undefined && value !== null) clean[key] = value;
             }
+            const { timestamp, attributes : extra } = placeEventTime(options?.time, now(), maxOffsetMs);
+            Object.assign(clean, extra);
             otelLogger.emit({
                 eventName : name,
                 severityText : "INFO",
                 severityNumber : 9,
                 body : formatEventLine(name, clean),
                 attributes : clean,
+                ...(timestamp !== undefined ? { timestamp } : {}),
             });
         },
     };

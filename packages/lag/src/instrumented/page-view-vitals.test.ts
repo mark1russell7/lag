@@ -183,6 +183,51 @@ describe("createInstrumentedPageViewVitals", () => {
         expect(t.recording.records().get("lag_web_vital_fcp_histogram")).toEqual([{ value : 50, attributes : { navigation_type : "back-forward-cache" } }]);
     });
 
+    it("sends a lag.page_view.start event for the load and for each later view, at the start of the view", () => {
+        const frames : Array<(time : number) => void> = [];
+        const t = setup({ performance : { timeOrigin : 1_000_000, now : () => 0 }, requestAnimationFrame : (callback) => frames.push(callback) });
+        const load = t.vitals.getView();
+        t.fake.pagehide(true);
+        t.fake.setNow(10_000);
+        t.fake.pageshow(true, 10_000);
+        const restore = t.vitals.getView();
+
+        const starts = t.events.emit.mock.calls.filter(([name]) => name === "lag.page_view.start");
+        expect(starts).toEqual([
+            ["lag.page_view.start", { navigation_type : "navigate", "lag.page_view.id" : load.id, "lag.page_view.url" : "https://shop.example/cart" }, { time : 1_000_000 }],
+            ["lag.page_view.start", {
+                navigation_type : "back-forward-cache",
+                "lag.page_view.id" : restore.id,
+                "lag.page_view.url" : "https://shop.example/cart",
+                "lag.page_view.previous_id" : load.id,
+            }, { time : 1_010_000 }],
+        ]);
+        expectCatalogEvents(t.events.emit);
+
+        // After the stop, a new view sends no event
+        t.handle.stop();
+        t.fake.pagehide(true);
+        t.fake.pageshow(true, 20_000);
+        expect(t.events.emit.mock.calls.filter(([name]) => name === "lag.page_view.start")).toHaveLength(2);
+    });
+
+    it("sends each vital at the time of its occurrence, not at the time of the report", () => {
+        const t = setup({ performance : { timeOrigin : 1_000_000, now : () => 0 } });
+        t.observer.deliver("paint", paintEntry(500));
+        t.observer.deliver("largest-contentful-paint", lcpEntry(800));
+        t.observer.deliver("event", eventEntry({ interactionId : 5, startTime : 3_000, duration : 120 }));
+        t.fake.setNow(60_000);
+        t.fake.setVisibility("hidden");
+
+        const timeOf = (name : string) => t.events.emit.mock.calls.find(([event, attributes]) =>
+            event === "browser.web_vital" && (attributes as Record<string, unknown>)["browser.web_vital.name"] === name)?.[2];
+        expect(timeOf("fcp")).toEqual({ time : 1_000_500 });
+        expect(timeOf("lcp")).toEqual({ time : 1_000_800 });
+        expect(timeOf("inp")).toEqual({ time : 1_003_000 });
+        // The navigation of the fake page: responseStart 200
+        expect(timeOf("ttfb")).toEqual({ time : 1_000_200 });
+    });
+
     it("observes soft navigations when the dependencies enable them", () => {
         const t = setup({ softNavigations : true });
 

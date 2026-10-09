@@ -63,9 +63,10 @@ export type MeasurementConditionsOptions = {
      * The function gets one call for each stall episode: the stall samples of
      * all validators whose windows overlap. `valueMs` is the longest sample of
      * the episode. The kind is `suspend` if a sample of the episode had
-     * evidence of a suspend.
+     * evidence of a suspend. `startTime` is the start of the first window of
+     * the episode, in the time of `clock`.
      */
-    onStall? : (kind : StallKind, valueMs : number) => void;
+    onStall? : (kind : StallKind, valueMs : number, startTime : number) => void;
     onDiscard? : (reason : DiscardReason) => void;
 };
 
@@ -109,7 +110,7 @@ export function createMeasurementConditions(options : MeasurementConditionsOptio
     const reportEpisode = (episode : StallEpisode) : void => {
         const index = episodes.indexOf(episode);
         if (index >= 0) episodes.splice(index, 1);
-        options.onStall?.(episode.kind, episode.valueMs);
+        options.onStall?.(episode.kind, episode.valueMs, episode.start);
     };
 
     /** This function adds a stall sample to the episode that its window overlaps, or it starts a new episode. */

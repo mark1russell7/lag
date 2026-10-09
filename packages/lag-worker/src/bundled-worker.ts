@@ -2,6 +2,7 @@ import { createWorkerHandler, type HangEvent } from "@lag/core/lag-worker.js";
 import type { HangOptions } from "@lag/core/worker-protocol.js";
 import { encodeOtlpLogs } from "@lag/core/otlp-json.js";
 import { formatEventLine } from "@lag/core/event-line.js";
+import { placeEventTime } from "@lag/core/events.js";
 import { createIndexedDbHangJournal } from "@lag/core/browser/indexeddb-journal.js";
 
 // Read timeOrigin one time: Safari calculates it again from the wall clock at each read
@@ -16,10 +17,14 @@ const clock = { now : () => origin + performance.now() };
 function reportHang(event : HangEvent, options : HangOptions) : void {
     const target = options.report;
     if (!target) return;
-    const attributes = { ...event.attributes, phase : event.phase, duration_ms : event.durationMs };
+    // The time of the record is the start of the hang, as for the events of the main thread, if Loki can
+    // accept it. The observed time is the time of the report.
+    const now = Date.now();
+    const { timestamp, attributes : extra } = placeEventTime(event.startedAt, now);
+    const attributes = { ...event.attributes, phase : event.phase, duration_ms : event.durationMs, ...extra };
     const body = encodeOtlpLogs(target.resource ?? {}, "@lag/worker", [{
-        // OTLP log times are wall-clock times, as the OpenTelemetry SDK writes them
-        timeMs : Date.now(),
+        timeMs : timestamp ?? now,
+        observedTimeMs : now,
         eventName : "lag.main_thread.hang",
         severityText : "WARN",
         severityNumber : 13,
