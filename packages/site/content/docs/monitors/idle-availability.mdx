@@ -62,7 +62,7 @@ The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `IdleDeps` (`reques
 
 ```ts
 import { metrics } from "@opentelemetry/api";
-import { createBrowserDeps, createInstrumentedIdleAvailability } from "@lag/core";
+import { createBrowserDeps, createInstrumentedIdleAvailability } from "@mark1russell7/lag";
 
 const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
 // Safari has no requestIdleCallback

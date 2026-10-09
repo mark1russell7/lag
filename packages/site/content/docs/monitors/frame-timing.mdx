@@ -71,7 +71,7 @@ The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `FrameDeps` (`reque
 
 ```ts
 import { metrics } from "@opentelemetry/api";
-import { createBrowserDeps, createInstrumentedFrameTiming } from "@lag/core";
+import { createBrowserDeps, createInstrumentedFrameTiming } from "@mark1russell7/lag";
 
 const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
 if (deps.requestAnimationFrame && deps.cancelAnimationFrame) {

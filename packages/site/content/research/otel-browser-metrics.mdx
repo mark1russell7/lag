@@ -293,7 +293,7 @@ The research names these risks for tests before production:
 
 ## The library and otel-ts at this time
 
-**`@lag/core`.** The library makes only counters and histograms ([`metric-catalog.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/metric-catalog.ts)). Each attribute has a small, fixed set of values. Measured values, timestamps and IDs are not attributes.
+**`@mark1russell7/lag`.** The library makes only counters and histograms ([`metric-catalog.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/metric-catalog.ts)). Each attribute has a small, fixed set of values. Measured values, timestamps and IDs are not attributes.
 
 IDs, URLs, selectors and script names go only into events, which are OTel log records with an event name. Each event of the monitors gets `lag.page_view.id`. The `browser.web_vital` events use the attribute names of v1.44. The histograms of the vitals have only the attribute `navigation_type`.
 

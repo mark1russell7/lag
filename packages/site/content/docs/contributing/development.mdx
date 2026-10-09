@@ -20,8 +20,7 @@ pnpm build
 
 | Folder | Package |
 |---|---|
-| `packages/lag` | `@lag/core` |
-| `packages/lag-worker` | `@lag/worker` |
+| `packages/lag` | `@mark1russell7/lag`, the package on npm. Its folder `src/worker` is the export `@mark1russell7/lag/worker`. |
 | `packages/lag-integration-tests` | The browser tests |
 | `packages/load` | `@lag/load` |
 | `packages/report` | `@lag/report` |
@@ -42,7 +41,7 @@ The scaffold makes the folder, the `package.json` and `tsconfig.json` files, and
 
 | Command | What it does |
 |---|---|
-| `pnpm test` | The unit tests of `@lag/core`. |
+| `pnpm test` | The unit tests of `@mark1russell7/lag`. |
 | `pnpm test:integration` | The browser tests in each engine, the CDP tests, the back/forward cache tests and the cross-origin-isolated tests. `pnpm test:e2e` starts the Grafana stack first. |
 | `pnpm --filter @lag/site test` | The tests of the site, in Node and in Chromium. |
 | `pnpm lint:ste` | The writing rules. The linter [`@mark1russell7/ste-lint`](https://github.com/mark1russell7/ste-lint) has its own repository and tests. |
@@ -56,3 +55,12 @@ The [test strategy](/docs/testing/strategy) explains each type of test.
 - Write a unit test for each rule, with fake time. Write a browser test for each behavior that depends on a real browser.
 - Write the comments and the pages with the [writing style](/docs/contributing/writing-style), and operate `pnpm lint:ste`.
 - Make sure that `pnpm build`, the tests and the linter pass before you commit.
+
+## Release
+
+The workflow `release.yml` publishes `@mark1russell7/lag` to npm. To release a version, do these steps:
+
+1. Set the new `version` in `packages/lag/package.json`, and merge the change to `main`.
+2. Push a tag with the same version and the prefix `v`, for example `v0.2.0`.
+
+The workflow stops when the tag and the version are different. It tests and builds the package, packs it with `pnpm pack`, and publishes the tarball with a provenance statement. The workflow uses npm trusted publishing, thus the repository has no npm token. The owner of the package sets the trusted publisher on npm one time.
