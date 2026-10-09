@@ -290,6 +290,51 @@ describe("DriftLag with a probe when the timer granularity changes", () => {
     });
 });
 
+/** The change times of the granularity: 240 times, 0.5 ms apart, after 3 s on an idle thread. */
+const CHANGE_OFFSETS = Array.from({ length : 240 }, (_, i) => i / 2);
+
+describe("DriftLag when the granularity changes at any time in a window", () => {
+    // This test found a library bug. A window with an accepted row used the new baseline also for its
+    // steps before the row. From 15.6 ms to 5.7 ms, 115 of 240 change times gave more than 20 ms of
+    // lag (up to 49.5 ms).
+    for (const [fromMs, toMs, probe] of [[10.6, 0.7, true], [10.6, 0.7, false], [0.7, 10.6, false]] as const) {
+        it(`gives no lag on an idle thread when the steps change from ${5 + fromMs} ms to ${5 + toMs} ms (probe: ${probe})`, () => {
+            let largest = -Infinity;
+            for (const offsetMs of CHANGE_OFFSETS) {
+                const d = createDriftLag(fromMs, probe);
+                d.thread.advance(3_000 + offsetMs);
+                const change = d.thread.now;
+                d.thread.timerExtraMs = toMs;
+                d.thread.advance(2_000);
+                largest = Math.max(largest, maxLag(d.windows, change));
+                d.monitor.stop();
+            }
+
+            expect(largest).toBeLessThan(1);
+        });
+    }
+
+    // The same bug hid a block. For a coarser granularity, the window gave the new baseline of 15.6 ms to
+    // its steps of 5.7 ms before the row. Thus its lag was negative, and the factory recorded it as 0.
+    it("measures a block of 100 ms just before a change to a coarser granularity", () => {
+        const recorded : number[] = [];
+        for (const offsetMs of CHANGE_OFFSETS) {
+            const d = createDriftLag(0.7, false);
+            d.thread.advance(3_000 + offsetMs);
+            const change = d.thread.now;
+            d.thread.post(() => d.thread.busy(100));
+            d.thread.timerExtraMs = 10.6;
+            d.thread.advance(2_000);
+            // The factory records a negative lag as 0
+            recorded.push(d.windows.filter(w => w.endAt >= change).reduce((sum, w) => sum + Math.max(0, w.lag), 0));
+            d.monitor.stop();
+        }
+
+        expect(Math.min(...recorded)).toBeGreaterThan(100 - 5.7 - 1);
+        expect(Math.max(...recorded)).toBeLessThan(100 + 1);
+    });
+});
+
 describe("DriftLag probe rules", () => {
     it("probes the step after the 5th step of a row of longer steps", () => {
         const d = createDriftLag(1);

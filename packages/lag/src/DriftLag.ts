@@ -1,7 +1,7 @@
 import { BaselineConfirmation } from "./BaselineConfirmation.js";
 import { BusyTimeProbe } from "./BusyTimeProbe.js";
 import { driftStepMs } from "./constants.js";
-import { MIN_JITTER_MS, idleStepMs, isIdleStep, spreadMs, stepsUpTo, usedBaselineMs } from "./drift-baseline.js";
+import { MIN_JITTER_MS, changeStepMs, idleStepMs, isIdleStep, spreadMs, stepsUpTo, usedBaselineMs } from "./drift-baseline.js";
 import { LagMonitor } from "./LagMonitor.js";
 import type { PostTaskFn } from "./message-task.js";
 
@@ -79,8 +79,14 @@ type Probing = {
  * with each other, but not with the baseline, starts a new baseline.
  *
  * A window that ends during such a row continues until the row ends, or
- * until the monitor accepts the new granularity. Thus, the change gives no
- * lag. Steps of more than 40 ms are not a granularity.
+ * until the monitor accepts the new granularity. The steps of the window
+ * before the row keep the old baseline, and the other steps get the new
+ * baseline. Thus, the change gives no lag. Steps of more than 40 ms are not
+ * a granularity.
+ *
+ * The granularity can change during a step. Then that step is outside the
+ * baseline, but it does not agree with the row. Its value is between the two
+ * baselines.
  *
  * A sustained load can also make the steps longer. Tasks of the same length
  * give a row of equal steps. If the thread is busy during more than half of
@@ -131,6 +137,20 @@ export class DriftLag extends LagMonitor {
     private rowMax! : number;
     /** The result of the last probe during the row. */
     private rowProbe : "idle" | "busy" | undefined;
+    /** The step of the window at which the row started, from 0. The value -1 is a row of an earlier window. */
+    private rowStart = -1;
+    /**
+     * The duration of a step that started a row of one step before this row.
+     * It can be the step in which the granularity changed.
+     */
+    private changeStep : number | undefined;
+    /**
+     * The first steps of the window that do not get the baseline of the end of
+     * the window: the steps before an accepted row.
+     */
+    private earlySteps = 0;
+    /** The idle duration of the steps before an accepted row, at the old baseline. */
+    private preRowIdleMs = 0;
     private readonly probing : Probing | undefined;
     private readonly stepMs : number;
     private readonly maxSteps : number;
@@ -155,9 +175,8 @@ export class DriftLag extends LagMonitor {
     public start() : void {
         if (this.handle !== undefined) return;
         const now = this.clock.now();
-        this.windowStart = now;
         this.lastStepAt = now;
-        this.stepsInWindow = 0;
+        this.startWindow(now);
         this.endRow();
         this.step();
     }
@@ -189,7 +208,12 @@ export class DriftLag extends LagMonitor {
         return this.lastWindowMs;
     }
 
-    /** This method gives the lag of the window that ends at this time, and starts the next window. */
+    /**
+     * This method gives the lag of the window that ends at this time, and
+     * starts the next window. Each step of the window gets the baseline,
+     * except the early steps. The steps before an accepted row get the old
+     * baseline.
+     */
     measure() : number {
         const now = this.clock.now();
         let baseline = this.recentBaselineMs();
@@ -199,11 +223,18 @@ export class DriftLag extends LagMonitor {
             if (window.probe) this.probing.wanted = true;
         }
         this.lastWindowMs = now - this.windowStart;
-        const lag = this.lastWindowMs - this.stepsInWindow * baseline;
+        const idleMs = this.preRowIdleMs + (this.stepsInWindow - this.earlySteps) * baseline;
+        this.startWindow(now);
+        this.windowBaseline = baseline;
+        return this.lastWindowMs - idleMs;
+    }
+
+    private startWindow(now : number) : void {
         this.windowStart = now;
         this.stepsInWindow = 0;
-        this.windowBaseline = baseline;
-        return lag;
+        this.earlySteps = 0;
+        this.preRowIdleMs = 0;
+        this.rowStart = -1;
     }
 
     private recentBaselineMs() : number {
@@ -245,9 +276,11 @@ export class DriftLag extends LagMonitor {
             this.rowMin = min;
             this.rowMax = max;
         } else {
-            // The step does not agree with the row: a new row starts with it
-            this.startRow(durationMs);
+            // The step does not agree with the row: a new row starts with it. A row of one step of
+            // this window before it can be the step in which the granularity changed.
+            this.startRow(durationMs, this.rowCount === 1 && this.rowStart >= 0 ? this.rowMin : undefined);
         }
+        if (this.rowCount === 1) this.rowStart = this.stepsInWindow;
         // Equal tasks on a busy thread also give a row of longer steps. Thus, after the first confirmed
         // value, a row of longer steps is a granularity only if the last probe during the row was idle.
         const probing = this.probing;
@@ -256,19 +289,31 @@ export class DriftLag extends LagMonitor {
         if (this.rowCount >= GRANULARITY_CHANGE_STEPS && (!needsProbe || this.rowProbe === "idle")) this.acceptRow();
     }
 
-    /** A new granularity: the baseline comes only from the steps of the row. */
+    /**
+     * A new granularity: the baseline comes only from the steps of the row.
+     * The steps of the window before the row operated at the old granularity,
+     * thus they keep the old baseline. The step in which the granularity
+     * changed gets a value between the two baselines (`changeStepMs`).
+     */
     private acceptRow() : void {
+        const oldMs = this.windowBaseline;
         this.recentSteps.splice(0, this.recentSteps.length - this.rowCount);
         this.windowBaseline = idleStepMs(this.recentSteps);
         this.probing?.confirmation.accept(this.windowBaseline);
+        if (this.rowStart > this.earlySteps) {
+            this.preRowIdleMs += (this.rowStart - this.earlySteps) * oldMs;
+            this.earlySteps = this.rowStart;
+            if (this.changeStep !== undefined) this.preRowIdleMs += changeStepMs(this.changeStep, oldMs, this.windowBaseline) - oldMs;
+        }
         this.endRow();
     }
 
-    private startRow(durationMs : number) : void {
+    private startRow(durationMs : number, changeStep : number | undefined) : void {
         this.rowCount = 1;
         this.rowMin = durationMs;
         this.rowMax = durationMs;
         this.rowProbe = undefined;
+        this.changeStep = changeStep;
     }
 
     private endRow() : void {
@@ -276,6 +321,7 @@ export class DriftLag extends LagMonitor {
         this.rowMin = Infinity;
         this.rowMax = -Infinity;
         this.rowProbe = undefined;
+        this.changeStep = undefined;
     }
 
     private step() : void {

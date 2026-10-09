@@ -58,6 +58,16 @@ export function spreadMs(stepMs : number) : number {
 }
 
 /**
+ * The idle duration of a step in which the granularity changed. Part of the
+ * step can have the old granularity, and part the new granularity. Thus the
+ * value is the duration of the step, but not less than the shorter baseline
+ * and not more than the longer baseline.
+ */
+export function changeStepMs(stepMs : number, oldMs : number, newMs : number) : number {
+    return Math.min(Math.max(stepMs, Math.min(oldMs, newMs)), Math.max(oldMs, newMs));
+}
+
+/**
  * The baseline that the monitor uses. It is the recent baseline, or the
  * confirmed value if the recent baseline is more than max(1 ms, 10%) above
  * it. Without a confirmed value, it is the recent baseline.
