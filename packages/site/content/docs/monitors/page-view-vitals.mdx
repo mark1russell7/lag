@@ -260,7 +260,7 @@ if (lifecycle.monitor && deps.PerformanceObserver) {
 
 ### The flush hook
 
-Connect `flush()` to the exporter, so that the last export of a page has the final values. With `setupAllMonitors()`, use `AllMonitorHandles.flush()`, which uses `PageViewVitals.flush()`. With otel-ts, write `otel.onBeforeFlush(() => monitors.flush())`.
+Connect `flush()` to the exporter, so that the last export of a page has the final values. With `setupAllMonitors()`, use `AllMonitorHandles.flush()`, which uses `PageViewVitals.flush()`. With otel-ts, write `otel.onBeforeFlush((cause) => monitors.flush(cause.event))`.
 
 <Callout type="warning" title="Listener order">
   Chromium does not start the capture listeners of `window` first. For `pagehide` on `window`, it starts the listener that the page added first. An exporter that added its `pagehide` listener before the monitors can flush before the final checkpoint. The flush hook prevents this. Refer to [page lifecycle](/docs/concepts/page-lifecycle).
