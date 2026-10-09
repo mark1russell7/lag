@@ -165,7 +165,7 @@ The mutation report comes from the weekly mutation workflow, thus it is usually 
   In the simulator, the click of safaridriver gives no INP, also in web-vitals. Thus the two INP tests skip themselves there.
 - **Low Power Mode.** A macOS runner refuses Low Power Mode on AC power. Thus no browser test operates in Low Power Mode. `DriftLag.power.test.ts` uses the timer rule of the WebKit source instead: a grid of 30 ms for nested timers.
 - **Safari on a shared runner.** Safari on a macOS runner of GitHub sometimes slows the timers of its window, for example by 9 s. Then a timing test fails for a reason that is not in the code. Thus the Safari job of CI reports its results, but it does not block a pull request. A stress profile that the browser slowed skips itself with the reason.
-- **Safari and the collector.** Only macOS has Safari. Thus a macOS job exports its reports (`--export-reports`), and the Linux job of the site imports them (`--import-reports`).
+- **Safari and the collector.** Only macOS has Safari. Thus a macOS job exports its reports (`--export-reports`), and the Linux job of the site imports them (`--import-reports`). The converter removes the checkout folder of the macOS runner from the file names, thus a test file has the same name in each engine.
 - **The E2E tests need a free port.** The Grafana stack uses port 3000 by default. Set `GRAFANA_PORT` when another program uses that port.
 - **Mimir labels.** Mimir puts `service.name` into the `job` label. The E2E query accepts `job` or `service_name`, and a native or a classic histogram.
 - **Mimir and CORS.** Mimir sends no CORS headers, thus a test page cannot read the answer of a query. A Vitest command sends the query from Node (`commands/mimir.ts`).
