@@ -14,7 +14,7 @@ export const LOAD_ACTIONS : readonly LoadActionInfo[] = [
     { id : "layout-thrash", label : "Layout thrash", description : "The button reads and changes the layout in a loop for 150 ms. This causes style and layout work." },
     { id : "gc-pressure", label : "Make garbage", description : "The button makes many short-lived objects for 300 ms. This can start a garbage collection." },
     { id : "long-animation-frame", label : "Long animation frame", description : "The button does 150 ms of work in an animation frame callback." },
-    { id : "macrotask-flood", label : "Macrotask flood", description : "The button puts 1,000 setTimeout(0) tasks in the task queue." },
+    { id : "macrotask-flood", label : "Macrotask flood", description : "The button starts a chain of 1,000 setTimeout(0) tasks, one after the other. After the fifth step, the browser waits at least 4 ms for each step. Thus the chain takes approximately 4 s, and the load is small." },
     { id : "microtask-flood", label : "Microtask flood", description : "The button puts 200,000 microtasks in the queue. They start before the next task." },
 ];
 
