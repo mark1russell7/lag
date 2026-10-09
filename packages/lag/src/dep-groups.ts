@@ -22,6 +22,8 @@ import type {
 } from "./types.js";
 import type { Meter } from "./meter.js";
 import type { EventSink } from "./events.js";
+import type { SpanSink } from "./spans.js";
+import type { PageViewSpans } from "./instrumented/page-view-spans.js";
 import type { PerformanceObserverInit } from "./perf-types.js";
 import type {
     RequestAnimationFrameFn,
@@ -189,6 +191,20 @@ export type WallClockDeps = {
 /** The structured-event port for attribution and diagnostics. */
 export type EventDeps = {
     events : EventSink;
+};
+
+/**
+ * The span port: the periods that the monitors measure, as spans with their
+ * real start and end (refer to `SpanSink`).
+ */
+export type SpanDeps = {
+    spans : SpanSink;
+    /**
+     * The spans of the page views. `setupAllMonitors` makes them. The
+     * page-view vitals start and end them, and the other monitors use the span
+     * of the current view as the parent of their spans.
+     */
+    pageViewSpans? : PageViewSpans;
 };
 
 /** The Reporting API, for browser interventions and deprecations. */

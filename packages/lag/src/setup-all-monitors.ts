@@ -33,14 +33,16 @@ import type {
     AbsoluteClockDeps,
     CrashReportDeps,
     PeerDeps,
+    SpanDeps,
 } from "./dep-groups.js";
 import { withEventContext, type EventAttributes, type EventSink } from "./events.js";
 import { createAbsoluteClock } from "./absolute-clock.js";
 import { LIVENESS_BUFFER_BYTES, beatingSetTimeout, createLivenessBeacon } from "./shared-liveness.js";
 import { MonitorRegistry } from "./monitor-registry.js";
 import { createMeasurementConditions, type MeasurementConditions, type StallKind } from "./measurement-conditions.js";
-import { EVENTS, METRICS, createCounter, createHistogram } from "./metric-catalog.js";
-import { occurredAtClockTime } from "./instrumented/shared.js";
+import { EVENTS, METRICS, SPANS, createCounter, createHistogram } from "./metric-catalog.js";
+import { occurredAtClockTime, recordSpan } from "./instrumented/shared.js";
+import { createPageViewSpans } from "./instrumented/page-view-spans.js";
 
 // Monitor class types (for typed accessors on AllMonitorHandles)
 import type { DriftLag } from "./DriftLag.js";
@@ -118,7 +120,8 @@ export type AllMonitorDeps =
     & Partial<PageDeps>
     & Partial<AbsoluteClockDeps>
     & Partial<CrashReportDeps>
-    & Partial<PeerDeps>;
+    & Partial<PeerDeps>
+    & Partial<Pick<SpanDeps, "spans">>;
 
 /**
  * The handles that `setupAllMonitors` gives.
@@ -211,7 +214,9 @@ function createConditions(deps : AllMonitorDeps, lifecycle : LifecycleStateMachi
         onStall : (kind, valueMs, startTime) => {
             stalls.add(1, { kind });
             stallDuration.record(valueMs, { kind });
-            deps.events?.emit(EVENTS.stall.name, { kind, duration_ms : valueMs }, occurredAtClockTime(deps.absoluteClock, deps.clock, startTime));
+            const options = occurredAtClockTime(deps.absoluteClock, deps.clock, startTime);
+            deps.events?.emit(EVENTS.stall.name, { kind, duration_ms : valueMs }, options);
+            if (options.time !== undefined) recordSpan(deps, SPANS.stall.name, options.time, options.time + valueMs, { kind, duration_ms : valueMs });
         },
     });
 }
@@ -227,12 +232,15 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
     const events = rootDeps.events
         ? withEventContext(rootDeps.events, () : EventAttributes => vitals ? { "lag.page_view.id" : vitals.getView().id } : {})
         : undefined;
-    const deps : AllMonitorDeps = {
+    // With a span sink: one trace for each page view. The other spans are in the span of their view.
+    const pageViewSpans = rootDeps.spans ? createPageViewSpans(rootDeps.spans, absoluteClock) : undefined;
+    const deps : AllMonitorDeps & Partial<SpanDeps> = {
         ...rootDeps,
         // One ID for the page instance: the hang journal of the worker and the peer hang watch use it
         pageId : rootDeps.pageId ?? createRandomId(),
         ...(events ? { events } : {}),
         ...(absoluteClock ? { absoluteClock } : {}),
+        ...(pageViewSpans ? { pageViewSpans } : {}),
     };
 
     // 1. Lifecycle first: registered first, so the LIFO teardown stops it last

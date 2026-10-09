@@ -9,6 +9,7 @@ import {
     METRICS as CATALOG,
     METRIC_CATALOG,
     EVENT_CATALOG,
+    SPAN_CATALOG,
     createBrowserDeps,
     setupAllMonitors,
     type AllMonitorDeps,
@@ -16,10 +17,10 @@ import {
 } from "@lag/core";
 import { createLagWorker } from "@lag/worker";
 
-export type { Attributes, Counter, Histogram, Meter, MetricDefinition, EventDefinition } from "@lag/core";
+export type { Attributes, Counter, Histogram, Meter, MetricDefinition, EventDefinition, SpanDefinition } from "@lag/core";
 
-/** Every metric and every event that the monitors emit: the single source for the documentation. */
-export { METRIC_CATALOG, EVENT_CATALOG };
+/** Every metric, event and span that the monitors emit: the single source for the documentation. */
+export { METRIC_CATALOG, EVENT_CATALOG, SPAN_CATALOG };
 
 type LagWorker = ReturnType<typeof createLagWorker>;
 

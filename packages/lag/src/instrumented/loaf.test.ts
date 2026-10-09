@@ -1,23 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInstrumentedLoaf } from "./loaf.js";
 import { createFakePerformanceObserver } from "../vitals/test-fakes.js";
-import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "../test-utils.js";
+import { createRecordingMeter, createRecordingSpanSink, expectCatalogEvents, expectCatalogInstruments, expectCatalogSpans } from "../test-utils.js";
 import type { LoafEntry } from "../perf-types.js";
 
-function setup(withEvents : boolean) {
+const VIEW = { traceId : "a".repeat(32), spanId : "b".repeat(16) };
+
+function setup(withEvents : boolean, withSpans = false, withClock = true) {
     const observer = createFakePerformanceObserver(["long-animation-frame"]);
     const meter = createRecordingMeter();
     const events = { emit : vi.fn() };
+    const spans = createRecordingSpanSink();
     const logger = { log : vi.fn() };
     const handle = createInstrumentedLoaf({
         logger,
         clock : { now : () => 0 },
         meter : meter.meter,
         PerformanceObserver : observer.PerformanceObserver,
-        performance : { timeOrigin : 1_000_000, now : () => 0 },
+        ...(withClock ? { performance : { timeOrigin : 1_000_000, now : () => 0 } } : {}),
         ...(withEvents ? { events } : {}),
+        ...(withSpans ? { spans, pageViewSpans : { viewStarted() {}, viewHidden() {}, viewEnded() {}, current : () => VIEW } } : {}),
     });
-    return { observer, meter, events, logger, handle };
+    return { observer, meter, events, spans, logger, handle };
 }
 
 function frame(blockingDuration : number) : LoafEntry {
@@ -119,5 +123,40 @@ describe("createInstrumentedLoaf", () => {
         t.observer.deliver("long-animation-frame", entry);
 
         expect(t.events.emit.mock.calls[0]![1]["script.invoker"]).toBe(expected);
+    });
+});
+
+describe("createInstrumentedLoaf with spans", () => {
+    it("records a span from the start to the end of each frame that gets an event, in the current page view", () => {
+        const t = setup(true, true);
+
+        t.observer.deliver("long-animation-frame", frame(149), frame(150));
+
+        expect(t.spans.spans).toEqual([expect.objectContaining({
+            name : "lag.long_animation_frame",
+            startTime : 1_000_100,
+            endTime : 1_000_300,
+            attributes : { duration_ms : 200, blocking_duration_ms : 150 },
+            parent : VIEW,
+        })]);
+        expectCatalogSpans(t.spans.spans);
+    });
+
+    it("records no span without a clock, because the frame has no absolute time", () => {
+        const t = setup(true, true, false);
+
+        t.observer.deliver("long-animation-frame", frame(200));
+
+        expect(t.events.emit).toHaveBeenCalledTimes(1);
+        expect(t.spans.spans).toEqual([]);
+    });
+
+    it("records the spans without an event sink, with the same limit of 10 each minute", () => {
+        const t = setup(false, true);
+
+        t.observer.deliver("long-animation-frame", ...Array.from({ length : 12 }, () => frame(200)));
+
+        expect(t.spans.spans).toHaveLength(10);
+        expect(t.events.emit).not.toHaveBeenCalled();
     });
 });

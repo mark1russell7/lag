@@ -1,5 +1,6 @@
 import type { AllMonitorDeps } from "../setup-all-monitors.js";
 import type { EventSink } from "../events.js";
+import type { SpanSink } from "../spans.js";
 import type { Meter } from "../meter.js";
 import type { Logger, PerformanceLike } from "../types.js";
 import type { PerformanceEntryLike, PerformanceObserverInit } from "../perf-types.js";
@@ -59,6 +60,8 @@ export type BrowserDepsOptions = {
     logger : Logger;
     meter : Meter;
     events? : EventSink;
+    /** The span sink, for example `createOtelSpanSink()`. Without it, the monitors make no spans. */
+    spans? : SpanSink;
     /** The worker in which the `@lag/worker` handler operates. Without it, the worker monitors stay off. */
     worker? : WorkerLike;
     workerHeartbeatIntervalMs? : number;
@@ -194,6 +197,7 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         ...(PressureObserver ? { PressureObserver, pressureSources : options.pressureSources ?? ["cpu"] } : {}),
         ...(SharedArrayBuffer ? { SharedArrayBuffer } : {}),
         ...(options.events ? { events : options.events } : {}),
+        ...(options.spans ? { spans : options.spans } : {}),
         ...(options.worker ? { worker : options.worker } : {}),
         ...(options.workerHeartbeatIntervalMs !== undefined ? { workerHeartbeatIntervalMs : options.workerHeartbeatIntervalMs } : {}),
         ...(options.workerHangReport ? { workerHangReport : options.workerHangReport } : {}),

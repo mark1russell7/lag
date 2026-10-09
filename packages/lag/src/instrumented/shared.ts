@@ -8,9 +8,53 @@
 import type { Clock, Logger } from "../types.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import type { MeasurementConditions, SampleValidator } from "../measurement-conditions.js";
-import type { AbsoluteClockDeps, PerformanceDeps } from "../dep-groups.js";
-import type { EventOptions } from "../events.js";
+import type { AbsoluteClockDeps, PerformanceDeps, SpanDeps } from "../dep-groups.js";
+import type { EventAttributes, EventOptions } from "../events.js";
+import { isSpanIdentity, type SpanIdentity } from "../spans.js";
+import { SPANS } from "../metric-catalog.js";
 import { createAbsoluteClock, type AbsoluteClock } from "../absolute-clock.js";
+
+/** The context attributes with the identity of the span of the page view (refer to the page-view context). */
+export const PAGE_VIEW_TRACE_ID = "lag.page_view.trace_id";
+export const PAGE_VIEW_SPAN_ID = "lag.page_view.span_id";
+
+/** The span of the page view in the context attributes of a page, if they have a valid identity. */
+export function pageViewSpanOf(attributes : Readonly<Record<string, unknown>>) : SpanIdentity | undefined {
+    const identity = { traceId : attributes[PAGE_VIEW_TRACE_ID], spanId : attributes[PAGE_VIEW_SPAN_ID] };
+    return isSpanIdentity(identity) ? identity : undefined;
+}
+
+/**
+ * This function records the span of a hang. The parent is the page view of
+ * the page that hung, when the context of that page (`hungPage`) has the
+ * identity of its span. Then the span is in the trace of that page. It has
+ * a link to the current page view of this page, which reports it. Else
+ * the parent is the current page view of this page.
+ */
+export function recordHangSpan(
+    deps : Partial<SpanDeps>,
+    hang : { startedAt : number; durationMs : number; attributes : EventAttributes; hungPage? : Readonly<Record<string, unknown>> },
+) : void {
+    if (!deps.spans) return;
+    const current = deps.pageViewSpans?.current();
+    const hungView = hang.hungPage ? pageViewSpanOf(hang.hungPage) : undefined;
+    const parent = hungView ?? current;
+    const link = hungView && current && hungView.spanId !== current.spanId ? current : undefined;
+    deps.spans.record(SPANS.hang.name, {
+        startTime : hang.startedAt,
+        endTime : hang.startedAt + hang.durationMs,
+        attributes : hang.attributes,
+        ...(parent ? { parent } : {}),
+        ...(link ? { links : [link] } : {}),
+    });
+}
+
+/** This function records a span of a monitor in the current page view. Without a span sink, it does nothing. */
+export function recordSpan(deps : Partial<SpanDeps>, name : string, startTime : number, endTime : number, attributes : EventAttributes) : void {
+    if (!deps.spans) return;
+    const parent = deps.pageViewSpans?.current();
+    deps.spans.record(name, { startTime, endTime, attributes, ...(parent ? { parent } : {}) });
+}
 
 /**
  * This function gives the clock for the times of the events of a factory:

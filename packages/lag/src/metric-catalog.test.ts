@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { EVENT_CATALOG, HISTOGRAM_BOUNDARIES, METRIC_CATALOG, METRICS, createCounter, createHistogram, type MetricDefinition } from "./metric-catalog.js";
+import { EVENT_CATALOG, HISTOGRAM_BOUNDARIES, METRIC_CATALOG, METRICS, SPAN_CATALOG, createCounter, createHistogram, type MetricDefinition } from "./metric-catalog.js";
 import type { InstrumentOptions, Meter } from "./meter.js";
 import { VITAL_THRESHOLDS } from "./vitals/types.js";
 import { createRecordingMeter } from "./test-utils.js";
@@ -138,6 +138,18 @@ describe("metric catalog", () => {
 
     it("gives every event a description", () => {
         for (const e of EVENT_CATALOG) expect(e.description.length, e.name).toBeGreaterThan(10);
+    });
+
+    it("has unique span names with the lag. prefix, attributes, a description and a monitor of the package", () => {
+        const names = SPAN_CATALOG.map(s => s.name);
+        expect(new Set(names).size).toBe(names.length);
+        const exported = new Set(Object.keys(lag));
+        for (const s of SPAN_CATALOG) {
+            expect(s.name, s.name).toMatch(/^lag\.[a-z_.]+$/);
+            expect(s.attributes.length, s.name).toBeGreaterThan(0);
+            expect(s.description.length, s.name).toBeGreaterThan(10);
+            expect(exported.has(s.monitor) || exported.has(`create${s.monitor}`), `${s.name}: ${s.monitor}`).toBe(true);
+        }
     });
 });
 

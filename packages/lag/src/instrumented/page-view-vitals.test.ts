@@ -9,7 +9,9 @@ import {
     paintEntry,
     type FakePage,
 } from "../vitals/test-fakes.js";
-import { createRecordingMeter, expectCatalogEvents } from "../test-utils.js";
+import { createRecordingMeter, createRecordingSpanSink, expectCatalogEvents, expectCatalogSpans } from "../test-utils.js";
+import { createPageViewSpans } from "./page-view-spans.js";
+import { createAbsoluteClock } from "../absolute-clock.js";
 import { METRICS } from "../metric-catalog.js";
 import type { PerformanceEntryLike } from "../perf-types.js";
 import type { RequestAnimationFrameFn } from "../FrameTimingMonitor.js";
@@ -25,12 +27,15 @@ function setup(options : {
     requestAnimationFrame? : RequestAnimationFrameFn;
     withoutEvents? : boolean;
     window? : boolean;
+    spans? : boolean;
 } = {}) {
     const fake = createFakeLifecycle();
     const observer = createFakePerformanceObserver([...LOAD_TYPES, "soft-navigation", "interaction-contentful-paint"]);
     const recording = createRecordingMeter();
     const events = { emit : vi.fn() };
+    const spans = createRecordingSpanSink();
     const page = "page" in options ? options.page : createFakePage();
+    const pageViewSpans = options.spans ? createPageViewSpans(spans, createAbsoluteClock({ timeOrigin : 1_000_000, now : () => fake.clock.now() })) : undefined;
     const handle = createInstrumentedPageViewVitals({
         logger : { log : vi.fn() },
         clock : fake.clock,
@@ -43,8 +48,9 @@ function setup(options : {
         ...(options.softNavigations !== undefined ? { softNavigations : options.softNavigations } : {}),
         ...(options.requestAnimationFrame ? { requestAnimationFrame : options.requestAnimationFrame } : {}),
         ...(options.window ? { window : fake.window } : {}),
+        ...(pageViewSpans ? { pageViewSpans } : {}),
     }, fake.lifecycle);
-    return { fake, observer, recording, events, vitals : handle.monitor!, handle };
+    return { fake, observer, recording, events, spans, vitals : handle.monitor!, handle };
 }
 
 /** The attributes of the `browser.web_vital` events of one vital, in the sequence of the events. */
@@ -268,5 +274,62 @@ describe("createInstrumentedPageViewVitals", () => {
 
         expect([...recorded].sort()).toEqual(["back-forward", "back-forward-cache", "navigate", "prerender", "reload", "restore", "soft-navigation"]);
         for (const value of recorded) expect(METRICS.vitalTtfb.attributes["navigation_type"]).toContain(value);
+    });
+});
+
+describe("createInstrumentedPageViewVitals with page-view spans", () => {
+    it("starts the span of the load, and ends it when the page is hidden for the first time, with the values at that time", () => {
+        const t = setup({ spans : true, withoutEvents : true });
+        t.observer.deliver("paint", paintEntry(500));
+        t.observer.deliver("largest-contentful-paint", lcpEntry(800));
+        t.fake.setNow(30_000);
+        t.fake.setVisibility("hidden");
+        // The view continues after the return to the page, but its span ended
+        t.fake.setVisibility("visible");
+        t.observer.deliver("event", eventEntry({ interactionId : 5, startTime : 40_000, duration : 120 }));
+        t.fake.setNow(50_000);
+        t.fake.setVisibility("hidden");
+        t.fake.pagehide(false);
+
+        expect(t.spans.spans).toEqual([expect.objectContaining({
+            name : "lag.page_view",
+            startTime : 1_000_000,
+            endTime : 1_030_000,
+            attributes : {
+                "lag.page_view.id" : t.vitals.getView().id,
+                navigation_type : "navigate",
+                "lag.page_view.url" : "https://shop.example/cart",
+                "lag.web_vital.cls" : 0,
+                "lag.web_vital.fcp" : 500,
+                "lag.web_vital.lcp" : 800,
+                "lag.web_vital.ttfb" : 200,
+            },
+            parent : undefined,
+        })]);
+        expectCatalogSpans(t.spans.spans);
+    });
+
+    it("starts a new trace for a restore from the back/forward cache", () => {
+        const frames : Array<(time : number) => void> = [];
+        const t = setup({ spans : true, requestAnimationFrame : (callback) => frames.push(callback) });
+        const load = t.vitals.getView();
+        t.fake.setNow(5_000);
+        t.fake.pagehide(true);
+        t.fake.setNow(10_000);
+        t.fake.pageshow(true, 10_000);
+        const restore = t.vitals.getView();
+
+        expect(t.spans.spans.map(span => [span.attributes["lag.page_view.id"], span.attributes["navigation_type"], span.startTime, span.endTime])).toEqual([
+            [load.id, "navigate", 1_000_000, 1_005_000],
+            [restore.id, "back-forward-cache", 1_010_000, undefined],
+        ]);
+        expect(t.spans.spans[1]!.identity.traceId).not.toBe(t.spans.spans[0]!.identity.traceId);
+
+        // After the stop, the span of the view ended, and a new view starts no span
+        t.fake.setNow(12_000);
+        t.handle.stop();
+        t.fake.pagehide(true);
+        t.fake.pageshow(true, 20_000);
+        expect(t.spans.spans.map(span => span.endTime)).toEqual([1_005_000, 1_012_000]);
     });
 });
