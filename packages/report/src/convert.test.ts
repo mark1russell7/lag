@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
     ERRORS_OUTSIDE_TESTS,
+    countBudgets,
     countStatuses,
     fromIstanbulSummary,
     fromStrykerReport,
@@ -137,7 +138,11 @@ describe("run summaries", () => {
             coverage : [],
             mutation : [],
             measurements : [],
-            budgets : [],
+            budgets : [
+                { name : "CPU", unit : "%", value : 3, limit : 2, pass : false },
+                { name : "Memory", unit : "By", value : 1, limit : 2, pass : true },
+                { name : "Worker p99", unit : "ms", value : 1, limit : 2, pass : true },
+            ],
         };
 
         expect(countStatuses(run.suites)).toEqual({ passed : 2, failed : 1, skipped : 0, todo : 0 });
@@ -145,7 +150,9 @@ describe("run summaries", () => {
             id : "r1",
             createdAt : "2026-10-07T00:00:00.000Z",
             counts : { passed : 2, failed : 1, skipped : 0, todo : 0 },
+            budgets : { pass : 2, fail : 1 },
             file : "runs/r1.json",
         });
+        expect(countBudgets([])).toEqual({ pass : 0, fail : 0 });
     });
 });

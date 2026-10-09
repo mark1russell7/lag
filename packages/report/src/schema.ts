@@ -137,12 +137,23 @@ export type RunReport = {
 
 export type StatusCounts = Record<TestStatus, number>;
 
+/** The number of budgets that passed and that failed. */
+export type BudgetCounts = {
+    pass : number;
+    fail : number;
+};
+
 /** One entry in the list of runs. */
 export type RunSummary = {
     id : string;
     createdAt : string;
     git? : GitInfo;
     counts : StatusCounts;
+    /**
+     * The budgets of the run. A run with a failed budget failed, also when
+     * all tests passed. A summary from before this field does not have it.
+     */
+    budgets? : BudgetCounts;
     /** The file name of the full `RunReport`, relative to the index file. */
     file : string;
 };

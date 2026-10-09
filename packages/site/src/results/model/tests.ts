@@ -1,6 +1,8 @@
+import { formatCount } from "../../lib/format";
 import {
     countStatuses,
     type RunReport,
+    type RunSummary,
     type StatusCounts,
     type SuiteKind,
     type SuiteResult,
@@ -174,4 +176,21 @@ export function countsText(counts : StatusCounts) : string {
 /** The sum of the suite durations, in ms. Suites can operate at the same time, so this is the total work, not the wall time. */
 export function totalSuiteDuration(run : RunReport) : number {
     return run.suites.reduce((sum, suite) => sum + suite.durationMs, 0);
+}
+
+/**
+ * The status of a run in the list of runs. A failed budget makes the run
+ * fail, as in the collector, also when all tests passed.
+ */
+export function runSummaryStatus(summary : RunSummary) : GroupStatus {
+    if ((summary.budgets?.fail ?? 0) > 0) return "failed";
+    return groupStatus(summary.counts);
+}
+
+/** The text after the status of a run, for example ": 2 of 120 tests, 1 budget failed". */
+export function runSummaryDetail(summary : RunSummary) : string {
+    const total = totalTests(summary.counts);
+    const tests = summary.counts.failed > 0 ? `${summary.counts.failed} of ${formatCount(total, "test")}` : formatCount(total, "test");
+    const failedBudgets = summary.budgets?.fail ?? 0;
+    return failedBudgets > 0 ? `: ${tests}, ${formatCount(failedBudgets, "budget")} failed` : `: ${tests}`;
 }

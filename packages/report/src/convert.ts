@@ -4,6 +4,8 @@
  */
 
 import type {
+    BudgetCounts,
+    BudgetResult,
     CoverageCounts,
     CoverageReport,
     FileCoverage,
@@ -186,12 +188,18 @@ export function countStatuses(suites : readonly SuiteResult[]) : StatusCounts {
     return result;
 }
 
+export function countBudgets(budgets : readonly BudgetResult[]) : BudgetCounts {
+    const pass = budgets.filter(budget => budget.pass).length;
+    return { pass, fail : budgets.length - pass };
+}
+
 export function summarizeRun(run : RunReport, file : string) : RunSummary {
     return {
         id : run.id,
         createdAt : run.createdAt,
         ...(run.git ? { git : run.git } : {}),
         counts : countStatuses(run.suites),
+        budgets : countBudgets(run.budgets),
         file,
     };
 }

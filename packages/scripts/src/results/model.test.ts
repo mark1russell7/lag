@@ -108,6 +108,13 @@ describe("the run index", () => {
         expect(again.runs.map(r => [r.id, r.file])).toEqual([["a", "runs/a.json"], ["b", "runs/b.json"]]);
     });
 
+    it("gives the summary of the new run its budget counts, and keeps an older summary without them", () => {
+        const old = { schemaVersion : SCHEMA_VERSION, runs : [{ id : "a", createdAt : "2026-10-06T10:00:00.000Z", counts : { passed : 1, failed : 0, skipped : 0, todo : 0 }, file : "runs/a.json" }] };
+        const next = { ...run("b", "2026-10-07T10:00:00.000Z"), budgets : [{ name : "CPU", unit : "%", value : 3, limit : 2, pass : false }] };
+        const index = mergeIndex(old, next);
+        expect(index.runs.map(r => [r.id, r.budgets])).toEqual([["a", undefined], ["b", { pass : 0, fail : 1 }]]);
+    });
+
     it("starts again from an index that the site cannot read, and keeps at most maxRuns", () => {
         expect(mergeIndex({ schemaVersion : 0, runs : [{ id : "old" }] }, run("n", "2026-10-07T10:00:00.000Z")).runs.map(r => r.id)).toEqual(["n"]);
         let index = mergeIndex(undefined, run("r0", "2026-10-01T00:00:00.000Z"));

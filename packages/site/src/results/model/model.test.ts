@@ -16,7 +16,18 @@ import {
 } from "./measurements";
 import { mutationFileRows, mutationOrigins, mutationPackageRows } from "./mutation";
 import { nextSort, sortRows } from "./sort";
-import { countsText, failingTests, filterSuites, flattenTests, groupStatus, matchesFilter, parseStatusFilter, slowestTests } from "./tests";
+import {
+    countsText,
+    failingTests,
+    filterSuites,
+    flattenTests,
+    groupStatus,
+    matchesFilter,
+    parseStatusFilter,
+    runSummaryDetail,
+    runSummaryStatus,
+    slowestTests,
+} from "./tests";
 import { runTrend, sortRunsNewestFirst } from "./trend";
 
 const run = SAMPLE_RUNS[1]!.report;
@@ -88,6 +99,29 @@ describe("group status", () => {
         expect(countsText(counts(0, 0, 0, 0))).toBe("No tests");
         expect(countsText(counts(5, 0, 3, 1))).toBe("5 passed, 3 skipped, 1 to do");
         expect(countsText(counts(5, 2, 0, 0))).toBe("2 failed of 7");
+    });
+});
+
+describe("run summary status", () => {
+    const summary = (failed : number, budgets? : { pass : number; fail : number }) => ({
+        id : "r",
+        createdAt : "2026-10-08T00:00:00.000Z",
+        counts : { passed : 120 - failed, failed, skipped : 0, todo : 0 },
+        file : "runs/r.json",
+        ...(budgets ? { budgets } : {}),
+    });
+
+    it("fails a run with a failed budget, also when all tests passed", () => {
+        expect(runSummaryStatus(summary(0, { pass : 2, fail : 1 }))).toBe("failed");
+        expect(runSummaryDetail(summary(0, { pass : 2, fail : 1 }))).toBe(": 120 tests, 1 budget failed");
+        expect(runSummaryDetail(summary(2, { pass : 1, fail : 2 }))).toBe(": 2 of 120 tests, 2 budgets failed");
+    });
+
+    it("passes a run whose tests and budgets passed, also from an index without budget counts", () => {
+        expect(runSummaryStatus(summary(0, { pass : 3, fail : 0 }))).toBe("passed");
+        expect(runSummaryStatus(summary(0))).toBe("passed");
+        expect(runSummaryStatus(summary(1))).toBe("failed");
+        expect(runSummaryDetail(summary(0))).toBe(": 120 tests");
     });
 });
 
