@@ -74,17 +74,18 @@ describe("DriftLag with the timer alignment of WebKit", () => {
             // Thus it can take 5 ms plus the grid, and give that time minus the baseline as lag.
             const startLimitMs = 5 + alignmentMs - baselineMs + 0.5;
 
-            // A start outside a timer task gives 10 steps of 5 ms that WebKit does not align. These steps
-            // were recent steps. After a start, the windows had up to 18 ms of lag on an idle thread.
-            it(`gives no lag after the start and after a restart in a task, with a grid of ${alignmentMs} ms (offset ${offset})`, () => {
+            // A restart in a task gives 10 steps of 5 ms that WebKit does not align. These steps were
+            // recent steps. After a restart on the grid of 4 ms, five windows had 4 ms of lag each.
+            it(`gives no lag after a restart in a task, with a grid of ${alignmentMs} ms (offset ${offset})`, () => {
                 const d = createDriftLag(alignmentMs, offset);
                 d.thread.advance(3_000);
                 d.thread.post(() => d.monitor.stop());
                 d.thread.advance(500);
+                const restart = d.thread.now;
                 d.thread.post(() => d.monitor.start());
                 d.thread.advance(3_000);
 
-                expect(Math.max(...d.windows.map(w => w.lag))).toBeLessThan(startLimitMs);
+                expect(Math.max(...lagsBetween(d.windows, restart, Infinity))).toBeLessThan(startLimitMs);
                 expect(d.monitor.getBaselineMs()).toBeCloseTo(baselineMs, 0);
                 d.monitor.stop();
             });

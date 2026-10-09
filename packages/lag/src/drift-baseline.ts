@@ -58,12 +58,14 @@ export function spreadMs(stepMs : number) : number {
 }
 
 /**
- * The idle duration of a step in which the granularity changed. Part of the
- * step can have the old granularity, and part the new granularity. Thus the
- * value is the duration of the step, but not less than the shorter baseline
- * and not more than the longer baseline.
+ * The idle duration of a step before an accepted row that was outside the
+ * old baseline. The step can have the new granularity, or the granularity
+ * can change during the step. It can also be a block. Thus the value is the
+ * duration of the step, but not less than the shorter baseline and not more
+ * than the longer baseline. A block before the row can lose up to the
+ * difference of the two baselines, but it does not give false lag.
  */
-export function changeStepMs(stepMs : number, oldMs : number, newMs : number) : number {
+export function outsideStepMs(stepMs : number, oldMs : number, newMs : number) : number {
     return Math.min(Math.max(stepMs, Math.min(oldMs, newMs)), Math.max(oldMs, newMs));
 }
 

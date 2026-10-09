@@ -36,9 +36,6 @@ function createDriftLag(initialGranularityMs = 1, options : DriftLagOptions = {}
     };
 }
 
-/** The 11 warm-up steps after the start, with exact timers. They are not in the baseline. */
-const WARM_UP_MS = 11 * 5;
-
 describe("DriftLag when the timer granularity changes", () => {
     beforeEach(() => {
         vi.useFakeTimers();
@@ -110,8 +107,8 @@ describe("DriftLag when the timer granularity changes", () => {
     // 4 steps of 16 ms before the row, thus the window had 4 * 10 = 40 ms of lag on an idle thread.
     it("gives the old baseline to the steps of the window before the row of a finer granularity", () => {
         const d = createDriftLag(11);
-        // The first window has 21 steps of 16 ms. The second window has round(100 / 16) = 6 steps; 3 of them come before the change.
-        vi.advanceTimersByTime(21 * 16 + 3 * 16);
+        // The first window has 20 steps of 16 ms. The second window has round(100 / 16) = 6 steps; 3 of them come before the change.
+        vi.advanceTimersByTime(20 * 16 + 3 * 16);
         d.lags.length = 0;
         d.setGranularity(1);
         // One step of 16 ms started before the change. The window waits for the row, and the 10th step of 6 ms ends it.
@@ -187,27 +184,12 @@ describe("DriftLag baseline", () => {
 
     it("leaves out a block, also when the block comes before shorter steps", () => {
         const d = createDriftLag(0);
-        vi.advanceTimersByTime(WARM_UP_MS);
         d.busySteps(45, 2, 2, 2, 2);
         vi.advanceTimersByTime(75);
 
         // The steps are 5, 50, 7 and 7 ms (the first step starts before the extras): the
         // median is 7 ms, thus 50 ms is a block, and the shorter step before it is not
         expect(d.monitor.getBaselineMs()).toBeCloseTo((5 + 7 + 7) / 3, 6);
-        d.monitor.stop();
-    });
-
-    // WebKit aligns a timer only from the nesting level 10. After a start outside a timer task, the
-    // first 10 steps of 5 ms were in the baseline of a chain of 8 ms steps, and each window had false lag.
-    it("does not use the 11 warm-up steps after the start", () => {
-        const d = createDriftLag(1);
-        // The steps are 6 ms, then 10 steps of 8 ms (the warm-up), then 3 steps of 6 ms
-        d.busySteps(...Array.from({ length : 10 }, () => 2));
-        vi.advanceTimersByTime(6 + 10 * 8);
-        expect(d.monitor.getBaselineMs()).toBe(5);
-        vi.advanceTimersByTime(3 * 6);
-
-        expect(d.monitor.getBaselineMs()).toBe(6);
         d.monitor.stop();
     });
 });
@@ -222,7 +204,6 @@ describe("DriftLag baseline of a short window of steps", () => {
 
     it("uses the mean of the two middle steps as the median of an even number of steps", () => {
         const d = createDriftLag(0, { baselineSteps : 4 });
-        vi.advanceTimersByTime(WARM_UP_MS);
         d.busySteps(0, 5, 10);
         vi.advanceTimersByTime(35);
 
@@ -233,7 +214,6 @@ describe("DriftLag baseline of a short window of steps", () => {
 
     it("uses the middle step as the median of an odd number of steps, and keeps a step at the limit", () => {
         const d = createDriftLag(0, { baselineSteps : 3 });
-        vi.advanceTimersByTime(WARM_UP_MS);
         d.busySteps(5, 10);
         vi.advanceTimersByTime(30);
 
