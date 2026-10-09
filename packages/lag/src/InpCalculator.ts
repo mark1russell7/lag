@@ -98,11 +98,15 @@ export class InpCalculator {
         return this.longest.some(i => i.id === interactionId);
     }
 
-    /** This method starts a new calculation, for example for a new page view. */
-    reset() : void {
+    /**
+     * This method starts a new calculation, for example for a new page view.
+     * `baseline` is the interaction count at the new start. The default is
+     * the count at this time.
+     */
+    reset(baseline? : number) : void {
         this.longest = [];
         this.observedInteractions = 0;
         this.maxInteractionId = 0;
-        this.interactionCountAtStart = this.readInteractionCount?.() ?? 0;
+        this.interactionCountAtStart = baseline ?? this.readInteractionCount?.() ?? 0;
     }
 }

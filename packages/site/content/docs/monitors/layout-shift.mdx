@@ -74,7 +74,7 @@ import { createBrowserDeps, createInstrumentedLayoutShift } from "@lag/core";
 const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
 if (deps.PerformanceObserver) {
     const layoutShift = createInstrumentedLayoutShift({ ...deps, PerformanceObserver : deps.PerformanceObserver });
-    // The CLS of the page since the start of the monitor
+    // The CLS of the page, with the buffered shifts from before the start of the monitor
     console.log(layoutShift.monitor?.getCLS());
 }
 ```
@@ -89,7 +89,7 @@ if (deps.PerformanceObserver) {
 
 - **Only Chromium.** In Firefox and Safari, the monitor logs a warning and gets no entries.
 - **Shifts, not CLS.** The histogram counts single shifts. For the CLS of each page view, use `lag_web_vital_cls_histogram`.
-- **The page, not the page view.** `getCLS()` covers the time since the start of the monitor, also across back/forward cache restores.
+- **The page, not the page view.** `getCLS()` covers the shifts since the start of the monitor and the buffered shifts from before it, also across back/forward cache restores.
 
 ## Tests
 
