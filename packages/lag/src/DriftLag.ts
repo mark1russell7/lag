@@ -151,6 +151,8 @@ export class DriftLag extends LagMonitor {
     private earlySteps = 0;
     /** The idle duration of the steps before an accepted row, at the old baseline. */
     private preRowIdleMs = 0;
+    /** The probed steps and the steps after a probe in the window. They are not in a row. */
+    private skippedSteps = 0;
     private readonly probing : Probing | undefined;
     private readonly stepMs : number;
     private readonly maxSteps : number;
@@ -234,6 +236,7 @@ export class DriftLag extends LagMonitor {
         this.stepsInWindow = 0;
         this.earlySteps = 0;
         this.preRowIdleMs = 0;
+        this.skippedSteps = 0;
         this.rowStart = -1;
     }
 
@@ -333,16 +336,19 @@ export class DriftLag extends LagMonitor {
             if (this.probing?.probe.isRunning()) {
                 this.addProbedStep(durationMs, this.probing.probe.stop(), this.probing);
                 this.probing.afterProbe = true;
+                this.skippedSteps++;
             } else if (this.probing?.afterProbe) {
                 this.probing.afterProbe = false;
+                this.skippedSteps++;
             } else {
                 this.addStep(durationMs);
             }
             this.stepsInWindow++;
             this.lastStepAt = now;
             // During a row that can be a new granularity, the window continues (for not more than
-            // the length of a row), so that its lag uses the correct baseline
-            const waitForRow = this.rowCount > 0 && this.rowProbe !== "busy" && this.stepsInWindow < this.stepsPerWindow + GRANULARITY_CHANGE_STEPS;
+            // the length of a row), so that its lag uses the correct baseline. The skipped steps are not in the row.
+            const waitForRow = this.rowCount > 0 && this.rowProbe !== "busy"
+                && this.stepsInWindow - this.skippedSteps < this.stepsPerWindow + GRANULARITY_CHANGE_STEPS;
             if (this.stepsInWindow < this.stepsPerWindow || waitForRow) {
                 this.step();
                 return;
