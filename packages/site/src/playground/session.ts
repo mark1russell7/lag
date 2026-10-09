@@ -1,7 +1,10 @@
-import type { Meter, MetricNames, MonitorLogEntry, StartedMonitors } from "../adapters/lag-core";
+import type { EntrySupport, Meter, MetricNames, MonitorLogEntry, MonitorRecorder, StartedMonitors, VitalReading } from "../adapters/lag-core";
 import type { LoadActionId, ProfileId, ProfileRun } from "../adapters/lag-load";
 import { downsampleMax, percentile, sortedValues } from "../lib/stats";
+import { loadLabel } from "./catalog";
 import { LiveMeter } from "./live-meter";
+import { buildTimelineModel, EMPTY_TIMELINE, type LoadRun, type TimelineConfig, type TimelineModel } from "./timeline/model";
+import { SessionRecorder } from "./timeline/recorder";
 
 /** `full`: every monitor and a worker (the playground). `timers`: only the timer monitors (the home page). */
 export type SessionKind = "full" | "timers";
@@ -9,7 +12,9 @@ export type SessionKind = "full" | "timers";
 /** The monitors to start. The browser runtime uses `setupAllMonitors`, and a test gives a fake. */
 export type MonitorRuntime = {
     readonly metrics : MetricNames;
-    start(meter : Meter, onLog : (entry : MonitorLogEntry) => void) : StartedMonitors;
+    /** The names and the thresholds of the timeline. Without them, the session makes no timeline. */
+    readonly timeline? : TimelineConfig;
+    start(meter : Meter, onLog : (entry : MonitorLogEntry) => void, recorder : MonitorRecorder) : StartedMonitors;
 };
 
 /** The synthetic load. The browser runtime uses `@lag/load`, and a test gives a fake. */
@@ -21,6 +26,12 @@ export type LoadRunner = {
 export type SessionScheduler = {
     /** The clock, in ms. */
     now() : number;
+    /**
+     * The Unix time (ms) of the time 0 of the clock, for example
+     * `performance.timeOrigin`. The events and the spans of the monitors
+     * have Unix times. The default is 0: the clock gives Unix times.
+     */
+    readonly timeOrigin? : number;
     setInterval(callback : () => void, ms : number) : unknown;
     clearInterval(handle : unknown) : void;
 };
@@ -89,6 +100,8 @@ export type PlaygroundSnapshot = {
     activeLoad : ActiveLoad | undefined;
     history : readonly LoadRecord[];
     log : readonly LogRecord[];
+    /** The data of the session timeline, from the start of the session to this time. */
+    timeline : TimelineModel;
 };
 
 export type PlaygroundSessionOptions = {
@@ -106,6 +119,10 @@ export type PlaygroundSessionOptions = {
 
 const HISTORY_LIMIT = 12;
 const LOG_LIMIT = 50;
+/** The timeline keeps the newest loads. */
+const LOAD_RUN_LIMIT = 500;
+
+const NO_SUPPORT : EntrySupport = { longAnimationFrame : false, eventTiming : false, layoutShift : false };
 
 const EMPTY_SERIES : LiveSeries = { points : [], count : 0, latest : undefined, p95 : undefined, max : undefined };
 
@@ -127,8 +144,15 @@ export class PlaygroundSession {
     private error : string | undefined;
     private meter : LiveMeter | undefined;
     private started : StartedMonitors | undefined;
+    private recorder : SessionRecorder | undefined;
     private timer : unknown;
     private startedAt = 0;
+    private stoppedAt : number | undefined;
+    private support : EntrySupport = NO_SUPPORT;
+    private loadRuns : LoadRun[] = [];
+    /** The last values that the monitors gave. They stay after the stop. */
+    private lastVitals : readonly VitalReading[] = [];
+    private lastLifecycleState : string | undefined;
     private activeLoad : ActiveLoad | undefined;
     private profileAbort : AbortController | undefined;
     private history : LoadRecord[] = [];
@@ -164,13 +188,20 @@ export class PlaygroundSession {
         if (this.status === "running") return;
         const { scheduler, runtime } = this.options;
         const meter = new LiveMeter({ now : () => scheduler.now(), ...(this.options.meterCapacity ? { capacity : this.options.meterCapacity } : {}) });
+        const recorder = new SessionRecorder({ origin : scheduler.timeOrigin ?? 0, now : () => scheduler.now() });
         this.meter = meter;
+        this.recorder = recorder;
         this.startedAt = scheduler.now();
+        this.stoppedAt = undefined;
         this.history = [];
+        this.loadRuns = [];
+        this.lastVitals = [];
+        this.lastLifecycleState = undefined;
         this.log = [];
         this.error = undefined;
         try {
-            this.started = runtime.start(meter, (entry) => this.addLog(entry));
+            this.started = runtime.start(meter, (entry) => this.addLog(entry), recorder);
+            this.support = this.started.support ?? NO_SUPPORT;
         } catch (error) {
             this.status = "failed";
             this.error = error instanceof Error ? error.message : String(error);
@@ -190,6 +221,7 @@ export class PlaygroundSession {
         this.profileAbort?.abort();
         const started = this.started;
         this.started = undefined;
+        this.stoppedAt = this.options.scheduler.now();
         try {
             started?.handles.stop();
         } finally {
@@ -250,6 +282,7 @@ export class PlaygroundSession {
             { kind, id, startedAt : (startedAt - this.startedAt) / 1000, durationMs : now - startedAt, aborted },
             ...this.history,
         ].slice(0, HISTORY_LIMIT);
+        this.loadRuns = [...this.loadRuns, { label : loadLabel(kind, id), start : startedAt, end : now, aborted }].slice(-LOAD_RUN_LIMIT);
         this.publish();
     }
 
@@ -309,6 +342,34 @@ export class PlaygroundSession {
             activeLoad : this.activeLoad,
             history : this.history,
             log : this.log,
+            timeline : this.timeline(now),
         };
+    }
+
+    private timeline(now : number) : TimelineModel {
+        const { meter, recorder } = this;
+        const config = this.options.runtime.timeline;
+        if (!meter || !recorder || !config || this.status === "idle" || this.status === "failed") return EMPTY_TIMELINE;
+        const { metrics } = this.options.runtime;
+        const active = this.activeLoad;
+        if (this.started) {
+            this.lastVitals = this.started.vitals?.() ?? [];
+            this.lastLifecycleState = this.started.lifecycleState();
+        }
+        return buildTimelineModel({
+            startedAt : this.startedAt,
+            now : this.stoppedAt ?? now,
+            running : this.status === "running",
+            config,
+            drift : meter.read(metrics.driftLag)?.samples ?? [],
+            macrotask : meter.read(metrics.macrotaskLag)?.samples ?? [],
+            recorded : recorder.contents(),
+            vitals : this.lastVitals,
+            loads : active
+                ? [...this.loadRuns, { label : loadLabel(active.kind, active.id), start : active.startedAt, end : undefined, aborted : false }]
+                : this.loadRuns,
+            lifecycleState : this.lastLifecycleState,
+            support : this.support,
+        });
     }
 }

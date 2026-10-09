@@ -1,15 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Meter } from "../adapters/lag-core";
+import type { Meter, MonitorRecorder, VitalReading } from "../adapters/lag-core";
 import type { ProfileRun } from "../adapters/lag-load";
 import { PlaygroundSession, type LoadRunner, type MonitorRuntime, type SessionScheduler } from "./session";
 
 const METRICS = {
     driftLag : "drift",
+    macrotaskLag : "macrotask",
     workerMainBlock : "worker",
     frameDelta : "frame",
     eventDuration : "event",
     gcEvents : "gc",
     lifecycleTransitions : "lifecycle",
+} as const;
+
+const TIMELINE = {
+    names : {
+        pageView : "view",
+        hang : "hang",
+        stall : "stall",
+        longAnimationFrame : "loaf",
+        hidden : "hidden",
+        frozen : "frozen",
+        lifecycleTransition : "transition",
+        pressureChange : "pressure",
+    },
+    inpThresholds : { good : 200, poor : 500 },
 } as const;
 
 /** A runtime that records into the meter like the real monitors, and tracks its own teardown. */
@@ -18,17 +33,23 @@ function fakeRuntime() {
         stops : 0,
         terminates : 0,
         meter : undefined as Meter | undefined,
+        recorder : undefined as MonitorRecorder | undefined,
+        vitals : [] as VitalReading[],
     };
     const runtime : MonitorRuntime = {
         metrics : METRICS,
-        start(meter, onLog) {
+        timeline : TIMELINE,
+        start(meter, onLog, recorder) {
             state.meter = meter;
+            state.recorder = recorder;
             meter.createHistogram("fps", { unit : "{frame}/s" }).record(60);
             onLog({ level : "warn", message : "Compute pressure is not available." });
             return {
                 handles : { stop : () => { state.stops++; } },
                 worker : { terminate : () => { state.terminates++; } },
                 lifecycleState : () => "active",
+                vitals : () => state.vitals,
+                support : { longAnimationFrame : true, eventTiming : true, layoutShift : false },
             };
         },
     };
@@ -160,6 +181,75 @@ describe("PlaygroundSession", () => {
         expect(snapshot.activeLoad).toBeUndefined();
         expect(snapshot.history).toEqual([{ kind : "action", id : "block-200", startedAt : 0, durationMs : 200, aborted : false }]);
         session.dispose();
+    });
+
+    it("has no timeline before the start, or without the names of the timeline", () => {
+        const { runtime } = fakeRuntime();
+        expect(new PlaygroundSession({ runtime, scheduler }).getSnapshot().timeline.drift).toEqual([]);
+        const withoutTimeline : MonitorRuntime = { metrics : runtime.metrics, start : runtime.start };
+        const session = new PlaygroundSession({ runtime : withoutTimeline, scheduler });
+        session.start();
+        expect(session.getSnapshot().timeline).toMatchObject({ now : 0, running : false, pageViews : [] });
+        session.dispose();
+    });
+
+    it("makes the timeline from the meter, the recorder and the vitals", () => {
+        const { runtime, state } = fakeRuntime();
+        const session = new PlaygroundSession({ runtime, scheduler : { ...scheduler, timeOrigin : 0 } });
+        session.start();
+        const start = Date.now();
+        const drift = state.meter!.createHistogram("drift", { unit : "ms" });
+        const macrotask = state.meter!.createHistogram("macrotask", { unit : "ms" });
+        vi.advanceTimersByTime(100);
+        drift.record(3);
+        macrotask.record(1.5);
+        state.recorder!.spans.start("view", { startTime : start - 2_000 });
+        state.recorder!.spans.record("hang", { startTime : start + 50, endTime : start + 90, attributes : { phase : "ended" } });
+        state.recorder!.events.emit("transition", { from : "active", to : "passive", trigger : "blur" }, { time : start + 80 });
+        state.recorder!.longAnimationFrame({ startTime : start + 20, duration : 70, blockingDuration : 20, renderDuration : 0 });
+        state.recorder!.interaction({ interactionId : 4, name : "click", type : "pointer", startTime : start + 18, duration : 80, inputDelay : 1, processingDuration : 70, presentationDelay : 9 });
+        state.vitals = [{ name : "FCP", value : 300, time : start - 1_700, rating : "good" }];
+        vi.advanceTimersByTime(400);
+
+        const timeline = session.getSnapshot().timeline;
+        expect(timeline).toMatchObject({ now : 0.5, start : -2, running : true, support : { layoutShift : false }, inpThresholds : { good : 200, poor : 500 } });
+        expect(timeline.drift).toEqual([{ t : 0.1, value : 3 }]);
+        expect(timeline.macrotask).toEqual([{ t : 0.1, value : 1.5 }]);
+        expect(timeline.pageViews[0]).toMatchObject({ start : -2, end : 0.5, open : true });
+        expect(timeline.hangs[0]).toMatchObject({ start : 0.05, end : 0.09 });
+        expect(timeline.lifecycle.map(segment => segment.state)).toEqual(["active", "passive"]);
+        expect(timeline.frames[0]).toMatchObject({ start : 0.02, durationMs : 70, blockingMs : 20 });
+        expect(timeline.interactions[0]).toMatchObject({ id : 4, start : 0.018, durationMs : 80, rating : "good" });
+        expect(timeline.vitals).toEqual([{ name : "FCP", t : -1.7, value : 300, rating : "good" }]);
+        session.dispose();
+    });
+
+    it("shows each load on the timeline, and keeps the timeline after the stop", async () => {
+        let finish = () => {};
+        const loads : LoadRunner = {
+            run : vi.fn(() => new Promise<void>((resolve) => { finish = resolve; })),
+            runProfile : vi.fn(),
+        };
+        const { runtime, state } = fakeRuntime();
+        state.vitals = [{ name : "LCP", value : 900, time : Date.now() - 100, rating : "good" }];
+        const session = new PlaygroundSession({ runtime, loads, scheduler });
+        session.start();
+        vi.advanceTimersByTime(1_000);
+        const run = session.runLoad("block-800");
+        expect(session.getSnapshot().timeline.loads).toEqual([{ start : 1, end : 1, label : "Block for 800 ms", aborted : false, active : true }]);
+        vi.advanceTimersByTime(800);
+        finish();
+        await run;
+        expect(session.getSnapshot().timeline.loads).toEqual([{ start : 1, end : 1.8, label : "Block for 800 ms", aborted : false, active : false }]);
+
+        vi.advanceTimersByTime(1_200);
+        session.stop();
+        state.vitals = [];
+        vi.advanceTimersByTime(5_000);
+        const timeline = session.getSnapshot().timeline;
+        expect(timeline).toMatchObject({ now : 3, running : false });
+        expect(timeline.vitals.map(vital => vital.name)).toEqual(["LCP"]);
+        expect(timeline.loads).toHaveLength(1);
     });
 
     it("stops a profile when the session stops", async () => {
