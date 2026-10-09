@@ -139,6 +139,18 @@ export function runExitCode(failedTests : number, budgets : readonly BudgetResul
     return failedTests > 0 || budgets.some(budget => !budget.pass) || stepExitCodes.some(code => code !== 0) ? 1 : 0;
 }
 
+/** The tolerance for file systems that keep the change time in whole seconds. */
+const FILE_TIME_TOLERANCE_MS = 2_000;
+
+/**
+ * True if a file changed during the run that started at `runStart`. A file
+ * from before the run, for example the coverage of an earlier run with
+ * `--skip-unit`, is not a result of this run.
+ */
+export function changedDuringRun(modified : Date, runStart : Date) : boolean {
+    return modified.getTime() >= runStart.getTime() - FILE_TIME_TOLERANCE_MS;
+}
+
 /** A run ID that sorts by time and shows the commit: "2026-10-07-153012-b492a0a". */
 export function runId(createdAt : Date, commit? : string) : string {
     const iso = createdAt.toISOString();
