@@ -72,15 +72,25 @@ export type MutationFile = {
     /**
      * The number of `Killed` and `Timeout` mutants divided by the number of
      * valid mutants (`Killed`, `Timeout`, `Survived` and `NoCoverage`), from 0
-     * to 100.
+     * to 100. A file without valid mutants (for example only `CompileError`
+     * or `Ignored`) has no score.
      */
-    score : number;
+    score? : number;
 };
 
 export type MutationReport = {
     packageName : string;
-    score : number;
+    /** The score of all files together. A report without valid mutants has no score. */
+    score? : number;
     files : MutationFile[];
+    /** The commit that Stryker tested, if it is known. */
+    commit? : string;
+    /**
+     * The ISO 8601 time of the Stryker run. The mutation tests do not operate
+     * in each run of the test program, thus this time is usually earlier than
+     * the time of the run.
+     */
+    createdAt? : string;
 };
 
 /**
@@ -129,12 +139,23 @@ export type RunReport = {
 
 export type StatusCounts = Record<TestStatus, number>;
 
+/** The number of budgets that passed and that failed. */
+export type BudgetCounts = {
+    pass : number;
+    fail : number;
+};
+
 /** One entry in the list of runs. */
 export type RunSummary = {
     id : string;
     createdAt : string;
     git? : GitInfo;
     counts : StatusCounts;
+    /**
+     * The budgets of the run. A run with a failed budget failed, also when
+     * all tests passed. A summary from before this field does not have it.
+     */
+    budgets? : BudgetCounts;
     /** The file name of the full `RunReport`, relative to the index file. */
     file : string;
 };

@@ -17,7 +17,7 @@ The monitor answers this question: did the browser act against the page, or does
 
 ## How it works
 
-1. The monitor makes a `ReportingObserver` for the types `intervention` and `deprecation`, with `buffered: true`. Thus it also gets the reports from before its start.
+1. The monitor makes a `ReportingObserver` for the types `intervention` and `deprecation`, with `buffered: true`. Thus it also gets the reports from before its start. After `stop()` and `start()`, the new observer does not ask for the buffered reports, because the monitor counted them already. The monitor does not get the reports during the stop.
 2. For each report of these types, it reads `id`, `message`, `sourceFile` and `lineNumber` from the body. A missing field gives an empty string or 0.
 3. The factory adds 1 to `lag_browser_reports` and, with an event sink, sends a `lag.browser_report` event. It sends at most 10 events in each period of 60 s, and it removes the query string and the fragment from the source file.
 
@@ -100,7 +100,7 @@ if (deps.ReportingObserver) {
 
 Unit tests:
 
-- `BrowserReportMonitor.test.ts`: the observer asks for interventions and deprecations, with `buffered: true`. The monitor reads the fields of each report body. Without `ReportingObserver`, it logs a warning. An error in the report callback does not stop the other reports. `stop()` disconnects the observer, and the monitor can start again.
+- `BrowserReportMonitor.test.ts`: the observer asks for interventions and deprecations, with `buffered: true`. The monitor reads the fields of each report body. Without `ReportingObserver`, it logs a warning. An error in the report callback does not stop the other reports. `stop()` disconnects the observer, and the monitor can start again. A fake of the Reporting API with a report buffer makes sure that a start after a stop counts no report two times.
 - `setup-all-monitors.test.ts`: a `HeavyAdIntervention` report gives an event with the source file without its query string.
 - `support.test.ts`: the rate limiter lets the limit of actions occur in each window, and `stripUrlParameters()` removes the query string and the fragment.
 

@@ -85,17 +85,28 @@ jobs:
       - name: Install the Playwright browsers
         run: pnpm --filter @lag/integration-tests exec playwright install --with-deps chromium firefox webkit
 
-      # The weekly mutation workflow uploads its report. pnpm results reads the newest one.
-      - name: Download the newest mutation report
+      # The weekly mutation workflow uploads its report, also when the score is below the
+      # break threshold (if: always()). Thus this step takes the newest completed run of main,
+      # not only a successful run: a score that falls must show on the site. A run without
+      # the artifact (for example a run that stopped before Stryker) does not count.
+      # mutation-run.json gives pnpm results the commit and the time of the Stryker run.
+      - name: Download the newest mutation report of main
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          run_id=$(gh run list --workflow mutation.yml --status success --limit 1 --json databaseId --jq '.[0].databaseId')
-          if [ -n "$run_id" ]; then
-            gh run download "$run_id" --name mutation-report --dir packages/lag/reports/mutation
-          fi
+          dir=packages/lag/reports/mutation
+          gh run list --workflow mutation.yml --branch main --status completed --limit 10 \
+            --json databaseId,headSha,createdAt,conclusion \
+            --jq '.[] | [.databaseId, .headSha, .createdAt, .conclusion] | @tsv' |
+          while IFS=$'\t' read -r run_id commit created conclusion; do
+            if gh run download "$run_id" --name mutation-report --dir "$dir"; then
+              printf '{"commit":"%s","createdAt":"%s"}\n' "$commit" "$created" > "$dir/mutation-run.json"
+              echo "Mutation report of run $run_id ($conclusion) for $commit from $created"
+              break
+            fi
+          done
 
       - name: Download the Safari reports
         continue-on-error: true
@@ -105,9 +116,21 @@ jobs:
           path: safari-reports
 
       # The results viewer of the site reads packages/site/public/data/results
+      # Failed tests do not stop the deploy: the site shows them
       - name: Make the test results
         run: pnpm results --import-reports=safari-reports
         continue-on-error: true
+
+      # A crash of the collector must not deploy a site without results, as a green run
+      - name: The test results exist
+        shell: bash
+        run: |
+          index=packages/site/public/data/results/index.json
+          if [ ! -s "$index" ]; then
+            echo "::error::The collector wrote no $index. Thus the site would deploy without test results."
+            exit 1
+          fi
+          node -e 'const i = require("./" + process.argv[1]); if (!Array.isArray(i.runs) || i.runs.length === 0) { console.error("index.json has no runs"); process.exit(1); }' "$index"
 
       - name: Build the site
         run: pnpm --filter @lag/site build

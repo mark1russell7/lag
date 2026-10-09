@@ -1,6 +1,6 @@
 import { vi, expect, type Mock } from 'vitest';
 import type { LagMonitor, LagMonitorConstructor } from "./LagMonitor.js";
-import type { Meter } from "./meter.js";
+import type { InstrumentAdvice, Meter } from "./meter.js";
 import { EVENT_CATALOG, METRIC_CATALOG } from "./metric-catalog.js";
 
 /**
@@ -103,20 +103,22 @@ export type RecordedInstrument = {
     name : string;
     kind : "histogram" | "counter";
     unit : string;
+    /** The advice of the first instrument with this name. */
+    advice : InstrumentAdvice | undefined;
     values : RecordedValue[];
 };
 
 /**
  * This function makes a `Meter` that records each histogram and counter
- * value, with the `kind` and the `unit` of its instrument.
+ * value, with the `kind`, the `unit` and the advice of its instrument.
  */
 export function createRecordingMeter() {
     const instruments = new Map<string, RecordedInstrument>();
 
     // Two instruments with the same name share their values, as in the OpenTelemetry SDK. For
     // example, the worker monitor and the peer hang watch both record lag_main_thread_hangs.
-    const recorder = (name : string, kind : RecordedInstrument["kind"], unit : string) => {
-        const instrument : RecordedInstrument = instruments.get(name) ?? { name, kind, unit, values : [] };
+    const recorder = (name : string, kind : RecordedInstrument["kind"], unit : string, advice : InstrumentAdvice | undefined) => {
+        const instrument : RecordedInstrument = instruments.get(name) ?? { name, kind, unit, advice, values : [] };
         instruments.set(name, instrument);
         return (value : number, attributes? : unknown) => {
             instrument.values.push({ value, attributes : attributes as Record<string, unknown> | undefined });
@@ -124,8 +126,8 @@ export function createRecordingMeter() {
     };
 
     const meter : Meter = {
-        createHistogram : (name, options) => ({ record : recorder(name, "histogram", options.unit) }),
-        createCounter : (name, options) => ({ add : recorder(name, "counter", options.unit) }),
+        createHistogram : (name, options) => ({ record : recorder(name, "histogram", options.unit, options.advice) }),
+        createCounter : (name, options) => ({ add : recorder(name, "counter", options.unit, options.advice) }),
     };
 
     return {
@@ -144,8 +146,9 @@ export function createRecordingMeter() {
 
 /**
  * This function makes sure that the meter made only instruments of the metric
- * catalog, with the kind and the unit of the catalog. It also makes sure
- * that each recorded attribute has a value that the catalog permits.
+ * catalog. Each instrument must have the kind, the unit and the bucket
+ * boundaries of the catalog. Each recorded attribute must have a value that
+ * the catalog permits.
  */
 export function expectCatalogInstruments(recording : ReturnType<typeof createRecordingMeter>) : void {
     const byName = new Map(METRIC_CATALOG.map(m => [m.name, m]));
@@ -154,6 +157,7 @@ export function expectCatalogInstruments(recording : ReturnType<typeof createRec
         expect(definition, instrument.name).toBeDefined();
         expect(instrument.kind, instrument.name).toBe(definition!.kind);
         expect(instrument.unit, instrument.name).toBe(definition!.unit);
+        expect(instrument.advice?.explicitBucketBoundaries, instrument.name).toEqual(definition!.advice?.explicitBucketBoundaries);
         for (const { attributes } of instrument.values) {
             for (const [key, value] of Object.entries(attributes ?? {})) {
                 expect(definition!.attributes[key], `${instrument.name}.${key}=${String(value)}`).toContain(value);

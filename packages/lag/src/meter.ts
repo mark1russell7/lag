@@ -36,9 +36,20 @@ export type Counter<A extends Attributes = Attributes> = {
     add(value : number, attributes? : A) : void;
 };
 
+/**
+ * The same type as `MetricAdvice` of `@opentelemetry/api`. The SDK uses
+ * `explicitBucketBoundaries` when it records a histogram with explicit
+ * buckets. A view can replace the advice. The SDK ignores the advice for an
+ * exponential histogram.
+ */
+export type InstrumentAdvice = {
+    explicitBucketBoundaries? : number[];
+};
+
 export type InstrumentOptions = {
     unit : string;
     description? : string;
+    advice? : InstrumentAdvice;
 };
 
 export type Meter = {

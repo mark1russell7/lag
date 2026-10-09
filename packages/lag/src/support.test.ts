@@ -69,6 +69,31 @@ describe("OTLP JSON encoding", () => {
         const record = body.resourceLogs[0].scopeLogs[0].logRecords[0];
         expect([record.timeUnixNano, record.observedTimeUnixNano]).toEqual(["1000000000", "9000000000"]);
     });
+
+    it("encodes only safe integers as intValue, and other numbers as doubleValue", () => {
+        const values = {
+            zero : 0,
+            negative : -42,
+            maxSafe : Number.MAX_SAFE_INTEGER,
+            minSafe : Number.MIN_SAFE_INTEGER,
+            unsafe : 2 ** 53,
+            beyondInt64 : 1e21,
+            negativeBeyondInt64 : -1e21,
+        };
+        const body = JSON.parse(encodeOtlpLogs({}, "@lag/worker", [{
+            timeMs : 0, eventName : "e", severityText : "INFO", severityNumber : 9, body : "", attributes : values,
+        }]));
+
+        expect(body.resourceLogs[0].scopeLogs[0].logRecords[0].attributes).toEqual([
+            { key : "zero", value : { intValue : "0" } },
+            { key : "negative", value : { intValue : "-42" } },
+            { key : "maxSafe", value : { intValue : "9007199254740991" } },
+            { key : "minSafe", value : { intValue : "-9007199254740991" } },
+            { key : "unsafe", value : { doubleValue : 2 ** 53 } },
+            { key : "beyondInt64", value : { doubleValue : 1e21 } },
+            { key : "negativeBeyondInt64", value : { doubleValue : -1e21 } },
+        ]);
+    });
 });
 
 describe("event sinks", () => {

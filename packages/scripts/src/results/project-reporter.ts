@@ -8,17 +8,26 @@
  * The collector gives it to Vitest by path:
  *   vitest run --reporter=default --reporter=<this file>
  * with LAG_PROJECT_REPORT_DIR set to the output folder.
+ *
+ * Some failures have no failed test. A `beforeAll` hook that fails skips the
+ * tests of its suite, and an `afterAll` hook that fails keeps them passed. An
+ * error at the import of a file gives a file without tests. For each file or
+ * suite with such errors, the reporter adds a failed test with the title
+ * `ERRORS_OUTSIDE_TESTS`. Thus the report counts the failure.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { Reporter, TestCase, TestModule } from "vitest/node";
+import { ERRORS_OUTSIDE_TESTS } from "@lag/report";
+import type { Reporter, SerializedError, TestCase, TestModule, TestSuite } from "vitest/node";
 import type { ProjectReport, ProjectReportFile } from "./model.js";
 
 export const PROJECT_REPORT_DIR_ENV = "LAG_PROJECT_REPORT_DIR";
 
-function ancestors(test : TestCase) : string[] {
+type AssertionResult = ProjectReportFile["assertionResults"][number];
+
+function ancestors(entity : TestCase | TestSuite) : string[] {
     const titles : string[] = [];
-    let parent = test.parent;
+    let parent = entity.parent;
     while (parent.type === "suite") {
         titles.unshift(parent.name);
         parent = parent.parent;
@@ -32,12 +41,41 @@ function status(test : TestCase) : string {
     return state === "pending" ? "skipped" : state;
 }
 
+function errorText(error : SerializedError) : string {
+    return error.stack ?? error.message;
+}
+
 function messages(test : TestCase) : string[] {
     const result = test.result();
-    const errors = result.errors?.map(error => error.stack ?? error.message) ?? [];
+    const errors = result.errors?.map(errorText) ?? [];
     // The reason of ctx.skip(condition, reason): the site shows it with the test
     if (result.state === "skipped" && result.note) return [`Skipped: ${result.note}`, ...errors];
     return errors;
+}
+
+/**
+ * The failed tests for the errors of the file and its suites outside the
+ * tests: failed hooks, and errors at the import of the file. A file that
+ * Vitest marks as failed, without an error and without a failed test, also
+ * gets a failed test.
+ */
+function errorsOutsideTests(module : TestModule, tests : readonly AssertionResult[]) : AssertionResult[] {
+    const failed = (path : string[], failureMessages : string[]) : AssertionResult => ({
+        title : ERRORS_OUTSIDE_TESTS,
+        ancestorTitles : path,
+        status : "failed",
+        duration : null,
+        failureMessages,
+    });
+    const results : AssertionResult[] = [];
+    if (module.errors().length > 0) results.push(failed([], module.errors().map(errorText)));
+    for (const suite of module.children.allSuites()) {
+        if (suite.errors().length > 0) results.push(failed([...ancestors(suite), suite.name], suite.errors().map(errorText)));
+    }
+    if (results.length === 0 && module.state() === "failed" && !tests.some(test => test.status === "failed")) {
+        results.push(failed([], ["Vitest marks the file as failed, but it gives no error and no failed test."]));
+    }
+    return results;
 }
 
 function environmentOf(module : TestModule) : string {
@@ -56,17 +94,18 @@ export function toProjectReports(modules : ReadonlyArray<TestModule>) : ProjectR
         const timed = tests.map(test => test.diagnostic()).filter(d => d !== undefined);
         const startTime = timed.length > 0 ? Math.min(...timed.map(d => d.startTime)) : undefined;
         const endTime = timed.length > 0 ? Math.max(...timed.map(d => d.startTime + d.duration)) : undefined;
+        const results = tests.map((test) : AssertionResult => ({
+            title : test.name,
+            ancestorTitles : ancestors(test),
+            status : status(test),
+            duration : test.diagnostic()?.duration ?? null,
+            failureMessages : messages(test),
+        }));
         const file : ProjectReportFile = {
             name : module.moduleId,
             ...(startTime !== undefined ? { startTime } : {}),
             ...(endTime !== undefined ? { endTime } : {}),
-            assertionResults : tests.map(test => ({
-                title : test.name,
-                ancestorTitles : ancestors(test),
-                status : status(test),
-                duration : test.diagnostic()?.duration ?? null,
-                failureMessages : messages(test),
-            })),
+            assertionResults : [...results, ...errorsOutsideTests(module, results)],
         };
         report.testResults.push(file);
         reports.set(name, report);

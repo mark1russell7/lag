@@ -7,6 +7,7 @@ import { durationBins } from "./durations";
 import { compareEnvironments, environmentMatrix } from "./matrix";
 import {
     defaultGroupingKey,
+    familyGroupingKey,
     GROUP_BY_MEASUREMENT,
     groupingKeys,
     groupMeasurements,
@@ -14,9 +15,20 @@ import {
     metricOf,
     OTHER_GROUP,
 } from "./measurements";
-import { mutationFileRows, mutationPackageRows } from "./mutation";
+import { mutationFileRows, mutationOrigins, mutationPackageRows } from "./mutation";
 import { nextSort, sortRows } from "./sort";
-import { failingTests, filterSuites, flattenTests, matchesFilter, parseStatusFilter, slowestTests } from "./tests";
+import {
+    countsText,
+    failingTests,
+    filterSuites,
+    flattenTests,
+    groupStatus,
+    matchesFilter,
+    parseStatusFilter,
+    runSummaryDetail,
+    runSummaryStatus,
+    slowestTests,
+} from "./tests";
 import { runTrend, sortRunsNewestFirst } from "./trend";
 
 const run = SAMPLE_RUNS[1]!.report;
@@ -72,6 +84,48 @@ describe("tests model", () => {
     });
 });
 
+describe("group status", () => {
+    const counts = (passed : number, failed : number, skipped : number, todo : number) => ({ passed, failed, skipped, todo });
+
+    it("shows a group with only skipped tests as skipped, and a group without tests as none, not as passed", () => {
+        expect(groupStatus(counts(0, 0, 3, 0))).toBe("skipped");
+        expect(groupStatus(counts(0, 0, 0, 0))).toBe("none");
+        expect(groupStatus(counts(0, 0, 0, 2))).toBe("todo");
+        expect(groupStatus(counts(5, 0, 3, 1))).toBe("passed");
+        expect(groupStatus(counts(5, 1, 0, 0))).toBe("failed");
+    });
+
+    it("gives the counts as text", () => {
+        expect(countsText(counts(0, 0, 3, 0))).toBe("3 skipped");
+        expect(countsText(counts(0, 0, 0, 0))).toBe("No tests");
+        expect(countsText(counts(5, 0, 3, 1))).toBe("5 passed, 3 skipped, 1 to do");
+        expect(countsText(counts(5, 2, 0, 0))).toBe("2 failed of 7");
+    });
+});
+
+describe("run summary status", () => {
+    const summary = (failed : number, budgets? : { pass : number; fail : number }) => ({
+        id : "r",
+        createdAt : "2026-10-08T00:00:00.000Z",
+        counts : { passed : 120 - failed, failed, skipped : 0, todo : 0 },
+        file : "runs/r.json",
+        ...(budgets ? { budgets } : {}),
+    });
+
+    it("fails a run with a failed budget, also when all tests passed", () => {
+        expect(runSummaryStatus(summary(0, { pass : 2, fail : 1 }))).toBe("failed");
+        expect(runSummaryDetail(summary(0, { pass : 2, fail : 1 }))).toBe(": 120 tests, 1 budget failed");
+        expect(runSummaryDetail(summary(2, { pass : 1, fail : 2 }))).toBe(": 2 of 120 tests, 2 budgets failed");
+    });
+
+    it("passes a run whose tests and budgets passed, also from an index without budget counts", () => {
+        expect(runSummaryStatus(summary(0, { pass : 3, fail : 0 }))).toBe("passed");
+        expect(runSummaryStatus(summary(0))).toBe("passed");
+        expect(runSummaryStatus(summary(1))).toBe("failed");
+        expect(runSummaryDetail(summary(0))).toBe(": 120 tests");
+    });
+});
+
 describe("environment matrix", () => {
     it("puts node first, then the engines", () => {
         expect(["webkit", "custom", "node", "firefox", "chromium"].sort(compareEnvironments)).toEqual(["node", "chromium", "firefox", "webkit", "custom"]);
@@ -116,11 +170,41 @@ describe("mutation model", () => {
     it("sorts the files by score and sums the packages", () => {
         const files = mutationFileRows(run);
         for (let index = 1; index < files.length; index++) {
-            expect(files[index - 1]!.score).toBeLessThanOrEqual(files[index]!.score);
+            expect(files[index - 1]!.score).toBeLessThanOrEqual(files[index]!.score!);
         }
         const [core] = mutationPackageRows(run);
         expect(core?.files).toBe(files.length);
         expect(core?.total).toBe(files.reduce((sum, file) => sum + file.total, 0));
+    });
+
+    it("puts the files without a score last, and gives them no bar", () => {
+        const counts = { CompileError : 2 };
+        const mutation = [{
+            packageName : "@lag/core",
+            score : 50,
+            files : [
+                { file : "packages/lag/src/types.ts", counts },
+                { file : "packages/lag/src/a.ts", counts : { Killed : 1, Survived : 1 }, score : 50 },
+            ],
+        }];
+        const rows = mutationFileRows(emptyRun({ mutation }));
+        expect(rows.map(row => [row.file, row.score])).toEqual([["packages/lag/src/a.ts", 50], ["packages/lag/src/types.ts", undefined]]);
+        expect(mutationPackageRows(emptyRun({ mutation : [{ packageName : "@lag/x", files : [] }] }))[0]!.score).toBeUndefined();
+    });
+
+    it("gives the commit and the time of each Stryker run, and its age in days", () => {
+        const report = { packageName : "@lag/core", score : 96, files : [] };
+        const origins = mutationOrigins(emptyRun({
+            createdAt : "2026-10-08T12:00:00.000Z",
+            mutation : [
+                { ...report, commit : "abc1234def567", createdAt : "2026-10-04T03:41:00.000Z" },
+                { ...report, packageName : "@lag/other" },
+            ],
+        }));
+        expect(origins).toEqual([
+            { packageName : "@lag/core", commit : "abc1234def567", createdAt : "2026-10-04T03:41:00.000Z", daysBeforeRun : 4 },
+            { packageName : "@lag/other", commit : undefined, createdAt : undefined, daysBeforeRun : undefined },
+        ]);
     });
 });
 
@@ -145,6 +229,29 @@ describe("measurements model", () => {
         expect(groupingKeys(run.measurements)).toEqual([GROUP_BY_MEASUREMENT, "suite", "browser", "profile"]);
         expect(defaultGroupingKey(run.measurements)).toBe("profile");
         expect(defaultGroupingKey([])).toBe(GROUP_BY_MEASUREMENT);
+    });
+
+    it("groups each family by a label that the family has, with browser as the fallback", () => {
+        const measurement = (name : string, labels : Record<string, string>) => ({ suiteId : "s", name, unit : "ms", values : [1], labels });
+        const stress = { key : "a", metric : "lag_drift_histogram", unit : "ms", measurements : [
+            measurement("stress/heavy/lag_drift_histogram", { profile : "heavy", browser : "chromium" }),
+            measurement("stress/light/lag_drift_histogram", { profile : "light", browser : "firefox" }),
+        ] };
+        const worker = { key : "b", metric : "lag_worker_main_block_histogram", unit : "ms", measurements : [
+            measurement("worker/lag_worker_main_block_histogram", { browser : "chromium" }),
+            measurement("worker/lag_worker_main_block_histogram", { browser : "webkit" }),
+        ] };
+        const keys = groupingKeys([...stress.measurements, ...worker.measurements]);
+
+        expect(familyGroupingKey(stress, null, keys)).toBe("profile");
+        // Not "profile": all values of the family would go into one group "(none)", for all engines
+        expect(familyGroupingKey(worker, null, keys)).toBe("browser");
+        expect(groupMeasurements(worker.measurements, familyGroupingKey(worker, null, keys)).map(group => group.group)).toEqual(["chromium", "webkit"]);
+        // A selection of the reader applies to each family, and an unknown key gives the default
+        expect(familyGroupingKey(worker, "profile", keys)).toBe("profile");
+        expect(familyGroupingKey(worker, "nope", keys)).toBe("browser");
+        // A label that only some measurements of the family have comes after a label that all have
+        expect(defaultGroupingKey([...worker.measurements, stress.measurements[0]!])).toBe("browser");
     });
 
     it("joins the values of each group and summarizes them", () => {

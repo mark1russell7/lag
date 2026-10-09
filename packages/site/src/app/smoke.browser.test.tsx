@@ -86,12 +86,35 @@ async function renderPath(path : string, reports : ReportSource = createSampleRe
     }, { timeout : 30_000, interval : 50 });
 }
 
+/**
+ * The messages of the parts that failed, for example "The chart did not
+ * render: ...". A chart or a diagram catches its own error, thus such a
+ * failure gives no entry in `problems`.
+ */
+const FAILED_PART = /(?:chart|diagram|page|list of runs|monitors) did not (?:render|load)[^.]*/gi;
+
+async function failedParts() : Promise<string[]> {
+    // A chart shows its render error in the render after the load of Plot
+    await new Promise(resolve => setTimeout(resolve, 100));
+    return container.textContent?.match(FAILED_PART) ?? [];
+}
+
 describe("site routes", () => {
     it.each([...APP_PATHS, ...CONTENT_PATHS])("renders %s without errors", async (path) => {
         await renderPath(path);
         expect(container.querySelector("header nav[aria-label='Main']")).not.toBeNull();
         expect(container.querySelector("main h1")?.textContent?.trim()).not.toBe("");
         expect(problems).toEqual([]);
+        expect(await failedParts()).toEqual([]);
+    });
+
+    it("draws the measurement charts of almost equal values", async () => {
+        const { file, report } = SAMPLE_RUNS[1]!;
+        // The differences of clock readings: 999.9999999999999 and 1000 have the same log(1 + x)
+        const run = { ...report, measurements : [{ suiteId : report.suites[0]!.id, name : "stress/idle/lag_drift_histogram", unit : "ms", values : [1000, 1500.1 - 500.1, 1000], labels : { browser : "chromium" } }] };
+        await renderPath(`/results/${run.id}/measurements`, MemoryReportSource.fromRuns([{ file, report : run }]));
+        expect(problems).toEqual([]);
+        expect(await failedParts()).toEqual([]);
     });
 
     it("shows the title of each content page as its h1", async () => {

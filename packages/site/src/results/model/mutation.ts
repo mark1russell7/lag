@@ -13,12 +13,13 @@ export type MutantCounts = {
 export type MutationFileRow = MutantCounts & {
     packageName : string;
     file : string;
-    score : number;
+    /** No score: the file has no valid mutants, for example only compile errors. */
+    score : number | undefined;
 };
 
 export type MutationPackageRow = MutantCounts & {
     packageName : string;
-    score : number;
+    score : number | undefined;
     files : number;
 };
 
@@ -51,7 +52,7 @@ export function mutationPackageRows(run : RunReport) : MutationPackageRow[] {
         .sort((a, b) => a.packageName.localeCompare(b.packageName));
 }
 
-/** One row for each mutated file, the lowest score first. */
+/** One row for each mutated file, the lowest score first, and the files without a score last. */
 export function mutationFileRows(run : RunReport) : MutationFileRow[] {
     return run.mutation
         .flatMap(report => report.files.map(file => ({
@@ -60,5 +61,36 @@ export function mutationFileRows(run : RunReport) : MutationFileRow[] {
             score : file.score,
             ...mutantCounts(file.counts),
         })))
-        .sort((a, b) => a.score - b.score || a.file.localeCompare(b.file));
+        .sort((a, b) => (a.score ?? Number.POSITIVE_INFINITY) - (b.score ?? Number.POSITIVE_INFINITY) || a.file.localeCompare(b.file));
+}
+
+const DAY_MS = 86_400_000;
+
+/** The origin of one mutation report: the commit and the time of its Stryker run. */
+export type MutationOriginRow = {
+    packageName : string;
+    commit : string | undefined;
+    createdAt : string | undefined;
+    /** The whole days from the Stryker run to the run of the tests, or undefined without a time. */
+    daysBeforeRun : number | undefined;
+};
+
+/**
+ * The commit and the time of the Stryker run of each mutation report. The
+ * mutation tests operate each week, thus a report is usually older than the
+ * run that shows it.
+ */
+export function mutationOrigins(run : RunReport) : MutationOriginRow[] {
+    return run.mutation
+        .map((report) : MutationOriginRow => {
+            const reportTime = report.createdAt === undefined ? Number.NaN : Date.parse(report.createdAt);
+            const runTime = Date.parse(run.createdAt);
+            return {
+                packageName : report.packageName,
+                commit : report.commit,
+                createdAt : report.createdAt,
+                daysBeforeRun : Number.isNaN(reportTime) || Number.isNaN(runTime) ? undefined : Math.max(0, Math.floor((runTime - reportTime) / DAY_MS)),
+            };
+        })
+        .sort((a, b) => a.packageName.localeCompare(b.packageName));
 }

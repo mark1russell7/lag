@@ -44,12 +44,29 @@ export function groupingKeys(measurements : readonly Measurement[]) : string[] {
     return [GROUP_BY_MEASUREMENT, GROUP_BY_SUITE, ...[...labels].sort()];
 }
 
-/** A label key that most measurements share, or the measurement name. */
+/**
+ * The default grouping of a set of measurements, usually one family. First a
+ * preferred label that each measurement has, thus no group "(none)" pools
+ * the values of different engines. Then a preferred label that some
+ * measurements have. Else the measurement name.
+ */
 export function defaultGroupingKey(measurements : readonly Measurement[], preferred : readonly string[] = ["profile", "browser"]) : string {
+    for (const key of preferred) {
+        if (measurements.length > 0 && measurements.every(measurement => key in measurement.labels)) return key;
+    }
     for (const key of preferred) {
         if (measurements.some(measurement => key in measurement.labels)) return key;
     }
     return GROUP_BY_MEASUREMENT;
+}
+
+/**
+ * The grouping of one family: the grouping that the reader selected, if it
+ * is one of `keys`, or else the default of the family. One family can have
+ * the label `profile`, and another family not.
+ */
+export function familyGroupingKey(family : MeasurementFamily, requested : string | null | undefined, keys : readonly string[]) : string {
+    return requested && keys.includes(requested) ? requested : defaultGroupingKey(family.measurements);
 }
 
 export function groupValue(measurement : Measurement, key : string) : string {

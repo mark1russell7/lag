@@ -13,6 +13,21 @@ describe("format", () => {
         expect(formatMs(Number.NaN)).toBe("–");
     });
 
+    it("rounds a duration of minutes to whole seconds before it divides them", () => {
+        expect(formatMs(119_600)).toBe("2 min 0 s");
+        expect(formatMs(59_400)).toBe("59.4 s");
+        expect(formatMs(59_996)).toBe("1 min 0 s");
+        expect(formatMs(-119_600)).toBe("-2 min 0 s");
+    });
+
+    it("shows 100% and 0% only for exactly 100 and 0", () => {
+        expect(formatPercent(99.96)).toBe("99.9%");
+        expect(formatPercent(99.94)).toBe("99.9%");
+        expect(formatPercent(0.04)).toBe("0.1%");
+        expect(formatPercent(0)).toBe("0%");
+        expect(formatPercent(100)).toBe("100%");
+    });
+
     it("formats percentages, bytes, units and counts", () => {
         expect(formatPercent(87.54)).toBe("87.5%");
         expect(formatPercent(100)).toBe("100%");
@@ -64,6 +79,21 @@ describe("stats", () => {
         expect(bins.reduce((sum, bin) => sum + bin.count, 0)).toBe(values.length);
         expect(symlogBins([7, 7])).toEqual([{ x0 : 7, x1 : 8, count : 2 }]);
         expect(symlogBins([])).toEqual([]);
+    });
+
+    it("gives one bin when the values differ but have the same log(1 + x)", () => {
+        // The difference of two performance.now() readings: 999.9999999999999 and 1000
+        const values = [1000, 1500.1 - 500.1, 1000];
+        expect(Math.log1p(values[1]!)).toBe(Math.log1p(1000));
+        expect(symlogBins(values, 28)).toEqual([{ x0 : 1500.1 - 500.1, x1 : 1500.1 - 500.1 + 1, count : 3 }]);
+    });
+
+    it("puts each value into a bin, also the maximum, and gives at least one bin", () => {
+        const values = [0.5, 3, 3, 40, 2_000];
+        const bins = symlogBins(values, 5);
+        expect(bins.reduce((sum, bin) => sum + bin.count, 0)).toBe(values.length);
+        expect(bins.at(-1)!.count).toBeGreaterThan(0);
+        expect(symlogBins([1, 2], 0)).toEqual([{ x0 : 1, x1 : 2, count : 2 }]);
     });
 
     it("keeps spikes when it reduces a series", () => {

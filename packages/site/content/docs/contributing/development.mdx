@@ -36,7 +36,7 @@ Use the scaffold of the repository. Do not write a `package.json` file yourself.
 pnpm new --name my-package --config node
 ```
 
-The scaffold makes the folder, the `package.json` and `tsconfig.json` files, and the reference in the root `tsconfig.json`.
+The scaffold makes the folder, the `package.json` and `tsconfig.json` files, and the reference in the root `tsconfig.json`. It adds the devDependencies that the config needs, for example `@types/node` for `node`, with the versions of the workspace. It does not write over a folder or a package name that exists. Add `--force` to make the files again in a folder that exists: then it keeps `src/index.ts`.
 
 ## Tests
 

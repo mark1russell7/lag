@@ -5,7 +5,7 @@ order: 17
 status: final
 ---
 
-import { eventTable } from "./diagrams.data";
+import { bucketTable, eventTable } from "./diagrams.data";
 import { allMetrics } from "../monitors/metrics.data";
 import { DataTable } from "../../../src/components/DataTable/DataTable";
 
@@ -35,8 +35,9 @@ The library records no gauges, for two causes:
 - `monitor`: the monitor that records the metric.
 - `description`: the description that the instrument and the documentation show.
 - `attributes`: each attribute name with its permitted values.
+- `advice`: only for a histogram, its [bucket boundaries](#bucket-boundaries).
 
-The factories make their instruments only with `createHistogram(meter, definition)` and `createCounter(meter, definition)`. These functions take the name, the unit and the description from the catalog. If the definition has a different `kind`, they do not make the instrument, and they give an error. The tables of metrics on this site also come from the catalog, for example on each page of the [monitors](/docs/monitors). Thus the code, the instruments and the documentation agree.
+The factories make their instruments only with `createHistogram(meter, definition)` and `createCounter(meter, definition)`. These functions take the name, the unit, the description and the advice from the catalog. If the definition has a different `kind`, they do not make the instrument, and they give an error. The tables of metrics on this site also come from the catalog, for example on each page of the [monitors](/docs/monitors). Thus the code, the instruments and the documentation agree.
 
 Tests make sure of this agreement:
 
@@ -110,6 +111,21 @@ Cumulative data tolerates a lost export: the next export contains the totals. On
 With `histogramAggregation: "exponential"`, otel-ts records each histogram as a base-2 exponential histogram. Mimir keeps it as a native histogram: one series for each attribute set. An explicit-bucket histogram needs one series for each bucket, one for `+Inf`, and one each for `_sum` and `_count`. Mimir must accept native histograms (`native_histograms_ingestion_enabled`). The default of otel-ts is `"explicit"`.
 
 With the default settings of Mimir, the series of a native histogram has the name of the instrument, without a suffix. The PromQL functions `histogram_quantile()`, `histogram_sum()`, `histogram_count()` and `histogram_fraction()` read it.
+
+## Bucket boundaries
+
+With the explicit-bucket aggregation, the SDK puts each value into a bucket with fixed boundaries. The default boundaries of the SDK go from 0 to 10000, for durations in milliseconds. With them, all scores and ratios go into the bucket from 0 to 5, and all byte counts go into the last bucket. Thus each histogram of the catalog has its own boundaries in `advice.explicitBucketBoundaries`. `createHistogram()` gives this advice to the `Meter`. An exponential histogram does not use the advice, and a view of the SDK can replace it.
+
+The catalog has one set of boundaries for each type of value (`HISTOGRAM_BOUNDARIES`):
+
+- **Durations** (`ms`): from 0 to 60000 ms. The boundaries below 1 ms separate the clock resolutions of the browsers. The boundaries 16 and 33 are the frame budgets at 60 Hz and 30 Hz. The boundary 50 is the limit of a long task, and 5000 is the limit of a stall.
+- **Scores and ratios** (`1`): from 0 to 1, for layout shifts, CLS and the memory ratio. The CLS thresholds 0.1 and 0.25 are boundaries.
+- **The pressure state**: 0, 1, 2 and 3. Each state has its own bucket.
+- **Bytes** (`By`): the powers of 2 from 1 MiB to 16 GiB.
+
+Each bucket includes its upper boundary. The thresholds of the Web Vitals are boundaries, thus the buckets give the exact number of good values. For example, the `_bucket` series of `lag_web_vital_cls_histogram` with `le="0.1"` counts the page views with a good CLS. The boundaries of two library versions must agree: a different set of boundaries gives different `_bucket` series.
+
+<DataTable spec={bucketTable} label="Bucket boundaries" />
 
 ## Aggregation in PromQL
 
