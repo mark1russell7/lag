@@ -14,6 +14,11 @@ import type { PostTaskFn } from "./message-task.js";
  */
 export class MacrotaskLag extends LagMonitor {
     private handle : number | undefined;
+    /**
+     * `start()` increments this value. A measurement that started before a
+     * stop and a new start must not report.
+     */
+    private generation = 0;
     private readonly postTask : PostTaskFn | undefined;
 
     constructor(...args : [...ConstructorParameters<typeof LagMonitor>, postTask? : PostTaskFn]) {
@@ -25,6 +30,7 @@ export class MacrotaskLag extends LagMonitor {
 
     public start() : void {
         if (this.handle !== undefined) return;
+        this.generation++;
         this.handle = this.setIntervalFn(() => {
             void this.measureAndReport();
         }, this.expectedElapsedTimeMs);
@@ -50,10 +56,11 @@ export class MacrotaskLag extends LagMonitor {
     }
 
     private async measureAndReport() : Promise<void> {
+        const generation = this.generation;
         try {
             const lag = await this.measure();
-            // Skip the in-flight sample if stop() was called while it waited
-            if (this.handle !== undefined) {
+            // Skip the in-flight sample if stop() was called while it waited, also after a new start()
+            if (this.handle !== undefined && generation === this.generation) {
                 this.report(lag);
             }
         } catch (error) {

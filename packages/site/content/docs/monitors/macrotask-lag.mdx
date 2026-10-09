@@ -24,7 +24,7 @@ MacrotaskLag answers this question: when the page puts a new task in the queue, 
 
 The message task is necessary because of the clamp of nested timers. The HTML standard clamps a timeout from a nesting level above 5 to 4 ms or more. Each repeat of `setInterval` increases the nesting level. A message task has the nesting level 0, thus a `setTimeout(0)` from it gets no clamp. Then the probe measures the queue, not the clamp.
 
-Without `MessageChannel`, the measurement starts in the `setInterval` callback. Then expect a floor of approximately 4 ms or the timer tick of the system (refer to the next section). The factory records a negative value as 0. If the monitor stops while a sample waits, it does not record that sample.
+Without `MessageChannel`, the measurement starts in the `setInterval` callback. Then expect a floor of approximately 4 ms or the timer tick of the system (refer to the next section). The factory records a negative value as 0. If the monitor stops while a sample waits, it does not record that sample. This is also true when the monitor starts again before the sample ends. Each `start()` increments a generation number, and a sample of an earlier generation does not report.
 
 ## Browser support
 
@@ -92,7 +92,7 @@ The class `MacrotaskLag` takes a `postTask` function as its last argument. Witho
 
 Unit tests:
 
-- `MacrotaskLag.test.ts`: the interval has the configured period. The sample is the delay of a zero-delay timeout. An error in the report function goes to the logger, and the monitor continues. The monitor does not report a sample that waits during `stop()`. The monitor can start again. With `postTask`, the measurement starts in the posted task, thus the clamp of nested timers does not apply.
+- `MacrotaskLag.test.ts`: the interval has the configured period. The sample is the delay of a zero-delay timeout. An error in the report function goes to the logger, and the monitor continues. The monitor does not report a sample that waits during `stop()`, also when `start()` comes before the sample ends. The monitor can start again. With `postTask`, the measurement starts in the posted task, thus the clamp of nested timers does not apply.
 - `message-task.test.ts`: the queue starts the callbacks later, in the sequence of their posts. `close()` removes the callbacks that did not start, and closes the ports.
 - `setup-all-monitors.test.ts`: the monitor pauses while the page is hidden.
 
