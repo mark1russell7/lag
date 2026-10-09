@@ -206,7 +206,8 @@ function barLabel(ctx : Context, variants : readonly string[], x0 : number, widt
         return;
     }
     const after = x0 + width + 5;
-    const outsideText = after >= limits.minX ? fittingText(ctx, variants, limits.limit - 4 - after) : undefined;
+    // A label after a bar needs the end of the bar in the plot, else it has no visible bar
+    const outsideText = x0 + width >= limits.minX + 2 ? fittingText(ctx, variants, limits.limit - 4 - after) : undefined;
     if (outsideText) {
         ctx.fillStyle = outside;
         ctx.fillText(outsideText, after, y);

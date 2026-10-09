@@ -96,7 +96,8 @@
     font-variant-numeric: tabular-nums;
 }
 
-.panel > .count {
+.panel > .count,
+.panel > .empty {
     margin-bottom: var(--space-3);
 }
 
