@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
-import { EVENT_CATALOG, METRIC_CATALOG, METRICS, createCounter, createHistogram } from "./metric-catalog.js";
+import { describe, expect, it, vi } from "vitest";
+import { EVENT_CATALOG, HISTOGRAM_BOUNDARIES, METRIC_CATALOG, METRICS, createCounter, createHistogram, type MetricDefinition } from "./metric-catalog.js";
+import type { InstrumentOptions, Meter } from "./meter.js";
+import { VITAL_THRESHOLDS } from "./vitals/types.js";
 import { createRecordingMeter } from "./test-utils.js";
 import * as lag from "./index.js";
 import type { DiscardReason, StallKind } from "./measurement-conditions.js";
@@ -54,6 +56,24 @@ describe("metric catalog", () => {
             ["lag_drift_histogram", "histogram", "ms"],
             ["lag_gc_events", "counter", "{gc}"],
         ]);
+    });
+
+    it("gives the bucket boundaries of the catalog to the SDK as advice, as a copy", () => {
+        const createHistogramSpy = vi.fn((_name : string, _options : InstrumentOptions) => ({ record() {} }));
+        const createCounterSpy = vi.fn((_name : string, _options : InstrumentOptions) => ({ add() {} }));
+        const meter : Meter = { createHistogram : createHistogramSpy, createCounter : createCounterSpy };
+
+        createHistogram(meter, METRICS.vitalCls);
+        createCounter(meter, METRICS.gcEvents);
+
+        const options = createHistogramSpy.mock.calls[0]![1];
+        expect(options).toEqual({
+            unit : "1",
+            description : METRICS.vitalCls.description,
+            advice : { explicitBucketBoundaries : HISTOGRAM_BOUNDARIES.score },
+        });
+        expect(options.advice!.explicitBucketBoundaries).not.toBe(HISTOGRAM_BOUNDARIES.score);
+        expect(createCounterSpy.mock.calls[0]![1]).toEqual({ unit : "{gc}", description : METRICS.gcEvents.description });
     });
 
     it("refuses to create an instrument of the wrong kind", () => {
@@ -113,5 +133,74 @@ describe("metric catalog", () => {
 
     it("gives every event a description", () => {
         for (const e of EVENT_CATALOG) expect(e.description.length, e.name).toBeGreaterThan(10);
+    });
+});
+
+/** The bucket of `value`, as the SDK finds it: the first boundary that is equal to or more than the value. */
+function bucketOf(boundaries : readonly number[], value : number) : number {
+    const index = boundaries.findIndex(boundary => value <= boundary);
+    return index < 0 ? boundaries.length : index;
+}
+
+const boundariesOf = (definition : MetricDefinition) : readonly number[] => definition.advice?.explicitBucketBoundaries ?? [];
+
+/** The number of different buckets of the values. */
+const bucketCount = (definition : MetricDefinition, values : readonly number[]) : number =>
+    new Set(values.map(value => bucketOf(boundariesOf(definition), value))).size;
+
+describe("histogram buckets", () => {
+    it("gives each histogram ascending, unique bucket boundaries, and no counter", () => {
+        for (const m of METRIC_CATALOG) {
+            if (m.kind === "counter") {
+                expect(m.advice, m.name).toBeUndefined();
+                continue;
+            }
+            const boundaries = boundariesOf(m);
+            expect(boundaries.length, m.name).toBeGreaterThanOrEqual(4);
+            expect([...boundaries].sort((a, b) => a - b), m.name).toEqual(boundaries);
+            expect(new Set(boundaries).size, m.name).toBe(boundaries.length);
+        }
+    });
+
+    it("selects the boundaries from the unit, and the ordinal boundaries for the pressure state", () => {
+        for (const m of METRIC_CATALOG.filter(definition => definition.kind === "histogram")) {
+            const expected = m === METRICS.pressureState ? HISTOGRAM_BOUNDARIES.ordinal
+                : m.unit === "ms" ? HISTOGRAM_BOUNDARIES.duration
+                : m.unit === "By" ? HISTOGRAM_BOUNDARIES.bytes
+                : HISTOGRAM_BOUNDARIES.score;
+            expect(boundariesOf(m), m.name).toBe(expected);
+        }
+    });
+
+    it("makes the thresholds of the Web Vitals bucket boundaries, thus the buckets give the exact ratings", () => {
+        const definitions = { INP : METRICS.vitalInp, CLS : METRICS.vitalCls, LCP : METRICS.vitalLcp, FCP : METRICS.vitalFcp, TTFB : METRICS.vitalTtfb };
+        for (const [name, definition] of Object.entries(definitions)) {
+            const { good, poor } = VITAL_THRESHOLDS[name as keyof typeof definitions];
+            expect(boundariesOf(definition), name).toContain(good);
+            expect(boundariesOf(definition), name).toContain(poor);
+        }
+    });
+
+    it("puts the typical values of each type of histogram into different buckets", () => {
+        // CLS: good, at the good threshold, needs improvement, poor
+        expect(bucketCount(METRICS.vitalCls, [0.05, 0.1, 0.2, 0.3])).toBe(4);
+        expect(bucketCount(METRICS.layoutShift, [0.001, 0.005, 0.05, 0.2])).toBe(4);
+        expect(bucketCount(METRICS.memoryUsage, [0.3, 0.6, 0.8, 0.95])).toBe(4);
+        expect(bucketCount(METRICS.pressureState, [0, 1, 2, 3])).toBe(4);
+        expect(bucketCount(METRICS.memoryUsed, [16, 64, 256, 1_024, 4_096].map(mib => mib * 2 ** 20 * 0.9))).toBe(5);
+        // The clock resolutions: cross-origin isolated Chrome and Firefox, Chrome, Firefox and Safari
+        expect(bucketCount(METRICS.clockResolution, [0.005, 0.02, 0.1, 1])).toBe(4);
+        // Frame deltas at 120 Hz, 60 Hz and 30 Hz
+        expect(bucketCount(METRICS.frameDelta, [8.3, 16.7, 33.4])).toBe(3);
+        expect(bucketCount(METRICS.drift, [3, 30, 60, 120, 600, 6_000, 40_000])).toBe(7);
+    });
+
+    it("gives exactly the documented boundaries", () => {
+        expect(HISTOGRAM_BOUNDARIES.ordinal).toEqual([0, 1, 2, 3]);
+        expect(HISTOGRAM_BOUNDARIES.score).toEqual([0, 0.001, 0.01, 0.025, 0.05, 0.1, 0.15, 0.25, 0.5, 0.75, 0.9, 1]);
+        expect(HISTOGRAM_BOUNDARIES.bytes[0]).toBe(2 ** 20);
+        expect(HISTOGRAM_BOUNDARIES.bytes.at(-1)).toBe(2 ** 34);
+        expect(HISTOGRAM_BOUNDARIES.bytes.every(value => Number.isInteger(Math.log2(value)))).toBe(true);
+        expect(HISTOGRAM_BOUNDARIES.duration).toEqual(expect.arrayContaining([0, 16, 33, 50, 100, 5_000, 60_000]));
     });
 });

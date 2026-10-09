@@ -3,7 +3,7 @@
  * follows the code that it shows. The comment of each diagram names the
  * source file in `packages/lag/src`.
  */
-import { EVENT_CATALOG } from "../../../src/adapters/lag-core";
+import { EVENT_CATALOG, METRIC_CATALOG } from "../../../src/adapters/lag-core";
 import type { DataTableSpec } from "../../../src/components/DataTable/DataTable";
 
 /** The event loop, simplified: one task, then all microtasks, then sometimes a rendering update. */
@@ -207,5 +207,41 @@ export const eventTable : DataTableSpec = {
         name : event.name,
         monitor : event.monitor,
         attributes : event.attributes.join(", "),
+    })),
+};
+
+/** A boundary of a histogram, with a binary unit for byte counts. */
+function formatBoundary(unit : string, value : number) : string {
+    if (unit !== "By") return String(value);
+    return value >= 2 ** 30 ? `${value / 2 ** 30} GiB` : `${value / 2 ** 20} MiB`;
+}
+
+type BucketRow = { unit : string; boundaries : string; histograms : string[] };
+
+function bucketRows() : BucketRow[] {
+    const rows = new Map<string, BucketRow>();
+    for (const definition of METRIC_CATALOG) {
+        const values = definition.advice?.explicitBucketBoundaries;
+        if (definition.kind !== "histogram" || !values) continue;
+        const boundaries = values.map(value => formatBoundary(definition.unit, value)).join(", ");
+        const row = rows.get(boundaries) ?? { unit : definition.unit, boundaries, histograms : [] };
+        row.histograms.push(definition.name);
+        rows.set(boundaries, row);
+    }
+    return [...rows.values()];
+}
+
+/** The bucket boundaries of the histograms of `METRIC_CATALOG`, one row for each set of boundaries. */
+export const bucketTable : DataTableSpec = {
+    caption : "The bucket boundaries of the histograms, from the metric catalog",
+    columns : [
+        { key : "unit", label : "Unit" },
+        { key : "boundaries", label : "Boundaries" },
+        { key : "histograms", label : "Histograms" },
+    ],
+    rows : bucketRows().map(row => ({
+        unit : row.unit,
+        boundaries : row.boundaries,
+        histograms : row.histograms.length > 4 ? `All ${row.histograms.length} histograms with the unit ${row.unit}` : row.histograms.join(", "),
     })),
 };

@@ -34,6 +34,7 @@ export type {
     Histogram,
     Counter,
     InstrumentOptions,
+    InstrumentAdvice,
     Attributes,
     AttributeValue,
 } from "./meter.js";
@@ -60,6 +61,7 @@ export {
     METRIC_CATALOG,
     EVENTS,
     EVENT_CATALOG,
+    HISTOGRAM_BOUNDARIES,
     createCounter,
     createHistogram,
     type MetricDefinition,
