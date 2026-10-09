@@ -58,6 +58,8 @@ async function lockHeld(name : string) : Promise<boolean> {
 
 describe("experiment E7: another page of the origin watches a hang", () => {
     it("sees the silence of the main thread, while the lock of the page stays held", async (ctx) => {
+        // In CI, no heartbeat of the peer page arrived before the block on iOS: earlier runs measured nothing there
+        ctx.skip(environment() === "ios", "Safari on iOS operates only the visible tab: the peer page sends no heartbeats while the test page is visible.");
         const id = `hang-${Math.random().toString(36).slice(2)}`;
         const heartbeats = listen(id);
         const peer = await openPeerPage(`src/pages/peer.html?id=${id}`);
