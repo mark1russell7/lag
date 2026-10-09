@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet, useParams } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useParams } from "react-router";
 import type { RunReport } from "../../adapters/lag-report";
 import { SITE_NAME } from "../../app/site";
 import { cx } from "../../lib/cx";
@@ -8,37 +8,39 @@ import { ErrorState, Loading } from "../components/States";
 import { budgetCounts } from "../model/budgets";
 import { runCounts } from "../model/tests";
 import { useReportSource } from "../ReportSourceContext";
+import { RUN_PAGES, runPageOf, runPageTitle, type RunPage } from "../run-pages";
 import type { RunContext } from "./run-context";
 import styles from "./Results.module.css";
 
-type RunView = {
-    path : string;
-    label : string;
+type RunView = RunPage & {
     /** A short count after the label, for example "2 failed". */
     badge? : (run : RunReport) => string | undefined;
 };
 
-/** The views of a run. To add a view, add a route in app/sections.tsx and an entry here. */
-export const RUN_VIEWS : readonly RunView[] = [
-    { path : ".", label : "Overview" },
-    { path : "tests", label : "Tests", badge : (run) => {
+/** The short count after the label of a view, for example "2 failed". */
+const BADGES : Readonly<Record<string, (run : RunReport) => string | undefined>> = {
+    tests : (run) => {
         const failed = runCounts(run).failed;
         return failed > 0 ? `${failed} failed` : undefined;
-    } },
-    { path : "coverage", label : "Coverage" },
-    { path : "mutation", label : "Mutation" },
-    { path : "budgets", label : "Budgets", badge : (run) => {
+    },
+    budgets : (run) => {
         const { fail } = budgetCounts(run);
         return fail > 0 ? `${fail} failed` : undefined;
-    } },
-    { path : "measurements", label : "Measurements" },
-];
+    },
+};
+
+/** The views of a run (refer to `run-pages.ts`), with their badges. */
+export const RUN_VIEWS : readonly RunView[] = RUN_PAGES.map((page) : RunView => {
+    const badge = BADGES[page.path];
+    return badge ? { ...page, badge } : page;
+});
 
 type LoadResult = { kind : "missing" } | ({ kind : "ready" } & RunContext);
 
 /** This component loads one run, and shows its header, the view navigation and the selected view. */
 export function RunLayout() {
     const { runId = "" } = useParams();
+    const { pathname } = useLocation();
     const source = useReportSource();
     const state = useAsync(async () : Promise<LoadResult> => {
         const index = await source.listRuns();
@@ -69,7 +71,7 @@ export function RunLayout() {
     const context : RunContext = { index, summary, run };
     return (
         <div className={styles.page}>
-            <title>{`Run ${run.id} – ${SITE_NAME}`}</title>
+            <title>{runPageTitle(run.id, runPageOf(pathname))}</title>
             <p className={styles.back}><Link to="/results">All runs</Link></p>
             <header className={styles.header}>
                 <h1 className={styles.runTitle}>Test run <code>{run.id}</code></h1>

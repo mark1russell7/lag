@@ -4,7 +4,7 @@ The library measures the lag of the main thread in browser apps, on the devices 
 
 Each monitor measures one signal, for example blocked time, queueing delay, hangs, frame delays, input latency (INP) or the Core Web Vitals of each page view. The library calibrates each probe against the browser and the operating system. It discards each sample that a hidden page, a frozen page or a system suspend makes incorrect.
 
-The website in `packages/site` has the documentation, the thesis, the research and the test results.
+The [website](https://mark1russell7.github.io/lag/) (`packages/site`) has the documentation, the thesis, the research, the test results and a live playground.
 
 ## Packages
 

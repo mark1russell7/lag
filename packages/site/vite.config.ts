@@ -3,9 +3,10 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { normalizeBase } from "./build/base";
+import { fontPreloadPlugin } from "./build/font-preload-plugin";
 import { mdxFrontmatterPlugin } from "./build/frontmatter-plugin";
 import { mdxPlugin } from "./build/mdx-plugin";
-import { spaFallbackPlugin } from "./build/spa-fallback-plugin";
+import { staticSitePlugin } from "./build/static-site-plugin";
 
 const siteDir = fileURLToPath(new URL(".", import.meta.url));
 
@@ -17,13 +18,16 @@ function sourceOf(packageDir : string) : string {
 export default defineConfig({
     // Set SITE_BASE to deploy below a path, as GitHub Pages does: SITE_BASE=lag
     // gives /lag/. (Git Bash on Windows changes "/lag" into a Windows path, so
-    // there use the form without slashes.)
+    // there use the form without slashes.) SITE_URL gives the absolute address
+    // for the canonical links, Open Graph and the sitemap. The build renders
+    // each page in Chromium; SITE_PRERENDER=0 builds without Chromium.
     base : normalizeBase(process.env["SITE_BASE"]),
     plugins : [
         mdxFrontmatterPlugin(),
         mdxPlugin(),
         react({ include : /\.(mdx|js|jsx|ts|tsx)$/ }),
-        spaFallbackPlugin(),
+        fontPreloadPlugin(),
+        staticSitePlugin(),
     ],
     resolve : {
         alias : {
