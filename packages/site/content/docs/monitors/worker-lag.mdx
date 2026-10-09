@@ -99,6 +99,8 @@ A page can close or crash during a hang. Then nobody reports the end of the hang
 
 The duration of an abandoned hang is the time from the start of the hang to the last write of the worker. The page ID is a random ID of 32 hexadecimal digits for each page instance (`createRandomId()`). The main thread sends the page ID to the worker only when it has a journal. Without a page ID, the worker writes no records. In WebKit and Safari, the writes of the worker complete only after the hang. Thus there, the journal does not keep a hang that the page does not survive.
 
+The journal of a page or of a worker keeps one connection to the database. It closes the connection when another connection deletes the database or opens a later version. Thus it does not block a later version of the library. After that, or after the browser closed the connection, the next operation opens the database again.
+
 Another open page can also report a hang that the page did not survive, at once, through the [peer hang watch](/docs/monitors/peer-hang-watch). That page takes the journal record of the hung page. Thus the next page does not report the hang again.
 
 ### System stalls
@@ -240,6 +242,7 @@ Unit tests:
 - `lag-worker.test.ts`, the journal: the worker writes the record at the start of a hang and again each second. It removes the record at the end or at a stop. It keeps no record without a page ID. The heartbeats continue when the journal fails.
 - `WorkerClockSync.test.ts`: the exchange with the shortest round trip, and a correction of 0 for an offset inside the uncertainty. The best result of all synchronizations, and 8 exchanges by default.
 - `hang-journal.test.ts`: the memory journal and the IndexedDB journal (with `fake-indexeddb`). Two journals of one database share the records, as a page and its worker do. `take()` gives a stale record one time, and it does not take a record that somebody updated after the limit. Of two IndexedDB journals that take one record at the same time, only one gets it. `findAbandonedHangs()` finds the stale records of other pages.
+- `hang-journal.test.ts`, the connection: the journal does not block the deletion of the database or a later version. After a deletion, and after the browser closed the connection, the next operation opens the database again.
 - `instrumented/worker-lag.test.ts`: the factory reports the abandoned hangs of earlier pages, removes their records, and reports nothing after `stop()`. Without a journal, it sends no page ID. Two pages that start at the same time (a session restore) report an abandoned hang one time, with a journal in memory and with IndexedDB. With a real worker handler, a hang counts also when it ends because the user changed the tab. A real worker handler and a main thread that is not blocked give no hang in 60 s. The test uses heartbeat intervals from 1 s to 10 s.
 - `setup-all-monitors.test.ts`: a hang from start to end, a suspend that discards the overlapping samples, and the page-view ID in the context of the worker.
 
