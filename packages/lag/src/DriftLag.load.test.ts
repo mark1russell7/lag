@@ -294,10 +294,12 @@ describe("DriftLag with a probe when the timer granularity changes", () => {
 const CHANGE_OFFSETS = Array.from({ length : 240 }, (_, i) => i / 2);
 
 describe("DriftLag when the granularity changes at any time in a window", () => {
-    // This test found a library bug. A window with an accepted row used the new baseline also for its
-    // steps before the row. From 15.6 ms to 5.7 ms, 115 of 240 change times gave more than 20 ms of
-    // lag (up to 49.5 ms).
-    for (const [fromMs, toMs, probe] of [[10.6, 0.7, true], [10.6, 0.7, false], [0.7, 10.6, false]] as const) {
+    // These tests found two library bugs. (1) A window with an accepted row used the new baseline also
+    // for its steps before the row. From 15.6 ms to 5.7 ms, 115 of 240 change times gave more than
+    // 20 ms of lag (up to 49.5 ms). (2) With a probe, a row of longer steps needs 12 steps, because the
+    // probed step and the step after it are not in the row. The window waited for not more than 10
+    // steps after its normal length, thus 11 of 240 change times gave a window of 108.9 ms of lag.
+    for (const [fromMs, toMs, probe] of [[10.6, 0.7, true], [10.6, 0.7, false], [0.7, 10.6, true], [0.7, 10.6, false]] as const) {
         it(`gives no lag on an idle thread when the steps change from ${5 + fromMs} ms to ${5 + toMs} ms (probe: ${probe})`, () => {
             let largest = -Infinity;
             for (const offsetMs of CHANGE_OFFSETS) {
