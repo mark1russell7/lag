@@ -125,19 +125,24 @@ describe("Lag Monitor Integration", () => {
     it("the worker measures main-thread blocking from outside the main thread", async () => {
         await wait(500);
         const before = tee.values("lag_worker_main_block_histogram").length;
+        const selfBefore = tee.values("lag_worker_self_lag_histogram").length;
         expect(before).toBeGreaterThan(0);
 
         blockMainThread(500);
         await wait(300);
 
         const after = tee.values("lag_worker_main_block_histogram").slice(before);
+        const selfDuring = tee.values("lag_worker_self_lag_histogram").slice(selfBefore);
         const max = Math.max(...after);
         console.log(`Worker heartbeat max wait after a 500ms block: ${max.toFixed(1)}ms (${after.length} heartbeats)`);
         await recordMeasurement("integration/block-500ms/lag_worker_main_block_histogram", "ms", after, { scenario : "block-500ms" });
         // Heartbeats sent early in the block wait for most of it
         expect(max).toBeGreaterThan(300);
-        // A free worker keeps its own timer on schedule
-        expect(tee.max("lag_worker_self_lag_histogram")).toBeLessThan(100);
+        // The worker keeps its own timer during the block of the main thread: its lag stays far below
+        // the block (500 ms). The limit is half the block. The maximum of the whole session was not a
+        // good limit: a loaded CI runner once made a timer of the worker 134 ms late at another time.
+        expect(selfDuring.length).toBeGreaterThan(0);
+        expect(Math.max(...selfDuring)).toBeLessThan(250);
     });
 
     it("FrameTimingMonitor records frames", async (ctx) => {
