@@ -24,6 +24,21 @@ describe("relativePath", () => {
     it("keeps paths outside the root", () => {
         expect(relativePath("/other/x.ts", "/repo")).toBe("/other/x.ts");
     });
+
+    it("removes the checkout folder of another runner, thus the file names agree in each engine", () => {
+        const linuxRoot = "/home/runner/work/lag/lag";
+        // The Safari reports of the macOS job, converted in the Linux job
+        expect(relativePath("/Users/runner/work/lag/lag/packages/lag-integration-tests/src/worker.test.ts", linuxRoot))
+            .toBe("packages/lag-integration-tests/src/worker.test.ts");
+        expect(relativePath("/home/runner/work/lag/lag/packages/lag/src/a.ts", "/Users/runner/work/lag/lag")).toBe("packages/lag/src/a.ts");
+        expect(relativePath("D:\\a\\lag\\lag\\packages\\lag\\src\\a.ts", linuxRoot)).toBe("packages/lag/src/a.ts");
+        expect(relativePath("/Users/runner/work/lag/lag/vitest.setup.ts", linuxRoot)).toBe("vitest.setup.ts");
+    });
+
+    it("removes the part before the packages folder of a file from another machine", () => {
+        expect(relativePath("/Users/mark/git/lag/packages/lag/src/a.ts", "/home/runner/work/lag/lag")).toBe("packages/lag/src/a.ts");
+        expect(relativePath("packages/lag/src/a.ts", "/repo")).toBe("packages/lag/src/a.ts");
+    });
 });
 
 describe("fromVitestJson", () => {

@@ -53,12 +53,30 @@ const STATUS_MAP : Record<string, TestStatus> = {
     disabled : "skipped",
 };
 
-/** This function makes `file` relative to `rootDir`, with forward slashes. */
+/**
+ * The checkout folder of a GitHub runner: `/home/runner/work/<repo>/<repo>/`
+ * (Linux), `/Users/runner/work/<repo>/<repo>/` (macOS) or `D:/a/<repo>/<repo>/`
+ * (Windows).
+ */
+const RUNNER_CHECKOUT = /^(?:\/home\/runner\/work|\/Users\/runner\/work|[A-Za-z]:\/a)\/([^/]+)\/\1\//;
+
+/**
+ * This function makes `file` relative to `rootDir`, with forward slashes. A
+ * report of another machine has a different root, for example the Safari
+ * reports of the macOS job in the Linux job. For such a file, the function
+ * removes the checkout folder of the runner, or else the part before the
+ * `packages/` folder of the repository. Thus a file has the same name in
+ * each engine.
+ */
 export function relativePath(file : string, rootDir : string) : string {
     const normalize = (p : string) : string => p.replace(/\\/g, "/");
     const root = normalize(rootDir).replace(/\/$/, "");
     const path = normalize(file);
-    return path.toLowerCase().startsWith(root.toLowerCase() + "/") ? path.slice(root.length + 1) : path;
+    if (path.toLowerCase().startsWith(root.toLowerCase() + "/")) return path.slice(root.length + 1);
+    const checkout = RUNNER_CHECKOUT.exec(path);
+    if (checkout) return path.slice(checkout[0].length);
+    const packages = path.indexOf("/packages/");
+    return packages >= 0 ? path.slice(packages + 1) : path;
 }
 
 /**
