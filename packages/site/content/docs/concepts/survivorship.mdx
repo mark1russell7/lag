@@ -109,7 +109,7 @@ The report of another page comes at once, not at the start of a later page. In C
 
 <MetricTable metrics={workerLagMetrics.filter((row) => row.name.includes("hang"))} />
 
-`createBrowserDeps()` gives the journal to the worker monitor when there is a worker and the page has IndexedDB. With `hangJournal: false`, the monitor does not read the journal, and it sends no page ID to the worker. Without a page ID, the worker writes no records.
+`createBrowserDeps()` gives the journal when the page has IndexedDB, and a worker or the peer hang watch. Only the worker monitor reads the journal at its start. The peer hang watch only takes the record of a hung page. With `hangJournal: false`, the monitor does not read the journal, and it sends no page ID to the worker. Without a page ID, the worker writes no records.
 
 A browser test blocks the main thread for 6.5 s and stops the worker before the end of the block, as when the page closes. Then it finds one record in IndexedDB, with a duration of 5 s or more and the ID of the page view. The test skips itself where a probe finds that the IndexedDB requests of a worker wait for the main thread, as in WebKit and Safari. The skip comes from that measurement, not from the name of the browser. The browser test `worker-io.test.ts` measures the behavior of each engine, also of a service worker, and it fails if an engine changes.
 

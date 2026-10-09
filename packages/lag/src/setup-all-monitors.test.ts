@@ -849,6 +849,36 @@ describe("setupAllMonitors with BroadcastChannel and the Web Locks API", () => {
         noteHangEnded.mockRestore();
     });
 
+    it("gives the journal to the watch of a page without a worker, but the page does not read the journal at its start", async () => {
+        const origin = new SimulatedOrigin();
+        const { BroadcastChannel, locks } = origin.page().deps();
+        const browser = createFakeBrowser();
+        const { worker : _worker, ...deps } = browser.deps;
+        const hangJournal = createMemoryHangJournal();
+        const stale = { pageId : "closed-page", startedAt : Date.now() - 100_000, lastSeenAt : Date.now() - 90_000, attributes : {} };
+        await hangJournal.put(stale);
+        const list = vi.spyOn(hangJournal, "list");
+        const handles = setupAllMonitors({ ...deps, BroadcastChannel, locks, hangJournal });
+        await advance(10);
+        expect(list).not.toHaveBeenCalled();
+
+        // Another page of the origin hangs, its worker writes a record, and the browser stops the page
+        const hungPage = origin.page();
+        const hung = new PeerHangWatch(hungPage.deps(), { pageId : "hung-page", visible : true, onAbandonedHang : () => {} });
+        await advance(1_500);
+        hungPage.hang();
+        await hangJournal.put({ pageId : "hung-page", startedAt : Date.now() - 200, lastSeenAt : Date.now() + 6_000, attributes : {} });
+        await advance(8_000);
+        hungPage.kill();
+        await advance(2_000);
+
+        expect(browser.meter.records().get("lag_main_thread_hang_duration_histogram")).toEqual([{ value : 6_200, attributes : { outcome : "abandoned" } }]);
+        list.mockRestore();
+        expect(await hangJournal.list()).toEqual([stale]);
+        handles.stop();
+        hung.stop();
+    });
+
     it("needs the wall clock, BroadcastChannel and the Web Locks API for the watch", () => {
         const origin = new SimulatedOrigin();
         const { BroadcastChannel, locks } = origin.page().deps();

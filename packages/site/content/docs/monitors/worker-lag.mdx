@@ -179,7 +179,7 @@ The factory uses these dependency groups:
 | `worker` | necessary | The worker from `createLagWorker()` of `@lag/worker`. The caller owns it and stops it with `worker.terminate()`. |
 | `workerHeartbeatIntervalMs` | 1000 | The time between two heartbeats. The interval can be longer than the hang threshold: the wait of a heartbeat starts at its send. |
 | `workerHangReport` | none | `{ url, resource }`: the OTLP logs URL and the resource attributes of the hang reports. Without it, the worker detects hangs but sends no reports. |
-| `hangJournal` | none | The hang journal. `createBrowserDeps()` gives `createIndexedDbHangJournal(indexedDB)` when there is a worker and IndexedDB (option `hangJournal`, default true). Without a journal, the worker writes no records. |
+| `hangJournal` | none | The hang journal. `createBrowserDeps()` gives `createIndexedDbHangJournal(indexedDB)` when there is IndexedDB, and a worker or the peer hang watch (option `hangJournal`, default true). Without a journal, the worker writes no records. |
 | `pageId` | a random ID | The ID of this page instance in the journal. The monitor sends it to the worker only with a journal. |
 
 The hang threshold (5000 ms) and the system stall threshold (5000 ms) are constants of the factory. The class `WorkerLagMonitor` also takes `clockSyncIntervalMs` (default 60 000) and event callbacks. Its `stop()` stops the heartbeats, but it keeps the listener, so that a `hang-ended` message can still arrive. `dispose()` stops the monitor and removes the listener. The `stop()` of the handle uses `dispose()`.

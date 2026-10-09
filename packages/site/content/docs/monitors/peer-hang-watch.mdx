@@ -112,7 +112,7 @@ function createInstrumentedPeerHangWatch(
 
 `PeerDeps` has `BroadcastChannel`, `locks` (the part of `navigator.locks` that the watch uses) and an optional `AbortController`. `setupAllMonitors()` adds the watch when it has `BroadcastChannel`, `locks`, `wallClock` and the lifecycle. It gives the watch and the worker monitor one page ID, thus the watch can take the journal record of the worker. The [page-view context](/docs/monitors/page-view-context) gives the current page-view ID to the beats.
 
-`createBrowserDeps()` gives `BroadcastChannel`, `navigator.locks` and `AbortController` when the browser has them. The option `peerHangWatch: false` turns the watch off:
+`createBrowserDeps()` gives `BroadcastChannel`, `navigator.locks` and `AbortController` when the browser has them. It also gives the hang journal in IndexedDB, also to a page without a worker. Thus the watch can take the record of a hung page that had a worker. Only the worker monitor reads the journal at the start, thus a page without a worker does not. The option `peerHangWatch: false` turns the watch off:
 
 ```ts
 import { metrics } from "@opentelemetry/api";
@@ -174,8 +174,8 @@ Unit tests:
 - `PeerHangWatch.test.ts`, other cases: the record of the worker from the journal, and the own times when the journal fails. A stop during the take puts the record back. A hidden page watches. The protocol names. The checks of the messages.
 - `PeerHangWatch.test.ts`, a page that becomes visible again: the page stays watched, also when it becomes visible again during the wait for its last messages. A late beat from before the lock makes no new request.
 - `instrumented/peer-hang-watch.test.ts`: the metrics and the event in the catalog, the context of the hung page, and the record of the journal. The own report at `pagehide`, and no report when the page becomes hidden or goes into the back/forward cache. The lock only while the page is visible. The closed channel while the page is in the cache.
-- `setup-all-monitors.test.ts`: the setup adds the watch, gives the page-view ID to its beats, and gives the worker and the watch one page ID. The watch learns of each hang that the worker monitor counts as ended, but not of an abandoned hang from the journal.
-- `browser-deps.test.ts`: `BroadcastChannel`, `AbortController` and `navigator.locks`, bound to `navigator.locks`, and the option `peerHangWatch: false`.
+- `setup-all-monitors.test.ts`: the setup adds the watch, gives the page-view ID to its beats, and gives the worker and the watch one page ID. The watch learns of each hang that the worker monitor counts as ended, but not of an abandoned hang from the journal. A page without a worker does not read the journal at its start, but its watch takes the record of a hung page.
+- `browser-deps.test.ts`: `BroadcastChannel`, `AbortController` and `navigator.locks`, bound to `navigator.locks`, and the option `peerHangWatch: false`. The hang journal with the watch and without a worker.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), and the CI job in Safari):
 
