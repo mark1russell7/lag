@@ -8,6 +8,8 @@ export type PageDocument = {
     readonly prerendering? : boolean;
     /** Chromium only. */
     readonly wasDiscarded? : boolean;
+    /** The URL of the document. It is null for a document without a browsing context. */
+    readonly location? : { readonly href : string } | null;
     addEventListener(type : string, listener : LifecycleListener, options? : LifecycleListenerOptions) : void;
     removeEventListener(type : string, listener : LifecycleListener, options? : LifecycleListenerOptions) : void;
 };
@@ -36,7 +38,8 @@ function navigationType(type : string | undefined) : NavigationInfo["type"] {
 
 /**
  * The page source of a browser document. It reads the Navigation Timing
- * entry, the `visibility-state` entries and the prerender state.
+ * entry, the `visibility-state` entries, the prerender state and the URL of
+ * the document.
  *
  * As web-vitals does, the source ignores a navigation entry with a
  * `responseStart` that is 0 or that is not before `performance.now()`. Some
@@ -67,6 +70,7 @@ export function createPageSource(document : PageDocument, performance : PagePerf
         isPrerendering : () => document.prerendering === true,
         wasDiscarded : () => document.wasDiscarded === true,
         hiddenTimes : () => entries("visibility-state").filter(e => e.name === "hidden").map(e => e.startTime),
+        url : () => document.location?.href,
         onActivation(listener) {
             const handler = () => listener();
             const options = { capture : true };

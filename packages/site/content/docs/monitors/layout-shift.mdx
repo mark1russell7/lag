@@ -74,7 +74,7 @@ import { createBrowserDeps, createInstrumentedLayoutShift } from "@lag/core";
 const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
 if (deps.PerformanceObserver) {
     const layoutShift = createInstrumentedLayoutShift({ ...deps, PerformanceObserver : deps.PerformanceObserver });
-    // The CLS of the page since the start of the monitor
+    // The CLS of the page, with the buffered shifts from before the start of the monitor
     console.log(layoutShift.monitor?.getCLS());
 }
 ```
@@ -89,13 +89,13 @@ if (deps.PerformanceObserver) {
 
 - **Only Chromium.** In Firefox and Safari, the monitor logs a warning and gets no entries.
 - **Shifts, not CLS.** The histogram counts single shifts. For the CLS of each page view, use `lag_web_vital_cls_histogram`.
-- **The page, not the page view.** `getCLS()` covers the time since the start of the monitor, also across back/forward cache restores.
+- **The page, not the page view.** `getCLS()` covers the shifts since the start of the monitor and the buffered shifts from before it, also across back/forward cache restores.
 
 ## Tests
 
 Unit tests:
 
-- `LayoutShiftMonitor.test.ts`: the monitor records the score of each shift, and it ignores a shift with `hadRecentInput`. A window continues across a gap of 500 ms. A new window starts after a gap of 1.5 s, or after more than 5 s. CLS is the worst window. `stop()` clears the state.
+- `LayoutShiftMonitor.test.ts`: the monitor records the score of each shift, and it ignores a shift with `hadRecentInput`. A window continues across a gap of 500 ms. A new window starts after a gap of 1.5 s, or after more than 5 s. CLS is the worst window. `stop()` clears the state. The monitor gets the buffered shifts also when `observe()` delivers them at once, as old Safari did (WebKit bug 247863).
 - `ClsCalculator.test.ts`: the sum of one window, the two rules for a new window, the sources of the largest shift in the worst window, and `reset()`. At equal scores, the later shift and the first window win. A gap of exactly 1000 ms and a length of exactly 5000 ms start a new window, as in web-vitals. A property test (fast-check) compares the calculator with the definition of web-vitals for all sequences of shifts.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):

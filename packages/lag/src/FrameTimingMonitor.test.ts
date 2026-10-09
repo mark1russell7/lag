@@ -235,8 +235,49 @@ describe("FrameTimingMonitor", () => {
         it("ignores deltas too short to be a refresh interval", () => {
             const d = createAutoDriver();
             d.frames(16.67, 10);
-            d.frames(1, 1);
+            d.frames(1, 5);
             expect(d.monitor.getFrameIntervalMs()).toBeCloseTo(16.67);
+        });
+
+        it("keeps the interval when one gap is short: a late frame and then an on-time frame", () => {
+            const d = createAutoDriver();
+            d.frames(1000 / 60, 100);
+            d.frames(1000 / 60 + 6, 1);
+            d.frames(1000 / 60 - 6, 1);
+            d.frames(1000 / 60, 100);
+
+            expect(d.monitor.getFrameIntervalMs()).toBeCloseTo(1000 / 60);
+            expect(d.reports.slice(-100).filter(r => r.droppedFrames > 0)).toHaveLength(0);
+        });
+
+        it("measures the gaps between the frame timestamps, not the times at which the callbacks run", () => {
+            let now = 0;
+            let pending : ((time : number) => void) | undefined;
+            const reports : FrameMeasurement[] = [];
+            new FrameTimingMonitor((m) => reports.push(m), { log : vi.fn() }, (cb) => { pending = cb; return 1; }, vi.fn(), { now : () => now });
+            for (let frame = 0; frame <= 120; frame++) {
+                const time = frame * 1000 / 60;
+                // Each fourth callback runs 6 ms after the start of its frame
+                now = time + (frame % 4 === 0 ? 6 : 0);
+                pending?.(time);
+            }
+
+            expect(reports).toHaveLength(120);
+            expect(reports.every(r => Math.abs(r.frameDeltaMs - 1000 / 60) < 1e-9)).toBe(true);
+            expect(reports.filter(r => r.droppedFrames > 0)).toHaveLength(0);
+        });
+
+        it("reads the clock when the callback gets no frame timestamp", () => {
+            let now = 0;
+            let pending : (() => void) | undefined;
+            const reports : FrameMeasurement[] = [];
+            new FrameTimingMonitor((m) => reports.push(m), { log : vi.fn() }, (cb) => { pending = cb as () => void; return 1; }, vi.fn(), { now : () => now });
+            for (const time of [100, 116, 166]) {
+                now = time;
+                pending?.();
+            }
+
+            expect(reports.map(r => r.frameDeltaMs)).toEqual([16, 50]);
         });
     });
 
@@ -263,33 +304,64 @@ describe("FrameTimingMonitor", () => {
 
         it("estimates the interval for the target fps \"auto\"", () => {
             const d = createAutoMonitor("auto");
-            d.frames(8, 3);
+            d.frames(8, 6);
 
             expect(d.monitor.getFrameIntervalMs()).toBe(8);
         });
 
+        it("uses 60 Hz until the window has five deltas", () => {
+            const d = createAutoMonitor();
+            // The first frame sets the start, and the next four frames give four deltas
+            d.frames(8, 5);
+            expect(d.monitor.getFrameIntervalMs()).toBeCloseTo(1000 / 60);
+            expect(d.reports.at(-1)!.targetFrameTimeMs).toBeCloseTo(1000 / 60);
+
+            d.frames(8, 1);
+            expect(d.monitor.getFrameIntervalMs()).toBe(8);
+            expect(d.reports.at(-1)!.targetFrameTimeMs).toBe(8);
+        });
+
         it("accepts a delta of 4 ms as a frame interval", () => {
             const d = createAutoMonitor();
-            d.frames(4, 5);
+            d.frames(4, 6);
 
             expect(d.monitor.getFrameIntervalMs()).toBe(4);
         });
 
-        it("follows a change from 60 Hz to 120 Hz at the first short delta", () => {
+        it("uses the fifth-shortest delta, thus four short deltas do not change the interval", () => {
+            const d = createAutoMonitor();
+            d.frames(16, 3);
+            d.frames(9, 1);
+            d.frames(16, 3);
+            d.frames(7, 1);
+            d.frames(16, 3);
+            d.frames(5, 1);
+            d.frames(8, 1);
+            d.frames(16, 3);
+            expect(d.monitor.getFrameIntervalMs()).toBe(16);
+
+            d.frames(12, 1);
+            expect(d.monitor.getFrameIntervalMs()).toBe(12);
+        });
+
+        it("follows a change from 60 Hz to 120 Hz at the fifth short delta", () => {
             const d = createAutoMonitor();
             d.frames(16, 10);
-            d.frames(8, 1);
+            d.frames(8, 4);
+            expect(d.monitor.getFrameIntervalMs()).toBe(16);
 
+            d.frames(8, 1);
             expect(d.monitor.getFrameIntervalMs()).toBe(8);
         });
 
         it("follows a change from 120 Hz to 60 Hz after 600 frames", () => {
             const d = createAutoMonitor();
-            // The first frame sets the start, and the second frame gives one delta of 8 ms
-            d.frames(8, 2);
-            d.frames(16, 599);
+            // The first frame sets the start, and the next five frames give five deltas of 8 ms
+            d.frames(8, 6);
+            d.frames(16, 595);
             expect(d.monitor.getFrameIntervalMs()).toBe(8);
 
+            // The first delta of 8 ms leaves the window of 600 deltas
             d.frames(16, 1);
             expect(d.monitor.getFrameIntervalMs()).toBe(16);
         });

@@ -71,6 +71,7 @@ describe("site content", () => {
         }
     });
 
+    // Each page compiles its MDX. On a busy machine, one compile took more than 5 s
     it.each(allPages.map(page => [page.path, page] as const))("compiles %s with a component and a table of contents", async (_path, page) => {
         const module = await page.load();
         expect(typeof module.default).toBe("function");
@@ -81,5 +82,5 @@ describe("site content", () => {
             expect(entry.text.length).toBeGreaterThan(0);
         }
         expect(module.frontmatter).toMatchObject({ title : page.meta.title });
-    });
+    }, 20_000);
 });
