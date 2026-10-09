@@ -117,20 +117,25 @@ export function createFakeLifecycle(initialVisibility : "visible" | "hidden" = "
 export type FakePage = PageSource & {
     setPrerendering(value : boolean) : void;
     setNavigation(value : NavigationInfo | undefined) : void;
+    /** This method changes the value of `url()`. */
+    setUrl(value : string | undefined) : void;
     activate() : void;
 };
 
-/** A page source with settable state. */
+/** A page source with settable state. Only with the option `url`, the source has `url()`. */
 export function createFakePage(options : {
     navigation? : NavigationInfo | undefined;
     prerendering? : boolean;
     wasDiscarded? : boolean;
     hiddenTimes? : number[];
+    url? : string;
 } = {}) : FakePage {
     let navigation = "navigation" in options ? options.navigation : { type : "navigate" as const, activationStart : 0, responseStart : 200, url : "https://shop.example/cart?item=7#top" };
     let prerendering = options.prerendering === true;
+    let url = options.url;
     const activationListeners = new Set<() => void>();
     return {
+        ...(options.url !== undefined ? { url : () => url } : {}),
         navigation : () => navigation,
         isPrerendering : () => prerendering,
         wasDiscarded : () => options.wasDiscarded === true,
@@ -141,6 +146,7 @@ export function createFakePage(options : {
         },
         setPrerendering(value) { prerendering = value; },
         setNavigation(value) { navigation = value; },
+        setUrl(value) { url = value; },
         activate() {
             prerendering = false;
             for (const listener of [...activationListeners]) listener();

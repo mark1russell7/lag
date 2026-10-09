@@ -920,6 +920,29 @@ describe("PageViewVitals", () => {
             expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ INP : 300 });
         });
 
+        it("gives a restored view the URL of the document at the restore, without the query string and the fragment", () => {
+            const page = createFakePage({ url : "https://shop.example/cart?item=7#top" });
+            const t = setup({ page });
+            // The page changed its URL (history.pushState) before the user left
+            page.setUrl("https://shop.example/orders/42?token=SECRET#top");
+            t.pagehide(true);
+            t.setNow(5_000);
+            t.pageshow(true, 5_000);
+
+            expect(t.vitals.getView()).toEqual({ id : "view-2", navigationType : "back-forward-cache", startTime : 5_000, url : "https://shop.example/orders/42" });
+        });
+
+        it("gives a restored view the URL of the load when the page source gives no URL", () => {
+            const page = createFakePage({ url : "https://shop.example/cart" });
+            const t = setup({ page });
+            page.setUrl(undefined);
+            t.pagehide(true);
+            t.setNow(5_000);
+            t.pageshow(true, 5_000);
+
+            expect(t.vitals.getView().url).toBe("https://shop.example/cart");
+        });
+
         it("gives a restored view no URL when the load had no URL", () => {
             const t = setup({ page : undefined });
             t.pagehide(true);

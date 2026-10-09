@@ -37,7 +37,7 @@ Each page view has these properties:
 - `navigationType`: one of the navigation types above.
 - `startTime`: the start of the page view, in `performance.now()` time.
 - `interactionId`: for a soft navigation, the interaction that caused it.
-- `url`: the URL at the start of the page view, without the query string and the fragment.
+- `url`: the URL at the start of the page view, without the query string and the fragment. For a restore, it is the URL of the document at the `pageshow` event.
 
 ```ts
 import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@lag/core";

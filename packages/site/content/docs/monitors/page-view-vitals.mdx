@@ -69,6 +69,8 @@ For a prerendered page, the monitor waits for the `prerenderingchange` event. Th
 
 A `pageshow` event with `persisted` ends the current page view and starts a new one with the type `back-forward-cache`. The start time is the `timeStamp` of the event. TTFB is 0 when the load had a navigation entry, as in web-vitals. FCP and LCP are the time from the `pageshow` event to the second animation frame after it. At that time, the browser painted the restored page.
 
+The URL of the new page view is the URL of the document at the `pageshow` event (`location.href`), without the query string and the fragment. The page can change its URL after the load, for example with `history.pushState()`. Without a URL from the page source, the new page view gets the URL of the earlier page view.
+
 Chromium restores a page with `resume`, `visibilitychange` and then `pageshow`. Thus the page is visible before `pageshow`. The [lifecycle](/docs/monitors/lifecycle) state machine gives a transition for each `pageshow` with `persisted`, also from a visible state. Thus the monitor starts the new page view in Chromium too. The entries from before the `timeStamp` of `pageshow` go to the page view that ends.
 
 ### Soft navigations
@@ -227,7 +229,7 @@ The factory uses `CoreDeps` (`logger`, `clock`, `meter`), `ObserverDeps` (`Perfo
 | `absoluteClock` | none | The clock of the times of the events. `setupAllMonitors()` gives one clock for the page. |
 | `events` | none | The event sink of the `browser.web_vital` and `lag.page_view.start` events. |
 | `requestAnimationFrame` | none | Measures FCP and LCP after a restore. Without it, a restored page view has no FCP and LCP. |
-| `page` | none | The navigation entry, the prerender and discard state and the hidden times (`createPageSource(document, performance)`). Without it, the first page view has the type `navigate` and no TTFB. |
+| `page` | none | The navigation entry, the prerender and discard state, the hidden times and the URL of the document (`createPageSource(document, performance)`). Without it, the first page view has the type `navigate` and no TTFB. |
 | `describeNode` | the selector of web-vitals | Makes the CSS selector of a DOM node for the attribution. |
 | `softNavigations` | `false` | When true, each soft navigation starts a new page view. |
 | `window` | none | The target of the trusted `keydown` and `click` events that make the LCP final. Without it, only the Event Timing entries of the inputs make the LCP final. |
@@ -295,14 +297,14 @@ Unit tests:
 
 - `vitals/PageViewVitals.test.ts`, a load: the five vitals at the first hide, and the event threshold of 16 ms. The last LCP candidate of the browser stays, also when its start time is earlier. The interactions of the load count from the start of the page. The final values at `terminated`, and no paints after the first hide. The first hidden time from the `visibility-state` entries, and the types `restore` and `navigate`. The buffered FCP and layout shifts count, also when `observe()` delivers them at once, as in old Safari.
 - `vitals/PageViewVitals.test.ts`, LCP finalization: a click or a key press makes the LCP final. This occurs through the entry of the input or through the DOM event, also for a fast click without an entry. A synthetic click does not, and `stop()` removes the listeners.
-- `vitals/PageViewVitals.test.ts`, prerender and restores: a prerendered page starts at the activation and measures from it. A restore ends the page view and starts a new one, with TTFB 0 and the paint times from two animation frames. The new page view also starts with the event sequence of Chromium. Without entries, the INP of a restore is 8 ms.
+- `vitals/PageViewVitals.test.ts`, prerender and restores: a prerendered page starts at the activation and measures from it. A restore ends the page view and starts a new one, with TTFB 0 and the paint times from two animation frames. The restored page view has the URL of the document at the restore. The new page view also starts with the event sequence of Chromium. Without entries, the INP of a restore is 8 ms.
 - `vitals/PageViewVitals.test.ts`, soft navigations: they are off by default, start a new page view, and operate only when the browser has the two entry types. The paints and the interactions that the browser did not deliver yet go to the correct page view. An entry that the browser delivered before the `soft-navigation` entry stays in the earlier page view. A click makes the LCP of the navigation final.
 - `vitals/PageViewVitals.test.ts`, checkpoints: the checkpoint processes the entries that wait, and divides them at a soft navigation in the sequence of their start times. `flush()` makes a checkpoint that is not final. `stop()` makes a final checkpoint and stops the observers. A vital whose entry type the browser does not have gets no value, also after a restore.
 - `vitals/ViewCollector.test.ts`: the rules of INP, with an INP of 0 for a first input of 0 ms, and the count of the load from 0. The interaction that started a soft navigation stays out of the new page view, also when its entry comes late. The attribution: the target, the type, the three phases, the cap at the next paint, and the events of the frame, also of other events. The processing starts at the interaction at the earliest. CLS after FCP, and no value below 0. The CLS target is the first source with an element node, with the selector from the time of the shift.
 - `instrumented/page-view-vitals.test.ts`: the histograms record each vital of a page view one time. This is also true when a `flush()` or a `stop()` comes after the final report. The deltas of the events add up to the value.
 - `instrumented/page-view-vitals.test.ts`, the times: each vital event has the time of its occurrence, not of the report. The load and a restore each send a `lag.page_view.start` event at the start of the view, and the restore names the view before it.
 - `vitals/ViewCollector.test.ts`, the times: the time of each value, also in a view that starts later. No time for an INP estimate.
-- `vitals/selector.test.ts` and `browser/page-source.test.ts`: the selector of web-vitals, and the navigation entry, the hidden times and the prerender state.
+- `vitals/selector.test.ts` and `browser/page-source.test.ts`: the selector of web-vitals, and the navigation entry, the hidden times, the prerender state and the URL of the document.
 - `setup-all-monitors.test.ts`: `flush()` records the vitals that wait. Each vital records one time for each page view, and the events have the names of the semantic conventions. An unchanged value sends no second event.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):

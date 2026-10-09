@@ -94,6 +94,13 @@ export type PageSource = {
     wasDiscarded() : boolean;
     /** The start times of the `visibility-state` entries with the name `hidden` (Chromium only). */
     hiddenTimes() : readonly number[];
+    /**
+     * The URL of the document at this time (`location.href`), or undefined.
+     * The page-view vitals read it at a restore from the back/forward cache.
+     * They remove the query string and the fragment. Without this method, a
+     * restored view gets the URL of the load.
+     */
+    url?() : string | undefined;
     /** This method adds a listener for the activation of a prerendered page. It gives a function that removes the listener. */
     onActivation(listener : () => void) : () => void;
 };
