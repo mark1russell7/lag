@@ -59,7 +59,7 @@ const monitors = setupAllMonitors(createBrowserDeps(window, {
 }));
 
 // Record the pending values of the monitors before each export
-otel.onBeforeFlush((cause) => monitors.flush(cause.event));
+otel.onBeforeFlush(() => monitors.flush());
 ```
 
 The code does these steps:
@@ -73,7 +73,7 @@ The code does these steps:
 The worker sends its hang reports without the OpenTelemetry SDK, because the main thread cannot operate during a hang. `workerHangReport.resource` gives the reports the same `service.instance.id` as the page. `pageContext` gives them the session ID.
 
 <Callout type="warning">
-  Connect `monitors.flush()` to the exporter. In Chromium, an exporter that listens to `pagehide` before the monitors can flush before the monitors record their final values. Refer to [page lifecycle](/docs/concepts/page-lifecycle).
+  Connect `monitors.flush()` to the exporter. The otel-ts library flushes after the monitors recorded the end of the page, because both use the lifecycle tracker that the page shares. An exporter that listens to `pagehide` itself can flush before the monitors record their final values in Chromium. Refer to [page lifecycle](/docs/concepts/page-lifecycle).
 </Callout>
 
 ## What the monitors need

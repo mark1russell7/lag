@@ -44,7 +44,7 @@ const monitors = setupAllMonitors(createBrowserDeps(window, {
 }));
 
 // Record the pending values of the monitors before each export
-otel.onBeforeFlush((cause) => monitors.flush(cause.event));
+otel.onBeforeFlush(() => monitors.flush());
 
 // Later
 monitors.stop();

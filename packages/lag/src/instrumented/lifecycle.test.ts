@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createInstrumentedLifecycle } from "./lifecycle.js";
 import { createFakeLifecycle } from "../vitals/test-fakes.js";
 import { createRecordingMeter, createRecordingSpanSink, expectCatalogEvents, expectCatalogInstruments, expectCatalogSpans } from "../test-utils.js";
+import { LifecycleStateMachine } from "../LifecycleStateMachine.js";
 
 function setup(withClock = true) {
     const fake = createFakeLifecycle();
@@ -113,5 +114,34 @@ describe("createInstrumentedLifecycle with spans", () => {
 
         expect(t.spans.spans.map(span => [span.startTime, span.endTime, span.parent])).toEqual([[50_000, 52_000, undefined], [52_000, 53_000, undefined]]);
         vi.useRealTimers();
+    });
+});
+
+describe("createInstrumentedLifecycle with a tracker that the page shares", () => {
+    it("subscribes to the tracker, and at stop() it unsubscribes but does not dispose of the tracker", () => {
+        const fake = createFakeLifecycle();
+        const shared = new LifecycleStateMachine(fake.document, fake.window, fake.clock, { log : vi.fn() });
+        const exporter = vi.fn();
+        shared.subscribe(exporter, { phase : "export" });
+        const meter = createRecordingMeter();
+        const handle = createInstrumentedLifecycle({
+            logger : { log : vi.fn() },
+            clock : fake.clock,
+            meter : meter.meter,
+            document : fake.document,
+            window : fake.window,
+            lifecycleTracker : shared,
+        });
+
+        expect(handle.monitor).toBe(shared);
+        fake.setVisibility("hidden");
+        expect(meter.records().get("lag_lifecycle_transitions")).toHaveLength(1);
+
+        handle.stop();
+        fake.setVisibility("visible");
+        // The tracker still operates for the other libraries of the page, without the counter of lag
+        expect(exporter).toHaveBeenCalledTimes(2);
+        expect(meter.records().get("lag_lifecycle_transitions")).toHaveLength(1);
+        shared.dispose();
     });
 });

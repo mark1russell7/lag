@@ -65,7 +65,7 @@ The lifecycle state `terminated` (`pagehide` without the back/forward cache) mea
 - No heartbeat for 5000 ms or more until the close: the page closes at the end of a hang.
 - A heartbeat after a gap of 5000 ms or more, less than one interval before the close: the same. The heartbeat came between the hang and the close, because its timer was due during the hang.
 
-Then the page records the hang itself, with `lag.hang.source: "self"`. The duration is from the last heartbeat before the gap to the close. The recording must come before the last export of the page. In Chromium, the `pagehide` listener of the exporter can start before the listener of the lifecycle. Thus connect the flush hook with the event: `otel.onBeforeFlush((cause) => monitors.flush(cause.event))` ([page lifecycle](/docs/concepts/page-lifecycle)).
+Then the page records the hang itself, with `lag.hang.source: "self"`. The duration is from the last heartbeat before the gap to the close. The recording must come before the last export of the page. In Chromium, the `pagehide` listener of an exporter can start before the listener of the lifecycle. The otel-ts library flushes in the `export` phase of the shared lifecycle tracker, thus after this recording. An exporter that listens to `pagehide` itself must give the event to the flush hook: `monitors.flush(event)` ([page lifecycle](/docs/concepts/page-lifecycle)).
 
 The worker monitor can count the same hang as `ended`, if the main thread handles the messages of the worker before the close. `setupAllMonitors()` tells the watch about each hang that the worker monitor counts (`noteHangEnded()`). The page then does not report that hang again.
 

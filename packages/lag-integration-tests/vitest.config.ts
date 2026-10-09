@@ -169,7 +169,8 @@ function crossOriginIsolation() : Plugin {
         optimizeDeps : {
             // Pre-bundle every dependency that a test imports, so that Vite does
             // not reload the page in the middle of a run
-            include : ["@mark1russell7/otel-ts", "web-vitals", "web-vitals/attribution"],
+            // page-lifecycle-tracker is a dependency of @lag/core, which the tests import as source
+            include : ["@mark1russell7/otel-ts", "web-vitals", "web-vitals/attribution", "@lag/core > page-lifecycle-tracker"],
         },
         test : {
             testTimeout : 60_000,

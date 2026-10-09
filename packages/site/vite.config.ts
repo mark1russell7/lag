@@ -48,6 +48,8 @@ export default defineConfig({
             "@observablehq/plot",
             "@xyflow/react",
             "mermaid",
+            // A dependency of @lag/core, which the site imports as source
+            "@lag/core > page-lifecycle-tracker",
         ],
     },
     build : {

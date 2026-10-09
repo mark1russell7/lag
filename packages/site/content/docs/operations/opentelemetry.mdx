@@ -8,7 +8,9 @@ status: draft
 The monitors record into an OpenTelemetry `Meter` and send events to an OpenTelemetry `Logger`. The SDK settings decide if the metrics of many browsers are correct after aggregation. The research note [OpenTelemetry metrics in the browser](/research/otel-browser-metrics) gives the evidence for each setting.
 
 <Callout type="note" title="The version of otel-ts">
-  This page uses the otel-ts features `serviceInstanceId`, `createInstanceId()`, `histogramAggregation` and `onBeforeFlush`. They are in otel-ts from commit `a4a7722` (the `main` branch on 2026-10-08). The page event of a flush (`cause.event` of `onBeforeFlush`) is in otel-ts from commit `57dd0c1`, and the browser attributes from commit `327e625`. The lockfile of this repository has that commit. An earlier version puts `session.id` on the resource, sets no `service.instance.id`, uses explicit-bucket histograms and has no `onBeforeFlush`.
+  This page uses the otel-ts features `serviceInstanceId`, `createInstanceId()`, `histogramAggregation` and `onBeforeFlush`. They are in otel-ts from commit `a4a7722` (the `main` branch on 2026-10-08). The browser attributes are in otel-ts from commit `327e625`.
+
+  From commit `92cd393`, otel-ts flushes in the `export` phase of the shared lifecycle tracker (`page-lifecycle-tracker` 0.1.0). From that commit, `cause.event` of `onBeforeFlush` is not set, and `cause.transition` gives the transition. The lockfile of this repository has commit `92cd393`. An earlier version puts `session.id` on the resource, sets no `service.instance.id`, uses explicit-bucket histograms and has no `onBeforeFlush`.
 </Callout>
 
 ## The settings
@@ -19,7 +21,7 @@ The monitors record into an OpenTelemetry `Meter` and send events to an OpenTele
 | Temporality | Cumulative | Mimir drops delta sums and delta histograms. No collector merges many writers correctly. |
 | Histograms | Exponential (base 2) | Mimir stores each one as one native-histogram series. Explicit buckets need one series for each bucket. |
 | Export interval | 15 s | A shorter interval adds requests and series samples. The flush at page hide sends the last values. |
-| Flush | At each page hide, after `monitors.flush()` | The final values of a page view must be in the last export. |
+| Flush | At each page hide, in the `export` phase of the shared lifecycle tracker, after `monitors.flush()` | The final values of a page view and the end of the page must be in the last export. |
 | `session.id` | On log records only, not on the resource | A resource with `session.id` adds one `target_info` series for each session, and it keeps an old ID after the session changes. |
 
 ## otel-ts
@@ -37,7 +39,7 @@ const otel = init({
 });
 
 // After setupAllMonitors()
-otel.onBeforeFlush((cause) => monitors.flush(cause.event));
+otel.onBeforeFlush(() => monitors.flush());
 ```
 
 otel-ts has these defaults:
@@ -61,8 +63,8 @@ The monitors work with each OpenTelemetry SDK for JavaScript. Make sure that you
 1. Set `service.instance.id` to a new random value for each `MeterProvider`. Do not store the value. Do not make it from the session ID.
 2. Use cumulative temporality.
 3. Use the exponential histogram aggregation, if the backend has native histograms.
-4. Flush at `visibilitychange` to hidden and at `pagehide`.
-5. Before each flush, use `monitors.flush(event)`. Give it the `visibilitychange` or `pagehide` event that started the flush, if there is one.
+4. Flush when the page becomes hidden or frozen, and at the end of the page. Subscribe to the shared tracker in the `export` phase: `getPageLifecycle().subscribe(listener, { phase: "export" })` from `page-lifecycle-tracker`.
+5. Before each flush, use `monitors.flush()`. If the exporter listens to `visibilitychange` or `pagehide` itself, give it the event that started the flush: `monitors.flush(event)`.
 6. Put the session ID on log records, not on the resource.
 
 ## Spans

@@ -19,6 +19,10 @@ importers:
         version: 5.9.3
 
   packages/lag:
+    dependencies:
+      page-lifecycle-tracker:
+        specifier: ^0.1.0
+        version: 0.1.0
     devDependencies:
       '@stryker-mutator/core':
         specifier: ^10.0.0
@@ -52,11 +56,11 @@ importers:
         version: link:../lag-worker
       '@mark1russell7/otel-ts':
         specifier: github:mark1russell7/otel-ts
-        version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/327e62502bd671ac8053fb2c6a1ce8b092ad1ed3(zone.js@0.16.1)
+        version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.1)
     devDependencies:
       '@mark1russell7/grafana-infra':
         specifier: github:mark1russell7/grafana-infra
-        version: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/963ff018a13dbfd1581e4c0d906037fe1bd05014
+        version: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/6ebe0dc5452f16bd082b7a88c7c49692c8f9d894
       '@types/node':
         specifier: ^25.3.0
         version: 25.3.0
@@ -858,12 +862,12 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/963ff018a13dbfd1581e4c0d906037fe1bd05014':
-    resolution: {tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/963ff018a13dbfd1581e4c0d906037fe1bd05014}
+  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/6ebe0dc5452f16bd082b7a88c7c49692c8f9d894':
+    resolution: {tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/6ebe0dc5452f16bd082b7a88c7c49692c8f9d894}
     version: 0.0.0
 
-  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/327e62502bd671ac8053fb2c6a1ce8b092ad1ed3':
-    resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/327e62502bd671ac8053fb2c6a1ce8b092ad1ed3}
+  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8':
+    resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8}
     version: 0.0.1
 
   '@mark1russell7/ste-lint@https://codeload.github.com/mark1russell7/ste-lint/tar.gz/f597d6c1e09bcfcb487bb575825d6d5f29e9e0c7':
@@ -2925,6 +2929,9 @@ packages:
   package-manager-detector@1.9.0:
     resolution: {integrity: sha512-zAMfbta9nPA8AKkA4WdmNAT8R8s6Dk0/xwPsqNnRidMFcLo1YkLuPDTgs2f64XdzS8vbLNnoJ+uUIkgbz7oRHA==}
 
+  page-lifecycle-tracker@0.1.0:
+    resolution: {integrity: sha512-nhISB4DKdWYgqxWPLVIDkUCbNVjRSXrZTmviX6s8R4NplsiL2E6pzvEC/d4+DJKCgqt8j3p67W1iOLxDfgPMYQ==}
+
   pako@1.0.11:
     resolution: {integrity: sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw==}
 
@@ -4342,9 +4349,9 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/963ff018a13dbfd1581e4c0d906037fe1bd05014': {}
+  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/6ebe0dc5452f16bd082b7a88c7c49692c8f9d894': {}
 
-  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/327e62502bd671ac8053fb2c6a1ce8b092ad1ed3(zone.js@0.16.1)':
+  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.1)':
     dependencies:
       '@grafana/faro-web-sdk': 2.3.1
       '@grafana/faro-web-tracing': 2.3.1
@@ -4364,6 +4371,7 @@ snapshots:
       '@opentelemetry/sdk-trace-base': 2.6.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-web': 2.6.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.40.0
+      page-lifecycle-tracker: 0.1.0
     transitivePeerDependencies:
       - supports-color
       - zone.js
@@ -6956,6 +6964,8 @@ snapshots:
   package-json-from-dist@1.0.1: {}
 
   package-manager-detector@1.9.0: {}
+
+  page-lifecycle-tracker@0.1.0: {}
 
   pako@1.0.11: {}
 
