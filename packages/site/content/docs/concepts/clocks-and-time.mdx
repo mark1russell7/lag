@@ -39,7 +39,7 @@ In WebKit, a read of `performance.timeOrigin` gives the time origin of the page,
 `createAbsoluteClock(performance)` reads `timeOrigin` one time. With one read, the absolute time of each context moves only with its monotonic clock, in all engines:
 
 ```ts
-import { createAbsoluteClock } from "@lag/core";
+import { createAbsoluteClock } from "@mark1russell7/lag";
 
 // Read timeOrigin one time, when the context starts
 const clock = createAbsoluteClock(performance);
@@ -49,7 +49,7 @@ const elapsed = clock.monotonic();   // the same value as performance.now()
 console.log(clock.origin, sentAt, elapsed);
 ```
 
-`setupAllMonitors()` makes one absolute clock for the page, and it gives the clock to the worker monitor and to the clock-drift monitor. The bundled worker of `@lag/worker` also reads `timeOrigin` one time. A unit test changes `timeOrigin` after the first read, and it makes sure that the clock does not move.
+`setupAllMonitors()` makes one absolute clock for the page, and it gives the clock to the worker monitor and to the clock-drift monitor. The bundled worker of `@mark1russell7/lag/worker` also reads `timeOrigin` one time. A unit test changes `timeOrigin` after the first read, and it makes sure that the clock does not move.
 
 ## Sleep by operating system
 
@@ -151,8 +151,8 @@ Mimir rejects a sample that is more than 10 minutes in the future. Thus the samp
 If you need the offset of the worker clock in your app, the worker monitor gives the best result:
 
 ```ts
-import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@mark1russell7/lag";
+import { createLagWorker } from "@mark1russell7/lag/worker";
 
 const worker = createLagWorker();
 const monitors = setupAllMonitors(createBrowserDeps(window, {

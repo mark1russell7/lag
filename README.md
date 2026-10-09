@@ -10,20 +10,28 @@ The website in `packages/site` has the documentation, the thesis, the research a
 
 | Package | Folder | What it does |
 | --- | --- | --- |
-| `@lag/core` | `packages/lag` | The monitors, the measurement conditions, the metric catalog, the browser adapter and `setupAllMonitors()`. It has no DOM or OpenTelemetry dependency. |
-| `@lag/worker` | `packages/lag-worker` | The Web Worker of the worker-lag monitor. It sends heartbeats, detects hangs and keeps the hang journal in IndexedDB. |
+| [`@mark1russell7/lag`](packages/lag/README.md) | `packages/lag` | The package on npm. The monitors, the measurement conditions, the metric catalog, the browser adapter and `setupAllMonitors()`. It has no DOM or OpenTelemetry dependency. |
+| `@mark1russell7/lag/worker` | `packages/lag/src/worker` | The second entry point of the package: the Web Worker of the worker-lag monitor. It sends heartbeats, detects hangs and keeps the hang journal in IndexedDB. |
 | `@lag/load` | `packages/load` | Synthetic main-thread load for the tests and the playground. |
 | `@lag/report` | `packages/report` | The data format of the test reports, and the converters from Vitest, Istanbul and Stryker. |
 | `@lag/site` | `packages/site` | The website. |
 | Integration tests | `packages/lag-integration-tests` | The browser tests in Chromium, Firefox, WebKit and Chrome (Vitest browser mode and Playwright): stress profiles, CDP tests, a cross-origin-isolated project, the web-vitals oracle, the overhead benchmark and the soak test. |
 | Scripts | `packages/scripts` | `pnpm new`, `pnpm results`, `pnpm readme:metrics` and the other scripts of the repository. |
 
+The other packages are private packages of the workspace. They are not on npm.
+
 ## Usage
+
+```sh
+npm install @mark1russell7/lag
+```
+
+This example uses [otel-ts](https://github.com/mark1russell7/otel-ts). It is not on npm: install it with `npm install github:mark1russell7/otel-ts`. The [package README](packages/lag/README.md) has an example with the OpenTelemetry SDK.
 
 ```ts
 import { createInstanceId, init } from "@mark1russell7/otel-ts";
-import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+import { createBrowserDeps, createOtelEventSink, createOtelLoggerAdapter, setupAllMonitors } from "@mark1russell7/lag";
+import { createLagWorker } from "@mark1russell7/lag/worker";
 
 const endpoint = "http://localhost:4318";
 const serviceInstanceId = createInstanceId();
@@ -54,6 +62,8 @@ worker.terminate();
 `createBrowserDeps()` examines each browser API. Thus each browser gets the monitors that it can support. For example, Safari has no `requestIdleCallback`, so the idle monitor does not start there.
 
 The worker sends its hang reports without the OpenTelemetry SDK, because the main thread cannot operate during a hang. `workerHangReport.resource` gives the reports the same `service.instance.id` as the page, and `pageContext` gives them the session ID. Then a query can join the hang reports with the telemetry of the page.
+
+`createLagWorker()` needs a bundler with module workers (`new Worker(new URL(...), { type: "module" })`), for example Vite or webpack 5. In the Vite dev server, exclude `@mark1russell7/lag/worker` from `optimizeDeps`. The [package README](packages/lag/README.md#vite) shows the setting.
 
 You can also use each monitor alone, as a class (`new DriftLag(...)`) or through its factory (`createInstrumentedDriftLag(deps, conditions)`). A factory gives a `MonitorHandle` with an error boundary and a `stop()`.
 
@@ -149,8 +159,8 @@ pnpm --filter @lag/integration-tests exec playwright install chromium firefox we
 | Test kind | Script | What the tests examine |
 | --- | --- | --- |
 | Unit tests | `pnpm test` | The logic of each monitor in Node, with fake timers. These tests also cover `@lag/load`, `@lag/report` and `@lag/scripts`. |
-| Coverage | `pnpm coverage` | The unit-test coverage of `@lag/core`. The script writes `packages/lag/coverage/coverage-summary.json`. It fails below the thresholds. |
-| Mutation tests | `pnpm mutation` | Stryker changes the code of `@lag/core` and starts the unit tests again. A change that no test finds is a surviving mutant. |
+| Coverage | `pnpm coverage` | The unit-test coverage of `@mark1russell7/lag`. The script writes `packages/lag/coverage/coverage-summary.json`. It fails below the thresholds. |
+| Mutation tests | `pnpm mutation` | Stryker changes the code of `@mark1russell7/lag` and starts the unit tests again. A change that no test finds is a surviving mutant. |
 | Browser tests | `pnpm test:browser` | The monitors in Chromium, Firefox, WebKit and Chrome. The script also starts the CDP tests, the back/forward cache tests and the cross-origin-isolated tests. |
 | Chromium tests | `pnpm test:chromium` | The browser tests in Chromium only. This script is the fast check. |
 | CDP tests | `pnpm --filter @lag/integration-tests test:cdp` | Frozen pages, hidden pages, CPU throttling and compute pressure, through the Chrome DevTools Protocol. |
@@ -187,7 +197,7 @@ To show the test results on the site, do these steps:
 
 To include the soak test, the E2E tests, Safari or Safari on iOS (on macOS), add `--soak`, `--e2e`, `--safari` or `--ios` to `pnpm results`.
 
-GitHub Actions starts the build, the unit tests, the coverage, the browser tests and the site checks for each push and pull request (`ci.yml`). `e2e.yml` and `mutation.yml` start each week. You can also start them manually.
+GitHub Actions starts the build, the unit tests, the coverage, the browser tests and the site checks for each push and pull request (`ci.yml`). `e2e.yml` and `mutation.yml` start each week. You can also start them manually. `release.yml` publishes `@mark1russell7/lag` to npm when you push a tag `v<version>` (for example `v0.2.0`). The tag must agree with the version in `packages/lag/package.json`.
 
 ## AI-assisted text
 

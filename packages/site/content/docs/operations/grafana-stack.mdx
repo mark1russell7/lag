@@ -65,7 +65,7 @@ A page sends its data to the OTLP/HTTP receiver of Alloy on port 4318:
 | Metrics | `http://localhost:4318/v1/metrics` | Mimir |
 | Logs and events | `http://localhost:4318/v1/logs` | Loki |
 
-The traces go to the same receiver, and Alloy sends them to Tempo. With otel-ts, set `endpoint: "http://localhost:4318"`. The worker of `@lag/worker` sends its hang reports itself, as OTLP/HTTP JSON. For this stack, set `workerHangReport.url` to `http://localhost:4318/v1/logs`. Refer to [the hang reports of the worker](/docs/operations/opentelemetry#the-hang-reports-of-the-worker).
+The traces go to the same receiver, and Alloy sends them to Tempo. With otel-ts, set `endpoint: "http://localhost:4318"`. The worker of `@mark1russell7/lag/worker` sends its hang reports itself, as OTLP/HTTP JSON. For this stack, set `workerHangReport.url` to `http://localhost:4318/v1/logs`. Refer to [the hang reports of the worker](/docs/operations/opentelemetry#the-hang-reports-of-the-worker).
 
 ### CORS
 
@@ -196,7 +196,7 @@ The setting `limits_config.otlp_config` in `config/loki/loki.yaml` sets the labe
 - The index labels are `service_name`, from the resource attribute `service.name`, and `event_name`, from the log attribute `event.name`. Both have few values.
 - `ignore_defaults: true` removes the default list of index labels. That list makes `service.instance.id` an index label, but each page load has a new value.
 - All other attributes of the resource and of the record go to the structured metadata. Loki changes the dots in the attribute names to underscores. For example, `service.instance.id` becomes `service_instance_id`, `session.id` becomes `session_id`, and `browser.web_vital.value` becomes `browser_web_vital_value`.
-- The structured metadata also has the scope name in `scope_name`, for example `@lag/worker` for the hang reports of the worker.
+- The structured metadata also has the scope name in `scope_name`, for example `@mark1russell7/lag/worker` for the hang reports of the worker.
 - A log record without an event name, for example from `createOtelLoggerAdapter`, goes to a stream without the label `event_name`.
 
 The line of an entry is the body of the record:

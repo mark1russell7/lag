@@ -25,8 +25,8 @@ Each claim of the [thesis](/thesis) has a type of test that can show it. A rule 
 | Overhead benchmark | Chromium in the new headless mode | The cost of all monitors on an idle page, against budgets | `pnpm test:overhead` |
 | Soak test | Chromium, for 3 minutes or more | The heap does not grow without limit, and `stop()` releases each timer | `pnpm test:soak` |
 | E2E tests | Chromium and the Grafana stack in Docker | The export of the metrics to Mimir | `pnpm test:e2e` |
-| Coverage | Node | The parts of `@lag/core` that the unit tests use | `pnpm coverage` |
-| Mutation testing | Node, with Stryker | The changes to `@lag/core` that the unit tests find | `pnpm mutation` |
+| Coverage | Node | The parts of `@mark1russell7/lag` that the unit tests use | `pnpm coverage` |
+| Mutation testing | Node, with Stryker | The changes to `@mark1russell7/lag` that the unit tests find | `pnpm mutation` |
 | Writing checks | Node | The STE rules for the README, the site and the comments. The metric table of the README agrees with the catalog. | `pnpm lint:ste`, `pnpm readme:metrics:check` |
 
 <Tabs label="Test commands">
@@ -118,7 +118,7 @@ The soak test operates all monitors under a mixed workload for 3 minutes, or for
 
 ## Coverage and mutation testing
 
-`pnpm coverage` measures the coverage of `@lag/core` with V8. The command fails below the thresholds in `packages/lag/vitest.config.ts`.
+`pnpm coverage` measures the coverage of `@mark1russell7/lag` with V8. The command fails below the thresholds in `packages/lag/vitest.config.ts`.
 
 `pnpm mutation` uses Stryker. Stryker makes many small changes to the code, for example `-` to `+`. It operates the unit tests on each change. A change that no test finds is a surviving mutant: a behavior that no test pins down. The command fails below the break threshold in `packages/lag/stryker.config.json`. The incremental mode tests again only the mutants whose code or tests changed.
 

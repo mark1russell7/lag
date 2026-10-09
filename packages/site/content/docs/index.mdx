@@ -5,7 +5,7 @@ order: 1
 status: draft
 ---
 
-`@lag/core` measures the lag of the main thread in browser apps. Each monitor measures one signal, for example blocked time, queueing delay, frame delays or input latency. The monitors record OpenTelemetry metrics (counters and histograms) and send events with the details. `setupAllMonitors()` starts each monitor that the browser can support.
+`@mark1russell7/lag` measures the lag of the main thread in browser apps. Each monitor measures one signal, for example blocked time, queueing delay, frame delays or input latency. The monitors record OpenTelemetry metrics (counters and histograms) and send events with the details. `setupAllMonitors()` starts each monitor that the browser can support.
 
 The library measures in the field, on the devices of real users. Thus it calibrates each probe against its environment, and it discards each sample that the page lifecycle or the clocks make incorrect. The [thesis](/thesis) gives the argument and the evidence.
 
@@ -29,8 +29,8 @@ The [monitor overview](/docs/monitors) lists all monitors with their browser sup
 
 | Package | What it does |
 |---|---|
-| `@lag/core` | The monitors, the measurement conditions, the metric catalog, the browser adapter and `setupAllMonitors()`. It has no DOM or OpenTelemetry dependency: the caller gives each browser API. |
-| `@lag/worker` | The Web Worker of the worker-lag monitor. It sends heartbeats, detects hangs and keeps the hang journal. |
+| `@mark1russell7/lag` | The package on npm (`npm install @mark1russell7/lag`). The monitors, the measurement conditions, the metric catalog, the browser adapter and `setupAllMonitors()`. It has no DOM or OpenTelemetry dependency: the caller gives each browser API. |
+| `@mark1russell7/lag/worker` | The second entry point of the package: the Web Worker of the worker-lag monitor. It sends heartbeats, detects hangs and keeps the hang journal. |
 | `@lag/load` | Synthetic main-thread load for tests and for the playground. |
 | `@lag/report` | The data format of the test reports, and the converters from Vitest, Istanbul and Stryker. |
 | `@lag/site` | This website. |

@@ -1,6 +1,6 @@
 /**
  * This script writes the metric table of the root README from the metric
- * catalog of `@lag/core`. The table is between the markers
+ * catalog of `@mark1russell7/lag`. The table is between the markers
  * `<!-- metrics:start -->` and `<!-- metrics:end -->`.
  *
  * Usage: `pnpm readme:metrics` writes the table. `pnpm readme:metrics --check`
@@ -9,7 +9,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { METRIC_CATALOG, type MetricDefinition } from "@lag/core";
+import { METRIC_CATALOG, type MetricDefinition } from "@mark1russell7/lag";
 
 export const START_MARKER = "<!-- metrics:start -->";
 export const END_MARKER = "<!-- metrics:end -->";

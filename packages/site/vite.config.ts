@@ -27,8 +27,9 @@ export default defineConfig({
     ],
     resolve : {
         alias : {
-            "@lag/core" : sourceOf("lag"),
-            "@lag/worker" : sourceOf("lag-worker"),
+            // The export "./worker" first: the alias of the package also matches its subpaths
+            "@mark1russell7/lag/worker" : path.join(sourceOf("lag"), "worker", "index.ts"),
+            "@mark1russell7/lag" : sourceOf("lag"),
             "@lag/load" : sourceOf("load"),
             "@lag/report" : sourceOf("report"),
         },
@@ -48,8 +49,8 @@ export default defineConfig({
             "@observablehq/plot",
             "@xyflow/react",
             "mermaid",
-            // A dependency of @lag/core, which the site imports as source
-            "@lag/core > page-lifecycle-tracker",
+            // A dependency of @mark1russell7/lag, which the site imports as source
+            "@mark1russell7/lag > page-lifecycle-tracker",
         ],
     },
     build : {

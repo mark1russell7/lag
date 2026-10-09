@@ -1,6 +1,6 @@
 import { expect } from "vitest";
-import { createBrowserDeps, createIndexedDbHangJournal, createNoopMeter, setupAllMonitors } from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+import { createBrowserDeps, createIndexedDbHangJournal, createNoopMeter, setupAllMonitors } from "@mark1russell7/lag";
+import { createLagWorker } from "@mark1russell7/lag/worker";
 import { blockMainThread, wait } from "./harness.js";
 import { environment } from "./commands.js";
 

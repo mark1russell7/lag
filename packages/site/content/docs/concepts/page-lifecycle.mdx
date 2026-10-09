@@ -53,7 +53,7 @@ The state machine does not listen for `beforeunload`. A script can cancel that e
 Each transition has the properties `from`, `to`, `trigger` and `timestamp`. The state machine gives each transition to each subscriber. If an error occurs in one subscriber, the state machine records the error in the log and continues with the other subscribers.
 
 ```ts
-import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@lag/core";
+import { createBrowserDeps, createNoopMeter, setupAllMonitors } from "@mark1russell7/lag";
 
 const monitors = setupAllMonitors(createBrowserDeps(window, {
     logger : { log : (level, message) => console.log(level, message) },
@@ -106,7 +106,7 @@ The `onBeforeFlush(listener)` function of otel-ts starts each listener synchrono
 
 ```ts
 import { init } from "@mark1russell7/otel-ts";
-import { createBrowserDeps, createOtelLoggerAdapter, setupAllMonitors } from "@lag/core";
+import { createBrowserDeps, createOtelLoggerAdapter, setupAllMonitors } from "@mark1russell7/lag";
 
 const otel = init({ serviceName : "shop" });
 const monitors = setupAllMonitors(createBrowserDeps(window, {

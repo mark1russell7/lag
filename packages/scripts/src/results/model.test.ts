@@ -35,7 +35,7 @@ describe("suite names", () => {
             id : "integration-browser-firefox", packageName : "@lag/integration-tests", kind : "browser", environment : "firefox",
         });
         expect(suiteMeta("@lag/integration-tests", "coi (webkit)", "webkit").id).toBe("integration-coi-webkit");
-        expect(suiteMeta("@lag/core", "", "node")).toMatchObject({ id : "core-unit-node", kind : "unit" });
+        expect(suiteMeta("@mark1russell7/lag", "", "node")).toMatchObject({ id : "core-unit-node", kind : "unit" });
         expect(suiteMeta("@lag/site", "node", "node")).toMatchObject({ id : "site-unit-node", kind : "unit" });
         expect(suiteMeta("@lag/site", "browser (chromium)", "chromium")).toMatchObject({ id : "site-browser-chromium", kind : "browser" });
     });
@@ -49,7 +49,7 @@ describe("suite names", () => {
     });
 
     it("shortens the package names", () => {
-        expect(packageSlug("@lag/core")).toBe("core");
+        expect(packageSlug("@mark1russell7/lag")).toBe("core");
         expect(packageSlug("@lag/integration-tests")).toBe("integration");
     });
 

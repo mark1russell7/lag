@@ -74,7 +74,7 @@ The monitors keep the volume of events small. For example, the long-animation-fr
 `setupAllMonitors()` wraps the event sink with `withEventContext()`. When the page-view vitals operate, each event gets the attribute `lag.page_view.id`, with the ID of the current page view:
 
 ```ts
-import { withEventContext, type EventSink } from "@lag/core";
+import { withEventContext, type EventSink } from "@mark1russell7/lag";
 
 const sink : EventSink = { emit : (name, attributes) => console.log(name, attributes) };
 let viewId = "view-1";

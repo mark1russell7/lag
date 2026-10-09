@@ -1,6 +1,6 @@
 import { expect } from "vitest";
-import { ClockReliabilityChecker, createNoopMeter, setupAllMonitors, type AllMonitorHandles } from "@lag/core";
-import { createLagWorker, type LagWorker } from "@lag/worker";
+import { ClockReliabilityChecker, createNoopMeter, setupAllMonitors, type AllMonitorHandles } from "@mark1russell7/lag";
+import { createLagWorker, type LagWorker } from "@mark1russell7/lag/worker";
 import { blockMainThread, createBrowserDeps, createRecordingLogger, createTeeMeter, wait, waitUntil, type TeeMeter } from "../harness.js";
 import { features } from "../features.js";
 import { recordMeasurement } from "../commands.js";

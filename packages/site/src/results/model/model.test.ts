@@ -134,7 +134,7 @@ describe("environment matrix", () => {
     it("has one cell for each package and environment", () => {
         const matrix = environmentMatrix(run);
         expect(matrix.environments).toEqual(["node", "chromium", "firefox", "webkit"]);
-        const core = matrix.rows.find(row => row.packageName === "@lag/core")!;
+        const core = matrix.rows.find(row => row.packageName === "@mark1russell7/lag")!;
         expect(core.cells[0]?.counts.failed).toBe(1);
         expect(core.cells[1]).toBeUndefined();
     });
@@ -160,7 +160,7 @@ describe("coverage model", () => {
 
     it("gives rows for packages and files", () => {
         const packages = coveragePackageRows(run);
-        expect(packages.map(row => row.packageName)).toEqual(["@lag/core", "@lag/load", "@lag/report"]);
+        expect(packages.map(row => row.packageName)).toEqual(["@lag/load", "@lag/report", "@mark1russell7/lag"]);
         expect(packages[0]?.lines).toBeGreaterThan(50);
         expect(coverageFileRows(run).length).toBe(run.coverage.reduce((sum, report) => sum + report.files.length, 0));
     });
@@ -180,7 +180,7 @@ describe("mutation model", () => {
     it("puts the files without a score last, and gives them no bar", () => {
         const counts = { CompileError : 2 };
         const mutation = [{
-            packageName : "@lag/core",
+            packageName : "@mark1russell7/lag",
             score : 50,
             files : [
                 { file : "packages/lag/src/types.ts", counts },
@@ -193,7 +193,7 @@ describe("mutation model", () => {
     });
 
     it("gives the commit and the time of each Stryker run, and its age in days", () => {
-        const report = { packageName : "@lag/core", score : 96, files : [] };
+        const report = { packageName : "@mark1russell7/lag", score : 96, files : [] };
         const origins = mutationOrigins(emptyRun({
             createdAt : "2026-10-08T12:00:00.000Z",
             mutation : [
@@ -202,8 +202,8 @@ describe("mutation model", () => {
             ],
         }));
         expect(origins).toEqual([
-            { packageName : "@lag/core", commit : "abc1234def567", createdAt : "2026-10-04T03:41:00.000Z", daysBeforeRun : 4 },
             { packageName : "@lag/other", commit : undefined, createdAt : undefined, daysBeforeRun : undefined },
+            { packageName : "@mark1russell7/lag", commit : "abc1234def567", createdAt : "2026-10-04T03:41:00.000Z", daysBeforeRun : 4 },
         ]);
     });
 });
