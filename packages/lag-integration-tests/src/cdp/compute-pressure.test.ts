@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { ComputePressureMonitor, type PressureMeasurement, type PressureObserverInit } from "@lag/core";
+import { ComputePressureMonitor, type PressureMeasurement, type PressureObserverInit } from "@mark1russell7/lag";
 import { cdp } from "../commands.js";
 import { createRecordingLogger, waitUntil } from "../harness.js";
 

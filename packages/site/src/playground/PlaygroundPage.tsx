@@ -86,8 +86,8 @@ export function PlaygroundPage() {
             <header className={styles.header}>
                 <h1>Playground</h1>
                 <p className={styles.intro}>
-                    This page starts the monitors of <code>@lag/core</code> in your browser, with a Web Worker from{" "}
-                    <code>@lag/worker</code>. Use the buttons to make main-thread load. Then look at what the monitors record.
+                    This page starts the monitors of <code>@mark1russell7/lag</code> in your browser, with a Web Worker from{" "}
+                    <code>@mark1russell7/lag/worker</code>. Use the buttons to make main-thread load. Then look at what the monitors record.
                 </p>
                 {session && snapshot ? <SessionBar session={session} snapshot={snapshot} /> : null}
             </header>

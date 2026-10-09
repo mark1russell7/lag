@@ -1,6 +1,6 @@
 import { expect, inject } from "vitest";
-import { setupAllMonitors } from "@lag/core";
-import { createLagWorker } from "@lag/worker";
+import { setupAllMonitors } from "@mark1russell7/lag";
+import { createLagWorker } from "@mark1russell7/lag/worker";
 import { kitchenSink, runWorkload } from "@lag/load";
 import { cdp, recordBudget, recordMeasurement } from "../commands.js";
 import { countWorkerMessages, createBrowserDeps, createRecordingLogger, createSummaryMeter, createTimerAccounting, wait } from "../harness.js";

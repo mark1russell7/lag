@@ -7,7 +7,7 @@
  * the test page through the BroadcastChannel `lag-test-events`, because a
  * closing page can still send a message.
  */
-import { createBrowserDeps, createNoopMeter, peerLockName, setupAllMonitors } from "@lag/core";
+import { createBrowserDeps, createNoopMeter, peerLockName, setupAllMonitors } from "@mark1russell7/lag";
 
 /** An event of the monitors of the peer page, as the test page gets it. */
 export type PeerEvent = { pageId : string; name : string; attributes : Record<string, unknown> };

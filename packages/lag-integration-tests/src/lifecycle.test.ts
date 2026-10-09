@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { LifecycleStateMachine, type StateTransition } from "@lag/core";
+import { LifecycleStateMachine, type StateTransition } from "@mark1russell7/lag";
 
 /**
  * The lifecycle in a real browser. This file has its own page, thus the

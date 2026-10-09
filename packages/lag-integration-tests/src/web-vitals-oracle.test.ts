@@ -9,7 +9,7 @@ import {
     type INPMetricWithAttribution,
     type MetricWithAttribution,
 } from "web-vitals/attribution";
-import { createNoopMeter, setupAllMonitors, type AllMonitorHandles, type VitalName, type VitalValue } from "@lag/core";
+import { createNoopMeter, setupAllMonitors, type AllMonitorHandles, type VitalName, type VitalValue } from "@mark1russell7/lag";
 import { blockMainThread, createBrowserDeps, createRecordingLogger, nextFrames, wait, waitUntil } from "./harness.js";
 import { features } from "./features.js";
 import { environment, recordMeasurement } from "./commands.js";

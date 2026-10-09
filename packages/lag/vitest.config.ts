@@ -8,7 +8,8 @@ export default defineConfig({
         coverage: {
             provider: "v8",
             include: ["src/**/*.ts"],
-            exclude: ["src/**/*.test.ts", "src/test-utils.ts", "src/test-thread.ts", "src/test-peers.ts", "src/vitals/test-fakes.ts", "**/.stryker-tmp/**"],
+            // src/worker starts a real Web Worker: the browser tests (packages/lag-integration-tests) examine it, not Node
+            exclude: ["src/**/*.test.ts", "src/test-utils.ts", "src/test-thread.ts", "src/test-peers.ts", "src/vitals/test-fakes.ts", "src/worker/**", "**/.stryker-tmp/**"],
             // json-summary writes coverage/coverage-summary.json for the results collector (pnpm results)
             reporter: [["text", { skipFull: true }], "text-summary", "json-summary", "html"],
             reportsDirectory: "coverage",

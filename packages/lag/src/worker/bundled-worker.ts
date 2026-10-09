@@ -1,9 +1,9 @@
-import { createWorkerHandler, type HangEvent } from "@lag/core/lag-worker.js";
-import type { HangOptions } from "@lag/core/worker-protocol.js";
-import { encodeOtlpLogs } from "@lag/core/otlp-json.js";
-import { formatEventLine } from "@lag/core/event-line.js";
-import { placeEventTime } from "@lag/core/events.js";
-import { createIndexedDbHangJournal } from "@lag/core/browser/indexeddb-journal.js";
+import { createWorkerHandler, type HangEvent } from "../lag-worker.js";
+import type { HangOptions } from "../worker-protocol.js";
+import { encodeOtlpLogs } from "../otlp-json.js";
+import { formatEventLine } from "../event-line.js";
+import { placeEventTime } from "../events.js";
+import { createIndexedDbHangJournal } from "../browser/indexeddb-journal.js";
 
 // Read timeOrigin one time: Safari calculates it again from the wall clock at each read
 const origin = performance.timeOrigin;
@@ -22,7 +22,7 @@ function reportHang(event : HangEvent, options : HangOptions) : void {
     const now = Date.now();
     const { timestamp, attributes : extra } = placeEventTime(event.startedAt, now);
     const attributes = { ...event.attributes, phase : event.phase, duration_ms : event.durationMs, ...extra };
-    const body = encodeOtlpLogs(target.resource ?? {}, "@lag/worker", [{
+    const body = encodeOtlpLogs(target.resource ?? {}, "@mark1russell7/lag/worker", [{
         timeMs : timestamp ?? now,
         observedTimeMs : now,
         eventName : "lag.main_thread.hang",

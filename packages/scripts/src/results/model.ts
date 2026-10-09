@@ -49,8 +49,12 @@ export type ResultRecord =
         budget : BudgetResult;
     };
 
-/** The short name of a workspace package: "@lag/core" gives "core", "@lag/integration-tests" gives "integration". */
+/**
+ * The short name of a workspace package: "@mark1russell7/lag" gives "core" (the name of the
+ * package before it went to npm), "@lag/integration-tests" gives "integration".
+ */
 export function packageSlug(packageName : string) : string {
+    if (packageName === "@mark1russell7/lag") return "core";
     const name = packageName.replace(/^@lag\//, "");
     return name === "integration-tests" ? "integration" : name;
 }

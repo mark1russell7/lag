@@ -56,7 +56,7 @@ describe("fromVitestJson", () => {
                     { title : "is unknown", status : "weird" },
                 ],
             }],
-        }, { id : "lag-unit-node", packageName : "@lag/core", kind : "unit", environment : "node" }, "/repo");
+        }, { id : "lag-unit-node", packageName : "@mark1russell7/lag", kind : "unit", environment : "node" }, "/repo");
 
         expect(suite.startedAt).toBe(new Date(1_000).toISOString());
         expect(suite.durationMs).toBe(250);
@@ -68,7 +68,7 @@ describe("fromVitestJson", () => {
     });
 
     it("adds a failed test for a file that failed without a failed test, as Vitest's JSON reporter writes it", () => {
-        const meta = { id : "lag-unit-node", packageName : "@lag/core", kind : "unit", environment : "node" } as const;
+        const meta = { id : "lag-unit-node", packageName : "@mark1russell7/lag", kind : "unit", environment : "node" } as const;
         const suite = fromVitestJson({
             testResults : [
                 // An error at the import: no tests
@@ -98,7 +98,7 @@ describe("fromIstanbulSummary", () => {
             total : { lines : c(8, 10), statements : c(8, 10), functions : c(2, 2), branches : c(1, 2) },
             "/repo/b.ts" : { lines : c(4, 5), statements : c(4, 5), functions : c(1, 1), branches : c(0, 1) },
             "/repo/a.ts" : { lines : c(4, 5), statements : c(4, 5), functions : c(1, 1), branches : c(1, 1) },
-        }, "@lag/core", "/repo");
+        }, "@mark1russell7/lag", "/repo");
 
         expect(report.total.lines).toEqual({ covered : 8, total : 10 });
         expect(report.files.map(f => f.file)).toEqual(["a.ts", "b.ts"]);
@@ -112,7 +112,7 @@ describe("fromStrykerReport", () => {
                 "/repo/a.ts" : { mutants : [{ status : "Killed" }, { status : "Survived" }, { status : "CompileError" }] },
                 "/repo/b.ts" : { mutants : [{ status : "Killed" }, { status : "Timeout" }] },
             },
-        }, "@lag/core", "/repo");
+        }, "@mark1russell7/lag", "/repo");
 
         // 3 detected (2 killed + 1 timeout) of 4 valid mutants
         expect(report.score).toBe(75);
@@ -123,8 +123,8 @@ describe("fromStrykerReport", () => {
     });
 
     it("keeps the commit and the time of the Stryker run", () => {
-        const report = fromStrykerReport({ files : {} }, "@lag/core", "/repo", { commit : "abc1234def", createdAt : "2026-10-04T03:41:00.000Z" });
-        expect(report).toEqual({ packageName : "@lag/core", files : [], commit : "abc1234def", createdAt : "2026-10-04T03:41:00.000Z" });
+        const report = fromStrykerReport({ files : {} }, "@mark1russell7/lag", "/repo", { commit : "abc1234def", createdAt : "2026-10-04T03:41:00.000Z" });
+        expect(report).toEqual({ packageName : "@mark1russell7/lag", files : [], commit : "abc1234def", createdAt : "2026-10-04T03:41:00.000Z" });
     });
 
     it("gives no score to a file without valid mutants, and puts it after the files with a score", () => {
@@ -133,12 +133,12 @@ describe("fromStrykerReport", () => {
                 "/repo/types.ts" : { mutants : [{ status : "CompileError" }, { status : "Ignored" }] },
                 "/repo/a.ts" : { mutants : [{ status : "Killed" }, { status : "Survived" }] },
             },
-        }, "@lag/core", "/repo");
+        }, "@mark1russell7/lag", "/repo");
 
         expect(report.files.map(f => [f.file, f.score])).toEqual([["a.ts", 50], ["types.ts", undefined]]);
         expect(report.files[1]).not.toHaveProperty("score");
         expect(report.score).toBe(50);
-        expect(fromStrykerReport({ files : { "/repo/t.ts" : { mutants : [{ status : "Ignored" }] } } }, "@lag/core", "/repo")).not.toHaveProperty("score");
+        expect(fromStrykerReport({ files : { "/repo/t.ts" : { mutants : [{ status : "Ignored" }] } } }, "@mark1russell7/lag", "/repo")).not.toHaveProperty("score");
     });
 });
 
@@ -150,7 +150,7 @@ describe("run summaries", () => {
             createdAt : "2026-10-07T00:00:00.000Z",
             suites : [{
                 id : "s",
-                packageName : "@lag/core",
+                packageName : "@mark1russell7/lag",
                 kind : "unit",
                 environment : "node",
                 startedAt : "2026-10-07T00:00:00.000Z",
