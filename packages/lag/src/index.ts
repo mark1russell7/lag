@@ -110,6 +110,7 @@ export type {
     ReportingDeps,
     SharedMemoryDeps,
     PageDeps,
+    PeerDeps,
     AbsoluteClockDeps,
     CrashReportDeps,
     CrashReportContextLike,
