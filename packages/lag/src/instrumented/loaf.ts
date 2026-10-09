@@ -10,6 +10,17 @@ const ATTRIBUTION_THRESHOLD_MS = 150;
 const MAX_EVENTS_PER_MINUTE = 10;
 
 /**
+ * This function removes the query string and the fragment from each URL in
+ * an invoker. For `classic-script` and `module-script`, the invoker is the
+ * URL of the script. An `event-listener` invoker of an element without an ID
+ * contains the `src` attribute, for example `IMG[src=https://shop.example/a.png].onload`.
+ */
+function stripInvokerUrl(invoker : string, invokerType : string) : string {
+    if (invokerType === "classic-script" || invokerType === "module-script") return stripUrlParameters(invoker);
+    return invoker.replace(/\[src=([^\]]*)\]/, (_match, url : string) => `[src=${stripUrlParameters(url)}]`);
+}
+
+/**
  * This factory makes a `LongAnimationFrameMonitor` that records into two
  * histograms (`lag_loaf_blocking_histogram` and
  * `lag_loaf_duration_histogram`).
@@ -17,7 +28,8 @@ const MAX_EVENTS_PER_MINUTE = 10;
  * With `deps.events`, a frame that blocks for 150 ms or more also emits a
  * `lag.long_animation_frame` event that names the longest script. The time
  * of the event is the start of the frame. The factory sends no more than 10
- * events each minute.
+ * events each minute. The URLs in the event have no query string and no
+ * fragment.
  */
 export function createInstrumentedLoaf(
     deps : CoreDeps & ObserverDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
@@ -38,7 +50,7 @@ export function createInstrumentedLoaf(
                         duration_ms : entry.duration,
                         blocking_duration_ms : entry.blockingDuration,
                         ...(script ? {
-                            "script.invoker" : script.invoker,
+                            "script.invoker" : stripInvokerUrl(script.invoker, script.invokerType),
                             "script.invoker_type" : script.invokerType,
                             "script.source_url" : stripUrlParameters(script.sourceURL),
                             "script.duration_ms" : script.duration,
