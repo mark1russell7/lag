@@ -8,34 +8,100 @@ status: draft
 The [Grafana stack](/docs/operations/grafana-stack) provisions two dashboards from the [grafana-infra](https://github.com/mark1russell7/grafana-infra) repository. The Lag Monitor dashboard shows the metrics of the monitors in Mimir and their events in Loki. The Frontend Observability dashboard shows span metrics, traces and logs. This page describes each panel and the query that it uses.
 
 <Callout type="note" title="The version">
-  This page describes the dashboards of grafana-infra at commit `4e183e3`, the `main` branch on 2026-10-08. The lockfile of this repository has this commit, and `pnpm test:e2e` starts its stack.
+  This page describes the dashboards of grafana-infra at commit `6ebe0dc`, the `main` branch on 2026-10-09, after pull request 5 ("annotations"). The lockfile of this repository has this commit, and `pnpm test:e2e` starts its stack.
 </Callout>
 
 ## The dashboards
 
 | Dashboard | UID | File | Content |
 |---|---|---|---|
-| Lag Monitor | `lag-monitor` | `lag-monitor.json` | 70 panels in 21 rows: the metrics of the monitors in Mimir, and their events in Loki. The script `scripts/build-dashboards.mjs` writes the file. |
+| Lag Monitor | `lag-monitor` | `lag-monitor.json` | 72 panels in 21 rows, and 8 annotation layers: the metrics of the monitors in Mimir, and their events in Loki. The script `scripts/build-dashboards.mjs` writes the file. |
 | Frontend Observability | `frontend-observability` | `frontend.json` | 11 panels in 5 rows: the span metrics of Tempo, the traces in Tempo, and the logs in Loki. It does not use the lag metrics. |
 
 The files are in `config/grafana/provisioning/dashboards` of grafana-infra. The file provider `Default` of Grafana loads them. Grafana reads the files again in 30 seconds or less (`updateIntervalSeconds: 30`). By default, both dashboards show the last hour, and they refresh each 30 seconds.
 
-The verification script of grafana-infra loads one dashboard through the Grafana API and sends each panel query. The option `--dashboard` selects the dashboard, and the default is `lag-monitor`.
+The verification script of grafana-infra loads one dashboard through the Grafana API and sends each panel query and the query of each annotation layer. The option `--dashboard` selects the dashboard, and the default is `lag-monitor`. Refer to [the verification workflow](#the-verification-workflow).
 
 ## Variables
 
-The Lag Monitor dashboard has two variables:
+The Lag Monitor dashboard has four variables:
 
-| Variable | Label | Query |
-|---|---|---|
-| `service_name` | Service | `label_values(lag_drift_histogram, service_name)` |
-| `navigation_type` | Navigation type | `label_values(lag_web_vital_lcp_histogram{service_name=~"$service_name"}, navigation_type)` |
+| Variable | Label | Type | Query or value |
+|---|---|---|---|
+| `service_name` | Service | Query, Mimir | `label_values(lag_drift_histogram, service_name)` |
+| `instance` | Page load | Query, Mimir | `label_values(lag_drift_histogram{service_name=~"$service_name"}, instance)` |
+| `session_id` | Session | Text box | The start of a `session.id`. The default is empty. |
+| `navigation_type` | Navigation type | Query, Mimir | `label_values(lag_web_vital_lcp_histogram{service_name=~"$service_name"}, navigation_type)` |
 
-You can select more than one value of each variable. The default value is All, and All sends the regular expression `.+`. Thus each query uses the operator `=~`, for example `service_name=~"$service_name"`. Grafana gets the values again when the time range changes (`refresh: 2`).
+The default value of each query variable is All, and All sends the regular expression `.+`. Thus each query uses the operator `=~`, for example `service_name=~"$service_name"`. Grafana gets the values again when the time range changes (`refresh: 2`). You can select more than one value of Service and of Navigation type. Page load has one value or All.
 
 The `service_name` label comes from the resource attribute `service.name`. Mimir promotes it to a label, and Loki indexes it. The Service list shows only the services that send `lag_drift_histogram` as a native histogram. A service with explicit-bucket histograms has only `_bucket`, `_sum` and `_count` series, thus the list does not show it.
 
+The `instance` variable selects one page load: one SDK instance. Mimir makes the `instance` label from the resource attribute `service.instance.id`. In Loki, the same value is in the structured metadata `service_instance_id`. Each Mimir query has the matcher `instance=~"$instance"`, and each Loki query has the filter `service_instance_id=~"$instance"`. Thus, with one page load, each panel and each annotation layer shows only that page load. The row [Long range](#long-range-recording-rules-all-page-loads) is different: its recording rules sum all page loads, thus the variable does not apply to it.
+
+The Page load list has the page loads that sent `lag_drift_histogram` in the time range. The list is in alphabetical order, and each value is a UUID. To find a page load, use the [Page loads table](#events-loki). A click on a page load in the table sets the variable.
+
+With All, the matcher is `instance=~".+"`. This matcher does not find a series without the `instance` label. Thus the panels do not show the data of an SDK that does not set `service.instance.id`. In the same way, the Loki panels do not show an event without `service_instance_id`.
+
+The `session_id` variable filters only the Page loads table. The table uses `session_id=~"${session_id:regex}.*"`. Grafana escapes the special characters of the text, and `.*` lets the text match the start of a session ID.
+
 The `navigation_type` variable filters the Web Vitals panels, the INP p75 panel of the Overview row, and the recorded Web Vitals panel.
+
+## Annotation layers
+
+Each kind of lag event has an annotation layer. A layer shows a mark on each time series panel at the time of each event. The top of the dashboard has a switch for each layer.
+
+| Layer | Event | On by default | Color | Title of a mark | Text of a mark | Tags |
+|---|---|---|---|---|---|---|
+| Hangs | `lag.main_thread.hang` | Yes | Red | `Hang {{phase}}` | `{{duration_ms}} ms, source {{lag_hang_source}}` | `phase`, `lag_hang_source` |
+| Stalls | `lag.stall` | Yes | Orange | `Stall: {{kind}}` | `{{duration_ms}} ms` | `kind` |
+| Page views | `lag.page_view.start` | No | Blue | `Page view: {{navigation_type}}` | `{{lag_page_view_url}}` | `navigation_type` |
+| Lifecycle | `lag.lifecycle.transition` | No | Purple | `{{from}} to {{to}}` | `{{trigger}}` | `trigger` |
+| Compute pressure | `lag.pressure.change` | No | Yellow | `Pressure {{source}}: {{state}}` | `from {{previous_state}}` | `source`, `state` |
+| Clock jumps | `lag.clock.jump` | No | Gray (`#8f8f8f`) | `Clock {{kind}} {{direction}}` | `{{magnitude_ms}} ms` | `kind` |
+| Long animation frames | `lag.long_animation_frame` | No | Purple (`#b877d9`) | `Long animation frame` | `{{blocking_duration_ms}} ms blocking, {{script_invoker}}` | `script_invoker_type` |
+| Browser reports | `lag.browser_report` | No | Blue (`#5794f2`) | `{{type}}: {{id}}` | `{{message}}` | `type` |
+
+The marks show these items:
+
+- Hangs: the phase of the hang (`started`, `ended` or `abandoned`) and its duration. For an abandoned hang, the source tells which page reported it: `journal` (the next page of the origin), `peer` (another open page of the origin) or `self` (the page itself at its close). The other phases have no source. Refer to [Hangs](#hangs-workerlagmonitor).
+- Stalls: the kind of the stall episode (`hang` or `suspend`) and its duration.
+- Page views: the start of each page view, with its navigation type and its URL.
+- Lifecycle: each transition of the lifecycle state, with the browser event that caused it.
+- Compute pressure: each change of the pressure state of a source, with the state before it. The first record of a source has no state before it.
+- Clock jumps: the kind, the direction and the magnitude of each jump.
+- Long animation frames: the blocking duration of each frame that the monitor sent as an event, and the script that blocked the frame most.
+- Browser reports: the type, the ID and the message of each report.
+
+The Hangs and Stalls layers are on by default. The other layers can have many events, thus they are off by default. With all page loads, the marks of all pages are on the panels. Thus, first select one page load, then turn on the layers. A layer gets at most 500 events (`maxLines: 500`).
+
+Each layer follows the Service and Page load variables. It does not follow Navigation type or Session. The query of a layer has this form:
+
+```logql
+{service_name=~"$service_name", event_name="lag.main_thread.hang"} | service_instance_id=~"$instance" | logfmt
+```
+
+The line of an event in Loki is the event name, then the attributes as sorted `key=value` pairs. Refer to [events in Loki](/docs/operations/grafana-stack#events-in-loki). The parser `logfmt` gets the attributes from the line. Thus the title, the text and the tags of a mark can use each attribute. The names have underscores in place of dots, for example `lag_hang_source` for `lag.hang.source`.
+
+The time of a mark is the time of the log record. The lag library gives each event the time of its occurrence. For an event with a duration, for example a hang or a stall, it is the start. Thus a mark is at the time of the metric values that it explains.
+
+An occurrence can be more than 30 minutes before or after the call. Then the record gets the time of the call, and the attribute `lag.event.time` has the time of the occurrence. Refer to [the time of an event](/docs/concepts/metrics-model#the-time-of-an-event).
+
+<Callout type="note" title="The query of a layer in Grafana 13">
+  The Loki data source of Grafana 13 reads the query of an annotation layer from the layer itself (`annotationQuery`), not from its `target`. Thus each layer has the query in the top-level property `expr`, with `maxLines`, `instant`, `titleFormat`, `textFormat` and `tagKeys`. The `target` of the layer has the same query, for the query editor and for the verification script. With the query only in `target`, Grafana sent no query for the layers (commit `91a5cd8` of grafana-infra).
+</Callout>
+
+The verification script makes sure that the query of each layer finds events in the sample data. It does not examine the title and the text of the marks. The screenshots of the [verification workflow](#the-verification-workflow) show the marks.
+
+## Examine one page load
+
+1. Open the Lag Monitor dashboard.
+2. Go to the row Events (Loki).
+3. To find the page loads of one session, write the start of its session ID in Session.
+4. In the Page loads table, click the ID of a page load. If Grafana shows a menu, click "Show only this page load".
+5. At the top of the dashboard, turn on the annotation layers that you want to see.
+
+The link of step 4 opens the dashboard with the Page load variable, the Service value and the time range in the URL. To see all page loads again, set Page load to All.
 
 ## Read a panel
 
@@ -43,7 +109,8 @@ The queries of the Lag Monitor dashboard obey these rules:
 
 - A histogram query first sums the rates of all page loads, then it takes the quantile, for example `histogram_quantile(0.95, sum(rate(x[$__rate_interval])))`. Thus a p95 line is the p95 of all samples of the selected page loads. It is not a mean of the quantiles of each page load. Refer to [aggregation in PromQL](/docs/concepts/metrics-model#aggregation-in-promql).
 - A counter query uses `rate()` or `increase()`, not the cumulative value. A Mimir panel with "per minute" in its title multiplies the rate in each second by 60.
-- No query groups by `instance` or by session.
+- Each query filters by the Service and the Page load variables. Only the queries of the row Long range do not filter by Page load.
+- No Mimir query groups by `instance` or by session. Only the Page loads table groups by page load and by session. It counts the events of each page load in Loki.
 - A rate in a time series uses the range `$__rate_interval`. The Mimir data source sets `timeInterval` to `15s`, the export interval. Then `$__rate_interval` is 60 seconds or more.
 - A stat panel with "(time range)" in its title uses an instant query with `increase(...[$__range])`. The panels INP p75, Hangs, Stalls and `performance.now()` resolution also use such a query. These panels give one value for the full time range of the dashboard.
 - A mean line uses `histogram_avg()`. A count of observations uses `histogram_count()`.
@@ -68,7 +135,7 @@ The Web Vitals panels show the good and the poor thresholds of each vital. The c
 | FCP | 1800 or less | More than 3000 | `ms` |
 | TTFB | 800 or less | More than 1800 | `ms` |
 
-To find the events of one page load, use its `instance` label in Mimir. In Loki, the same value is in `service_instance_id`.
+To see the metrics and the events of one page load, set the Page load variable. Refer to [examine one page load](#examine-one-page-load). In Mimir, the ID of the page load is the `instance` label. In Loki, the same value is in `service_instance_id`.
 
 ## The metric names are a contract
 
@@ -80,13 +147,25 @@ The names are in these files:
 |---|---|---|
 | lag | `packages/lag/src/metric-catalog.ts` | The catalog: the name, kind, unit and permitted attribute values of each metric, and the events with their attributes. |
 | grafana-infra | `scripts/lib/lag-catalog.mjs` | A copy of the catalog. The dashboard script, the sample-data script and the verification script use it. |
-| grafana-infra | `scripts/build-dashboards.mjs` | The panel queries and the variables. The script writes `lag-monitor.json`. |
+| grafana-infra | `scripts/build-dashboards.mjs` | The panel queries, the annotation layers and the variables. The script writes `lag-monitor.json`. |
 | grafana-infra | `config/mimir/rules/anonymous/lag.yaml` | The recording rules of 11 histograms. |
 | grafana-infra | `config/grafana/provisioning/dashboards/lag-monitor.json` | The dashboard that the script writes. |
 
-The attribute names are also part of the contract. The panels group by attributes, for example `outcome`, `kind` and `navigation_type`. The Loki panels use the event names and the event attributes, for example `blocking_duration_ms`.
+The attribute names are also part of the contract. The panels group by attributes, for example `outcome`, `kind` and `navigation_type`. The Loki panels use the event names and the event attributes, for example `blocking_duration_ms`. The annotation layers use the event names, and their marks use the event attributes, for example `lag_hang_source`.
 
-On 2026-10-08, the copy of commit `4e183e3` agrees with the catalog of this repository. Both have 42 metrics (32 histograms and 10 counters) and 6 events, with the same names, kinds, units and attributes. The dashboard uses all 42 metric names, and no other `lag_*` name. The check `verify --catalog` of grafana-infra compares the two catalogs.
+On 2026-10-09, the copy of commit `6ebe0dc` agrees with the catalog on the `main` branch of this repository. Both have 42 metrics (32 histograms and 10 counters) and 9 events, with the same names, kinds, units, attributes and permitted values. The 9 events are `browser.web_vital`, `lag.main_thread.hang`, `lag.clock.jump`, `lag.long_animation_frame`, `lag.browser_report`, `lag.stall`, `lag.lifecycle.transition`, `lag.page_view.start` and `lag.pressure.change`. The check `verify --catalog` of grafana-infra compares the two catalogs, and it found no difference.
+
+The copy also has a list of optional attributes (`optional`) for 3 events. Some events of these names do not have these attributes:
+
+| Event | Optional attributes |
+|---|---|
+| `lag.main_thread.hang` | `lag.hang.page_id`, `lag.hang.source` |
+| `lag.page_view.start` | `lag.page_view.url`, `lag.page_view.previous_id` |
+| `lag.pressure.change` | `previous_state` |
+
+The catalog of this repository has no such list. The verification script does not expect the optional attributes in the structured metadata of each event.
+
+The dashboard uses all 42 metric names, and no other metric name that starts with `lag_`. The other `lag_` names in the dashboard are the structured metadata of the events: `lag_page_view_id`, `lag_page_view_url`, `lag_page_view_previous_id`, `lag_hang_page_id` and `lag_hang_source`.
 
 ### Examine a change of a name
 
@@ -115,7 +194,9 @@ On 2026-10-08, the copy of commit `4e183e3` agrees with the catalog of this repo
    pnpm verify --summary sample-summary.json --catalog ../lag/packages/lag/src/metric-catalog.ts
    ```
 
-With `--catalog`, the verification script compares the copy with the catalog. It compares the names, the kinds, the units, the attribute names and the attributes of each event. It also examines if Mimir stores each metric under its catalog name, and if each panel query gives data. The path in the example is correct when lag and grafana-infra are in the same directory.
+With `--catalog`, the verification script compares the copy with the catalog. It compares the names, the kinds, the units, the attribute names and the attributes of each event. It does not compare the permitted values of the attributes. It also examines if Mimir stores each metric under its catalog name, if each panel query gives data, and if each annotation layer finds events. The path in the example is correct when lag and grafana-infra are in the same directory.
+
+The comparison of the catalogs is the first part of the output, and it does not use the stack. Without the stack, the next checks fail, and the script stops at the CORS check with the error `fetch failed`. The CI workflow of grafana-infra does not use `--catalog`, because it does not have a copy of this repository.
 
 ## Add a panel
 
@@ -125,24 +206,26 @@ The script `scripts/build-dashboards.mjs` writes the Lag Monitor dashboard. Do n
 2. Find the `row()` call of the row for the new panel.
 3. After the last panel of that row, add a call to `timeseries()`, `stat()`, `metricTable()` or `eventTable()`.
 4. Give the targets with `prom()`, `promInstant()`, `loki()` or `lokiInstant()`.
-5. Write each PromQL query with the helpers, for example `quantile()`, `sumRate()`, `perMinute()` and `observationsPerMinute()`. The helpers add the matcher `service_name=~"$service_name"`.
-6. Make sure that the query obeys the rules in [Read a panel](#read-a-panel).
-7. Write the dashboard again:
+5. Write each PromQL query with the helpers, for example `quantile()`, `sumRate()`, `perMinute()` and `observationsPerMinute()`. The helpers add the matchers `service_name=~"$service_name"` and `instance=~"$instance"`.
+6. Start each LogQL query with the helper `events()`, for example `events('="lag.stall"')`. It adds the Service matcher and the Page load filter.
+7. Make sure that the query obeys the rules in [Read a panel](#read-a-panel).
+8. Write the dashboard again:
 
    ```sh
    pnpm dashboards
    ```
 
-8. Look at each panel and its queries:
+9. Look at each panel and its queries:
 
    ```sh
    node scripts/build-dashboards.mjs --list
    ```
 
-9. Wait for 30 seconds.
-10. Load the dashboard again in Grafana.
-11. Send sample data.
-12. Start the verification script. Make sure that the query of the new panel gives data.
+10. Wait for 30 seconds.
+11. Load the dashboard again in Grafana.
+12. Send sample data.
+13. Start the verification script. Make sure that the query of the new panel gives data.
+14. Commit `scripts/build-dashboards.mjs` and `lag-monitor.json` together. The CI workflow writes the dashboard again, and it fails if the file is different.
 
 This example adds the p75 of the drift lag to the drift row:
 
@@ -158,13 +241,89 @@ By default, a time series panel has the unit `ms`, a width of 12 and a height of
 
 A panel for a new metric needs more steps. First add the metric to `scripts/lib/lag-catalog.mjs`. Then record the metric in `scripts/send-sample-data.mjs`. That script stops with "Metrics without values" if a metric of the copy has no values.
 
+### Add an annotation layer
+
+The list `ANNOTATIONS` in `scripts/build-dashboards.mjs` has the layers. Each item is a call to `annotation()`, with the name of the layer, the event name, and the options `color`, `enable`, `title`, `text` and `tags`. The function writes the query with `events()` and `| logfmt`. It puts the query in `expr` and in `target`. This example is the Stalls layer:
+
+```js
+annotation("Stalls", "lag.stall", { color : "orange", enable : true, title : "Stall: {{kind}}", text : "{{duration_ms}} ms", tags : "kind" }),
+```
+
+A layer for a new event needs more steps. First add the event to `EVENTS` in `scripts/lib/lag-catalog.mjs`. Then send the event in `scripts/send-sample-data.mjs`. Without events in the sample data, the verification script fails for the layer.
+
+## The verification workflow
+
+The CI workflow `.github/workflows/verify.yml` of grafana-infra examines the stack, the sample data and the dashboard from end to end. It starts for each pull request, for each push to `main`, and by hand (`workflow_dispatch`). The job uses Node.js 24 and the pnpm version of `packageManager` in `package.json`. It stops after 30 minutes.
+
+| Step | What it does |
+|---|---|
+| The dashboard file agrees with `scripts/build-dashboards.mjs` | Writes the dashboard again. The step fails if `git diff --exit-code` finds a change in `config/grafana/provisioning/dashboards/`. |
+| Start the stack | `docker compose up -d`. Then it waits up to 5 minutes for Alloy, Mimir, Loki and Grafana. |
+| Send sample data | `node scripts/send-sample-data.mjs --summary sample-summary.json` |
+| Verify the pipeline and the dashboard | `node scripts/verify-pipeline.mjs --summary sample-summary.json`, without `--catalog` |
+| Screenshots of the dashboard | Installs Chromium for Playwright, then `node scripts/screenshot-dashboard.mjs --summary sample-summary.json --out screenshots`. |
+| Upload the screenshots | Uploads the directory `screenshots/` as the artifact `dashboard-screenshots`. |
+| Stop the stack | `docker compose down -v`. When a step fails, the workflow first writes the last 200 log lines of the containers. |
+
+The screenshots, the upload and the stop of the stack also occur when an earlier step fails.
+
+### The sample data
+
+`scripts/send-sample-data.mjs` simulates six page loads of two services, with the OpenTelemetry JS SDK. It sends each event of the catalog copy, also `lag.page_view.start`, `lag.lifecycle.transition` and `lag.pressure.change`. Each event has the line of the event as its body, in the form of `formatEventLine` of the lag library. Thus the lines in Loki, which the annotation layers parse, have the same form as the lines of the library. A hang event and its stall event have the start of the hang as their time.
+
+### The checks of the dashboard
+
+`scripts/verify-pipeline.mjs` examines the dashboard through the Grafana API:
+
+- Grafana loads the dashboard.
+- Each `label_values()` variable gives values. The Session text box has no query.
+- Each panel query gives data. The script sends the query to `/api/ds/query`. It replaces `$service_name` with the services of the sample, `$navigation_type` and `$instance` with `.+`, and `${session_id:regex}` with an empty text.
+- The query of each annotation layer finds events. The script sends the query of the `target` of the layer.
+
+Before these checks, the script compares the number of events of each name in Loki with the number that the sample sent. It waits up to 30 seconds for the last events of the sample. Then it examines the structured metadata of one event of each name, without the optional attributes of the catalog copy.
+
+On 2026-10-09, the workflow passed on the merge commit `6ebe0dc` (workflow run 37920009653). All 134 panel queries gave data, each of the 8 annotation layers found events, and the script passed 269 of 269 checks.
+
+### The screenshots
+
+`scripts/screenshot-dashboard.mjs` takes screenshots of the dashboard with Playwright and Chromium, after the sample data. It reads the dashboard from Grafana and saves a copy with all annotation layers on: the UID `lag-monitor-review` and the title "Lag Monitor (all annotations)". A URL cannot turn on a layer, thus the script needs this copy. The time range is from 1 minute before the start of the sample to 1 minute after its end. The browser window is 1600 by 1200 pixels, and Grafana shows the dashboard in kiosk mode.
+
+The script writes these files into the directory of `--out`. The default directory is `screenshots`.
+
+| File | Content |
+|---|---|
+| `fleet.png` | The full dashboard as provisioned, for all page loads. |
+| `table-<title>.png` | One screenshot for each table of events: Page loads, Recent page views and lifecycle transitions, Recent hangs and stalls, Recent clock jumps, and LoAF attribution. |
+| `tables.json` | For each table: the title, the file and the first 400 characters of its text, or the error. |
+| `page-<index>.png` | The review copy for one page load of the sample, with all annotation layers on. The option `--pages` selects the page loads. The default is `0,1`. |
+| `annotations.json` | The annotation queries that Grafana sent, with the number of frames and rows of each result. Also the console errors of the browser, and the fields of the log frames of the Loki panels. |
+
+To take the screenshots on your computer, do these steps:
+
+1. Send the sample data with `--summary sample-summary.json`.
+2. Install Chromium for Playwright:
+
+   ```sh
+   pnpm exec playwright install chromium
+   ```
+
+3. Take the screenshots:
+
+   ```sh
+   node scripts/screenshot-dashboard.mjs --summary sample-summary.json
+   ```
+
+4. Open the directory `screenshots`.
+
+The script sends no credentials to Grafana. It saves the dashboard `lag-monitor-review` in your Grafana, and it replaces an earlier copy. Git ignores the directory `screenshots/`.
+
 ## The Lag Monitor panels
 
 Each row of the dashboard has a section here. The table gives each panel, and the code block gives its queries from `lag-monitor.json`.
 
 ### Overview
 
-Six stat panels give the state of the selected services.
+Six stat panels give the state of the selected services and page loads.
 
 | Panel | Type | Unit | What it shows |
 |---|---|---|---|
@@ -177,17 +336,17 @@ Six stat panels give the state of the selected services.
 
 ```promql
 # Active page loads
-count(count_over_time(lag_drift_histogram{service_name=~"$service_name"}[1m])) or vector(0)
+count(count_over_time(lag_drift_histogram{service_name=~"$service_name", instance=~"$instance"}[1m])) or vector(0)
 # Drift p95
-histogram_quantile(0.95, sum (rate(lag_drift_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_drift_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Heartbeat delay p95
-histogram_quantile(0.95, sum (rate(lag_worker_main_block_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_worker_main_block_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # INP p75
-histogram_quantile(0.75, sum(increase(lag_web_vital_inp_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__range])))
+histogram_quantile(0.75, sum(increase(lag_web_vital_inp_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__range])))
 # Hangs
-sum(increase(lag_main_thread_hangs{service_name=~"$service_name"}[$__range]))
+sum(increase(lag_main_thread_hangs{service_name=~"$service_name", instance=~"$instance"}[$__range]))
 # Stalls
-sum(increase(lag_stalls{service_name=~"$service_name"}[$__range]))
+sum(increase(lag_stalls{service_name=~"$service_name", instance=~"$instance"}[$__range]))
 ```
 
 ### Drift (DriftLag)
@@ -197,20 +356,20 @@ Refer to [DriftLag](/docs/monitors/drift-lag).
 | Panel | Type | Unit | What it shows |
 |---|---|---|---|
 | Drift lag p50 / p95 / p99 | Time series | `ms` | The quantiles and the mean of the lag of each window of chained timeouts (approximately 100 ms). Each block of the main thread in a window adds to the lag of the window. |
-| Drift baseline: timer granularity | Time series | `ms` | The p50 and the p95 of the idle duration of one timer step: the mean of the recent steps that are not blocks. An increase needs a probe that shows an idle thread. It is the timer granularity of the browser and the operating system. DriftLag subtracts it. |
+| Drift baseline: timer granularity | Time series | `ms` | The p50 and the p95 of the idle duration of one timer step: the mean of the recent steps that are not blocks. An increase needs a probe that shows an idle thread, thus a sustained load does not change it. It is the timer granularity of the browser and the operating system. DriftLag subtracts it. |
 | Drift windows per second | Time series | `none` | The number of windows that DriftLag recorded each second, for all page loads. The monitors discard the windows of hidden and frozen pages. |
 
 ```promql
 # Drift lag p50 / p95 / p99
-histogram_quantile(0.5, sum (rate(lag_drift_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_drift_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_drift_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_avg(sum (rate(lag_drift_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_drift_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_drift_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_drift_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_avg(sum (rate(lag_drift_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Drift baseline: timer granularity
-histogram_quantile(0.5, sum (rate(lag_drift_baseline_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_drift_baseline_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_drift_baseline_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_drift_baseline_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Drift windows per second
-histogram_count(sum (rate(lag_drift_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_count(sum (rate(lag_drift_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
 
 ### Macrotask (MacrotaskLag)
@@ -223,10 +382,10 @@ Refer to [MacrotaskLag](/docs/monitors/macrotask-lag).
 
 ```promql
 # Macrotask queue delay p50 / p95 / p99
-histogram_quantile(0.5, sum (rate(lag_macrotask_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_macrotask_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_macrotask_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_avg(sum (rate(lag_macrotask_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_macrotask_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_macrotask_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_macrotask_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_avg(sum (rate(lag_macrotask_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
 
 ### Scheduling fairness (SchedulingFairnessMonitor)
@@ -240,13 +399,13 @@ Refer to [scheduling fairness](/docs/monitors/scheduling-fairness).
 
 ```promql
 # Scheduling latency p50, by primitive
-histogram_quantile(0.5, sum (rate(lag_scheduling_microtask_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.5, sum (rate(lag_scheduling_macrotask_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.5, sum (rate(lag_scheduling_message_channel_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_scheduling_microtask_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_scheduling_macrotask_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_scheduling_message_channel_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Scheduling latency p99, by primitive
-histogram_quantile(0.99, sum (rate(lag_scheduling_microtask_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_scheduling_macrotask_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_scheduling_message_channel_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_scheduling_microtask_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_scheduling_macrotask_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_scheduling_message_channel_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
 
 ### Worker heartbeat (WorkerLagMonitor)
@@ -261,18 +420,18 @@ Refer to [worker lag](/docs/monitors/worker-lag).
 
 ```promql
 # Heartbeat delivery delay: the lag that a random event sees
-histogram_quantile(0.5, sum (rate(lag_worker_main_block_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_worker_main_block_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_worker_main_block_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_avg(sum (rate(lag_worker_main_block_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_worker_main_block_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_worker_main_block_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_worker_main_block_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_avg(sum (rate(lag_worker_main_block_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Worker self-lag
-histogram_quantile(0.5, sum (rate(lag_worker_self_lag_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_worker_self_lag_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_worker_self_lag_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_worker_self_lag_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_worker_self_lag_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_worker_self_lag_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Worker clock offset
-histogram_quantile(0.5, sum (rate(lag_worker_clock_offset_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_worker_clock_offset_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_worker_clock_offset_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_worker_clock_offset_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_worker_clock_offset_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_worker_clock_offset_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
 
 ### Hangs (WorkerLagMonitor)
@@ -281,16 +440,18 @@ Refer to [worker lag](/docs/monitors/worker-lag).
 
 | Panel | Type | Unit | What it shows |
 |---|---|---|---|
-| Hangs per minute, by outcome | Time series, bars | `none` | The hangs that the workers detected, each minute, for each `outcome`. In a hang, the main thread does not acknowledge the heartbeats. `abandoned`: the page closed or crashed during the hang, and the next page of the origin reported it. |
-| Hang duration p50 / p95, by outcome | Time series | `ms` | The duration of each hang. For an abandoned hang, it is the duration until the worker saw the hang for the last time. |
+| Hangs per minute, by outcome | Time series, bars | `none` | The hangs that the workers detected, each minute, for each `outcome`. In a hang, the main thread does not acknowledge the heartbeats. `abandoned`: the page closed or crashed during the hang. The next page of the origin, another open page of the origin, or the page itself at its close reported it. The attribute `lag.hang.source` of the event tells which (`journal`, `peer` or `self`). |
+| Hang duration p50 / p95, by outcome | Time series | `ms` | The duration of each hang. For an abandoned hang, it is the duration until the worker saw the hang for the last time, or until the end of the page. |
 
 ```promql
 # Hangs per minute, by outcome
-60 * sum by (outcome) (rate(lag_main_thread_hangs{service_name=~"$service_name"}[$__rate_interval]))
+60 * sum by (outcome) (rate(lag_main_thread_hangs{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 # Hang duration p50 / p95, by outcome
-histogram_quantile(0.5, sum by (outcome) (rate(lag_main_thread_hang_duration_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum by (outcome) (rate(lag_main_thread_hang_duration_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum by (outcome) (rate(lag_main_thread_hang_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum by (outcome) (rate(lag_main_thread_hang_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
+
+The annotation layer Hangs shows each hang event on the charts, with its phase, its duration and its source.
 
 ### Measurement conditions (stalls and discarded samples)
 
@@ -304,13 +465,15 @@ Refer to [measurement validity](/docs/concepts/measurement-validity).
 
 ```promql
 # Stalls per minute, by kind
-60 * sum by (kind) (rate(lag_stalls{service_name=~"$service_name"}[$__rate_interval]))
+60 * sum by (kind) (rate(lag_stalls{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 # Stall duration p50 / p95, by kind
-histogram_quantile(0.5, sum by (kind) (rate(lag_stall_duration_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum by (kind) (rate(lag_stall_duration_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum by (kind) (rate(lag_stall_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum by (kind) (rate(lag_stall_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Samples discarded per minute, by reason
-60 * sum by (reason) (rate(lag_samples_discarded{service_name=~"$service_name"}[$__rate_interval]))
+60 * sum by (reason) (rate(lag_samples_discarded{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 ```
+
+The annotation layer Stalls shows each `lag.stall` event on the charts, at the start of the stall episode.
 
 ### Clock (ClockDriftMonitor and ClockReliabilityChecker)
 
@@ -324,15 +487,17 @@ Refer to [clock drift](/docs/monitors/clock-drift) and [clock reliability](/docs
 
 ```promql
 # Clock jumps per minute, by kind and direction
-60 * sum by (kind, direction) (rate(lag_clock_jumps{service_name=~"$service_name"}[$__rate_interval]))
+60 * sum by (kind, direction) (rate(lag_clock_jumps{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 # Clock skew p50 / p95 / p99
-histogram_quantile(0.5, sum (rate(lag_clock_skew_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_clock_skew_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_clock_skew_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_clock_skew_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_clock_skew_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_clock_skew_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # performance.now() resolution
-histogram_quantile(0.5, sum(increase(lag_clock_resolution_histogram{service_name=~"$service_name"}[$__range])))
-histogram_quantile(0.95, sum(increase(lag_clock_resolution_histogram{service_name=~"$service_name"}[$__range])))
+histogram_quantile(0.5, sum(increase(lag_clock_resolution_histogram{service_name=~"$service_name", instance=~"$instance"}[$__range])))
+histogram_quantile(0.95, sum(increase(lag_clock_resolution_histogram{service_name=~"$service_name", instance=~"$instance"}[$__range])))
 ```
+
+The annotation layer Clock jumps shows each `lag.clock.jump` event on the charts. It is off by default.
 
 ### Long animation frames (LongAnimationFrameMonitor)
 
@@ -343,26 +508,28 @@ Refer to [long animation frames](/docs/monitors/long-animation-frames).
 | LoAF blocking duration p50 / p95 / p99 | Time series | `ms` | The blocking duration of each long animation frame. |
 | LoAF duration p50 / p95 / p99 | Time series | `ms` | The total duration of each long animation frame. |
 | Long animation frames per minute | Time series | `none` | The number of long animation frames of all page loads, each minute: the count of the duration histogram. |
-| LoAF attribution: blocking time by script (events) | Table | Blocking time: `ms`, Frames: `none` | One row for each script, with its invoker type, invoker and URL. The columns give the sum of the blocking time and the number of frames in the time range. The data comes from the `lag.long_animation_frame` events. The monitor sends this event only for a frame that blocks for 150 ms or more. The event names the script that blocked the frame most. The table sorts by the blocking time. |
+| LoAF attribution: blocking time by script (events) | Table | Blocking time: `ms`, Frames: `none` | One row for each script, with the columns Invoker type, Invoker and Script URL. The columns Blocking time and Frames give the sum of the blocking time and the number of frames in the time range. The data comes from the `lag.long_animation_frame` events. The monitor sends this event only for a frame that blocks for 150 ms or more. The event names the script that blocked the frame most. The table sorts by the blocking time. Two instant queries give the values. The transformations put each label in a column and merge the two queries into one row for each script. |
 
 ```promql
 # LoAF blocking duration p50 / p95 / p99
-histogram_quantile(0.5, sum (rate(lag_loaf_blocking_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_loaf_blocking_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_loaf_blocking_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_loaf_blocking_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_loaf_blocking_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_loaf_blocking_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # LoAF duration p50 / p95 / p99
-histogram_quantile(0.5, sum (rate(lag_loaf_duration_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_loaf_duration_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_loaf_duration_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_loaf_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_loaf_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_loaf_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Long animation frames per minute
-60 * histogram_count(sum (rate(lag_loaf_duration_histogram{service_name=~"$service_name"}[$__rate_interval])))
+60 * histogram_count(sum (rate(lag_loaf_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
 
 ```logql
 # LoAF attribution: blocking time by script (events)
-sum by (script_invoker_type, script_invoker, script_source_url) (sum_over_time({service_name=~"$service_name", event_name="lag.long_animation_frame"} | keep script_invoker_type, script_invoker, script_source_url, blocking_duration_ms | unwrap blocking_duration_ms [$__range]))
-sum by (script_invoker_type, script_invoker, script_source_url) (count_over_time({service_name=~"$service_name", event_name="lag.long_animation_frame"} | keep script_invoker_type, script_invoker, script_source_url [$__range]))
+sum by (script_invoker_type, script_invoker, script_source_url) (sum_over_time({service_name=~"$service_name", event_name="lag.long_animation_frame"} | service_instance_id=~"$instance" | keep script_invoker_type, script_invoker, script_source_url, blocking_duration_ms | unwrap blocking_duration_ms [$__range]))
+sum by (script_invoker_type, script_invoker, script_source_url) (count_over_time({service_name=~"$service_name", event_name="lag.long_animation_frame"} | service_instance_id=~"$instance" | keep script_invoker_type, script_invoker, script_source_url [$__range]))
 ```
+
+The annotation layer Long animation frames shows each `lag.long_animation_frame` event on the charts, at the start of the frame. It is off by default.
 
 ### Event timing (EventTimingMonitor)
 
@@ -376,13 +543,13 @@ Refer to [Event Timing](/docs/monitors/event-timing).
 
 ```promql
 # Event duration p95, by interaction type
-histogram_quantile(0.95, sum by (interaction) (rate(lag_event_duration_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.95, sum by (interaction) (rate(lag_event_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Event phases p95
-histogram_quantile(0.95, sum (rate(lag_event_input_delay_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_event_processing_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_event_presentation_delay_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_event_input_delay_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_event_processing_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_event_presentation_delay_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Interactions per minute, by interaction type
-60 * histogram_count(sum by (interaction) (rate(lag_event_duration_histogram{service_name=~"$service_name"}[$__rate_interval])))
+60 * histogram_count(sum by (interaction) (rate(lag_event_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
 
 ### Layout shift (LayoutShiftMonitor)
@@ -396,11 +563,11 @@ Refer to [layout shift](/docs/monitors/layout-shift).
 
 ```promql
 # Layout shift score p50 / p95 / p99
-histogram_quantile(0.5, sum (rate(lag_layout_shift_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_layout_shift_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_layout_shift_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_layout_shift_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_layout_shift_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_layout_shift_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Layout shifts per minute
-60 * histogram_count(sum (rate(lag_layout_shift_histogram{service_name=~"$service_name"}[$__rate_interval])))
+60 * histogram_count(sum (rate(lag_layout_shift_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
 
 ### Web Vitals (PageViewVitals)
@@ -425,36 +592,38 @@ Refer to [page-view vitals](/docs/monitors/page-view-vitals). The histogram of a
 
 ```promql
 # INP p75 (time range)
-histogram_quantile(0.75, sum by (navigation_type) (increase(lag_web_vital_inp_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__range])))
+histogram_quantile(0.75, sum by (navigation_type) (increase(lag_web_vital_inp_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__range])))
 # CLS p75 (time range)
-histogram_quantile(0.75, sum by (navigation_type) (increase(lag_web_vital_cls_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__range])))
+histogram_quantile(0.75, sum by (navigation_type) (increase(lag_web_vital_cls_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__range])))
 # LCP p75 (time range)
-histogram_quantile(0.75, sum by (navigation_type) (increase(lag_web_vital_lcp_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__range])))
+histogram_quantile(0.75, sum by (navigation_type) (increase(lag_web_vital_lcp_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__range])))
 # FCP p75 (time range)
-histogram_quantile(0.75, sum by (navigation_type) (increase(lag_web_vital_fcp_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__range])))
+histogram_quantile(0.75, sum by (navigation_type) (increase(lag_web_vital_fcp_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__range])))
 # TTFB p75 (time range)
-histogram_quantile(0.75, sum by (navigation_type) (increase(lag_web_vital_ttfb_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__range])))
+histogram_quantile(0.75, sum by (navigation_type) (increase(lag_web_vital_ttfb_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__range])))
 # Page views (time range)
-histogram_count(sum(increase(lag_web_vital_lcp_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__range])))
+histogram_count(sum(increase(lag_web_vital_lcp_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__range])))
 # INP p75, by navigation type
-histogram_quantile(0.75, sum by (navigation_type) (rate(lag_web_vital_inp_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__rate_interval])))
+histogram_quantile(0.75, sum by (navigation_type) (rate(lag_web_vital_inp_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__rate_interval])))
 # CLS p75, by navigation type
-histogram_quantile(0.75, sum by (navigation_type) (rate(lag_web_vital_cls_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__rate_interval])))
+histogram_quantile(0.75, sum by (navigation_type) (rate(lag_web_vital_cls_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__rate_interval])))
 # LCP p75, by navigation type
-histogram_quantile(0.75, sum by (navigation_type) (rate(lag_web_vital_lcp_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__rate_interval])))
+histogram_quantile(0.75, sum by (navigation_type) (rate(lag_web_vital_lcp_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__rate_interval])))
 # FCP p75, by navigation type
-histogram_quantile(0.75, sum by (navigation_type) (rate(lag_web_vital_fcp_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__rate_interval])))
+histogram_quantile(0.75, sum by (navigation_type) (rate(lag_web_vital_fcp_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__rate_interval])))
 # TTFB p75, by navigation type
-histogram_quantile(0.75, sum by (navigation_type) (rate(lag_web_vital_ttfb_histogram{service_name=~"$service_name", navigation_type=~"$navigation_type"}[$__rate_interval])))
+histogram_quantile(0.75, sum by (navigation_type) (rate(lag_web_vital_ttfb_histogram{service_name=~"$service_name", instance=~"$instance", navigation_type=~"$navigation_type"}[$__rate_interval])))
 ```
 
 ```logql
 # Web Vitals p75 from events, by navigation type
-quantile_over_time(0.75, {service_name=~"$service_name", event_name="browser.web_vital"} | browser_web_vital_navigation_type=~"$navigation_type" | keep browser_web_vital_name, browser_web_vital_navigation_type, browser_web_vital_value | unwrap browser_web_vital_value [$__range]) by (browser_web_vital_name, browser_web_vital_navigation_type)
-sum by (browser_web_vital_name, browser_web_vital_navigation_type) (count_over_time({service_name=~"$service_name", event_name="browser.web_vital"} | browser_web_vital_navigation_type=~"$navigation_type" | keep browser_web_vital_name, browser_web_vital_navigation_type [$__range]))
+quantile_over_time(0.75, {service_name=~"$service_name", event_name="browser.web_vital"} | service_instance_id=~"$instance" | browser_web_vital_navigation_type=~"$navigation_type" | keep browser_web_vital_name, browser_web_vital_navigation_type, browser_web_vital_value | unwrap browser_web_vital_value [$__range]) by (browser_web_vital_name, browser_web_vital_navigation_type)
+sum by (browser_web_vital_name, browser_web_vital_navigation_type) (count_over_time({service_name=~"$service_name", event_name="browser.web_vital"} | service_instance_id=~"$instance" | browser_web_vital_navigation_type=~"$navigation_type" | keep browser_web_vital_name, browser_web_vital_navigation_type [$__range]))
 # Web Vitals p75 from events
-quantile_over_time(0.75, {service_name=~"$service_name", event_name="browser.web_vital"} | browser_web_vital_navigation_type=~"$navigation_type" | keep browser_web_vital_name, browser_web_vital_value | unwrap browser_web_vital_value [5m]) by (browser_web_vital_name)
+quantile_over_time(0.75, {service_name=~"$service_name", event_name="browser.web_vital"} | service_instance_id=~"$instance" | browser_web_vital_navigation_type=~"$navigation_type" | keep browser_web_vital_name, browser_web_vital_value | unwrap browser_web_vital_value [5m]) by (browser_web_vital_name)
 ```
+
+The annotation layer Page views shows the start of each page view (`lag.page_view.start`) on the charts. It is off by default.
 
 ### Frames (FrameTimingMonitor)
 
@@ -468,13 +637,13 @@ Refer to [frame timing](/docs/monitors/frame-timing).
 
 ```promql
 # Frames per second, delivered and dropped
-sum by (outcome) (rate(lag_frames{service_name=~"$service_name"}[$__rate_interval]))
+sum by (outcome) (rate(lag_frames{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 # Dropped frame ratio
-sum(rate(lag_frames{service_name=~"$service_name", outcome="dropped"}[$__rate_interval])) / sum(rate(lag_frames{service_name=~"$service_name"}[$__rate_interval]))
+sum(rate(lag_frames{service_name=~"$service_name", instance=~"$instance", outcome="dropped"}[$__rate_interval])) / sum(rate(lag_frames{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 # Frame delta p50 / p95 / p99
-histogram_quantile(0.5, sum (rate(lag_frame_delta_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_frame_delta_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_frame_delta_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_frame_delta_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_frame_delta_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_frame_delta_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
 
 ### Idle time (IdleAvailabilityMonitor)
@@ -490,17 +659,17 @@ Refer to [idle availability](/docs/monitors/idle-availability).
 
 ```promql
 # Idle time remaining p10 / p50 / p90
-histogram_quantile(0.1, sum (rate(lag_idle_time_remaining_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.5, sum (rate(lag_idle_time_remaining_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.9, sum (rate(lag_idle_time_remaining_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.1, sum (rate(lag_idle_time_remaining_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_idle_time_remaining_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.9, sum (rate(lag_idle_time_remaining_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Idle gap p50 / p95 / p99
-histogram_quantile(0.5, sum (rate(lag_idle_gap_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_idle_gap_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_idle_gap_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_idle_gap_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_idle_gap_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_idle_gap_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Idle callbacks per minute, by timed_out
-60 * sum by (timed_out) (rate(lag_idle_callbacks{service_name=~"$service_name"}[$__rate_interval]))
+60 * sum by (timed_out) (rate(lag_idle_callbacks{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 # Idle callbacks that timed out
-sum(rate(lag_idle_callbacks{service_name=~"$service_name", timed_out="true"}[$__rate_interval])) / sum(rate(lag_idle_callbacks{service_name=~"$service_name"}[$__rate_interval]))
+sum(rate(lag_idle_callbacks{service_name=~"$service_name", instance=~"$instance", timed_out="true"}[$__rate_interval])) / sum(rate(lag_idle_callbacks{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 ```
 
 ### Memory (MemoryMonitor)
@@ -514,11 +683,11 @@ Refer to [memory](/docs/monitors/memory).
 
 ```promql
 # Used JS heap p50 / p95, by source
-histogram_quantile(0.5, sum by (source) (rate(lag_memory_used_bytes_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum by (source) (rate(lag_memory_used_bytes_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum by (source) (rate(lag_memory_used_bytes_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum by (source) (rate(lag_memory_used_bytes_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Heap usage ratio p50 / p95
-histogram_quantile(0.5, sum (rate(lag_memory_usage_ratio_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_memory_usage_ratio_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_memory_usage_ratio_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_memory_usage_ratio_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
 
 ### Compute pressure (ComputePressureMonitor)
@@ -532,10 +701,12 @@ Refer to [compute pressure](/docs/monitors/compute-pressure).
 
 ```promql
 # Mean pressure state, by source
-histogram_avg(sum by (source) (rate(lag_pressure_state_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_avg(sum by (source) (rate(lag_pressure_state_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Records at serious or critical pressure, by source
-1 - histogram_fraction(-Inf, 1.5, sum by (source) (rate(lag_pressure_state_histogram{service_name=~"$service_name"}[$__rate_interval])))
+1 - histogram_fraction(-Inf, 1.5, sum by (source) (rate(lag_pressure_state_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
+
+The annotation layer Compute pressure shows each change of the pressure state of a source (`lag.pressure.change`) on the charts. It is off by default.
 
 ### GC, page lifecycle and timer throttling
 
@@ -549,12 +720,14 @@ Refer to [GC signal](/docs/monitors/gc-signal), [lifecycle](/docs/monitors/lifec
 
 ```promql
 # GC events per minute
-60 * sum (rate(lag_gc_events{service_name=~"$service_name"}[$__rate_interval]))
+60 * sum (rate(lag_gc_events{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 # Lifecycle transitions per minute
-60 * sum by (from, to, trigger) (rate(lag_lifecycle_transitions{service_name=~"$service_name"}[$__rate_interval]))
+60 * sum by (from, to, trigger) (rate(lag_lifecycle_transitions{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 # Throttled timer calibrations
-sum(rate(lag_timer_calibrations{service_name=~"$service_name", throttled="true"}[$__rate_interval])) / sum(rate(lag_timer_calibrations{service_name=~"$service_name"}[$__rate_interval]))
+sum(rate(lag_timer_calibrations{service_name=~"$service_name", instance=~"$instance", throttled="true"}[$__rate_interval])) / sum(rate(lag_timer_calibrations{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 ```
+
+The annotation layer Lifecycle shows each `lag.lifecycle.transition` event on the charts. It is off by default. The table [Recent page views and lifecycle transitions](#events-loki) gives the same events.
 
 ### Browser reports (BrowserReportMonitor)
 
@@ -567,13 +740,15 @@ Refer to [browser reports](/docs/monitors/browser-reports).
 
 ```promql
 # Browser reports per minute, by type
-60 * sum by (type) (rate(lag_browser_reports{service_name=~"$service_name"}[$__rate_interval]))
+60 * sum by (type) (rate(lag_browser_reports{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval]))
 ```
 
 ```logql
 # Recent browser reports (events)
-{service_name=~"$service_name", event_name="lag.browser_report"} | label_format report_id=id
+{service_name=~"$service_name", event_name="lag.browser_report"} | service_instance_id=~"$instance" | label_format report_id=id
 ```
+
+The annotation layer Browser reports shows each `lag.browser_report` event on the charts. It is off by default.
 
 ### Shared-memory liveness (SharedLivenessMonitor)
 
@@ -586,11 +761,11 @@ Refer to [shared-memory liveness](/docs/monitors/shared-liveness).
 
 ```promql
 # Liveness block duration p50 / p95 / p99
-histogram_quantile(0.5, sum (rate(lag_liveness_block_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.95, sum (rate(lag_liveness_block_histogram{service_name=~"$service_name"}[$__rate_interval])))
-histogram_quantile(0.99, sum (rate(lag_liveness_block_histogram{service_name=~"$service_name"}[$__rate_interval])))
+histogram_quantile(0.5, sum (rate(lag_liveness_block_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_liveness_block_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_liveness_block_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 # Liveness blocks per minute
-60 * histogram_count(sum (rate(lag_liveness_block_histogram{service_name=~"$service_name"}[$__rate_interval])))
+60 * histogram_count(sum (rate(lag_liveness_block_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
 ```
 
 ### Events (Loki)
@@ -600,21 +775,29 @@ The panels of this row read the events in Loki. Refer to [events in Loki](/docs/
 | Panel | Type | Unit | What it shows |
 |---|---|---|---|
 | Events per minute, by event name | Time series | `none` | The lag events in Loki in the minute before each point, for each `event_name`. The panel has an interval of 15 s. |
-| Recent hangs and stalls | Table | Duration: `ms` | The latest `lag.main_thread.hang` and `lag.stall` events: the phase, the kind, the duration, the sender (`scope_name`), the page view, the hung page, the session and the instance. The worker sends the start of a hang itself, with the scope `@lag/worker`. An abandoned hang comes from the next page of the origin. |
-| Recent clock jumps | Table | Magnitude: `ms`, Skew: `ms`, Lateness: `ms` | The latest `lag.clock.jump` events: the kind, the direction, the magnitude, the skew, the lateness, the page view and the session. |
+| Page loads | Table | – | The page loads (SDK instances) with lag events in the time range. Each row has the columns Page load (`service_instance_id`), Session (`session_id`) and Events, the number of events in the time range. The table has at most 50 rows (`topk(50, ...)`), and it sorts by Events. The Session variable filters the rows. Each page load ID has the link "Show only this page load", which sets the Page load variable. The query also filters by Page load, thus with one page load the table has only that page load. |
+| Recent page views and lifecycle transitions | Table | – | The latest `lag.page_view.start` and `lag.lifecycle.transition` events (at most 200 lines), with the columns Time, Event, Navigation, From, To, Trigger, URL, Page view, Previous view, Session and Instance. A page view start fills Navigation, URL and Previous view. The first page view of a page load has no previous view. A transition fills From, To and Trigger. The annotation layers Page views and Lifecycle show the same events on the charts. |
+| Recent hangs and stalls | Table | Duration: `ms` | The latest `lag.main_thread.hang` and `lag.stall` events (at most 200 lines): the time, the service, the event, the phase, the kind, the duration, the sender (`scope_name`), the page view, the hung page, the session and the instance. The worker sends the start of a hang itself, with the scope `@lag/worker`. An abandoned hang comes from the next page of the origin (`journal`), from another open page of the origin (`peer`), or from the page itself at its close (`self`). The table has no column for this source, `lag_hang_source`. The Hangs annotation layer shows it. |
+| Recent clock jumps | Table | Magnitude: `ms`, Skew: `ms`, Lateness: `ms` | The latest `lag.clock.jump` events (at most 200 lines): the time, the service, the kind, the direction, the magnitude, the skew, the lateness, the page view and the session. |
+
+The Page loads table uses the transformations of the LoAF attribution table: one column for each label, then one row for each series. The value of its instant query is `Value` or `Value #A`, by the version of Grafana, and the table shows it as Events. The other tables get their columns from the structured metadata of each log line (`extractFields`), and they sort by the time.
 
 ```logql
 # Events per minute, by event name
-sum by (event_name) (count_over_time({service_name=~"$service_name", event_name=~".+"} [1m]))
+sum by (event_name) (count_over_time({service_name=~"$service_name", event_name=~".+"} | service_instance_id=~"$instance" [1m]))
+# Page loads
+topk(50, sum by (service_instance_id, session_id) (count_over_time({service_name=~"$service_name", event_name=~".+"} | service_instance_id=~"$instance" | session_id=~"${session_id:regex}.*" [$__range])))
+# Recent page views and lifecycle transitions
+{service_name=~"$service_name", event_name=~"lag.page_view.start|lag.lifecycle.transition"} | service_instance_id=~"$instance"
 # Recent hangs and stalls
-{service_name=~"$service_name", event_name=~"lag.main_thread.hang|lag.stall"}
+{service_name=~"$service_name", event_name=~"lag.main_thread.hang|lag.stall"} | service_instance_id=~"$instance"
 # Recent clock jumps
-{service_name=~"$service_name", event_name="lag.clock.jump"}
+{service_name=~"$service_name", event_name="lag.clock.jump"} | service_instance_id=~"$instance"
 ```
 
-### Long range (recording rules)
+### Long range (recording rules, all page loads)
 
-The panels of this row read the series of the [recording rules](/docs/operations/grafana-stack#recording-rules), not the raw series. The rules use 5-minute windows, and Mimir evaluates them each minute. Use these panels for long time ranges. The six histograms are the drift, the macrotask delay, the heartbeat delay, the LoAF blocking duration, the event duration and the frame delta.
+The panels of this row read the series of the [recording rules](/docs/operations/grafana-stack#recording-rules), not the raw series. The rules use 5-minute windows, and Mimir evaluates them each minute. Use these panels for long time ranges. The six histograms are the drift, the macrotask delay, the heartbeat delay, the LoAF blocking duration, the event duration and the frame delta. The rules sum all page loads of a service, thus the Page load variable does not apply to this row.
 
 | Panel | Type | Unit | What it shows |
 |---|---|---|---|
@@ -704,9 +887,12 @@ sum(count_over_time({service_name=~".+"} [1h]))
 ## Source
 
 - [grafana-infra](https://github.com/mark1russell7/grafana-infra) on GitHub.
-- `scripts/build-dashboards.mjs`: the panels of the Lag Monitor dashboard and the query rules.
+- `scripts/build-dashboards.mjs`: the panels, the annotation layers and the variables of the Lag Monitor dashboard, and the query rules.
 - `scripts/lib/lag-catalog.mjs`: the copy of the metric catalog.
 - `config/grafana/provisioning/dashboards`: `lag-monitor.json`, `frontend.json` and the dashboard provider.
-- `scripts/verify-pipeline.mjs`: the verification of each panel query.
+- `scripts/send-sample-data.mjs`: the sample data.
+- `scripts/verify-pipeline.mjs`: the verification of each panel query and each annotation layer, and the comparison of the catalogs.
+- `scripts/screenshot-dashboard.mjs`: the screenshots of the dashboard.
+- `.github/workflows/verify.yml`: the CI workflow.
 - `packages/lag/src/metric-catalog.ts` in this repository: the metric catalog.
 - The Grafana documentation of [provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/).
