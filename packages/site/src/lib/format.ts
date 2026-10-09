@@ -17,16 +17,20 @@ export function formatMs(ms : number) : string {
     if (abs < 1) return `${number2.format(ms)} ms`;
     if (abs < 10) return `${number1.format(ms)} ms`;
     if (abs < 1000) return `${integer.format(ms)} ms`;
-    if (abs < 60_000) return `${number2.format(ms / 1000)} s`;
-    const minutes = Math.floor(abs / 60_000);
-    const seconds = Math.round((abs % 60_000) / 1000);
-    return `${ms < 0 ? "-" : ""}${minutes} min ${seconds} s`;
+    // 59 995 ms and more round to 60 s: they show in minutes
+    if (abs < 59_995) return `${number2.format(ms / 1000)} s`;
+    // Round to whole seconds first, thus 119 600 ms gives "2 min 0 s", not "1 min 60 s"
+    const totalSeconds = Math.round(abs / 1000);
+    return `${ms < 0 ? "-" : ""}${Math.floor(totalSeconds / 60)} min ${totalSeconds % 60} s`;
 }
 
 /** This function formats a percentage from 0 to 100. The value `undefined` means that there is no data. */
 export function formatPercent(value : number | undefined) : string {
     if (value === undefined || !Number.isFinite(value)) return "No data";
     if (value === 100 || value === 0) return `${value}%`;
+    // Only 100 and 0 show as 100% and 0%: a score of 99.96 is not 100
+    if (value > 99.9 && value < 100) return "99.9%";
+    if (value > 0 && value < 0.1) return "0.1%";
     return `${number1.format(value)}%`;
 }
 

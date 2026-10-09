@@ -166,10 +166,19 @@ export type StrykerReport = {
 
 const VALID_FOR_SCORE : readonly MutantStatus[] = ["Killed", "Timeout", "Survived", "NoCoverage"];
 
-function mutationScore(c : Partial<Record<MutantStatus, number>>) : number {
+/**
+ * The score in percent. Without valid mutants, there is no score: a score of
+ * 100 tells that the tests found each change, and that is not true.
+ */
+function mutationScore(c : Partial<Record<MutantStatus, number>>) : { score? : number } {
     const detected = (c.Killed ?? 0) + (c.Timeout ?? 0);
     const valid = VALID_FOR_SCORE.reduce((sum, status) => sum + (c[status] ?? 0), 0);
-    return valid === 0 ? 100 : (detected / valid) * 100;
+    return valid === 0 ? {} : { score : (detected / valid) * 100 };
+}
+
+/** The lowest score first, and the files without a score last. */
+function compareScores(a : MutationFile, b : MutationFile) : number {
+    return (a.score ?? Number.POSITIVE_INFINITY) - (b.score ?? Number.POSITIVE_INFINITY) || a.file.localeCompare(b.file);
 }
 
 /** The commit and the time of a Stryker run. */
@@ -185,12 +194,12 @@ export function fromStrykerReport(report : StrykerReport, packageName : string, 
             fileCounts[key] = (fileCounts[key] ?? 0) + 1;
             totals[key] = (totals[key] ?? 0) + 1;
         }
-        files.push({ file : relativePath(file, rootDir), counts : fileCounts, score : mutationScore(fileCounts) });
+        files.push({ file : relativePath(file, rootDir), counts : fileCounts, ...mutationScore(fileCounts) });
     }
     return {
         packageName,
-        score : mutationScore(totals),
-        files : files.sort((a, b) => a.score - b.score),
+        ...mutationScore(totals),
+        files : files.sort(compareScores),
         ...(origin.commit !== undefined ? { commit : origin.commit } : {}),
         ...(origin.createdAt !== undefined ? { createdAt : origin.createdAt } : {}),
     };

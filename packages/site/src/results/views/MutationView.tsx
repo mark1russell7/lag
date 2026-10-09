@@ -35,16 +35,19 @@ function countColumns<T extends Record<CountKey, number>>() : Array<Column<T, Co
     }));
 }
 
+/** A file with only compile errors, runtime errors or ignored mutants has no score: not 100%. */
+const NO_SCORE = "No valid mutants";
+
 const PACKAGE_COLUMNS : ReadonlyArray<Column<MutationPackageRow, "packageName" | "score" | "files" | CountKey>> = [
     { key : "packageName", label : "Package", rowHeader : true, render : (row) => <code>{row.packageName}</code>, sortValue : (row) => row.packageName },
-    { key : "score", label : "Score", align : "right", render : (row) => <Meter value={row.score} />, sortValue : (row) => row.score },
+    { key : "score", label : "Score", align : "right", render : (row) => <Meter value={row.score} emptyText={NO_SCORE} />, sortValue : (row) => row.score },
     { key : "files", label : "Files", align : "right", render : (row) => row.files, sortValue : (row) => row.files },
     ...countColumns<MutationPackageRow>(),
 ];
 
 const FILE_COLUMNS : ReadonlyArray<Column<MutationFileRow, "file" | "score" | CountKey>> = [
     { key : "file", label : "File", rowHeader : true, render : (row) => <code>{row.file}</code>, sortValue : (row) => row.file },
-    { key : "score", label : "Score", align : "right", render : (row) => <Meter value={row.score} />, sortValue : (row) => row.score },
+    { key : "score", label : "Score", align : "right", render : (row) => <Meter value={row.score} emptyText={NO_SCORE} />, sortValue : (row) => row.score },
     ...countColumns<MutationFileRow>(),
 ];
 
@@ -78,7 +81,7 @@ export function MutationView() {
                 <p className={styles.lead}>
                     The score is the number of mutants with the status <code>Killed</code> or <code>Timeout</code>, divided by the
                     number of valid mutants. A mutant with the status <code>Survived</code> is a change to the code that no
-                    test found.
+                    test found. A file without valid mutants, for example with only compile errors, has no score.
                 </p>
                 <SortableTable
                     label="Mutation score by package"
@@ -99,7 +102,7 @@ export function MutationView() {
                             { key : "file", label : "File", format : (value) => shortPath(String(value)) },
                             { key : "score", label : "Score (%)", align : "right", format : (value) => formatPercent(value as number) },
                         ],
-                        rows : files,
+                        rows : files.filter(row => row.score !== undefined),
                     }}
                 />
                 <SortableTable

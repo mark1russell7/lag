@@ -202,9 +202,11 @@ export function shortPath(file : string) : string {
     return segments.slice(-2).join("/");
 }
 
-/** The mutation score of each file, the lowest score first. */
+/** The mutation score of each file, the lowest score first. A file without a score has no bar. */
 export function mutationChart(rows : readonly MutationFileRow[], limit = 20) : ChartBuilder {
-    const data = rows.slice(0, limit).map(row => ({ label : shortPath(row.file), value : row.score }));
+    const data = rows
+        .flatMap(row => (row.score === undefined ? [] : [{ label : shortPath(row.file), value : row.score }]))
+        .slice(0, limit);
     return horizontalPercentBars(data, "Mutation score (%)");
 }
 

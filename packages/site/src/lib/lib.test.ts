@@ -13,6 +13,21 @@ describe("format", () => {
         expect(formatMs(Number.NaN)).toBe("–");
     });
 
+    it("rounds a duration of minutes to whole seconds before it divides them", () => {
+        expect(formatMs(119_600)).toBe("2 min 0 s");
+        expect(formatMs(59_400)).toBe("59.4 s");
+        expect(formatMs(59_996)).toBe("1 min 0 s");
+        expect(formatMs(-119_600)).toBe("-2 min 0 s");
+    });
+
+    it("shows 100% and 0% only for exactly 100 and 0", () => {
+        expect(formatPercent(99.96)).toBe("99.9%");
+        expect(formatPercent(99.94)).toBe("99.9%");
+        expect(formatPercent(0.04)).toBe("0.1%");
+        expect(formatPercent(0)).toBe("0%");
+        expect(formatPercent(100)).toBe("100%");
+    });
+
     it("formats percentages, bytes, units and counts", () => {
         expect(formatPercent(87.54)).toBe("87.5%");
         expect(formatPercent(100)).toBe("100%");

@@ -72,14 +72,16 @@ export type MutationFile = {
     /**
      * The number of `Killed` and `Timeout` mutants divided by the number of
      * valid mutants (`Killed`, `Timeout`, `Survived` and `NoCoverage`), from 0
-     * to 100.
+     * to 100. A file without valid mutants (for example only `CompileError`
+     * or `Ignored`) has no score.
      */
-    score : number;
+    score? : number;
 };
 
 export type MutationReport = {
     packageName : string;
-    score : number;
+    /** The score of all files together. A report without valid mutants has no score. */
+    score? : number;
     files : MutationFile[];
     /** The commit that Stryker tested, if it is known. */
     commit? : string;
