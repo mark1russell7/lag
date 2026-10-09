@@ -52,7 +52,7 @@ importers:
         version: link:../lag-worker
       '@mark1russell7/otel-ts':
         specifier: github:mark1russell7/otel-ts
-        version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/57dd0c1d586a0d9d3ee48d2977e27b02bc635f00(zone.js@0.16.1)
+        version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/327e62502bd671ac8053fb2c6a1ce8b092ad1ed3(zone.js@0.16.1)
     devDependencies:
       '@mark1russell7/grafana-infra':
         specifier: github:mark1russell7/grafana-infra
@@ -862,8 +862,8 @@ packages:
     resolution: {tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/963ff018a13dbfd1581e4c0d906037fe1bd05014}
     version: 0.0.0
 
-  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/57dd0c1d586a0d9d3ee48d2977e27b02bc635f00':
-    resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/57dd0c1d586a0d9d3ee48d2977e27b02bc635f00}
+  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/327e62502bd671ac8053fb2c6a1ce8b092ad1ed3':
+    resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/327e62502bd671ac8053fb2c6a1ce8b092ad1ed3}
     version: 0.0.1
 
   '@mark1russell7/ste-lint@https://codeload.github.com/mark1russell7/ste-lint/tar.gz/f597d6c1e09bcfcb487bb575825d6d5f29e9e0c7':
@@ -4344,7 +4344,7 @@ snapshots:
 
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/963ff018a13dbfd1581e4c0d906037fe1bd05014': {}
 
-  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/57dd0c1d586a0d9d3ee48d2977e27b02bc635f00(zone.js@0.16.1)':
+  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/327e62502bd671ac8053fb2c6a1ce8b092ad1ed3(zone.js@0.16.1)':
     dependencies:
       '@grafana/faro-web-sdk': 2.3.1
       '@grafana/faro-web-tracing': 2.3.1
