@@ -24,6 +24,14 @@ export const PEER_HANG_THRESHOLD_MS = 5_000;
 export const PEER_GRACE_MS = 1_000;
 
 /**
+ * The page that reports a hang keeps the claim for this long. The other
+ * pages that watch the hung page try the claim after their wait for the last
+ * messages. Their lock grants and their timers can be late by some seconds,
+ * thus this time is much longer than the wait.
+ */
+export const PEER_CLAIM_HOLD_MS = 60_000;
+
+/**
  * The page that reports an abandoned hang: another page of the origin
  * (`peer`), or the hung page itself at its close (`self`).
  */
@@ -126,8 +134,8 @@ export function isPeerMessage(value : unknown) : value is PeerMessage {
  *   hang. One page reports it: the first page that gets the claim lock.
  *
  * The watch needs a second visible or hidden page of the origin. A hidden
- * page does not send heartbeats and holds no lock, but it watches the
- * others.
+ * page does not send heartbeats, but it watches the others. It holds no lock,
+ * except a claim for `PEER_CLAIM_HOLD_MS` after it reports a hang.
  *
  * Firefox and Safari on macOS do not stop a hung page that the user closes.
  * Firefox stops the blocked script, and Safari lets the script continue
@@ -161,9 +169,10 @@ export class PeerHangWatch {
     /** The monotonic time at which the worker monitor of this page counted the end of a hang. */
     private hangEndedAt : number | undefined;
     private stopped = false;
-    private resolveStopped! : () => void;
-    /** The claim locks stay held until the watch stops. */
-    private readonly stoppedPromise = new Promise<void>((resolve) => { this.resolveStopped = resolve; });
+    /** The page is in the back/forward cache, or the browser froze it. */
+    private suspended = false;
+    /** The functions that release the claims that the page holds. */
+    private readonly claimReleases = new Set<() => void>();
 
     constructor(private readonly deps : PeerHangWatchDeps, private readonly options : PeerHangWatchOptions) {
         this.beatIntervalMs = options.beatIntervalMs ?? PEER_BEAT_INTERVAL_MS;
@@ -218,19 +227,24 @@ export class PeerHangWatch {
 
     /**
      * The page goes into the back/forward cache, or the browser freezes it.
-     * The page says "away", releases its lock and closes its channel.
+     * The page says "away", releases its locks and closes its channel.
      */
     suspend() : void {
         this.hide();
+        this.suspended = true;
         this.closeChannel();
         // Without the channel, the page misses the "away" of the other pages. Thus it forgets them:
         // a page that closes normally in this time must not look like a page that closed during a hang.
         this.peers.clear();
+        // Chromium does not keep a page that holds a lock in the back/forward cache
+        this.releaseClaims();
     }
 
     /** The page operates again after a freeze or a restore from the back/forward cache: it opens its channel again. */
     resume() : void {
-        if (this.stopped || this.channel) return;
+        if (this.stopped) return;
+        this.suspended = false;
+        if (this.channel) return;
         try {
             this.channel = this.openChannel();
         } catch (error) {
@@ -242,7 +256,7 @@ export class PeerHangWatch {
     stop() : void {
         this.hide();
         this.stopped = true;
-        this.resolveStopped();
+        this.releaseClaims();
         for (const timer of this.graceTimers) this.deps.clearTimeoutFn(timer);
         this.closeChannel();
     }
@@ -359,8 +373,26 @@ export class PeerHangWatch {
                 return;
             }
             this.options.onAbandonedHang(record ?? { pageId, startedAt : peer.lastBeatAt, lastSeenAt : endedAt, attributes : peer.attributes }, "peer");
-            // No other page may report the same hang. Thus this page keeps the claim.
-            await this.stoppedPromise;
+            // No other page may report the same hang. Thus this page keeps the claim for a time.
+            await this.holdClaim();
         });
+    }
+
+    /** The page keeps a claim for `PEER_CLAIM_HOLD_MS`, or until it is suspended or stops. */
+    private holdClaim() : Promise<void> {
+        if (this.stopped || this.suspended) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+            const release = () : void => {
+                this.deps.clearTimeoutFn(timer);
+                this.claimReleases.delete(release);
+                resolve();
+            };
+            const timer = this.deps.setTimeoutFn(release, PEER_CLAIM_HOLD_MS);
+            this.claimReleases.add(release);
+        });
+    }
+
+    private releaseClaims() : void {
+        for (const release of [...this.claimReleases]) release();
     }
 }
