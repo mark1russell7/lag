@@ -88,7 +88,8 @@ const MAX_ENTRIES_PER_INTERACTION = 16;
  * - INP: the interactions from the start of the view. The `first-input`
  *   entry is a candidate also, because the browser always delivers it.
  * - CLS: the layout shifts without recent input. For a load, the collector
- *   reports CLS only after FCP.
+ *   reports CLS only after FCP. The attribution is the selector of the
+ *   largest shift, from the time of the shift.
  * - LCP, FCP, TTFB: the orchestrator sets them, because it knows the time base.
  */
 export class ViewCollector {
@@ -140,9 +141,15 @@ export class ViewCollector {
         }
     }
 
+    /**
+     * This method adds a layout shift. As in web-vitals, it makes the selector
+     * of the shift at this time, while the node is in the document. The
+     * calculator keeps the selector, not the node.
+     */
     addLayoutShift(entry : LayoutShiftEntryLike) : void {
         if (entry.hadRecentInput || entry.startTime < this.view.startTime) return;
-        this.cls.add(entry.startTime, entry.value, entry.sources ?? []);
+        const target = this.shiftTarget(entry.sources ?? []);
+        this.cls.add(entry.startTime, entry.value, target === "" ? [] : [target]);
     }
 
     setFcp(value : number) : void {
@@ -200,9 +207,7 @@ export class ViewCollector {
     }
 
     private clsValue() : VitalValue {
-        const sources = this.cls.getLargestShiftSources() as ReadonlyArray<{ node? : unknown }>;
-        const node = sources.find(source => source.node !== undefined && source.node !== null)?.node;
-        const target = node === undefined ? "" : this.describeNode(node);
+        const [target] = this.cls.getLargestShiftSources() as readonly string[];
         const time = this.cls.getLargestShiftTime();
         return {
             name : "CLS",
@@ -210,6 +215,12 @@ export class ViewCollector {
             attribution : target ? { largest_shift_target : target } : {},
             ...(time !== undefined ? { time } : {}),
         };
+    }
+
+    /** The selector of the source that web-vitals names: the first source with an element node, else the first source. */
+    private shiftTarget(sources : ReadonlyArray<{ node? : unknown }>) : string {
+        const source = sources.find(s => (s.node as { nodeType? : unknown } | null | undefined)?.nodeType === 1) ?? sources[0];
+        return source?.node ? this.describeNode(source.node) : "";
     }
 
     /** This method adds the entry to the group of its frame, as web-vitals does. */
