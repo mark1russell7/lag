@@ -318,6 +318,31 @@ describe("PeerHangWatch", () => {
         expect(a.page.logs).toEqual([]);
     });
 
+    it("logs nothing when it stops during the take, and the journal has no record or cannot put the record back", async () => {
+        for (const [pageId, withRecord] of [["b", true], ["c", false]] as const) {
+            const memory = createMemoryHangJournal();
+            if (withRecord) await memory.put({ pageId, startedAt : Date.now(), lastSeenAt : Date.now(), attributes : {} });
+            let release : () => void = () => {};
+            const journal : HangJournal = {
+                ...memory,
+                put : () => Promise.reject(new Error("no IndexedDB")),
+                take : (id, latestSeenAt) => new Promise(resolve => { release = () => resolve(memory.take(id, latestSeenAt)); }),
+            };
+            const a = open(`watcher-of-${pageId}`, { journal });
+            const hung = open(pageId);
+            await advance(1_500);
+            hung.page.hang();
+            await advance(8_000);
+            hung.page.kill();
+            await advance(2_000);
+            a.watch.stop();
+            release();
+            await advance(10);
+            expect(a.hangs).toEqual([]);
+            expect(a.page.logs).toEqual([]);
+        }
+    });
+
     it("watches the others while hidden, but sends no heartbeat and holds no lock", async () => {
         const a = open("a", { visible : false });
         const b = open("b");
@@ -658,6 +683,15 @@ describe("PeerHangWatch in the back/forward cache", () => {
         b.page.kill();
         await advance(2_000);
         expect(hangs.map(hang => hang.pageId)).toEqual(["b"]);
+
+        // After a stop, a lock that the watch could not cancel has no effect
+        const c = open("c");
+        await advance(1_500);
+        a.stop();
+        c.watch.stop();
+        await advance(10);
+        expect(origin.heldBy(page)).toEqual([]);
+        expect(vi.getTimerCount()).toBe(1);
     });
 
     it("opens its channel again when it resumes, and watches again", async () => {
