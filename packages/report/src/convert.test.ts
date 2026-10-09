@@ -124,7 +124,21 @@ describe("fromStrykerReport", () => {
 
     it("keeps the commit and the time of the Stryker run", () => {
         const report = fromStrykerReport({ files : {} }, "@lag/core", "/repo", { commit : "abc1234def", createdAt : "2026-10-04T03:41:00.000Z" });
-        expect(report).toEqual({ packageName : "@lag/core", score : 100, files : [], commit : "abc1234def", createdAt : "2026-10-04T03:41:00.000Z" });
+        expect(report).toEqual({ packageName : "@lag/core", files : [], commit : "abc1234def", createdAt : "2026-10-04T03:41:00.000Z" });
+    });
+
+    it("gives no score to a file without valid mutants, and puts it after the files with a score", () => {
+        const report = fromStrykerReport({
+            files : {
+                "/repo/types.ts" : { mutants : [{ status : "CompileError" }, { status : "Ignored" }] },
+                "/repo/a.ts" : { mutants : [{ status : "Killed" }, { status : "Survived" }] },
+            },
+        }, "@lag/core", "/repo");
+
+        expect(report.files.map(f => [f.file, f.score])).toEqual([["a.ts", 50], ["types.ts", undefined]]);
+        expect(report.files[1]).not.toHaveProperty("score");
+        expect(report.score).toBe(50);
+        expect(fromStrykerReport({ files : { "/repo/t.ts" : { mutants : [{ status : "Ignored" }] } } }, "@lag/core", "/repo")).not.toHaveProperty("score");
     });
 });
 

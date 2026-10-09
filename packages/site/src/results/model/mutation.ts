@@ -13,12 +13,13 @@ export type MutantCounts = {
 export type MutationFileRow = MutantCounts & {
     packageName : string;
     file : string;
-    score : number;
+    /** No score: the file has no valid mutants, for example only compile errors. */
+    score : number | undefined;
 };
 
 export type MutationPackageRow = MutantCounts & {
     packageName : string;
-    score : number;
+    score : number | undefined;
     files : number;
 };
 
@@ -51,7 +52,7 @@ export function mutationPackageRows(run : RunReport) : MutationPackageRow[] {
         .sort((a, b) => a.packageName.localeCompare(b.packageName));
 }
 
-/** One row for each mutated file, the lowest score first. */
+/** One row for each mutated file, the lowest score first, and the files without a score last. */
 export function mutationFileRows(run : RunReport) : MutationFileRow[] {
     return run.mutation
         .flatMap(report => report.files.map(file => ({
@@ -60,7 +61,7 @@ export function mutationFileRows(run : RunReport) : MutationFileRow[] {
             score : file.score,
             ...mutantCounts(file.counts),
         })))
-        .sort((a, b) => a.score - b.score || a.file.localeCompare(b.file));
+        .sort((a, b) => (a.score ?? Number.POSITIVE_INFINITY) - (b.score ?? Number.POSITIVE_INFINITY) || a.file.localeCompare(b.file));
 }
 
 const DAY_MS = 86_400_000;

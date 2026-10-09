@@ -169,11 +169,26 @@ describe("mutation model", () => {
     it("sorts the files by score and sums the packages", () => {
         const files = mutationFileRows(run);
         for (let index = 1; index < files.length; index++) {
-            expect(files[index - 1]!.score).toBeLessThanOrEqual(files[index]!.score);
+            expect(files[index - 1]!.score).toBeLessThanOrEqual(files[index]!.score!);
         }
         const [core] = mutationPackageRows(run);
         expect(core?.files).toBe(files.length);
         expect(core?.total).toBe(files.reduce((sum, file) => sum + file.total, 0));
+    });
+
+    it("puts the files without a score last, and gives them no bar", () => {
+        const counts = { CompileError : 2 };
+        const mutation = [{
+            packageName : "@lag/core",
+            score : 50,
+            files : [
+                { file : "packages/lag/src/types.ts", counts },
+                { file : "packages/lag/src/a.ts", counts : { Killed : 1, Survived : 1 }, score : 50 },
+            ],
+        }];
+        const rows = mutationFileRows(emptyRun({ mutation }));
+        expect(rows.map(row => [row.file, row.score])).toEqual([["packages/lag/src/a.ts", 50], ["packages/lag/src/types.ts", undefined]]);
+        expect(mutationPackageRows(emptyRun({ mutation : [{ packageName : "@lag/x", files : [] }] }))[0]!.score).toBeUndefined();
     });
 
     it("gives the commit and the time of each Stryker run, and its age in days", () => {
