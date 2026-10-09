@@ -224,7 +224,7 @@ Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in
 
 - `drift-accuracy.test.ts`: on an idle page, the median lag is between −5 ms and 5 ms. In a window without focus, the limit is 10 ms. On macOS, the timers of an app that is not in front can be late. After a 300 ms block, the largest lag is more than 300 ms minus the baseline minus 10 ms (20 ms without focus), and less than 340 ms.
 - `drift-load.test.ts`: equal message tasks of 20 ms and timer tasks of 30 ms for 3 s give more than 10% lag in the second half of the load. After the load, the median lag of a window is less than 10% of its length. The test skips itself if a probe on an idle page measures more than 10 ms of busy time in 100 ms (the WebKit build for Windows).
-- `lag-monitors.test.ts`: a 300 ms block gives a lag of more than 200 ms.
+- `lag-monitors.test.ts`: a 300 ms block gives a lag of more than 200 ms. The test waits up to 2 s for the window of the block, because the first window of a page can be long.
 - `stress.test.ts`: with the light profile of `@lag/load`, the largest lag is less than 150 ms. With the heavy profile, it is more than 100 ms.
 - `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no window while the page is hidden or frozen. It records more than 5 windows after the page is visible again. After a freeze of 2 s, each lag after the resume is less than half of the freeze, and no stall occurs.
 - `cdp/cpu-throttling.test.ts` (Chromium in the new headless mode): with 4× CPU throttling, the same work gives a median lag of more than 2.5 times the lag without throttling.
