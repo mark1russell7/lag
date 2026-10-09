@@ -28,7 +28,7 @@ The monitor answers two questions. When the page puts a task in the queue, how l
 3. The message task reads the clock. Then it sets `setTimeout(0)`, queues a microtask and posts a second message.
 4. Each callback records the time since the start. When the three latencies are known, the monitor reports the cycle.
 
-In a message task, the timer nesting level is 0. Thus the browser does not clamp the `setTimeout(0)` to 4 ms. A cycle that is in progress when the monitor stops does not report, also when the monitor starts again before the callbacks.
+In a message task, the timer nesting level is 0. Thus the browser does not clamp the `setTimeout(0)` to 4 ms. A cycle that is in progress when the monitor stops does not report, also when the monitor starts again before the callbacks. An error of the report function goes to the logger, and the next cycle starts at its usual time.
 
 ## Browser support
 
@@ -101,7 +101,7 @@ if (deps.MessageChannel && deps.queueMicrotask) {
 
 Unit tests:
 
-- `SchedulingFairnessMonitor.test.ts`: the loop starts at construction, and the monitor reports when the three callbacks are complete. `stop()` stops the loop and closes the channel. A cycle in progress across `stop()` and `start()` does not report. The `setTimeout(0)` starts from a message task, not from the interval callback. The monitor logs an error and does not start when it cannot make the `MessageChannel`.
+- `SchedulingFairnessMonitor.test.ts`: the loop starts at construction, and the monitor reports when the three callbacks are complete. `stop()` stops the loop and closes the channel. A cycle in progress across `stop()` and `start()` does not report. The `setTimeout(0)` starts from a message task, not from the interval callback. The monitor logs an error and does not start when it cannot make the `MessageChannel`. An error of the report function goes to the logger, not into the task of the browser, and the next cycle reports.
 - `setup-all-monitors.test.ts`: the monitor pauses while the page is hidden.
 - `browser-deps.test.ts`: without `MessageChannel`, `setupAllMonitors()` does not start the monitor.
 
