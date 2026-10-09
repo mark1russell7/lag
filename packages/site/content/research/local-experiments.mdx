@@ -208,9 +208,11 @@ The Playwright builds operated on Windows 11 in three runs, and on Linux in CI. 
 |---|---|---|---|---|---|
 | The test page operates during the block | Yes | Yes | Yes | Yes | Yes |
 | The lock of the blocked page stays held during the block | Yes | Yes | Yes | Yes | Yes |
-| Largest gap of the heartbeats of the worker | 114 ms to 210 ms | 115 ms to 123 ms | 3994 ms to 4088 ms (the block) | 4070 ms to 4088 ms (the block) | The block |
+| Largest gap of the heartbeats of the worker | 114 ms to 210 ms | 115 ms to 123 ms | 3994 ms to 4088 ms (the block) | 4070 ms to 4088 ms (the block) | Not measured (refer to the note) |
 | The test closes the blocked page: the lock comes free | 0.5 s to 8 s later | 14 ms to 2.8 s later | Windows: 12 ms to 52 ms later. Linux: 3 s later | At the end of the block, also after 90 s | 3.4 s to 5.3 s later |
 | `pagehide` of the closed page | No | Yes, 13 ms after the close | Windows: no. Linux: at the end of the block | Yes, at the end of the block | No |
+
+**Note on iOS.** The earlier iOS result for the gaps of the heartbeats was not a measurement. Safari on iOS operates only the visible tab. While the test page is visible, the peer page sends no heartbeats, thus the gap was the full interval. The test checks that heartbeats arrived before and after the block, and it skips itself on iOS. The lock and the close results of the iOS column are real checks.
 
 **Meaning.** In each engine, another page of the origin operates during the block, and the Web Lock of the blocked page stays held. Thus the other page sees the silence of the hung page, and it knows that the page still exists. The BroadcastChannel of a worker waits for the main thread in WebKit and Safari, as the other output of a worker (E6). Thus the hung page itself cannot send a message.
 
