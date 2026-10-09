@@ -53,18 +53,36 @@ export type BroadcastChannelLike = {
 
 export type BroadcastChannelConstructor = new (name : string) => BroadcastChannelLike;
 
+/** The part of `AbortSignal` that the watch and the lock manager use. */
+export type AbortSignalLike = {
+    readonly aborted : boolean;
+    addEventListener(type : "abort", listener : () => void) : void;
+};
+
+/** The part of `AbortController` that the watch uses. */
+export type AbortControllerLike = {
+    readonly signal : AbortSignalLike;
+    abort() : void;
+};
+
+export type AbortControllerConstructor = new () => AbortControllerLike;
+
 /**
  * The part of the Web Locks API (`navigator.locks`) that the watch uses. The
  * callback gets `null` when `ifAvailable` is true and another holder has the
  * lock. The holder keeps the lock until the promise of the callback settles.
+ * When `signal` aborts, a request that waits stops and rejects with an
+ * `AbortError`.
  */
 export type LockManagerLike = {
-    request(name : string, options : { ifAvailable? : boolean }, callback : (lock : unknown) => unknown) : Promise<unknown>;
+    request(name : string, options : { ifAvailable? : boolean; signal? : AbortSignalLike }, callback : (lock : unknown) => unknown) : Promise<unknown>;
 };
 
 export type PeerHangWatchDeps = {
     BroadcastChannel : BroadcastChannelConstructor;
     locks : LockManagerLike;
+    /** With `AbortController`, the watch cancels its waiting lock requests when the page is suspended or stops. */
+    AbortController? : AbortControllerConstructor;
     /** The wall clock: the pages of an origin compare their times with it. */
     wallClock : WallClock;
     /** The monotonic clock of the page, for the time between its own heartbeats. */
@@ -175,6 +193,8 @@ export class PeerHangWatch {
     private suspended = false;
     /** The functions that release the claims that the page holds. */
     private readonly claimReleases = new Set<() => void>();
+    /** The controller of the signal of the waiting lock requests. */
+    private waits : AbortControllerLike | undefined;
 
     constructor(private readonly deps : PeerHangWatchDeps, private readonly options : PeerHangWatchOptions) {
         this.beatIntervalMs = options.beatIntervalMs ?? PEER_BEAT_INTERVAL_MS;
@@ -194,7 +214,7 @@ export class PeerHangWatch {
         if (this.stopped || this.ownRequest) return;
         const request = {};
         this.ownRequest = request;
-        this.request(peerLockName(this.options.pageId), {}, () => {
+        this.request(peerLockName(this.options.pageId), this.waitOptions(), () => {
             if (this.ownRequest !== request) return undefined;
             this.beat();
             const timer = this.deps.setIntervalFn(() => this.beat(), this.beatIntervalMs);
@@ -229,11 +249,14 @@ export class PeerHangWatch {
 
     /**
      * The page goes into the back/forward cache, or the browser freezes it.
-     * The page says "away", releases its locks and closes its channel.
+     * The page says "away", releases its locks, cancels its waiting lock
+     * requests and closes its channel.
      */
     suspend() : void {
         this.hide();
         this.suspended = true;
+        // A frozen page can get a lock, and it keeps the lock until it operates again
+        this.cancelWaits();
         this.closeChannel();
         // Without the channel, the page misses the "away" of the other pages. Thus it forgets them:
         // a page that closes normally in this time must not look like a page that closed during a hang.
@@ -254,10 +277,11 @@ export class PeerHangWatch {
         }
     }
 
-    /** This method stops the watch. The page says "away", and releases its locks. */
+    /** This method stops the watch. The page says "away", releases its locks and cancels its waiting lock requests. */
     stop() : void {
         this.hide();
         this.stopped = true;
+        this.cancelWaits();
         this.releaseClaims();
         for (const timer of this.graceTimers) this.deps.clearTimeoutFn(timer);
         this.closeChannel();
@@ -317,10 +341,25 @@ export class PeerHangWatch {
         }
     }
 
+    /** The options of a lock request that can wait: the signal that cancels the waiting requests, if the watch has one. */
+    private waitOptions() : { signal? : AbortSignalLike } {
+        if (!this.deps.AbortController) return {};
+        this.waits ??= new this.deps.AbortController();
+        return { signal : this.waits.signal };
+    }
+
+    /** The waiting lock requests stop. A request that has its lock already continues. */
+    private cancelWaits() : void {
+        this.waits?.abort();
+        this.waits = undefined;
+    }
+
     /** A lock request that fails (for example in an opaque origin) stops only that request. */
-    private request(name : string, options : { ifAvailable? : boolean }, callback : (lock : unknown) => unknown) : void {
+    private request(name : string, options : { ifAvailable? : boolean; signal? : AbortSignalLike }, callback : (lock : unknown) => unknown) : void {
         try {
             this.deps.locks.request(name, options, callback).catch((error : unknown) => {
+                // The watch cancelled the request: this is not a failure
+                if (options.signal?.aborted) return;
                 this.deps.logger.log("debug", "A Web Lock request failed.", { error, name, type : "PeerHangWatch" });
             });
         } catch (error) {
@@ -346,7 +385,7 @@ export class PeerHangWatch {
         const peer : Peer = { lastBeatAt : data.sentAt, away : false, attributes : data.attributes };
         this.peers.set(data.pageId, peer);
         // The browser gives the lock when the page releases it: when it becomes hidden, closes or stops
-        this.request(peerLockName(data.pageId), {}, () => {
+        this.request(peerLockName(data.pageId), this.waitOptions(), () => {
             if (!this.stopped) this.peerEnded(data.pageId, peer);
         });
     }

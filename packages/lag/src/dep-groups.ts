@@ -44,7 +44,7 @@ import type { FinalizationRegistryConstructor } from "./GCSignalDetector.js";
 import type { WorkerLike } from "./WorkerLagMonitor.js";
 import type { HangReportTarget } from "./worker-protocol.js";
 import type { HangJournal } from "./hang-journal.js";
-import type { BroadcastChannelConstructor, LockManagerLike } from "./PeerHangWatch.js";
+import type { AbortControllerConstructor, BroadcastChannelConstructor, LockManagerLike } from "./PeerHangWatch.js";
 import type { ReportingObserverInit } from "./BrowserReportMonitor.js";
 import type { PageSource } from "./vitals/types.js";
 import type { AbsoluteClock } from "./absolute-clock.js";
@@ -141,6 +141,8 @@ export type WorkerMonitorDeps = {
 export type PeerDeps = {
     BroadcastChannel : BroadcastChannelConstructor;
     locks : LockManagerLike;
+    /** With it, the watch cancels its waiting lock requests when the page is frozen, goes into the back/forward cache or stops. */
+    AbortController? : AbortControllerConstructor;
 };
 
 /** The crash-report context of Chromium (`window.crashReport`, Chrome 145). */

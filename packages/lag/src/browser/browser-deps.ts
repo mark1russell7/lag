@@ -16,7 +16,7 @@ import type { HangReportTarget } from "../worker-protocol.js";
 import { createPageSource, type PageDocument } from "./page-source.js";
 import { createIndexedDbHangJournal, type IdbFactoryLike } from "./indexeddb-journal.js";
 import type { CrashReportContextLike } from "../dep-groups.js";
-import type { BroadcastChannelConstructor, LockManagerLike } from "../PeerHangWatch.js";
+import type { AbortControllerConstructor, BroadcastChannelConstructor, LockManagerLike } from "../PeerHangWatch.js";
 
 /**
  * The browser globals that the adapter reads. In a page, `window` has them.
@@ -49,6 +49,7 @@ export type BrowserGlobals = LifecycleWindow & {
     readonly indexedDB? : unknown;
     readonly crashReport? : unknown;
     readonly BroadcastChannel? : unknown;
+    readonly AbortController? : unknown;
     readonly navigator? : unknown;
 };
 
@@ -143,9 +144,10 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         ? createIndexedDbHangJournal(indexedDB)
         : undefined;
     const BroadcastChannel = constructorOf<BroadcastChannelConstructor>(globals.BroadcastChannel);
+    const AbortController = constructorOf<AbortControllerConstructor>(globals.AbortController);
     const locks = (globals.navigator as { locks? : Partial<LockManagerLike> } | undefined)?.locks;
     const peerDeps = options.peerHangWatch !== false && BroadcastChannel && typeof locks?.request === "function"
-        ? { BroadcastChannel, locks : { request : locks.request.bind(locks) } }
+        ? { BroadcastChannel, locks : { request : locks.request.bind(locks) }, ...(AbortController ? { AbortController } : {}) }
         : undefined;
     const crashReport = globals.crashReport as CrashReportContextLike | undefined;
     const crashReportContext = options.crashReportContext !== false && typeof crashReport?.set === "function" ? crashReport : undefined;

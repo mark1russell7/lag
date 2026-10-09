@@ -1,4 +1,4 @@
-import type { BroadcastChannelLike, LockManagerLike, PeerHangWatchDeps } from "./PeerHangWatch.js";
+import type { AbortSignalLike, BroadcastChannelLike, LockManagerLike, PeerHangWatchDeps } from "./PeerHangWatch.js";
 import type { Logger } from "./types.js";
 
 type LockRequest = {
@@ -13,7 +13,8 @@ type LockState = { holder : LockRequest | undefined; queue : LockRequest[] };
 /**
  * The pages of one origin, for the tests of `PeerHangWatch`. The origin has
  * a BroadcastChannel hub and a Web Lock manager with a FIFO queue for each
- * lock name, as a browser has.
+ * lock name, as a browser has. A request with an aborted signal does not
+ * wait, and an abort removes a waiting request from its queue.
  *
  * The tests use the fake timers of Vitest: the pages share the virtual
  * clock and the timer queue. A page can hang (`hang()`). Then its callbacks
@@ -71,8 +72,19 @@ export class SimulatedOrigin {
     }
 
     /** @internal */
-    request(page : SimulatedPage, name : string, options : { ifAvailable? : boolean }, callback : (lock : unknown) => unknown) : Promise<unknown> {
+    request(
+        page : SimulatedPage,
+        name : string,
+        options : { ifAvailable? : boolean; signal? : AbortSignalLike },
+        callback : (lock : unknown) => unknown,
+    ) : Promise<unknown> {
         return new Promise((resolve, reject) => {
+            const { signal } = options;
+            const aborted = () => new DOMException("The lock request was aborted.", "AbortError");
+            if (signal?.aborted) {
+                reject(aborted());
+                return;
+            }
             const state = this.lockStates.get(name) ?? { holder : undefined, queue : [] };
             this.lockStates.set(name, state);
             const request : LockRequest = { page, callback, resolve, reject };
@@ -81,6 +93,11 @@ export class SimulatedOrigin {
                 return;
             }
             state.queue.push(request);
+            signal?.addEventListener("abort", () => {
+                if (!state.queue.includes(request)) return;
+                state.queue = state.queue.filter(other => other !== request);
+                reject(aborted());
+            });
             this.grantNext(name);
         });
     }
@@ -205,6 +222,7 @@ export class SimulatedPage {
                 }
             },
             locks,
+            AbortController,
             wallClock : { now : () => Date.now() },
             // The simulated pages have one clock: the fake time of Vitest
             clock : { now : () => Date.now() },

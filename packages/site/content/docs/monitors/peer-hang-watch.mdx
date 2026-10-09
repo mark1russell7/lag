@@ -110,9 +110,9 @@ function createInstrumentedPeerHangWatch(
 ) : MonitorHandle<PeerHangWatch>;
 ```
 
-`PeerDeps` has `BroadcastChannel` and `locks` (the part of `navigator.locks` that the watch uses). `setupAllMonitors()` adds the watch when it has `BroadcastChannel`, `locks`, `wallClock` and the lifecycle. It gives the watch and the worker monitor one page ID, thus the watch can take the journal record of the worker. The [page-view context](/docs/monitors/page-view-context) gives the current page-view ID to the beats.
+`PeerDeps` has `BroadcastChannel`, `locks` (the part of `navigator.locks` that the watch uses) and an optional `AbortController`. `setupAllMonitors()` adds the watch when it has `BroadcastChannel`, `locks`, `wallClock` and the lifecycle. It gives the watch and the worker monitor one page ID, thus the watch can take the journal record of the worker. The [page-view context](/docs/monitors/page-view-context) gives the current page-view ID to the beats.
 
-`createBrowserDeps()` gives `BroadcastChannel` and `navigator.locks` when the browser has them. The option `peerHangWatch: false` turns the watch off:
+`createBrowserDeps()` gives `BroadcastChannel`, `navigator.locks` and `AbortController` when the browser has them. The option `peerHangWatch: false` turns the watch off:
 
 ```ts
 import { metrics } from "@opentelemetry/api";
@@ -148,6 +148,8 @@ A hidden page holds no lock, except a claim for at most 60 s after it reports a 
 
 While its channel is closed, the page does not get the `away` messages of the other pages. Thus it forgets the other pages, and it ignores their locks. Then a page that closes normally in that time does not seem to be a page that closed during a hang. A browser test examines this in Chromium with the cache (refer to [tests](#tests)). The research did not measure the cache of Firefox and WebKit.
 
+The page also cancels its waiting lock requests, with the `signal` of an `AbortController`. A frozen page cannot operate, but the browser can give it a lock. Then the frozen page keeps that lock until it operates again, and the page of the lock cannot get its own lock back.
+
 ## Limits
 
 - **An endless hang in Safari on macOS.** Safari on macOS lets the script of a closed page continue until it ends. A script that does not end keeps the page alive without a window. Then neither the page nor another page reports the hang.
@@ -168,11 +170,12 @@ Unit tests:
 - `PeerHangWatch.test.ts`, no report of another page: the page survives, closes normally, becomes hidden, or ends less than 5 s after its last beat. One report only, also with four pages and after the reporter stops. The reporter keeps the claim for 60 s, and releases it when it stops or goes into the cache. The wait for a late `away`, with a delay of the messages.
 - `PeerHangWatch.test.ts`, the own page at its close: a close at the end of a hang, with and without a heartbeat before the close. The limits of exactly 5 s. No report for a normal close or for a close some time after a hang. No report for a hang that the worker monitor counted, or for a page that becomes hidden.
 - `PeerHangWatch.test.ts`, the back/forward cache: the page closes its channel while it is in the cache, and gets no messages. No report for a page that closes normally in that time. The page opens its channel again after the restore, and watches again.
+- `PeerHangWatch.test.ts`, the waiting lock requests: the page cancels them when it is suspended and when it stops, and it logs nothing for them. Thus it has one request for each page after many suspends. A frozen page gets no lock of another page. Without `AbortController`, the watch operates, but it cannot cancel its requests.
 - `PeerHangWatch.test.ts`, other cases: the record of the worker from the journal, and the own times when the journal fails. A stop during the take puts the record back. A hidden page watches. The protocol names. The checks of the messages.
 - `PeerHangWatch.test.ts`, a page that becomes visible again: the page stays watched, also when it becomes visible again during the wait for its last messages. A late beat from before the lock makes no new request.
 - `instrumented/peer-hang-watch.test.ts`: the metrics and the event in the catalog, the context of the hung page, and the record of the journal. The own report at `pagehide`, and no report when the page becomes hidden or goes into the back/forward cache. The lock only while the page is visible. The closed channel while the page is in the cache.
 - `setup-all-monitors.test.ts`: the setup adds the watch, gives the page-view ID to its beats, and gives the worker and the watch one page ID. The watch learns of each hang that the worker monitor counts as ended, but not of an abandoned hang from the journal.
-- `browser-deps.test.ts`: `BroadcastChannel` and `navigator.locks`, bound to `navigator.locks`, and the option `peerHangWatch: false`.
+- `browser-deps.test.ts`: `BroadcastChannel`, `AbortController` and `navigator.locks`, bound to `navigator.locks`, and the option `peerHangWatch: false`.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), and the CI job in Safari):
 
