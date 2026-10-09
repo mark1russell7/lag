@@ -62,6 +62,16 @@ describe("InpCalculator", () => {
         expect(inp.getInteractionCount()).toBe(60);
     });
 
+    it("reset() without a browser count clears the calculation", () => {
+        const inp = new InpCalculator();
+        inp.add(1, 300);
+        inp.reset();
+        inp.add(2, 90);
+
+        expect(inp.getINP()).toBe(90);
+        expect(inp.getInteractionCount()).toBe(1);
+    });
+
     it("counts the events of one interaction as one candidate, also at 50 or more interactions", () => {
         let count = 0;
         const inp = new InpCalculator(() => count);
