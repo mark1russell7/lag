@@ -1,30 +1,20 @@
 import * as p from "@clack/prompts";
-import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import {
+  configs,
+  isConfig,
+  packageFiles,
+  refusal,
+  validateName,
+  workspaceVersions,
+  type Config,
+  type Manifest,
+} from "./package-template.js";
 
 const root = resolve(import.meta.dirname, "../../..");
 const packagesDir = join(root, "packages");
 const rootTsconfigPath = join(root, "tsconfig.json");
-
-const configs = [
-  { value: "ts", label: "ts — ESM library" },
-  { value: "node", label: "node — Node.js ESM" },
-  { value: "node-cjs", label: "node-cjs — Node.js CommonJS" },
-  { value: "vite", label: "vite — Vite / browser" },
-  { value: "react", label: "react — React (JSX)" },
-] as const;
-
-type Config = (typeof configs)[number]["value"];
-
-function validateName(v: string | undefined): string | undefined {
-  if (!v) return "Required";
-  if (!/^[a-z][a-z0-9-]*$/.test(v)) return "Lowercase alphanumeric with hyphens";
-  return undefined;
-}
-
-function isConfig(v: string | undefined): v is Config {
-  return configs.some((c) => c.value === v);
-}
 
 /**
  * This function reads the value of a flag, for example `--name <name>` or
@@ -65,6 +55,13 @@ async function askConfig(): Promise<Config> {
   return config;
 }
 
+/** The folder and the package.json of each workspace package. */
+function readManifests(): Array<{ dir: string; manifest: Manifest }> {
+  return readdirSync(packagesDir)
+    .filter((dir) => existsSync(join(packagesDir, dir, "package.json")))
+    .map((dir) => ({ dir, manifest: JSON.parse(readFileSync(join(packagesDir, dir, "package.json"), "utf-8")) as Manifest }));
+}
+
 async function main(): Promise<void> {
   p.intro("New @lag package");
 
@@ -73,44 +70,25 @@ async function main(): Promise<void> {
 
   const pkgDir = join(packagesDir, name);
   const srcDir = join(pkgDir, "src");
-  const isEsm = config !== "node-cjs";
+  const packages = readManifests();
+  const others = packages.filter((entry) => entry.dir !== name).map((entry) => entry.manifest);
+
+  // An existing package must not lose its package.json and its source
+  const reason = refusal(name, existsSync(pkgDir), others, process.argv.includes("--force"));
+  if (reason) throw new Error(reason);
+  const files = packageFiles(name, config, workspaceVersions(packages.map((entry) => entry.manifest)));
 
   const s = p.spinner();
   s.start("Creating package");
 
   mkdirSync(srcDir, { recursive: true });
 
-  // package.json
-  const pkg: Record<string, unknown> = {
-    name: `@lag/${name}`,
-    version: "0.0.0",
-    private: true,
-    ...(isEsm ? { type: "module" } : {}),
-    main: "dist/index.js",
-    types: "dist/index.d.ts",
-    exports: {
-      ".": {
-        types: "./dist/index.d.ts",
-        ...(isEsm ? { import: "./dist/index.js" } : { require: "./dist/index.js" }),
-      },
-    },
-    scripts: {
-      build: "tsc -b",
-    },
-  };
+  writeFileSync(join(pkgDir, "package.json"), JSON.stringify(files.packageJson, null, 2) + "\n");
+  writeFileSync(join(pkgDir, "tsconfig.json"), JSON.stringify(files.tsconfig, null, 2) + "\n");
 
-  writeFileSync(join(pkgDir, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
-
-  // tsconfig.json
-  const tsconfig = {
-    $schema: "https://json.schemastore.org/tsconfig",
-    extends: `../../ts/config/${config}.json`,
-  };
-
-  writeFileSync(join(pkgDir, "tsconfig.json"), JSON.stringify(tsconfig, null, 2) + "\n");
-
-  // src/index.ts
-  writeFileSync(join(srcDir, "index.ts"), "");
+  // src/index.ts: --force keeps the existing source
+  const indexPath = join(srcDir, "index.ts");
+  if (!existsSync(indexPath)) writeFileSync(indexPath, "");
 
   // Update root tsconfig.json references
   const rootTsconfig = JSON.parse(readFileSync(rootTsconfigPath, "utf-8")) as {
@@ -128,7 +106,7 @@ async function main(): Promise<void> {
 
   s.stop("Package created");
 
-  p.note(`cd packages/${name}`, "Next steps");
+  p.note(`pnpm install\ncd packages/${name}`, "Next steps");
   p.outro(`@lag/${name} is ready`);
 }
 
