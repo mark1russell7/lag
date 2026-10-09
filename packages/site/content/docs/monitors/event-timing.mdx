@@ -24,6 +24,8 @@ The monitor answers this question: how long does an interaction wait for the nex
 
 The INP of the page view, with attribution, comes from the [page-view vitals](/docs/monitors/page-view-vitals). This monitor gives the distribution of all slow events.
 
+The [playground](/playground) plots the duration of each interaction against the blocking time of the long animation frames that overlap it. A slow interaction without a long frame has a different cause, for example a long presentation delay.
+
 ## How it works
 
 The monitor makes a `PerformanceObserver` for the entry type `event`, with `durationThreshold: 16` and `buffered: true`. The browser default threshold is 104 ms, and 16 ms is the smallest permitted threshold of the specification. With the default, the monitor does not get most interactions.
