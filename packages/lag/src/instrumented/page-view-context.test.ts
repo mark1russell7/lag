@@ -127,3 +127,29 @@ describe("createInstrumentedPageViewContext", () => {
         expect(logger.log).not.toHaveBeenCalled();
     });
 });
+
+describe("createInstrumentedPageViewContext with page-view spans", () => {
+    it("gives the identity of the span of the current view to the receivers, at each new view", () => {
+        const fake = fakeVitals(view("view-1"));
+        const receiver = { setContext : vi.fn() };
+        let current : { traceId : string; spanId : string } | undefined = { traceId : "a".repeat(32), spanId : "b".repeat(16) };
+        const pageViewSpans = { viewStarted() {}, viewHidden() {}, viewEnded() {}, current : () => current };
+        createInstrumentedPageViewContext({ logger : { log : vi.fn() }, pageViewSpans }, fake.vitals, [receiver]);
+        current = undefined;
+        fake.startView(view("view-2"));
+
+        expect(receiver.setContext.mock.calls).toEqual([
+            [{ "lag.page_view.id" : "view-1", "lag.page_view.trace_id" : "a".repeat(32), "lag.page_view.span_id" : "b".repeat(16) }],
+            [{ "lag.page_view.id" : "view-2" }],
+        ]);
+    });
+
+    it("gives no span identity for a span that the SDK did not sample", () => {
+        const fake = fakeVitals(view("view-1"));
+        const receiver = { setContext : vi.fn() };
+        const pageViewSpans = { viewStarted() {}, viewHidden() {}, viewEnded() {}, current : () => ({ traceId : "a".repeat(32), spanId : "b".repeat(16), sampled : false }) };
+        createInstrumentedPageViewContext({ logger : { log : vi.fn() }, pageViewSpans }, fake.vitals, [receiver]);
+
+        expect(receiver.setContext.mock.calls).toEqual([[{ "lag.page_view.id" : "view-1" }]]);
+    });
+});

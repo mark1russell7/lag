@@ -1,8 +1,8 @@
-import type { CoreDeps, CrashReportContextLike, CrashReportDeps, PageDeps } from "../dep-groups.js";
+import type { CoreDeps, CrashReportContextLike, CrashReportDeps, PageDeps, SpanDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import type { PageViewVitals } from "../vitals/PageViewVitals.js";
 import type { PageView } from "../vitals/ViewCollector.js";
-import { createHandle } from "./shared.js";
+import { createHandle, PAGE_VIEW_SPAN_ID, PAGE_VIEW_TRACE_ID } from "./shared.js";
 
 /** The crash-report context of the page has this number of bytes for the keys and the values of the monitors. */
 const CRASH_CONTEXT_BYTES = 512;
@@ -25,9 +25,14 @@ export type PageViewContext = {
  * hang reports) and to the crash-report context of the browser (Chrome 145
  * and later). Both of them report while the main thread cannot operate.
  * Thus, they must have the ID before a hang starts.
+ *
+ * With page-view spans, the context also has the identity of the span of
+ * the view (`lag.page_view.trace_id` and `lag.page_view.span_id`). Thus the
+ * page that reports an abandoned hang can put its span into the trace of
+ * the page that hung.
  */
 export function createInstrumentedPageViewContext(
-    deps : Pick<CoreDeps, "logger"> & Partial<CrashReportDeps> & Partial<Pick<PageDeps, "pageContext">>,
+    deps : Pick<CoreDeps, "logger"> & Partial<CrashReportDeps> & Partial<Pick<PageDeps, "pageContext">> & Partial<Pick<SpanDeps, "pageViewSpans">>,
     vitals : PageViewVitals,
     receivers : readonly PageContextReceiver[],
 ) : MonitorHandle<PageViewContext> {
@@ -47,7 +52,14 @@ export function createInstrumentedPageViewContext(
         };
 
         const apply = (view : PageView) : void => {
-            attributes = { ...appContext(), [PAGE_VIEW_KEY] : view.id };
+            // Only a sampled span: the span of a hang that another page reports is sampled as its parent
+            const span = deps.pageViewSpans?.current();
+            const sampled = span && span.sampled !== false ? span : undefined;
+            attributes = {
+                ...appContext(),
+                [PAGE_VIEW_KEY] : view.id,
+                ...(sampled ? { [PAGE_VIEW_TRACE_ID] : sampled.traceId, [PAGE_VIEW_SPAN_ID] : sampled.spanId } : {}),
+            };
             for (const receiver of receivers) receiver.setContext(attributes);
             if (crashReport) {
                 crashContextReady

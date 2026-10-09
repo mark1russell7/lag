@@ -1,7 +1,8 @@
-import type { AbsoluteClockDeps, CoreDeps, EventDeps, LifecycleDeps, PerformanceDeps } from "../dep-groups.js";
+import type { AbsoluteClockDeps, CoreDeps, EventDeps, LifecycleDeps, PerformanceDeps, SpanDeps } from "../dep-groups.js";
+import type { OpenSpan } from "../spans.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { LifecycleStateMachine } from "../LifecycleStateMachine.js";
-import { EVENTS, METRICS, createCounter } from "../metric-catalog.js";
+import { EVENTS, METRICS, SPANS, createCounter } from "../metric-catalog.js";
 import { createHandle, eventClock, occurredAtClockTime } from "./shared.js";
 
 type TransitionAttributes = {
@@ -21,19 +22,38 @@ type TransitionAttributes = {
  * last. The LIFO order of the registry does this.
  */
 export function createInstrumentedLifecycle(
-    deps : CoreDeps & LifecycleDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
+    deps : CoreDeps & LifecycleDeps & Partial<EventDeps> & Partial<SpanDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
 ) : MonitorHandle<LifecycleStateMachine> {
     return createHandle("lifecycle", deps.logger, () => {
         const transitions = createCounter<TransitionAttributes>(deps.meter, METRICS.lifecycleTransitions);
         const clock = eventClock(deps);
+        /** The span of the hidden or frozen period in which the page is. */
+        let period : OpenSpan | undefined;
 
         const machine = new LifecycleStateMachine(deps.document, deps.window, deps.clock, deps.logger);
         machine.subscribe(({ from, to, trigger, timestamp }) => {
             transitions.add(1, { from, to, trigger });
             // The time of the transition is in the time of the clock of the monitors
-            deps.events?.emit(EVENTS.lifecycleTransition.name, { from, to, trigger }, occurredAtClockTime(clock, deps.clock, timestamp));
+            const options = occurredAtClockTime(clock, deps.clock, timestamp);
+            deps.events?.emit(EVENTS.lifecycleTransition.name, { from, to, trigger }, options);
+            const spans = deps.spans;
+            if (!spans) return;
+            const time = options.time ?? Date.now();
+            period?.end(time);
+            period = undefined;
+            const name = to === "hidden" ? SPANS.hidden.name : to === "frozen" ? SPANS.frozen.name : undefined;
+            if (!name) return;
+            const parent = deps.pageViewSpans?.current();
+            period = spans.start(name, { startTime : time, attributes : { trigger }, ...(parent ? { parent } : {}) });
         });
 
-        return { monitor : machine, stop : () => machine.dispose() };
+        return {
+            monitor : machine,
+            stop : () => {
+                machine.dispose();
+                period?.end(clock ? clock.now() : Date.now());
+                period = undefined;
+            },
+        };
     });
 }

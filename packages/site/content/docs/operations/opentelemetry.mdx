@@ -65,6 +65,25 @@ The monitors work with each OpenTelemetry SDK for JavaScript. Make sure that you
 5. Before each flush, use `monitors.flush(event)`. Give it the `visibilitychange` or `pagehide` event that started the flush, if there is one.
 6. Put the session ID on log records, not on the resource.
 
+## Spans
+
+The monitors can also send spans: the page view, the hangs, the stalls, the long animation frames and the hidden periods ([spans for the periods](/docs/concepts/metrics-model#spans-for-the-periods)). Give a span sink to `createBrowserDeps()`. `createOtelSpanSink()` sends each span through an OpenTelemetry tracer:
+
+```ts
+import * as api from "@opentelemetry/api";
+import { init } from "@mark1russell7/otel-ts";
+import { createBrowserDeps, createOtelSpanSink, setupAllMonitors } from "@lag/core";
+
+// otel-ts registers its tracer provider as the global provider
+const otel = init({ serviceName : "shop", endpoint : "https://collector.example.com" });
+const spans = createOtelSpanSink(api.trace.getTracer("@lag/core"), api);
+const monitors = setupAllMonitors(createBrowserDeps(window, { logger, meter, events, spans }));
+```
+
+The adapter needs the module `@opentelemetry/api` itself, because it gives each span its parent with `trace.setSpanContext()`. Each span has the time of the absolute clock of the page, as the events.
+
+Without `spans`, the monitors make no spans. The events and the metrics do not change.
+
 ## The hang reports of the worker
 
 During a hang, the main thread cannot send anything. Thus the worker sends its hang reports itself, as OTLP/HTTP JSON log records, to `workerHangReport.url`:
