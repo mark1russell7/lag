@@ -5,6 +5,8 @@ order: 15
 status: final
 ---
 
+import { BLOCK_DURATIONS, epochChart, epochTable } from "./statistics.data";
+
 A histogram of lag samples is correct only if the samples represent the quantity that you want to know. A probe that waits for the main thread takes fewer samples while the main thread is blocked. Thus its samples do not show the blocks correctly. This page tells you which statistic each monitor gives, and how to read it. The research note [clocks and timers](/research/clocks-and-timers) gives the sources.
 
 ## Closed-loop and open-loop probes
@@ -86,6 +88,46 @@ Two effects change this fraction:
 
 - **Jitter.** The metric records 0 for a negative lag, thus the jitter above the baseline adds to the sum and the jitter below it does not. An idle page shows a small blocked fraction. In experiment E3, the 90th percentile of the idle lag was 3.1 ms in Chromium ([local experiments](/research/local-experiments)).
 - **Sustained load.** DriftLag calculates its baseline from the recent steps, and a sustained load can make all steps longer. Thus a probe of message tasks must show an idle thread before the baseline increases ([DriftLag](/docs/monitors/drift-lag)). Before the first check of the probe, the baseline can increase, and DriftLag reports less lag. This is also true in a browser in which a message waits on an idle thread. The worker heartbeat measures these cases correctly.
+
+## Hang-aligned averages
+
+The timeline of the [playground](/playground) shows each block of the main thread, and what each monitor records near it. One block shows one case. To see what a typical block does to the metrics, the playground averages all blocks of the session. This method is a superposed epoch analysis:
+
+1. **Find the blocks.** A long animation frame that blocks for 100 ms or more is a block. A hang and a stall of the kind `hang` are blocks too. Items whose time ranges overlap are one block. For example, a block of 6 s gives a frame, a hang and a stall, but only one epoch.
+2. **Align the blocks.** The time 0 of each epoch is the start or the end of its block.
+3. **Average each signal.** The playground divides the time from 2 s before to 4 s after the time 0 into bins of 100 ms. For each bin, it calculates the mean of each signal over the epochs.
+
+| Signal | The value of one epoch in one bin | A bin without data |
+|---|---|---|
+| Drift lag | The lag that DriftLag reports in the bin: the sum of the lag of the windows that end in the bin. | 0 ms in a long window. No value when no window covers the bin, for example while the page is hidden. |
+| Blocking time | The sum of the blocking time of the long animation frames that start in the bin. | 0 ms. No value in a browser without long animation frames. |
+| Interaction duration | The mean duration of the interactions that start in the bin. | No value. |
+
+The band is the 95% confidence interval of the mean, from the t distribution. A bin needs 3 or more values for a band. With few blocks, the band is wide.
+
+### What the averages show
+
+The chart uses a simulated session with {BLOCK_DURATIONS.length} blocks of 200 ms to 900 ms. The playground uses the same functions on the data of your session.
+
+<PlotFigure
+  title="Mean drift lag near a block, for two times 0"
+  description="The mean drift lag of 12 simulated blocks of 200 ms to 900 ms, in bins of 100 ms. With the time 0 at the block start, the lag spreads over the time from 0.2 s to 1 s. With the time 0 at the block end, the lag has one sharp peak at the time 0."
+  options={epochChart}
+  table={epochTable}
+  caption="A simulated session. The band is the 95% confidence interval of the mean."
+/>
+
+- **Time 0 at the block start.** The lag spreads over the time from 0.2 s to 1 s. The blocks have different durations, and DriftLag reports a block only at the end of the window that contains it.
+- **Time 0 at the block end.** The lag has one sharp peak at the time 0. Thus DriftLag reports each block at its end, as a [closed-loop probe](#closed-loop-and-open-loop-probes) does.
+- **The sum of the bins.** The lag of a block is in one window. Thus the sum of the mean lag of all bins is approximately the mean duration of the blocks.
+- **The blocking time** is at the time 0 of the start alignment, because a frame starts with its block. A long animation frame gives its start, thus it shows where the block started.
+- **The interaction duration** is immediately before the time 0 of the start alignment in the playground. The click on a load button starts the block. Thus its duration contains the block and the time to the next paint.
+
+These limits apply:
+
+- **Overlap.** Epochs can overlap. A block less than 4 s after another block is also in the window of that block. For clear averages, wait some seconds between two loads.
+- **The time of a record.** The meter records a value at the time of the record. The measurement conditions keep a value of 5 s or more for 2 s before they record it, because they look for evidence of a suspend. The timeline moves such a window back to the gap in the series that it fills.
+- **Live data only.** The test results keep the values of each metric without their times. Thus the results pages cannot show these averages, or the chart of the interactions and the long animation frames.
 
 ## The observer effect and the cost of the probes
 
