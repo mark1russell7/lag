@@ -96,6 +96,7 @@ A page can close or crash during a hang. Then nobody reports the end of the hang
 4. Another page of the same origin, for example the next page, reads the journal one time at its start (`list()`). A record of a different page that nobody updated for 30 000 ms (`HANG_JOURNAL_STALE_MS`) belongs to a page that did not survive its hang.
 5. For each such record, the reading page uses `take(pageId, latestSeenAt)`, with `latestSeenAt` 30 000 ms before the read. The method removes the record and gives it, but only if nobody updated the record after `latestSeenAt`. The operation is atomic, thus only one page gets the record. This is also true when two pages start at the same time, for example at a session restore.
 6. The page that gets the record records that hang with the outcome `abandoned`, and it sends a `lag.main_thread.hang` event with the phase `abandoned`. If the monitor stopped after the take, the page puts the record back for the next page.
+7. The [peer hang watch](/docs/monitors/peer-hang-watch) can report a hang before the journal does. Then it writes a mark in `localStorage` (`hangReportMarks`), with the key `lag-hang-reported:<page ID>`. For a record of a marked page, the reading page removes the mark and does not count the hang again. After the read, it removes each mark that is 30 000 ms old or older and has no record in the journal.
 
 The duration of an abandoned hang is the time from the start of the hang to the last write of the worker. The page ID is a random ID of 32 hexadecimal digits for each page instance (`createRandomId()`). The main thread sends the page ID to the worker only when it has a journal. Without a page ID, the worker writes no records. In WebKit and Safari, the writes of the worker complete only after the hang. Thus there, the journal does not keep a hang that the page does not survive.
 
@@ -180,6 +181,7 @@ The factory uses these dependency groups:
 | `workerHeartbeatIntervalMs` | 1000 | The time between two heartbeats. The interval can be longer than the hang threshold: the wait of a heartbeat starts at its send. |
 | `workerHangReport` | none | `{ url, resource }`: the OTLP logs URL and the resource attributes of the hang reports. Without it, the worker detects hangs but sends no reports. |
 | `hangJournal` | none | The hang journal. `createBrowserDeps()` gives `createIndexedDbHangJournal(indexedDB)` when there is IndexedDB, and a worker or the peer hang watch (option `hangJournal`, default true). Without a journal, the worker writes no records. |
+| `hangReportMarks` | none | The marks of the hangs that the peer hang watch reported. `createBrowserDeps()` gives `createStorageHangReportMarks(localStorage)` with the conditions of the journal, when the page can use `localStorage`. |
 | `pageId` | a random ID | The ID of this page instance in the journal. The monitor sends it to the worker only with a journal. |
 
 The hang threshold (5000 ms) and the system stall threshold (5000 ms) are constants of the factory. The class `WorkerLagMonitor` also takes `clockSyncIntervalMs` (default 60 000) and event callbacks. Its `stop()` stops the heartbeats, but it keeps the listener, so that a `hang-ended` message can still arrive. `dispose()` stops the monitor and removes the listener. The `stop()` of the handle uses `dispose()`.
@@ -213,7 +215,7 @@ The collector must accept cross-origin `POST` requests with JSON from the page. 
 - **Main thread:** one heartbeat message and one `ack` each second. Each heartbeat records two histogram values.
 - **Clock synchronization:** 8 exchanges at the start and each 60 s.
 - **Worker:** one timeout each second. During a hang, one IndexedDB write each second, and one `fetch` at the start and at the end of the hang.
-- **Start of the page:** one read of the hang journal, one `take()` for each stale record, and at most two watchdog timeouts.
+- **Start of the page:** one read of the hang journal, one `take()` for each stale record, and at most two watchdog timeouts. With marks, also one pass over the keys of `localStorage`.
 
 ## Limits
 
@@ -242,8 +244,10 @@ Unit tests:
 - `lag-worker.test.ts`, the journal: the worker writes the record at the start of a hang and again each second. It removes the record at the end or at a stop. It keeps no record without a page ID. The heartbeats continue when the journal fails.
 - `WorkerClockSync.test.ts`: the exchange with the shortest round trip, and a correction of 0 for an offset inside the uncertainty. The best result of all synchronizations, and 8 exchanges by default.
 - `hang-journal.test.ts`: the memory journal and the IndexedDB journal (with `fake-indexeddb`). Two journals of one database share the records, as a page and its worker do. `take()` gives a stale record one time, and it does not take a record that somebody updated after the limit. Of two IndexedDB journals that take one record at the same time, only one gets it. `findAbandonedHangs()` finds the stale records of other pages.
+- `hang-journal.test.ts`, the marks: a mark goes to one reader, with the key of the protocol. The old marks of pages without a record go, and a storage that refuses an operation does not stop the monitor.
 - `hang-journal.test.ts`, the connection: the journal does not block the deletion of the database or a later version. After a deletion, and after the browser closed the connection, the next operation opens the database again.
 - `instrumented/worker-lag.test.ts`: the factory reports the abandoned hangs of earlier pages, removes their records, and reports nothing after `stop()`. Without a journal, it sends no page ID. Two pages that start at the same time (a session restore) report an abandoned hang one time, with a journal in memory and with IndexedDB. With a real worker handler, a hang counts also when it ends because the user changed the tab. A real worker handler and a main thread that is not blocked give no hang in 60 s. The test uses heartbeat intervals from 1 s to 10 s.
+- `instrumented/worker-lag.test.ts`, the marks: the factory removes the record of a marked hang, but does not count it. It keeps the marks that the journal can still need.
 - `setup-all-monitors.test.ts`: a hang from start to end, a suspend that discards the overlapping samples, and the page-view ID in the context of the worker.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):

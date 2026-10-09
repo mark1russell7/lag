@@ -4,6 +4,7 @@ import { setupAllMonitors } from "../setup-all-monitors.js";
 import { createRecordingMeter } from "../test-utils.js";
 import { createFakeEventTarget, createFakePerformanceObserver } from "../vitals/test-fakes.js";
 import type { WorkerLike } from "../WorkerLagMonitor.js";
+import { MemoryStorage } from "../test-peers.js";
 
 /** Browser globals whose functions throw without their `this` value, as some browser functions do. */
 function createGlobals(extra : Record<string, unknown> = {}) {
@@ -140,6 +141,24 @@ describe("createBrowserDeps", () => {
         expect(createBrowserDeps(peerGlobals, { ...options(), hangJournal : false }).hangJournal).toBeUndefined();
         // The database opens only at the first operation
         expect(indexedDB.open).not.toHaveBeenCalled();
+    });
+
+    it("marks the reports of the peer hang watch in localStorage, with the conditions of the hang journal", () => {
+        const worker : WorkerLike = { postMessage : vi.fn(), addEventListener : vi.fn(), removeEventListener : vi.fn() };
+        const localStorage = new MemoryStorage();
+
+        const marks = createBrowserDeps(createGlobals({ localStorage }), { ...options(), worker }).hangReportMarks;
+        marks!.add("page", 5);
+        expect(localStorage.getItem("lag-hang-reported:page")).toBe("5");
+
+        expect(createBrowserDeps(createGlobals({ localStorage }), options()).hangReportMarks).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ localStorage }), { ...options(), worker, hangJournal : false }).hangReportMarks).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ localStorage : {} }), { ...options(), worker }).hangReportMarks).toBeUndefined();
+        expect(createBrowserDeps(createGlobals(), { ...options(), worker }).hangReportMarks).toBeUndefined();
+        // In a sandboxed frame, the read of localStorage throws
+        const blocked = createGlobals();
+        Object.defineProperty(blocked, "localStorage", { get : () => { throw new Error("SecurityError"); } });
+        expect(createBrowserDeps(blocked, { ...options(), worker }).hangReportMarks).toBeUndefined();
     });
 
     it("uses BroadcastChannel and the Web Locks API for the peer hang watch, if the option permits it", async () => {

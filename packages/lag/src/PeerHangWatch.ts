@@ -1,5 +1,5 @@
 import type { ClearIntervalFn, ClearTimeoutFn, Clock, Logger, SetIntervalFn, SetTimeoutFn, WallClock } from "./types.js";
-import type { HangJournal, HangRecord } from "./hang-journal.js";
+import type { HangJournal, HangRecord, HangReportMarks } from "./hang-journal.js";
 
 /** The name of the BroadcastChannel of the watch. */
 export const PEER_CHANNEL_NAME = "lag-peer-hang-watch";
@@ -105,9 +105,16 @@ export type PeerHangWatchOptions = {
     /**
      * The hang journal. The worker of a page that hangs writes its record
      * there, except in WebKit. The page that reports the hang takes the
-     * record, thus the next page does not report it again.
+     * record, thus the next page does not report it again. A page that
+     * reports its own hang removes its record.
      */
     journal? : HangJournal;
+    /**
+     * The marks of reported hangs. The watch marks each hang that it reports
+     * without the record of the journal, also its own hang. The journal
+     * reader of a later page does not count a marked hang again.
+     */
+    marks? : HangReportMarks;
     /** The watch uses this function for each page that closed during a hang, also for its own page. */
     onAbandonedHang : (hang : HangRecord, source : AbandonedHangSource) => void;
 };
@@ -323,9 +330,14 @@ export class PeerHangWatch {
         if (hangStart === undefined) return;
         // The worker monitor counted this hang as ended
         if ((this.hangEndedAt ?? Number.NEGATIVE_INFINITY) >= hangStart) return;
+        const { pageId, journal, marks } = this.options;
         const wallNow = this.deps.wallClock.now();
+        // The worker can stop before it removes its record, for example in Firefox. The page cannot wait
+        // for IndexedDB at its close, thus the removal is not certain. The mark is synchronous.
+        marks?.add(pageId, wallNow);
+        journal?.remove(pageId).catch(() => {});
         this.options.onAbandonedHang({
-            pageId : this.options.pageId,
+            pageId,
             startedAt : wallNow - (now - hangStart),
             lastSeenAt : wallNow,
             attributes : this.attributes,
@@ -417,6 +429,8 @@ export class PeerHangWatch {
                 if (journal && record) await journal.put(record).catch(() => {});
                 return;
             }
+            // Without the record, the journal can still have it: the take failed, or this page has no journal
+            if (!record) this.options.marks?.add(pageId, endedAt);
             this.options.onAbandonedHang(record ?? { pageId, startedAt : peer.lastBeatAt, lastSeenAt : endedAt, attributes : peer.attributes }, "peer");
             // No other page may report the same hang. Thus this page keeps the claim for a time.
             await this.holdClaim();

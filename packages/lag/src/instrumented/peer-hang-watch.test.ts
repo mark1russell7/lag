@@ -3,8 +3,9 @@ import { createInstrumentedPeerHangWatch } from "./peer-hang-watch.js";
 import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "../test-utils.js";
 import { createFakeLifecycle } from "../vitals/test-fakes.js";
 import { SimulatedOrigin, type SimulatedPage } from "../test-peers.js";
-import { createMemoryHangJournal } from "../hang-journal.js";
+import { createMemoryHangJournal, createStorageHangReportMarks } from "../hang-journal.js";
 import { peerLockName } from "../PeerHangWatch.js";
+import { createInstrumentedWorkerLag } from "./worker-lag.js";
 
 let origin : SimulatedOrigin;
 
@@ -151,6 +152,41 @@ describe("createInstrumentedPeerHangWatch", () => {
         }, { time : 1_700_000_001_000 });
         expect(a.meter.records().get("lag_main_thread_hangs")).toEqual([{ value : 1, attributes : { outcome : "abandoned" } }]);
         a.handle.stop();
+    });
+
+    it("counts its own hang one time, also when its worker leaves the record in the journal", async () => {
+        const journal = createMemoryHangJournal();
+        const marks = createStorageHangReportMarks(origin.localStorage);
+        const a = open("a", "visible", { hangJournal : journal, hangReportMarks : marks });
+        await vi.advanceTimersByTimeAsync(1_500);
+        a.page.hang();
+        await vi.advanceTimersByTimeAsync(7_500);
+        a.page.recover();
+        a.fake.pagehide(false);
+        // The worker writes its record again, and then the browser stops it
+        await journal.put({ pageId : "a", startedAt : Date.now() - 8_000, lastSeenAt : Date.now(), attributes : {} });
+        a.handle.stop();
+
+        // A later page of the origin reads the journal
+        await vi.advanceTimersByTimeAsync(60_000);
+        const later = createRecordingMeter();
+        const handle = createInstrumentedWorkerLag({
+            logger : { log : vi.fn() },
+            clock : { now : () => 0 },
+            meter : later.meter,
+            worker : { postMessage : () => {}, addEventListener : () => {}, removeEventListener : () => {} },
+            performance : { timeOrigin : Date.now(), now : () => 0 },
+            setTimeoutFn : () => 1,
+            clearTimeoutFn : () => {},
+            wallClock : { now : () => Date.now() },
+            hangJournal : journal,
+            hangReportMarks : marks,
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        handle.stop();
+
+        expect(a.meter.sum("lag_main_thread_hangs") + later.sum("lag_main_thread_hangs")).toBe(1);
+        expect(await journal.list()).toEqual([]);
     });
 
     it("does not record a hang when the page becomes hidden at the end of a hang", async () => {

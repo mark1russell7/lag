@@ -37,6 +37,11 @@ const DEFAULT_HANG_THRESHOLD_MS = 5_000;
  * with the outcome `abandoned`, and removes its record. Other pages of the
  * origin can read the journal at the same time: the record goes to only one
  * page (`HangJournal.take`).
+ *
+ * The peer hang watch can report a hang before the journal reader does. With
+ * `deps.hangReportMarks`, the factory removes the record of a marked hang,
+ * but it does not count the hang again. It also removes the old marks of
+ * pages that have no record.
  */
 export function createInstrumentedWorkerLag(
     deps : CoreDeps & WorkerMonitorDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & Partial<WallClockDeps> & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<EventDeps>,
@@ -85,6 +90,7 @@ export function createInstrumentedWorkerLag(
 
         // Hangs that earlier pages of the origin did not survive
         const journal = deps.hangJournal;
+        const marks = deps.hangReportMarks;
         let stopped = false;
         if (journal) {
             journal.list().then(async (records) => {
@@ -98,6 +104,8 @@ export function createInstrumentedWorkerLag(
                         await journal.put(record);
                         return;
                     }
+                    // The peer hang watch reported this hang already. The record is gone now.
+                    if (marks?.take(record.pageId)) continue;
                     const durationMs = record.lastSeenAt - record.startedAt;
                     hangs.add(1, { outcome : "abandoned" });
                     hangDurationHist.record(durationMs, { outcome : "abandoned" });
@@ -109,6 +117,8 @@ export function createInstrumentedWorkerLag(
                         "lag.hang.source" : "journal",
                     }, { time : record.startedAt });
                 }
+                // A mark is necessary only while the journal can have a record of its page
+                marks?.prune(wallNow - HANG_JOURNAL_STALE_MS, new Set(records.map(record => record.pageId)));
             }).catch((error : unknown) => {
                 deps.logger.log("warn", "Could not read the hang journal.", { error, type : "WorkerLagMonitor" });
             });

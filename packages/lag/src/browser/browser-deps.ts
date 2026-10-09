@@ -15,6 +15,7 @@ import type { WorkerLike } from "../WorkerLagMonitor.js";
 import type { HangReportTarget } from "../worker-protocol.js";
 import { createPageSource, type PageDocument } from "./page-source.js";
 import { createIndexedDbHangJournal, type IdbFactoryLike } from "./indexeddb-journal.js";
+import { createStorageHangReportMarks, type StorageLike } from "../hang-journal.js";
 import type { CrashReportContextLike } from "../dep-groups.js";
 import type { AbortControllerConstructor, BroadcastChannelConstructor, LockManagerLike } from "../PeerHangWatch.js";
 
@@ -47,6 +48,7 @@ export type BrowserGlobals = LifecycleWindow & {
     readonly SharedArrayBuffer? : unknown;
     readonly crossOriginIsolated? : unknown;
     readonly indexedDB? : unknown;
+    readonly localStorage? : unknown;
     readonly crashReport? : unknown;
     readonly BroadcastChannel? : unknown;
     readonly AbortController? : unknown;
@@ -75,7 +77,9 @@ export type BrowserDepsOptions = {
      * When true (the default), the worker monitor reads the hang journal in
      * IndexedDB and reports the hangs that earlier pages did not survive. The
      * bundled worker writes the journal. The peer hang watch takes the record
-     * of a hung page from the journal, also in a page without a worker.
+     * of a hung page from the journal, also in a page without a worker. The
+     * watch also marks its reports in `localStorage`, thus the journal reader
+     * does not count them again.
      */
     hangJournal? : boolean;
     /** When true (the default), the page-view ID goes into the crash-report context of the browser (Chrome 145 and later). */
@@ -101,6 +105,16 @@ function method<F>(target : object, name : string) : F | undefined {
 /** `value` if it is a function (for example a constructor), or `undefined` if not. */
 function constructorOf<C>(value : unknown) : C | undefined {
     return typeof value === "function" ? value as C : undefined;
+}
+
+/** `localStorage`, if the page can use it. The browser can refuse it, for example in a sandboxed frame: then the read throws. */
+function localStorageOf(globals : BrowserGlobals) : StorageLike | undefined {
+    try {
+        const storage = globals.localStorage as Partial<StorageLike> | null | undefined;
+        return typeof storage?.getItem === "function" && typeof storage.setItem === "function" ? storage as StorageLike : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 function memorySourceOf(performance : BrowserGlobals["performance"]) : MemorySource | undefined {
@@ -148,9 +162,9 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         : undefined;
     // The worker monitor reads the journal. The peer hang watch takes the record of a hung page from it, also without a worker.
     const indexedDB = globals.indexedDB as IdbFactoryLike | undefined;
-    const hangJournal = options.hangJournal !== false && (options.worker || peerDeps) && typeof indexedDB?.open === "function"
-        ? createIndexedDbHangJournal(indexedDB)
-        : undefined;
+    const journalOn = options.hangJournal !== false && (options.worker !== undefined || peerDeps !== undefined);
+    const hangJournal = journalOn && typeof indexedDB?.open === "function" ? createIndexedDbHangJournal(indexedDB) : undefined;
+    const storage = journalOn ? localStorageOf(globals) : undefined;
     const crashReport = globals.crashReport as CrashReportContextLike | undefined;
     const crashReportContext = options.crashReportContext !== false && typeof crashReport?.set === "function" ? crashReport : undefined;
 
@@ -184,6 +198,7 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         ...(options.workerHeartbeatIntervalMs !== undefined ? { workerHeartbeatIntervalMs : options.workerHeartbeatIntervalMs } : {}),
         ...(options.workerHangReport ? { workerHangReport : options.workerHangReport } : {}),
         ...(hangJournal ? { hangJournal } : {}),
+        ...(storage ? { hangReportMarks : createStorageHangReportMarks(storage) } : {}),
         ...(crashReportContext ? { crashReport : crashReportContext } : {}),
         ...peerDeps,
     };
