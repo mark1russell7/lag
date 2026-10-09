@@ -52,6 +52,7 @@ import type { PageSource } from "./vitals/types.js";
 import type { AbsoluteClock } from "./absolute-clock.js";
 import type {
     LifecycleDocument,
+    LifecycleStateMachine,
     LifecycleWindow,
 } from "./LifecycleStateMachine.js";
 
@@ -74,6 +75,13 @@ export type TimerDeps = {
 export type LifecycleDeps = {
     document : LifecycleDocument;
     window : LifecycleWindow;
+    /**
+     * A lifecycle tracker that the page shares (`getPageLifecycle()` of
+     * `page-lifecycle-tracker`). The lifecycle factory subscribes to it, and
+     * does not dispose of it at `stop()`. Without it, the factory makes its
+     * own tracker from `document` and `window`.
+     */
+    lifecycleTracker? : LifecycleStateMachine;
 };
 
 /** `PerformanceObserver`, for LoAF, Event Timing, layout shifts, paint entries and LCP. */

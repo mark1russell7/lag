@@ -30,8 +30,10 @@ export function createInstrumentedLifecycle(
         /** The span of the hidden or frozen period in which the page is. */
         let period : OpenSpan | undefined;
 
-        const machine = new LifecycleStateMachine(deps.document, deps.window, deps.clock, deps.logger);
-        machine.subscribe(({ from, to, trigger, timestamp }) => {
+        // A tracker that the page shares: the factory only subscribes to it
+        const shared = deps.lifecycleTracker;
+        const machine = shared ?? new LifecycleStateMachine(deps.document, deps.window, deps.clock, deps.logger);
+        const unsubscribe = machine.subscribe(({ from, to, trigger, timestamp }) => {
             transitions.add(1, { from, to, trigger });
             // The time of the transition is in the time of the clock of the monitors
             const options = occurredAtClockTime(clock, deps.clock, timestamp);
@@ -50,7 +52,8 @@ export function createInstrumentedLifecycle(
         return {
             monitor : machine,
             stop : () => {
-                machine.dispose();
+                unsubscribe();
+                if (!shared) machine.dispose();
                 period?.end(clock ? clock.now() : Date.now());
                 period = undefined;
             },

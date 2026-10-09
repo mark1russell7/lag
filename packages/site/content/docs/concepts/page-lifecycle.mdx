@@ -90,13 +90,19 @@ We measured the sequence of the listeners in three engines ([local experiments](
 
 The events `visibilitychange`, `freeze` and `resume` have `document` as their target. In the three engines, the capture listeners of the state machine start before the listeners of an exporter. The events `pagehide` and `pageshow` have `window` as their target. In Chromium, the listener that the page added first starts first. Thus an exporter that listens to `pagehide` before the monitors can flush before the monitors record their final values.
 
-The sequence of the listeners cannot protect the final values in all engines. The library has an explicit hook for this problem.
+The sequence of the listeners cannot protect the final values in all engines. Two parts solve this problem: a lifecycle tracker that the page shares, and a flush hook.
+
+## The shared tracker
+
+The state machine is the npm package [`page-lifecycle-tracker`](https://mark1russell7.github.io/page-lifecycle-tracker/). In a page, `createBrowserDeps()` gives the monitors the tracker that the page shares (`getPageLifecycle()`). Each script of the page that uses `getPageLifecycle()` gets the same tracker, also from a different copy of the package.
+
+A subscriber has a phase: `observe` (the default) or `export`. For each transition, the tracker starts all subscribers of the `observe` phase first, and then the subscribers of the `export` phase. The monitors subscribe in the `observe` phase. The otel-ts library subscribes in the `export` phase, and it flushes there. Thus the last export has the transition to `terminated`, its event and the own hang report of the [peer hang watch](/docs/monitors/peer-hang-watch). The sequence of the scripts is not important.
 
 ## The flush hook
 
 `AllMonitorHandles.flush()` records the values that the monitors keep until a checkpoint. At this time, these values are the Web Vitals of the current page view. The function makes a checkpoint of the page-view vitals that is not final.
 
-The `onBeforeFlush(listener)` function of otel-ts starts each listener synchronously before each flush. The flushes include each page hide, the stop at `pagehide`, each use of `forceFlush()` and the first use of `shutdown()`. Connect the two:
+The `onBeforeFlush(listener)` function of otel-ts starts each listener synchronously before each flush. The flushes include each page hide, the stop at the end of the page, each use of `forceFlush()` and the first use of `shutdown()`. Connect the two:
 
 ```ts
 import { init } from "@mark1russell7/otel-ts";
@@ -109,15 +115,17 @@ const monitors = setupAllMonitors(createBrowserDeps(window, {
 }));
 
 // Record the values of the page view before each export
-otel.onBeforeFlush((cause) => monitors.flush(cause.event));
+otel.onBeforeFlush(() => monitors.flush());
 ```
 
-With the hook, the export contains the values in all engines, and the sequence of the listeners is not important. A unit test of `setupAllMonitors()` makes sure that `flush()` records the pending Web Vitals. With a different exporter, use `monitors.flush()` in the same way before each flush of the exporter.
+With the hook, the export contains the values in all engines, and the sequence of the listeners is not important. A unit test of `setupAllMonitors()` makes sure that `flush()` records the pending Web Vitals.
+
+With a different exporter, use `monitors.flush()` in the same way before each flush of the exporter. If the exporter does not use the shared tracker, give `flush()` the page event that started the flush: `monitors.flush(event)`. Then the state machine handles the event first (`handle()`), and its own listener ignores the same event object later.
 
 <Mermaid
   chart={flushSequenceChart}
   title="The flush at pagehide in Chromium"
-  caption="otel-ts added its pagehide listener first, thus it starts first. The hook records the values of the page view before the export."
+  caption="The shared tracker starts the subscribers of the observe phase first. otel-ts flushes in the export phase, after the monitors recorded the end of the page. The hook records the values of the page view before the export."
 />
 
 ## The time of a transition
