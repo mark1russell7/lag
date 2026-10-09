@@ -22,6 +22,12 @@ describe("DriftLag accuracy", () => {
             (id) => window.clearTimeout(id),
             performance,
         );
+        // The focus during the measured windows. A command of the test runner (recordMeasurement) can
+        // give the window the focus later: in Safari, a read after the commands said true for a window
+        // that had no focus during the windows.
+        let lostFocus = !document.hasFocus();
+        const onBlur = () : void => { lostFocus = true; };
+        window.addEventListener("blur", onBlur);
         try {
             await wait(3_000);
             const idle = lags.splice(0);
@@ -29,9 +35,10 @@ describe("DriftLag accuracy", () => {
             await wait(1_000);
             const afterBlock = lags.splice(0);
             const baseline = monitor.getBaselineMs();
+            const focused = !lostFocus && document.hasFocus();
 
             console.log(`DriftLag baseline ${baseline.toFixed(1)} ms, idle median ${median(idle).toFixed(1)} ms, block ${Math.max(...afterBlock).toFixed(1)} ms ` +
-                `(visibilityState "${document.visibilityState}", hasFocus ${document.hasFocus()})`);
+                `(visibilityState "${document.visibilityState}", focus during the windows ${focused})`);
             // The raw DriftLag value can be slightly negative (jitter around the baseline). The instrumented monitor clamps it at 0.
             await recordMeasurement("drift-accuracy/idle/drift_lag_raw", "ms", idle, { scenario : "idle" });
             await recordMeasurement("drift-accuracy/block-300ms/drift_lag_raw", "ms", [Math.max(...afterBlock)], { scenario : "block-300ms" });
@@ -39,7 +46,6 @@ describe("DriftLag accuracy", () => {
             expect(idle.length).toBeGreaterThan(5);
             // macOS can delay the timers of an app that is not in front. Safari on a GitHub runner had no
             // focus, and its idle median was between 0 ms and 5.4 ms in 22 runs. A window has 100 ms.
-            const focused = document.hasFocus();
             expect(Math.abs(median(idle))).toBeLessThan(focused ? 5 : 10);
             // The resolution is one step: up to the baseline less than the block. Without focus, some steps
             // of Safari are late, thus its baseline is longer than its usual step. Then each other step of the
@@ -48,6 +54,7 @@ describe("DriftLag accuracy", () => {
             expect(Math.max(...afterBlock)).toBeGreaterThan(300 - baseline - (focused ? 10 : 20));
             expect(Math.max(...afterBlock)).toBeLessThan(340);
         } finally {
+            window.removeEventListener("blur", onBlur);
             monitor.stop();
         }
     }, 30_000);
