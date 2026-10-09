@@ -58,6 +58,13 @@ export type VitalValue = {
      * Metric attributes must not contain them.
      */
     attribution : Readonly<Record<string, string | number>>;
+    /**
+     * The time of the occurrence that gave the value, in `performance.now()`
+     * time. For INP, it is the start of the interaction. For CLS, it is the
+     * largest shift of the worst session window. For FCP, LCP and TTFB, it is
+     * the start of the view plus the value. An estimate has no time.
+     */
+    time? : number;
 };
 
 /** The data of the Navigation Timing entry that the vitals use. */

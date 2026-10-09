@@ -14,6 +14,7 @@ function setup(withEvents : boolean) {
         clock : { now : () => 0 },
         meter : meter.meter,
         PerformanceObserver : observer.PerformanceObserver,
+        performance : { timeOrigin : 1_000_000, now : () => 0 },
         ...(withEvents ? { events } : {}),
     });
     return { observer, meter, events, logger, handle };
@@ -40,7 +41,8 @@ describe("createInstrumentedLoaf", () => {
 
         expect(t.meter.values("lag_loaf_blocking_histogram")).toEqual([149, 150]);
         expect(t.meter.values("lag_loaf_duration_histogram")).toEqual([199, 200]);
-        expect(t.events.emit.mock.calls).toEqual([["lag.long_animation_frame", { duration_ms : 200, blocking_duration_ms : 150 }]]);
+        // At the start time of the frame (100 ms after the time origin)
+        expect(t.events.emit.mock.calls).toEqual([["lag.long_animation_frame", { duration_ms : 200, blocking_duration_ms : 150 }, { time : 1_000_100 }]]);
         expectCatalogInstruments(t.meter);
         expectCatalogEvents(t.events.emit);
     });
@@ -88,7 +90,7 @@ describe("createInstrumentedLoaf", () => {
             "script.invoker_type" : "event-listener",
             "script.source_url" : "https://shop.example/app.js",
             "script.duration_ms" : 180,
-        });
+        }, { time : 1_000_100 });
         expectCatalogEvents(t.events.emit);
     });
 });

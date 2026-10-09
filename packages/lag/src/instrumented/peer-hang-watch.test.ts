@@ -50,7 +50,8 @@ describe("createInstrumentedPeerHangWatch", () => {
             "lag.hang.source" : "peer",
             "lag.page_view.id" : "view-b",
             "session.id" : "s1",
-        });
+        // At the last heartbeat of b, 1 s after the start of the test
+        }, { time : 1_700_000_001_000 });
         expectCatalogInstruments(a.meter);
         expectCatalogEvents(a.events.emit, ["session.id"]);
         a.handle.stop();
@@ -147,7 +148,7 @@ describe("createInstrumentedPeerHangWatch", () => {
             "lag.hang.page_id" : "a",
             "lag.hang.source" : "self",
             "lag.page_view.id" : "view-a",
-        });
+        }, { time : 1_700_000_001_000 });
         expect(a.meter.records().get("lag_main_thread_hangs")).toEqual([{ value : 1, attributes : { outcome : "abandoned" } }]);
         a.handle.stop();
     });

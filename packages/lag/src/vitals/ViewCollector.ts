@@ -175,9 +175,11 @@ export class ViewCollector {
         const inp = this.inpValue();
         if (inp) result.push(inp);
         if (this.clsReportable) result.push(this.clsValue());
-        if (this.lcp) result.push(this.lcp);
-        if (this.fcp !== undefined) result.push({ name : "FCP", value : this.fcp, attribution : {} });
-        if (this.ttfb !== undefined) result.push({ name : "TTFB", value : this.ttfb, attribution : {} });
+        // The milestones of the view occur at the start of the view plus the value
+        const start = this.view.startTime;
+        if (this.lcp) result.push({ ...this.lcp, time : start + this.lcp.value });
+        if (this.fcp !== undefined) result.push({ name : "FCP", value : this.fcp, attribution : {}, time : start + this.fcp });
+        if (this.ttfb !== undefined) result.push({ name : "TTFB", value : this.ttfb, attribution : {}, time : start + this.ttfb });
         return result;
     }
 
@@ -186,7 +188,9 @@ export class ViewCollector {
         // A candidate can have the duration 0, as a first input that the browser rounds to 0
         if (this.inp.getINPInteractionId() !== 0) {
             const entries = this.interactions.get(this.inp.getINPInteractionId());
-            return { name : "INP", value, attribution : entries ? interactionAttribution(entries, value) : {} };
+            if (!entries) return { name : "INP", value, attribution : {} };
+            const time = Math.min(...entries.map(entry => entry.startTime));
+            return { name : "INP", value, attribution : interactionAttribution(entries, value), time };
         }
         const restored = this.view.navigationType === "back-forward-cache" || this.view.navigationType === "soft-navigation";
         if (restored && this.inp.getInteractionCount() > 0) {
@@ -199,7 +203,13 @@ export class ViewCollector {
         const sources = this.cls.getLargestShiftSources() as ReadonlyArray<{ node? : unknown }>;
         const node = sources.find(source => source.node !== undefined && source.node !== null)?.node;
         const target = node === undefined ? "" : this.describeNode(node);
-        return { name : "CLS", value : this.cls.getCLS(), attribution : target ? { largest_shift_target : target } : {} };
+        const time = this.cls.getLargestShiftTime();
+        return {
+            name : "CLS",
+            value : this.cls.getCLS(),
+            attribution : target ? { largest_shift_target : target } : {},
+            ...(time !== undefined ? { time } : {}),
+        };
     }
 
     /** This method adds the entry to the group of its frame, as web-vitals does. */

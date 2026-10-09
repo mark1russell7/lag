@@ -27,6 +27,7 @@ export function createInstrumentedClockDrift(
         const skewHist = createHistogram(deps.meter, METRICS.clockSkew);
         const jumps = createCounter<{ direction : ClockJump["direction"]; kind : ClockJump["kind"] }>(deps.meter, METRICS.clockJumps);
 
+        const clock = deps.absoluteClock ?? createAbsoluteClock(deps.performance);
         const monitor = new ClockDriftMonitor(
             ({ skewMs }) => skewHist.record(Math.abs(skewMs)),
             (jump) => {
@@ -41,10 +42,11 @@ export function createInstrumentedClockDrift(
                     magnitude_ms : jump.magnitudeMs,
                     skew_ms : jump.skewMs,
                     lateness_ms : jump.latenessMs,
-                });
+                // The monitor finds the jump at this time
+                }, { time : clock.now() });
             },
             deps.logger,
-            deps.absoluteClock ?? createAbsoluteClock(deps.performance),
+            clock,
             deps.wallClock,
             deps.setIntervalFn,
             deps.clearIntervalFn,
