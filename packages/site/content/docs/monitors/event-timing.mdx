@@ -7,7 +7,7 @@ status: final
 
 import { eventTimingMetrics } from "./metrics.data";
 
-`EventTimingMonitor` records each interaction event of 16 ms or more from the Event Timing API. It divides each event into the input delay, the processing time and the presentation delay. It also calculates the Interaction to Next Paint (INP) of the page since its start.
+`EventTimingMonitor` records each interaction event of 16 ms or more from the Event Timing API. It divides each event into the input delay, the processing time and the presentation delay. It also calculates the Interaction to Next Paint (INP) of the page, from the start of the page.
 
 ## What it measures
 
@@ -40,7 +40,7 @@ The factory labels each value with the attribute `interaction`:
 
 `InpCalculator` keeps the 10 longest interactions. The events of one interaction (for example `pointerdown`, `pointerup` and `click`) share one interaction ID, and the longest event counts. INP is the longest interaction, with one outlier ignored for each 50 interactions. It is the interaction at the index min(n − 1, floor(count / 50)) of the sorted list, where n is the number of kept interactions. This is the rule of web-vitals ([Web Vitals algorithms](/research/web-vitals-algorithms)).
 
-The count of interactions comes from `performance.interactionCount`, since the start of the monitor. Without it, the calculator counts the interaction IDs that it got. `getINP()`, `getInteractionCount()` and `getWorstInteractionDuration()` give the current values. `stop()` clears the calculator, because a restart gets the buffered entries of the browser again.
+The count of interactions comes from `performance.interactionCount`, from the start of the page. The candidates also start at the start of the page, because the observer gets the buffered entries from before the start of the monitor. Thus the count and the candidates cover the same time, as for the load in web-vitals. Without `performance.interactionCount`, the calculator counts the interaction IDs that it got. `getINP()`, `getInteractionCount()` and `getWorstInteractionDuration()` give the current values. `stop()` clears the calculator, because a restart gets the buffered entries of the browser again.
 
 ## Browser support
 
@@ -85,7 +85,7 @@ import { createBrowserDeps, createInstrumentedEventTiming } from "@lag/core";
 const deps = createBrowserDeps(window, { logger : console, meter : metrics.getMeter("lag") });
 if (deps.PerformanceObserver) {
     const eventTiming = createInstrumentedEventTiming({ ...deps, PerformanceObserver : deps.PerformanceObserver });
-    // The INP of the page since the start of the monitor
+    // The INP of the page, from the start of the page
     console.log(eventTiming.monitor?.getINP(), eventTiming.monitor?.getInteractionCount());
 }
 ```
@@ -102,14 +102,15 @@ if (deps.PerformanceObserver) {
 - **Only slow events.** The browser gives no entry for an event of less than 16 ms. The histograms show the slow part of the distribution.
 - **Not all input.** Scroll, drag and hover are not discrete interactions, thus they have no interaction ID ([Web Vitals algorithms](/research/web-vitals-algorithms)).
 - **The count without `interactionCount`.** The count of interactions that the calculator got is too low, because fast interactions give no entry. Then INP can be slightly too high on a page with many fast interactions.
-- **The page, not the page view.** `getINP()` covers the time since the start of the monitor, also across back/forward cache restores.
+- **The page, not the page view.** `getINP()` covers the time from the start of the page, also across back/forward cache restores. Before the start of the monitor, the buffer of the browser keeps only the entries of 104 ms or more. Thus only these earlier entries are candidates.
 - **Engines differ.** Do not compare the values of Chromium with the values of Firefox and Safari without the engine as a dimension.
 
 ## Tests
 
 Unit tests:
 
-- `EventTimingMonitor.test.ts`: the three phases of an event, the monitor ignores an entry with the interaction ID 0, and INP as the p98 of the interactions. The longest event of an interaction counts, and an interaction counts one time across its events. The observer uses a threshold of 16 ms. The monitor records a negative presentation delay as 0. The calculator uses `performance.interactionCount` when the browser has it, and counts the interactions otherwise. The monitor gets the buffered entries also when `observe()` delivers them at once, as old Safari did (WebKit bug 247863).
+- `EventTimingMonitor.test.ts`: the three phases of an event, the monitor ignores an entry with the interaction ID 0, and INP as the p98 of the interactions. The longest event of an interaction counts, and an interaction counts one time across its events. The observer uses a threshold of 16 ms. The monitor records a negative presentation delay as 0. It gets the buffered entries also when `observe()` delivers them at once, as old Safari did (WebKit bug 247863).
+- `EventTimingMonitor.test.ts`, the count: the calculator uses `performance.interactionCount` when the browser has it, and counts the interactions otherwise. The count starts at the start of the page, also after a restart, as the buffered candidates do.
 - `InpCalculator.test.ts`: a property test (fast-check) compares the calculator with a reference definition for all sequences of entries.
 
 Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
