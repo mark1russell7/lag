@@ -49,7 +49,9 @@ import {
 import { PROJECT_REPORT_DIR_ENV } from "./project-reporter.js";
 import {
     changedDuringRun,
+    MUTATION_ORIGIN_FILE,
     mergeIndex,
+    mutationOrigin,
     parseResultLines,
     runExitCode,
     runFile,
@@ -192,14 +194,17 @@ function coverageReports(runStart : Date) : CoverageReport[] {
 }
 
 function mutationReports() : MutationReport[] {
-    const file = path.join(root, "packages/lag/reports/mutation/mutation.json");
+    const dir = path.join(root, "packages/lag/reports/mutation");
+    const file = path.join(dir, "mutation.json");
     if (has("--no-mutation") || !existsSync(file)) return [];
     const report = readJson<StrykerReport>(file);
     if (!report) return [];
-    console.log(`Mutation report: ${path.relative(root, file)} from ${statSync(file).mtime.toISOString()}`);
+    // The commit and the time of the Stryker run, usually from an earlier day than this run
+    const origin = mutationOrigin(readJson<unknown>(path.join(dir, MUTATION_ORIGIN_FILE)), statSync(file).mtime);
+    console.log(`Mutation report: ${path.relative(root, file)} from ${origin.createdAt}${origin.commit ? `, commit ${origin.commit.slice(0, 7)}` : ""}`);
     // Stryker names the files relative to the package
     const files = Object.fromEntries(Object.entries(report.files).map(([name, value]) => [path.resolve(root, "packages/lag", name), value]));
-    return [fromStrykerReport({ files }, "@lag/core", root)];
+    return [fromStrykerReport({ files }, "@lag/core", root, origin)];
 }
 
 function main() : void {

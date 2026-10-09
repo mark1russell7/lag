@@ -14,7 +14,7 @@ import {
     metricOf,
     OTHER_GROUP,
 } from "./measurements";
-import { mutationFileRows, mutationPackageRows } from "./mutation";
+import { mutationFileRows, mutationOrigins, mutationPackageRows } from "./mutation";
 import { nextSort, sortRows } from "./sort";
 import { countsText, failingTests, filterSuites, flattenTests, groupStatus, matchesFilter, parseStatusFilter, slowestTests } from "./tests";
 import { runTrend, sortRunsNewestFirst } from "./trend";
@@ -140,6 +140,21 @@ describe("mutation model", () => {
         const [core] = mutationPackageRows(run);
         expect(core?.files).toBe(files.length);
         expect(core?.total).toBe(files.reduce((sum, file) => sum + file.total, 0));
+    });
+
+    it("gives the commit and the time of each Stryker run, and its age in days", () => {
+        const report = { packageName : "@lag/core", score : 96, files : [] };
+        const origins = mutationOrigins(emptyRun({
+            createdAt : "2026-10-08T12:00:00.000Z",
+            mutation : [
+                { ...report, commit : "abc1234def567", createdAt : "2026-10-04T03:41:00.000Z" },
+                { ...report, packageName : "@lag/other" },
+            ],
+        }));
+        expect(origins).toEqual([
+            { packageName : "@lag/core", commit : "abc1234def567", createdAt : "2026-10-04T03:41:00.000Z", daysBeforeRun : 4 },
+            { packageName : "@lag/other", commit : undefined, createdAt : undefined, daysBeforeRun : undefined },
+        ]);
     });
 });
 

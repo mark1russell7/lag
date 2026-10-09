@@ -81,6 +81,14 @@ export type MutationReport = {
     packageName : string;
     score : number;
     files : MutationFile[];
+    /** The commit that Stryker tested, if it is known. */
+    commit? : string;
+    /**
+     * The ISO 8601 time of the Stryker run. The mutation tests do not operate
+     * in each run of the test program, thus this time is usually earlier than
+     * the time of the run.
+     */
+    createdAt? : string;
 };
 
 /**

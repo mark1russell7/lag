@@ -8,6 +8,7 @@ import {
     summarizeRun,
     type BudgetResult,
     type Measurement,
+    type MutationOrigin,
     type RunIndex,
     type RunReport,
     type RunSummary,
@@ -149,6 +150,25 @@ const FILE_TIME_TOLERANCE_MS = 2_000;
  */
 export function changedDuringRun(modified : Date, runStart : Date) : boolean {
     return modified.getTime() >= runStart.getTime() - FILE_TIME_TOLERANCE_MS;
+}
+
+/** The name of the file next to `mutation.json` with the commit and the time of the Stryker run. */
+export const MUTATION_ORIGIN_FILE = "mutation-run.json";
+
+/**
+ * The commit and the time of a Stryker report. The Pages workflow writes them
+ * into `MUTATION_ORIGIN_FILE` when it downloads the report of the mutation
+ * workflow. Without this file, for example after a local `pnpm mutation`, the
+ * time is the time of the change to `mutation.json`, and the commit is not
+ * known.
+ */
+export function mutationOrigin(origin : unknown, reportModified : Date) : MutationOrigin {
+    const value = typeof origin === "object" && origin !== null ? origin as Record<string, unknown> : {};
+    const commit = typeof value["commit"] === "string" && value["commit"] !== "" ? value["commit"] : undefined;
+    const createdAt = typeof value["createdAt"] === "string" && !Number.isNaN(Date.parse(value["createdAt"]))
+        ? new Date(value["createdAt"]).toISOString()
+        : reportModified.toISOString();
+    return { ...(commit !== undefined ? { commit } : {}), createdAt };
 }
 
 /** A run ID that sorts by time and shows the commit: "2026-10-07-153012-b492a0a". */

@@ -4,6 +4,7 @@ import { reportFileName } from "./project-reporter.js";
 import {
     changedDuringRun,
     mergeIndex,
+    mutationOrigin,
     packageSlug,
     parseResultLines,
     runExitCode,
@@ -135,5 +136,22 @@ describe("the result of the collector", () => {
         expect(changedDuringRun(new Date("2026-10-08T11:59:58.000Z"), start)).toBe(true);
         expect(changedDuringRun(new Date("2026-10-08T11:59:57.999Z"), start)).toBe(false);
         expect(changedDuringRun(new Date("2026-10-01T09:00:00.000Z"), start)).toBe(false);
+    });
+});
+
+describe("the origin of the mutation report", () => {
+    const modified = new Date("2026-10-08T09:00:00.000Z");
+
+    it("takes the commit and the time from the file of the Pages workflow", () => {
+        expect(mutationOrigin({ commit : "abc1234def", createdAt : "2026-10-04T03:41:07Z" }, modified)).toEqual({
+            commit : "abc1234def",
+            createdAt : "2026-10-04T03:41:07.000Z",
+        });
+    });
+
+    it("uses the time of the report file, and no commit, without a valid file", () => {
+        expect(mutationOrigin(undefined, modified)).toEqual({ createdAt : "2026-10-08T09:00:00.000Z" });
+        expect(mutationOrigin({ commit : "", createdAt : "not a date" }, modified)).toEqual({ createdAt : "2026-10-08T09:00:00.000Z" });
+        expect(mutationOrigin({ commit : 42 }, modified)).toEqual({ createdAt : "2026-10-08T09:00:00.000Z" });
     });
 });
