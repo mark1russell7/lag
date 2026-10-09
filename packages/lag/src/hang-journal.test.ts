@@ -111,6 +111,59 @@ describe("createIndexedDbHangJournal", () => {
         expect(await journal.take("b", 10)).toBeUndefined();
     });
 
+    /** This function deletes the database, or opens it with a later version, and rejects when an open connection blocks it. */
+    const unblocked = (request : IDBOpenDBRequest) =>
+        new Promise<void>((resolve, reject) => {
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+            request.onblocked = () => reject(new Error("An open connection blocks the request."));
+        });
+
+    it("closes its connection when a page deletes the database, and opens the database again at the next operation", async () => {
+        const factory = new IDBFactory();
+        const journal = createIndexedDbHangJournal(factory);
+        await journal.put(record("a", 1_000));
+
+        await unblocked(factory.deleteDatabase("lag-hang-journal"));
+        await journal.put(record("b", 2_000));
+        expect((await journal.list()).map(r => r.pageId)).toEqual(["b"]);
+    });
+
+    it("closes its connection when a later version of the library opens the database", async () => {
+        const factory = new IDBFactory();
+        const journal = createIndexedDbHangJournal(factory);
+        await journal.put(record("a", 1_000));
+
+        const later = factory.open("lag-hang-journal", 2);
+        await unblocked(later);
+        later.result.close();
+        // This version cannot open the database of the later version
+        await expect(journal.list()).rejects.toThrow();
+    });
+
+    it("opens the database again after the browser closed the connection", async () => {
+        const factory = new IDBFactory();
+        const connections : Array<{ close() : void; onclose : unknown }> = [];
+        const journal = createIndexedDbHangJournal({
+            open : (name, version) => {
+                const request = factory.open(name, version);
+                request.addEventListener("success", () => connections.push(request.result));
+                return request;
+            },
+        });
+        await journal.put(record("a", 1_000));
+
+        // The browser closes the connection, for example when the user clears the data of the site
+        const closed = connections[0]!;
+        closed.close();
+        (closed.onclose as () => void)();
+        await journal.put(record("b", 2_000));
+        // A late close event of the earlier connection does not close the new connection
+        (closed.onclose as () => void)();
+        expect((await journal.list()).map(r => r.pageId).sort()).toEqual(["a", "b"]);
+        expect(connections).toHaveLength(2);
+    });
+
     it("rejects when the database cannot open, and tries again at the next operation", async () => {
         let attempts = 0;
         const failing = {

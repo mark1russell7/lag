@@ -30,6 +30,9 @@ type IdbDatabaseLike = {
     readonly objectStoreNames : { contains(name : string) : boolean };
     createObjectStore(name : string, options : { keyPath : string }) : unknown;
     transaction(name : string, mode : "readonly" | "readwrite") : IdbTransactionLike;
+    close() : void;
+    onversionchange : ((event : never) => unknown) | null;
+    onclose : ((event : never) => unknown) | null;
 };
 
 type IdbOpenRequestLike = IdbRequestLike<IdbDatabaseLike> & {
@@ -64,24 +67,43 @@ function isHangRecord(value : unknown) : value is HangRecord {
  * The database opens at the first operation. An operation fails (the promise
  * rejects) when the browser does not permit IndexedDB, for example in some
  * private windows.
+ *
+ * The journal keeps its connection open. It closes the connection when
+ * another connection deletes the database or opens a later version, so that
+ * it does not block them. After that, or after the browser closed the
+ * connection, the next operation opens the database again.
  */
 export function createIndexedDbHangJournal(factory : IdbFactoryLike, name : string = "lag-hang-journal") : HangJournal {
     let database : Promise<IdbDatabaseLike> | undefined;
     const open = () : Promise<IdbDatabaseLike> => {
-        database ??= new Promise<IdbDatabaseLike>((resolve, reject) => {
+        if (database) return database;
+        const opening : Promise<IdbDatabaseLike> = new Promise<IdbDatabaseLike>((resolve, reject) => {
             const request = factory.open(name, VERSION);
             request.onupgradeneeded = () => {
                 const db = request.result;
                 if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath : "pageId" });
             };
-            request.onsuccess = () => resolve(request.result);
+            request.onsuccess = () => {
+                const db = request.result;
+                // The next operation opens the database again
+                const forget = () : void => {
+                    if (database === opening) database = undefined;
+                };
+                db.onversionchange = () => {
+                    db.close();
+                    forget();
+                };
+                db.onclose = forget;
+                resolve(db);
+            };
             request.onerror = () => reject(request.error);
         }).catch((error : unknown) => {
             // The next operation tries again
-            database = undefined;
+            if (database === opening) database = undefined;
             throw error;
         });
-        return database;
+        database = opening;
+        return opening;
     };
     const store = async (mode : "readonly" | "readwrite") : Promise<IdbObjectStoreLike> =>
         (await open()).transaction(STORE, mode).objectStore(STORE);
