@@ -44,7 +44,7 @@ export function LiveChart({ title, description, series, windowSeconds, elapsedSe
                         );
                     }
                     marks.push(mark === "line"
-                        ? Plot.lineY(series.points, { x : "t", y : "value", stroke : seriesColor(theme, 0), strokeWidth : 2, curve : "step-after" })
+                        ? Plot.lineY(series.points, { x : "t", y : "value", stroke : seriesColor(theme, 0), strokeWidth : 2, curve : "step-before" })
                         : Plot.dot(series.points, { x : "t", y : "value", fill : seriesColor(theme, 0), r : 4.5, stroke : theme.surface, strokeWidth : 2 }));
                     return {
                         marginLeft : 48,

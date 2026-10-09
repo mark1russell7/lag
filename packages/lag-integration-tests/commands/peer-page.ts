@@ -24,10 +24,16 @@ async function openWithPlaywright(ctx : BrowserCommandContext, url : string) : P
     const page = await ctx.context.newPage();
     const errors : string[] = [];
     page.on("pageerror", (error) => errors.push(String(error)));
-    await page.goto(url);
-    await page.waitForFunction(READY, undefined, { timeout : 10_000 }).catch((error : unknown) => {
-        throw new Error(`The page ${url} did not start: ${errors.join("; ") || String(error)}`);
-    });
+    try {
+        await page.goto(url);
+        await page.waitForFunction(READY, undefined, { timeout : 10_000 }).catch((error : unknown) => {
+            throw new Error(`The page ${url} did not start: ${errors.join("; ") || String(error)}`);
+        });
+    } catch (error) {
+        // A page that did not start must not stay in the context with its monitors, locks and messages
+        await page.close({ runBeforeUnload : false }).catch(() => undefined);
+        throw error;
+    }
     return {
         evaluate : (expression) => page.evaluate(expression),
         // Without beforeunload, so that the close does not wait for the main thread of the page
@@ -80,6 +86,10 @@ async function openWithWebdriverio(ctx : BrowserCommandContext, url : string) : 
         await browser.switchToWindow(handle);
         await browser.url(url);
         await browser.waitUntil(async () => (await browser.execute(`return ${READY};`) as unknown) === true, { timeout : 10_000 });
+    } catch (error) {
+        // A window that did not start must not stay open with its monitors, locks and messages
+        await browser.closeWindow().catch(() => undefined);
+        throw error;
     } finally {
         await back();
     }

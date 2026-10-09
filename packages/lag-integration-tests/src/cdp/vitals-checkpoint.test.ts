@@ -42,9 +42,10 @@ describe("The page-view vitals at the hidden checkpoint", () => {
 
             // A second hidden checkpoint does not record the same view again: a histogram cannot remove a value
             await cdp.showPage();
-            await waitUntil(() => document.visibilityState === "visible", 2_000);
+            expect(await waitUntil(() => document.visibilityState === "visible", 2_000)).toBe(true);
             await cdp.hidePage();
-            await waitUntil(() => document.visibilityState === "hidden", 2_000);
+            // Without a second hidden checkpoint, the checks below would pass for no reason
+            expect(await waitUntil(() => document.visibilityState === "hidden", 2_000)).toBe(true);
             await wait(200);
             expect(page.tee.records("lag_web_vital_fcp_histogram")).toHaveLength(1);
             expect(page.events.filter(e => e.name === "browser.web_vital")).toHaveLength(events.length);

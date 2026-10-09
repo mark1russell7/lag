@@ -2,7 +2,10 @@ import { expect } from "vitest";
 import { createBrowserDeps, createIndexedDbHangJournal, createNoopMeter, setupAllMonitors } from "@lag/core";
 import { createLagWorker } from "@lag/worker";
 import { blockMainThread, wait } from "./harness.js";
-import { workerIndexedDbWaitsForMainThread } from "./worker-io.js";
+import { environment } from "./commands.js";
+
+/** The engines that complete the IndexedDB requests of a worker on the main thread (experiments E4 and E6). */
+const WEBKIT_ENVIRONMENTS = ["webkit", "safari", "ios"];
 
 /**
  * A page that does not survive a hang: the worker writes the hang to
@@ -11,7 +14,8 @@ import { workerIndexedDbWaitsForMainThread } from "./worker-io.js";
  */
 describe("hang journal in a browser", () => {
     it("keeps the record of a hang that did not end", async (ctx) => {
-        ctx.skip(await workerIndexedDbWaitsForMainThread(),
+        // By engine: a probe that decides the skip can see a slow write during a short block as a wait, and skip in Firefox
+        ctx.skip(WEBKIT_ENVIRONMENTS.includes(environment()),
             "This browser completes the IndexedDB requests of a worker on the main thread (WebKit), thus the worker cannot write the record during the hang.");
         const journal = createIndexedDbHangJournal(indexedDB);
         for (const record of await journal.list()) await journal.remove(record.pageId);
