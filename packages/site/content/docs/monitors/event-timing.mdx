@@ -109,7 +109,7 @@ if (deps.PerformanceObserver) {
 
 Unit tests:
 
-- `EventTimingMonitor.test.ts`: the three phases of an event, the monitor ignores an entry with the interaction ID 0, and INP as the p98 of the interactions. The longest event of an interaction counts, and an interaction counts one time across its events. The observer uses a threshold of 16 ms. The monitor records a negative presentation delay as 0. The calculator uses `performance.interactionCount` when the browser has it, and counts the interactions otherwise.
+- `EventTimingMonitor.test.ts`: the three phases of an event, the monitor ignores an entry with the interaction ID 0, and INP as the p98 of the interactions. The longest event of an interaction counts, and an interaction counts one time across its events. The observer uses a threshold of 16 ms. The monitor records a negative presentation delay as 0. The calculator uses `performance.interactionCount` when the browser has it, and counts the interactions otherwise. The monitor gets the buffered entries also when `observe()` delivers them at once, as old Safari did (WebKit bug 247863).
 - `InpCalculator.test.ts`: a property test (fast-check) compares the calculator with a reference definition for all sequences of entries.
 
 Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):

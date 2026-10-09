@@ -1,6 +1,7 @@
 import { vi, expect } from "vitest";
 import { EventTimingMonitor, interactionType } from "./EventTimingMonitor.js";
 import type { PerformanceEntryList, PerformanceObserverInit, EventTimingEntry } from "./perf-types.js";
+import { createFakePerformanceObserver } from "./vitals/test-fakes.js";
 
 function createMockPerformanceObserver() {
     let capturedCallback : ((list : PerformanceEntryList) => void) | undefined;
@@ -203,6 +204,20 @@ describe("EventTimingMonitor", () => {
 
         expect(monitor.getInteractionCount()).toBe(10);
         expect(monitor.getINP()).toBe(300);
+    });
+
+    it("processes the buffered entries that the browser delivers inside observe(), as old Safari did", async () => {
+        const fake = createFakePerformanceObserver(["event"], { synchronousBuffer : true });
+        fake.buffer("event", makeEventEntry({ interactionId : 3, duration : 240 }));
+        const report = vi.fn();
+        const logger = { log : vi.fn() };
+
+        const monitor = new EventTimingMonitor(report, logger, fake.PerformanceObserver);
+        await Promise.resolve();
+
+        expect(monitor.getINP()).toBe(240);
+        expect(report).toHaveBeenCalledTimes(1);
+        expect(logger.log).not.toHaveBeenCalled();
     });
 
     it.each([

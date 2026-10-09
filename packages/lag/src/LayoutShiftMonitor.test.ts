@@ -1,6 +1,7 @@
 import { vi, expect } from "vitest";
 import { LayoutShiftMonitor } from "./LayoutShiftMonitor.js";
 import type { PerformanceEntryList, PerformanceObserverInit, LayoutShiftEntry } from "./perf-types.js";
+import { createFakePerformanceObserver } from "./vitals/test-fakes.js";
 
 function createMockPerformanceObserver() {
     let capturedCallback : ((list : PerformanceEntryList) => void) | undefined;
@@ -162,5 +163,17 @@ describe("LayoutShiftMonitor", () => {
         triggerEntries([withoutSources]);
 
         expect(report.mock.calls.map(([shift]) => (shift as { sources : unknown }).sources)).toEqual([sources, []]);
+    });
+
+    it("processes the buffered shifts that the browser delivers inside observe(), as old Safari did", async () => {
+        const fake = createFakePerformanceObserver(["layout-shift"], { synchronousBuffer : true });
+        fake.buffer("layout-shift", makeShiftEntry({ value : 0.2 }));
+        const logger = { log : vi.fn() };
+
+        const monitor = new LayoutShiftMonitor(vi.fn(), logger, fake.PerformanceObserver);
+        await Promise.resolve();
+
+        expect(monitor.getCLS()).toBe(0.2);
+        expect(logger.log).not.toHaveBeenCalled();
     });
 });
