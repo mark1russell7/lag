@@ -19,7 +19,10 @@ import { createRandomId } from "../random-id.js";
  * The watch does not need a worker. In WebKit and Safari, it is the only
  * way to keep a hang that the page does not survive (experiment E7). In the
  * other engines, it takes the record of the worker of the hung page from
- * the hang journal. Thus the next page does not report the hang again.
+ * the hang journal. Thus the next page does not report the hang again. With
+ * `deps.hangReportMarks`, the watch marks each hang that it reports without
+ * the record, for example its own hang. The journal reader of the worker
+ * monitor does not count a marked hang again.
  *
  * The page sends heartbeats and holds its lock only while it is visible
  * (the states `active` and `passive` of `lifecycle`). A hidden page watches
@@ -28,7 +31,7 @@ import { createRandomId } from "../random-id.js";
  * cache.
  */
 export function createInstrumentedPeerHangWatch(
-    deps : CoreDeps & PeerDeps & WallClockDeps & TimerDeps & Partial<EventDeps> & Pick<WorkerMonitorDeps, "hangJournal" | "pageId">,
+    deps : CoreDeps & PeerDeps & WallClockDeps & TimerDeps & Partial<EventDeps> & Pick<WorkerMonitorDeps, "hangJournal" | "hangReportMarks" | "pageId">,
     lifecycle : LifecycleStateMachine,
 ) : MonitorHandle<PeerHangWatch> {
     return createHandle("peer-hang-watch", deps.logger, () => {
@@ -39,6 +42,7 @@ export function createInstrumentedPeerHangWatch(
             pageId : deps.pageId ?? createRandomId(),
             visible : isVisibleState(lifecycle.getState()),
             ...(deps.hangJournal ? { journal : deps.hangJournal } : {}),
+            ...(deps.hangReportMarks ? { marks : deps.hangReportMarks } : {}),
             onAbandonedHang : (record, source) => {
                 const durationMs = Math.max(0, record.lastSeenAt - record.startedAt);
                 hangs.add(1, { outcome : "abandoned" });

@@ -115,13 +115,16 @@ describe("lag-worker handler", () => {
 
             w.advance(100);
             w.ackAll(); // the main thread answered at t=100
+            // The heartbeat of 200 ms waits 1000 ms: the hang starts at the acknowledgement of 100 ms
             for (let i = 0; i < 10; i++) w.advance(100);
+            expect(w.reportHang).not.toHaveBeenCalled();
+            w.advance(100);
 
-            expect(w.reportHang).toHaveBeenCalledWith({ phase : "started", startedAt : 100, durationMs : 1_000, attributes : {} }, expect.anything());
+            expect(w.reportHang).toHaveBeenCalledWith({ phase : "started", startedAt : 100, durationMs : 1_100, attributes : {} }, expect.anything());
 
-            w.handler.handleMessage({ type : "ack", seq : 11 });
-            expect(w.reportHang).toHaveBeenLastCalledWith({ phase : "ended", startedAt : 100, durationMs : 1_000, attributes : {} }, expect.anything());
-            expect(w.messages("hang-ended")).toEqual([{ type : "hang-ended", startedAt : 100, durationMs : 1_000 }]);
+            w.handler.handleMessage({ type : "ack", seq : 12 });
+            expect(w.reportHang).toHaveBeenLastCalledWith({ phase : "ended", startedAt : 100, durationMs : 1_100, attributes : {} }, expect.anything());
+            expect(w.messages("hang-ended")).toEqual([{ type : "hang-ended", startedAt : 100, durationMs : 1_100 }]);
         });
 
         it("reports each hang once", () => {
@@ -139,6 +142,55 @@ describe("lag-worker handler", () => {
                 w.ackAll();
             }
             expect(w.reportHang).not.toHaveBeenCalled();
+        });
+
+        it("reports no hang while the main thread acknowledges each heartbeat, also with an interval of the threshold or more", () => {
+            for (const intervalMs of [5_000, 8_000]) {
+                const w = createHandler();
+                w.handler.handleMessage({ type : "start", intervalMs, hang : { thresholdMs : 5_000 } });
+                for (let i = 0; i < 12; i++) {
+                    w.advance(intervalMs);
+                    w.ackAll();
+                }
+                expect(w.reportHang).not.toHaveBeenCalled();
+            }
+        });
+
+        it("reports no hang when its own timer is late by less than the threshold, and the main thread acknowledges each heartbeat", () => {
+            const w = createHandler();
+            w.handler.handleMessage({ type : "start", intervalMs : 4_500, hang : { thresholdMs : 5_000 } });
+            for (let i = 0; i < 12; i++) {
+                // The timer of the worker fires 600 ms late
+                w.advance(4_500, 5_100);
+                w.ackAll();
+            }
+            expect(w.reportHang).not.toHaveBeenCalled();
+        });
+
+        it("measures the wait from the oldest heartbeat without an acknowledgement", () => {
+            const w = createHandler();
+            w.handler.handleMessage({ type : "start", intervalMs : 5_000, hang : { thresholdMs : 5_000 } });
+            w.advance(5_000);
+            w.ackAll();
+            // The heartbeat at 10 000 ms gets no acknowledgement
+            w.advance(5_000);
+            expect(w.reportHang).not.toHaveBeenCalled();
+            w.advance(5_000);
+            expect(w.reportHang).toHaveBeenCalledWith({ phase : "started", startedAt : 5_000, durationMs : 10_000, attributes : {} }, expect.anything());
+        });
+
+        it("measures the wait again from an acknowledgement of an earlier heartbeat", () => {
+            const w = createHandler();
+            w.handler.handleMessage({ type : "start", intervalMs : 1_000, hang : { thresholdMs : 4_500 } });
+            for (let i = 0; i < 4; i++) w.advance(1_000);
+            // At 4200 ms, the main thread handles the first heartbeat. The next heartbeats continue to wait.
+            w.advance(200);
+            w.handler.handleMessage({ type : "ack", seq : 1 });
+            for (let i = 0; i < 4; i++) w.advance(1_000);
+            expect(w.reportHang).not.toHaveBeenCalled();
+            // The heartbeat at 9000 ms: the main thread did not operate for 4800 ms
+            w.advance(800);
+            expect(w.reportHang).toHaveBeenCalledWith(expect.objectContaining({ phase : "started", startedAt : 4_200, durationMs : 4_800 }), expect.anything());
         });
 
         it("does not blame the main thread for time in which the worker itself did not run", () => {
@@ -219,21 +271,22 @@ describe("lag-worker handler", () => {
             w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 1_000 }, pageId : "page-a" });
             w.handler.handleMessage({ type : "context", attributes : { "lag.page_view.id" : "view-1" } });
 
-            for (let i = 0; i < 10; i++) w.advance(100);
+            // The heartbeat of 100 ms waited 1000 ms at 1100 ms
+            for (let i = 0; i < 11; i++) w.advance(100);
             await settle();
             expect(await journal.list()).toEqual([{
                 pageId : "page-a",
                 startedAt : WALL_OFFSET,
-                lastSeenAt : WALL_OFFSET + 1_000,
+                lastSeenAt : WALL_OFFSET + 1_100,
                 attributes : { "lag.page_view.id" : "view-1" },
             }]);
 
             for (let i = 0; i < 10; i++) w.advance(100);
             await settle();
             expect(put).toHaveBeenCalledTimes(2);
-            expect((await journal.list())[0]!.lastSeenAt).toBe(WALL_OFFSET + 2_000);
+            expect((await journal.list())[0]!.lastSeenAt).toBe(WALL_OFFSET + 2_100);
 
-            w.handler.handleMessage({ type : "ack", seq : 20 });
+            w.handler.handleMessage({ type : "ack", seq : 21 });
             await settle();
             expect(remove).toHaveBeenCalledWith("page-a");
             expect(await journal.list()).toEqual([]);
@@ -257,10 +310,10 @@ describe("lag-worker handler", () => {
             const w = createHandler(5_000, journal);
             w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 1_000 }, pageId : "page-a" });
 
-            for (let i = 0; i < 10; i++) w.advance(100);
+            for (let i = 0; i < 11; i++) w.advance(100);
             await settle();
 
-            expect(await journal.list()).toEqual([expect.objectContaining({ startedAt : WALL_OFFSET + 5_000, lastSeenAt : WALL_OFFSET + 6_000 })]);
+            expect(await journal.list()).toEqual([expect.objectContaining({ startedAt : WALL_OFFSET + 5_000, lastSeenAt : WALL_OFFSET + 6_100 })]);
         });
 
         it("uses Date.now() for the times of the journal when the dependencies have no wall clock", async () => {
@@ -276,14 +329,14 @@ describe("lag-worker handler", () => {
             });
             handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 300 }, pageId : "page-a" });
 
-            for (let i = 0; i < 3; i++) {
+            for (let i = 0; i < 4; i++) {
                 now += 100;
                 vi.advanceTimersByTime(100);
             }
             await settle();
 
-            // The hang started at the start of the loop, and the worker saw it at 300 ms
-            expect(await journal.list()).toEqual([{ pageId : "page-a", startedAt : 1_700_000_000_000, lastSeenAt : 1_700_000_000_300, attributes : {} }]);
+            // The hang started at the start of the loop. At 400 ms, the heartbeat of 100 ms waited 300 ms.
+            expect(await journal.list()).toEqual([{ pageId : "page-a", startedAt : 1_700_000_000_000, lastSeenAt : 1_700_000_000_400, attributes : {} }]);
         });
 
         it("writes no record while the main thread acknowledges the heartbeats", async () => {

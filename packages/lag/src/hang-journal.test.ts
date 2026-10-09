@@ -1,7 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
-import { createMemoryHangJournal, findAbandonedHangs, HANG_JOURNAL_STALE_MS, type HangJournal, type HangRecord } from "./hang-journal.js";
+import {
+    createMemoryHangJournal,
+    createStorageHangReportMarks,
+    findAbandonedHangs,
+    HANG_JOURNAL_STALE_MS,
+    HANG_REPORT_MARK_PREFIX,
+    type HangJournal,
+    type HangRecord,
+} from "./hang-journal.js";
 import { createIndexedDbHangJournal } from "./browser/indexeddb-journal.js";
+import { MemoryStorage } from "./test-peers.js";
 
 const record = (pageId : string, lastSeenAt : number) : HangRecord => ({
     pageId,
@@ -111,6 +120,59 @@ describe("createIndexedDbHangJournal", () => {
         expect(await journal.take("b", 10)).toBeUndefined();
     });
 
+    /** This function deletes the database, or opens it with a later version, and rejects when an open connection blocks it. */
+    const unblocked = (request : IDBOpenDBRequest) =>
+        new Promise<void>((resolve, reject) => {
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+            request.onblocked = () => reject(new Error("An open connection blocks the request."));
+        });
+
+    it("closes its connection when a page deletes the database, and opens the database again at the next operation", async () => {
+        const factory = new IDBFactory();
+        const journal = createIndexedDbHangJournal(factory);
+        await journal.put(record("a", 1_000));
+
+        await unblocked(factory.deleteDatabase("lag-hang-journal"));
+        await journal.put(record("b", 2_000));
+        expect((await journal.list()).map(r => r.pageId)).toEqual(["b"]);
+    });
+
+    it("closes its connection when a later version of the library opens the database", async () => {
+        const factory = new IDBFactory();
+        const journal = createIndexedDbHangJournal(factory);
+        await journal.put(record("a", 1_000));
+
+        const later = factory.open("lag-hang-journal", 2);
+        await unblocked(later);
+        later.result.close();
+        // This version cannot open the database of the later version
+        await expect(journal.list()).rejects.toThrow();
+    });
+
+    it("opens the database again after the browser closed the connection", async () => {
+        const factory = new IDBFactory();
+        const connections : Array<{ close() : void; onclose : unknown }> = [];
+        const journal = createIndexedDbHangJournal({
+            open : (name, version) => {
+                const request = factory.open(name, version);
+                request.addEventListener("success", () => connections.push(request.result));
+                return request;
+            },
+        });
+        await journal.put(record("a", 1_000));
+
+        // The browser closes the connection, for example when the user clears the data of the site
+        const closed = connections[0]!;
+        closed.close();
+        (closed.onclose as () => void)();
+        await journal.put(record("b", 2_000));
+        // A late close event of the earlier connection does not close the new connection
+        (closed.onclose as () => void)();
+        expect((await journal.list()).map(r => r.pageId).sort()).toEqual(["a", "b"]);
+        expect(connections).toHaveLength(2);
+    });
+
     it("rejects when the database cannot open, and tries again at the next operation", async () => {
         let attempts = 0;
         const failing = {
@@ -137,5 +199,42 @@ describe("findAbandonedHangs", () => {
             record("own", now - 60_000),
         ];
         expect(findAbandonedHangs(records, now, "own").map(r => r.pageId)).toEqual(["closed"]);
+    });
+});
+
+describe("createStorageHangReportMarks", () => {
+    it("gives a mark one time, with the key of the protocol", () => {
+        const storage = new MemoryStorage();
+        const marks = createStorageHangReportMarks(storage);
+        marks.add("a", 5_000);
+        expect(HANG_REPORT_MARK_PREFIX).toBe("lag-hang-reported:");
+        expect(storage.getItem("lag-hang-reported:a")).toBe("5000");
+
+        expect(marks.take("a")).toBe(true);
+        expect(marks.take("a")).toBe(false);
+        expect(marks.take("unknown")).toBe(false);
+        expect(storage.length).toBe(0);
+    });
+
+    it("removes the old marks of pages without a record, and keeps the others", () => {
+        const storage = new MemoryStorage();
+        storage.setItem("other-key", "1");
+        const marks = createStorageHangReportMarks(storage);
+        marks.add("old", 1_000);
+        marks.add("old-with-record", 1_000);
+        marks.add("at-the-limit", 5_000);
+        marks.add("recent", 9_000);
+        storage.setItem("lag-hang-reported:not-a-time", "x");
+
+        marks.prune(5_000, new Set(["old-with-record"]));
+        expect(storage.keys()).toEqual(["other-key", "lag-hang-reported:old-with-record", "lag-hang-reported:at-the-limit", "lag-hang-reported:recent"]);
+    });
+
+    it("does nothing when the storage refuses an operation", () => {
+        const refuse = () => { throw new Error("SecurityError"); };
+        const marks = createStorageHangReportMarks({ length : 1, key : refuse, getItem : refuse, setItem : refuse, removeItem : refuse });
+        expect(() => marks.add("a", 1)).not.toThrow();
+        expect(marks.take("a")).toBe(false);
+        expect(() => marks.prune(1, new Set())).not.toThrow();
     });
 });

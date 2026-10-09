@@ -15,7 +15,7 @@ The monitor gives these signals:
 
 - **The delivery delay of each heartbeat** (`lag_worker_main_block_histogram`): the time from the send in the worker to the processing on the main thread. This is the time that the main thread could not process messages.
 - **The lateness of the worker timer** (`lag_worker_self_lag_histogram`): a high value shows that the worker itself did not operate, for example because the system was suspended.
-- **Hangs**: periods of 5 s or more in which the main thread did not acknowledge the heartbeats.
+- **Hangs**: periods of 5 s or more in which a heartbeat waited for its acknowledgement.
 
 The delivery delay answers this question: how long does an event that arrives at a random time wait for the main thread? The worker sends the heartbeats on its own schedule, not on the schedule of the main thread. The probe is open-loop. During a block of length L, the number of heartbeats that wait in the queue is approximately L divided by the interval. Each of them records its own wait. Thus a long block gives many samples, not one ([clocks and timers](/research/clocks-and-timers), coordinated omission).
 
@@ -41,7 +41,7 @@ sequenceDiagram
     M->>W: ack (seq)
     Note over M: A long task blocks the main thread
     W->>M: heartbeats wait in the queue
-    Note over W: 5 s without an ack
+    Note over W: A heartbeat waits 5 s for its ack
     W->>C: hang started (fetch with keepalive)
     W->>W: write the journal record each 1 s
     Note over M: The long task ends
@@ -76,7 +76,9 @@ The monitor synchronizes at the start, and again each 60 s. It adds the offset t
 
 ### Hang detection in the worker
 
-The worker detects a hang itself, because the main thread cannot do work during a hang. At each heartbeat, the worker examines the time since the last `ack`. When it is 5000 ms or more, the worker reports the start of a hang. The hang starts at the last acknowledgement.
+The worker detects a hang itself, because the main thread cannot do work during a hang. At each heartbeat, the worker examines the wait of the oldest heartbeat that has no `ack`. When the wait is 5000 ms or more, the worker reports the start of a hang. The hang starts at the last acknowledgement.
+
+The wait starts when the worker sends the heartbeat. The main thread cannot acknowledge a heartbeat before that time, thus the time between two heartbeats is not a wait. An `ack` of an earlier heartbeat starts the wait again, because the main thread operated at that time. Thus a heartbeat interval of 5000 ms or more gives no false hangs, and a late timer of the worker gives none either.
 
 The next message of the main thread ends the hang: an `ack`, a `stop` or a new `start`. The main thread sent the message, thus it operates again. For example, the main thread can stop the monitor when the page becomes hidden, before it handles the heartbeats that waited. The worker then reports the end, removes the journal record and sends `hang-ended` to the main thread.
 
@@ -94,8 +96,11 @@ A page can close or crash during a hang. Then nobody reports the end of the hang
 4. Another page of the same origin, for example the next page, reads the journal one time at its start (`list()`). A record of a different page that nobody updated for 30 000 ms (`HANG_JOURNAL_STALE_MS`) belongs to a page that did not survive its hang.
 5. For each such record, the reading page uses `take(pageId, latestSeenAt)`, with `latestSeenAt` 30 000 ms before the read. The method removes the record and gives it, but only if nobody updated the record after `latestSeenAt`. The operation is atomic, thus only one page gets the record. This is also true when two pages start at the same time, for example at a session restore.
 6. The page that gets the record records that hang with the outcome `abandoned`, and it sends a `lag.main_thread.hang` event with the phase `abandoned`. If the monitor stopped after the take, the page puts the record back for the next page.
+7. The [peer hang watch](/docs/monitors/peer-hang-watch) can report a hang before the journal does. Then it writes a mark in `localStorage` (`hangReportMarks`), with the key `lag-hang-reported:<page ID>`. For a record of a marked page, the reading page removes the mark and does not count the hang again. After the read, it removes each mark that is 30 000 ms old or older and has no record in the journal.
 
 The duration of an abandoned hang is the time from the start of the hang to the last write of the worker. The page ID is a random ID of 32 hexadecimal digits for each page instance (`createRandomId()`). The main thread sends the page ID to the worker only when it has a journal. Without a page ID, the worker writes no records. In WebKit and Safari, the writes of the worker complete only after the hang. Thus there, the journal does not keep a hang that the page does not survive.
+
+The journal of a page or of a worker keeps one connection to the database. It closes the connection when another connection deletes the database or opens a later version. Thus it does not block a later version of the library. After that, or after the browser closed the connection, the next operation opens the database again.
 
 Another open page can also report a hang that the page did not survive, at once, through the [peer hang watch](/docs/monitors/peer-hang-watch). That page takes the journal record of the hung page. Thus the next page does not report the hang again.
 
@@ -173,9 +178,10 @@ The factory uses these dependency groups:
 | Option | Default | What it does |
 |---|---|---|
 | `worker` | necessary | The worker from `createLagWorker()` of `@lag/worker`. The caller owns it and stops it with `worker.terminate()`. |
-| `workerHeartbeatIntervalMs` | 1000 | The time between two heartbeats. |
+| `workerHeartbeatIntervalMs` | 1000 | The time between two heartbeats. The interval can be longer than the hang threshold: the wait of a heartbeat starts at its send. |
 | `workerHangReport` | none | `{ url, resource }`: the OTLP logs URL and the resource attributes of the hang reports. Without it, the worker detects hangs but sends no reports. |
-| `hangJournal` | none | The hang journal. `createBrowserDeps()` gives `createIndexedDbHangJournal(indexedDB)` when there is a worker and IndexedDB (option `hangJournal`, default true). Without a journal, the worker writes no records. |
+| `hangJournal` | none | The hang journal. `createBrowserDeps()` gives `createIndexedDbHangJournal(indexedDB)` when there is IndexedDB, and a worker or the peer hang watch (option `hangJournal`, default true). Without a journal, the worker writes no records. |
+| `hangReportMarks` | none | The marks of the hangs that the peer hang watch reported. `createBrowserDeps()` gives `createStorageHangReportMarks(localStorage)` with the conditions of the journal, when the page can use `localStorage`. |
 | `pageId` | a random ID | The ID of this page instance in the journal. The monitor sends it to the worker only with a journal. |
 
 The hang threshold (5000 ms) and the system stall threshold (5000 ms) are constants of the factory. The class `WorkerLagMonitor` also takes `clockSyncIntervalMs` (default 60 000) and event callbacks. Its `stop()` stops the heartbeats, but it keeps the listener, so that a `hang-ended` message can still arrive. `dispose()` stops the monitor and removes the listener. The `stop()` of the handle uses `dispose()`.
@@ -209,13 +215,14 @@ The collector must accept cross-origin `POST` requests with JSON from the page. 
 - **Main thread:** one heartbeat message and one `ack` each second. Each heartbeat records two histogram values.
 - **Clock synchronization:** 8 exchanges at the start and each 60 s.
 - **Worker:** one timeout each second. During a hang, one IndexedDB write each second, and one `fetch` at the start and at the end of the hang.
-- **Start of the page:** one read of the hang journal, one `take()` for each stale record, and at most two watchdog timeouts.
+- **Start of the page:** one read of the hang journal, one `take()` for each stale record, and at most two watchdog timeouts. With marks, also one pass over the keys of `localStorage`.
 
 ## Limits
 
 - **The heartbeat interval.** With one heartbeat each second, the monitor finds a block of length B with a probability of approximately min(1, B / 1000 ms). A short block between two heartbeats gives no sample.
 - **One task source.** The delay is the queueing delay of the messages from the worker. A browser can start other work first, for example input or rendering. Thus pair this signal with [DriftLag](/docs/monitors/drift-lag) and [frame timing](/docs/monitors/frame-timing).
 - **The clock uncertainty.** The offset has an uncertainty of half the round trip plus the clock resolution. The research gives approximately ±0.2 ms more in Chrome, and ±1–2 ms in Firefox and Safari ([clocks and timers](/research/clocks-and-timers)).
+- **The start and the detection of a hang.** The hang starts at the last acknowledgement. The block started between that acknowledgement and the next heartbeat, thus at most one heartbeat interval later. The worker examines the wait only at a heartbeat. Thus it reports a hang up to one interval after the wait reached 5000 ms.
 - **No hang detection in hidden pages.** The heartbeats stop while the page is hidden. A hang that continues when the page becomes hidden ends at the `stop`.
 - **A hang that ends at the stop of the handle.** The `stop()` of the handle removes the listener. Thus the main thread does not count a hang that ends at that time. The worker still removes the record, and it sends its `ended` report when it has a report target.
 - **No report and no record during a hang in WebKit and Safari.** The timer of the worker continues, thus the worker detects the hang. But WebKit and Safari 26.6.2 complete the report (`fetch`) and the record (IndexedDB) only when the main thread operates again ([experiment E4](/research/local-experiments)). The other storage and network APIs of a worker also wait: OPFS, the Cache API, `XMLHttpRequest`, WebSocket and BroadcastChannel ([experiments E6 and E7](/research/local-experiments)). Thus there, a hang that the page does not survive leaves no report and no record. A service worker is no way out, because its writes and fetches also wait.
@@ -232,11 +239,15 @@ Unit tests:
 
 - `WorkerLagMonitor.test.ts`: the start message with the hang options, and the delivery delay with its `ack`. The delays of queued heartbeats after a block, and a negative delay recorded as 0. The clock synchronization corrects the delay, and it starts again after the interval. A system stall when the worker is late by 5 s or more. The stall ends when the worker sent the heartbeat, not when the main thread got it.
 - `WorkerLagMonitor.test.ts`, stop and dispose: `stop()` stops the worker loop and the sync timer, keeps one listener, and the monitor can start again. While it is stopped, the monitor passes on the end of a hang, but it ignores heartbeats. `dispose()` removes the listener. The watchdog warns after two checks without a heartbeat, and it stops with the monitor.
-- `lag-worker.test.ts` (the worker): the heartbeats and their lateness, the `sync-reply`, and stop and restart. A hang starts when the acknowledgements stop, ends when they come again, and occurs one time. The worker does not blame the main thread for its own stall, and it does not add that time to a hang in progress. A stop ends a hang in progress, because the main thread sent the stop.
+- `lag-worker.test.ts` (the worker): the heartbeats and their lateness, the `sync-reply`, and stop and restart. A hang starts when a heartbeat waits for the threshold, ends when the acknowledgements come again, and occurs one time. The worker does not blame the main thread for its own stall, and it does not add that time to a hang in progress. A stop ends a hang in progress, because the main thread sent the stop.
+- `lag-worker.test.ts`, the wait: the wait starts at the send of the oldest heartbeat without an acknowledgement, or at a later `ack` of an earlier heartbeat. When the main thread acknowledges each heartbeat, there is no hang. This is also true with an interval of 5 s or 8 s, or with a late timer of the worker.
 - `lag-worker.test.ts`, the journal: the worker writes the record at the start of a hang and again each second. It removes the record at the end or at a stop. It keeps no record without a page ID. The heartbeats continue when the journal fails.
 - `WorkerClockSync.test.ts`: the exchange with the shortest round trip, and a correction of 0 for an offset inside the uncertainty. The best result of all synchronizations, and 8 exchanges by default.
 - `hang-journal.test.ts`: the memory journal and the IndexedDB journal (with `fake-indexeddb`). Two journals of one database share the records, as a page and its worker do. `take()` gives a stale record one time, and it does not take a record that somebody updated after the limit. Of two IndexedDB journals that take one record at the same time, only one gets it. `findAbandonedHangs()` finds the stale records of other pages.
-- `instrumented/worker-lag.test.ts`: the factory reports the abandoned hangs of earlier pages, removes their records, and reports nothing after `stop()`. Without a journal, it sends no page ID. Two pages that start at the same time (a session restore) report an abandoned hang one time, with a journal in memory and with IndexedDB. With a real worker handler, a hang counts also when it ends because the user changed the tab.
+- `hang-journal.test.ts`, the marks: a mark goes to one reader, with the key of the protocol. The old marks of pages without a record go, and a storage that refuses an operation does not stop the monitor.
+- `hang-journal.test.ts`, the connection: the journal does not block the deletion of the database or a later version. After a deletion, and after the browser closed the connection, the next operation opens the database again.
+- `instrumented/worker-lag.test.ts`: the factory reports the abandoned hangs of earlier pages, removes their records, and reports nothing after `stop()`. Without a journal, it sends no page ID. Two pages that start at the same time (a session restore) report an abandoned hang one time, with a journal in memory and with IndexedDB. With a real worker handler, a hang counts also when it ends because the user changed the tab. A real worker handler and a main thread that is not blocked give no hang in 60 s. The test uses heartbeat intervals from 1 s to 10 s.
+- `instrumented/worker-lag.test.ts`, the marks: the factory removes the record of a marked hang, but does not count it. It keeps the marks that the journal can still need.
 - `setup-all-monitors.test.ts`: a hang from start to end, a suspend that discards the overlapping samples, and the page-view ID in the context of the worker.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):

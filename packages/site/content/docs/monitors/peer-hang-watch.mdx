@@ -51,12 +51,12 @@ sequenceDiagram
 ### Another page sees the end of a hung page
 
 1. A page that becomes visible requests the lock `lag-page:<page ID>`. When it has the lock, it sends a `beat` message through the channel `lag-peer-hang-watch`, and then one each 1000 ms (`PEER_BEAT_INTERVAL_MS`). The beat has the page ID, the wall-clock time (`Date.now()`) and the page context, for example `lag.page_view.id`.
-2. A page that becomes hidden, goes into the back/forward cache or closes sends `away`. Then it releases its lock. Thus a hidden page holds no lock and sends no beats. A page in the back/forward cache and a frozen page also close their channel (refer to [cost](#cost)).
-3. Each page listens on the channel. For each page that it sees for the first time, it requests the lock of that page. The browser gives that lock when the other page releases it, or when the browser stops the other page. A hung page cannot release its lock.
+2. A page that becomes hidden, goes into the back/forward cache or closes sends `away`. Then it releases its lock. Thus a hidden page sends no beats, and it holds no lock except a claim (step 6). A page in the back/forward cache and a frozen page also close their channel (refer to [cost](#cost)).
+3. Each page listens on the channel. For each page that it sees for the first time, it requests the lock of that page. The browser gives that lock when the other page releases it, or when the browser stops the other page. A hung page cannot release its lock. A beat that a page sent after the watch got its lock shows that the page operates again, for example after a short hide. Then the watch requests the lock again at once.
 4. When the lock comes free, the watch waits 1000 ms (`PEER_GRACE_MS`) for the last messages of the page. A message and a lock take different paths through the browser, thus an `away` can arrive after the lock.
 5. If the page did not say `away`, and its last beat is 5000 ms old or older (`PEER_HANG_THRESHOLD_MS`), the browser stopped the page during a hang.
-6. The watch then requests `lag-page-claim:<page ID>` with `ifAvailable`. Only the first page gets it, and it keeps the claim until it stops. Thus one page only reports the hang, also when many pages watch.
-7. The page that has the claim takes the record of the hung page from the [hang journal](/docs/monitors/worker-lag), if the worker of that page wrote one. Then it reports the hang with the times of the record. Without a record, it uses its own times: from the last beat to the end of the page.
+6. The watch then requests `lag-page-claim:<page ID>` with `ifAvailable`. Only the first page gets it. It keeps the claim for 60 000 ms (`PEER_CLAIM_HOLD_MS`), and the other pages try the claim after their wait of 1000 ms. Thus one page only reports the hang, also when many pages watch. The page releases the claim earlier when it goes into the back/forward cache, freezes or stops.
+7. The page that has the claim takes the record of the hung page from the [hang journal](/docs/monitors/worker-lag), if the worker of that page wrote one. Then it reports the hang with the times of the record. Without a record, it uses its own times: from the last beat to the end of the page. If the watch stops during the take, it reports nothing and puts the record back for the next page.
 
 ### The page reports its own hang at its close
 
@@ -68,6 +68,8 @@ The lifecycle state `terminated` (`pagehide` without the back/forward cache) mea
 Then the page records the hang itself, with `lag.hang.source: "self"`. The duration is from the last heartbeat before the gap to the close. The recording must come before the last export of the page. In Chromium, the `pagehide` listener of the exporter can start before the listener of the lifecycle. Thus connect the flush hook with the event: `otel.onBeforeFlush((cause) => monitors.flush(cause.event))` ([page lifecycle](/docs/concepts/page-lifecycle)).
 
 The worker monitor can count the same hang as `ended`, if the main thread handles the messages of the worker before the close. `setupAllMonitors()` tells the watch about each hang that the worker monitor counts (`noteHangEnded()`). The page then does not report that hang again.
+
+The worker of the page can have a record of the hang in the [hang journal](/docs/monitors/worker-lag). In Firefox, the browser can stop the worker before it removes the record. Thus at its own report, the page removes the record, but it cannot wait for IndexedDB at its close. It also writes a mark in `localStorage`, with the key `lag-hang-reported:<page ID>`. The journal reader of a later page then takes the record, but it does not count the hang again. The watch also writes a mark for a report of another page without the record, for example when the take fails.
 
 ## Browser support
 
@@ -110,9 +112,9 @@ function createInstrumentedPeerHangWatch(
 ) : MonitorHandle<PeerHangWatch>;
 ```
 
-`PeerDeps` has `BroadcastChannel` and `locks` (the part of `navigator.locks` that the watch uses). `setupAllMonitors()` adds the watch when it has `BroadcastChannel`, `locks`, `wallClock` and the lifecycle. It gives the watch and the worker monitor one page ID, thus the watch can take the journal record of the worker. The [page-view context](/docs/monitors/page-view-context) gives the current page-view ID to the beats.
+`PeerDeps` has `BroadcastChannel`, `locks` (the part of `navigator.locks` that the watch uses) and an optional `AbortController`. `setupAllMonitors()` adds the watch when it has `BroadcastChannel`, `locks`, `wallClock` and the lifecycle. It gives the watch and the worker monitor one page ID, thus the watch can take the journal record of the worker. The [page-view context](/docs/monitors/page-view-context) gives the current page-view ID to the beats.
 
-`createBrowserDeps()` gives `BroadcastChannel` and `navigator.locks` when the browser has them. The option `peerHangWatch: false` turns the watch off:
+`createBrowserDeps()` gives `BroadcastChannel`, `navigator.locks` and `AbortController` when the browser has them. It also gives the hang journal in IndexedDB, also to a page without a worker. Thus the watch can take the record of a hung page that had a worker. Only the worker monitor reads the journal at the start, thus a page without a worker does not. The option `peerHangWatch: false` turns the watch off:
 
 ```ts
 import { metrics } from "@opentelemetry/api";
@@ -139,14 +141,16 @@ The channel name and the lock names are a protocol between the pages of an origi
 
 - **A visible page:** one `BroadcastChannel` message each second, and one held Web Lock.
 - **Each page:** one waiting lock request for each visible page of the origin, and one message handler.
-- **For each page that ends:** one timeout of 1000 ms. For an abandoned hang, one claim lock until the watch stops, and one `take()` of the journal.
+- **For each page that ends:** one timeout of 1000 ms. For an abandoned hang, one claim lock and one timeout for 60 s, and one `take()` of the journal. A report without the record writes one `localStorage` mark.
 
-A hidden page holds no lock. In Chromium 145, two parts of the watch can keep a page out of the back/forward cache:
+A hidden page holds no lock, except a claim for at most 60 s after it reports a hang. In Chromium 145, two parts of the watch can keep a page out of the back/forward cache:
 
-- **A held Web Lock.** Chromium does not put a page that holds a lock into the cache (the reason `lock`). Thus the page releases its lock in `pagehide`, before it goes into the cache. A waiting lock request does not stop the cache.
+- **A held Web Lock.** Chromium does not put a page that holds a lock into the cache (the reason `lock`). Thus the page releases its lock and its claims in `pagehide`, before it goes into the cache. A waiting lock request does not stop the cache.
 - **A BroadcastChannel message.** Chromium removes a page from the cache when a message arrives for it (the reason `broadcastchannel-message`). The other visible pages send a beat each second. Thus the page closes its channel when it goes into the cache or the browser freezes it. It opens the channel again when it operates again.
 
 While its channel is closed, the page does not get the `away` messages of the other pages. Thus it forgets the other pages, and it ignores their locks. Then a page that closes normally in that time does not seem to be a page that closed during a hang. A browser test examines this in Chromium with the cache (refer to [tests](#tests)). The research did not measure the cache of Firefox and WebKit.
+
+The page also cancels its waiting lock requests, with the `signal` of an `AbortController`. A frozen page cannot operate, but the browser can give it a lock. Then the frozen page keeps that lock until it operates again, and the page of the lock cannot get its own lock back.
 
 ## Limits
 
@@ -159,19 +163,22 @@ While its channel is closed, the page does not get the `away` messages of the ot
 - **The start of the hang.** The last beat is the start. The hang started between that beat and the next beat, thus at most 1000 ms later.
 - **The last export.** The own report must go out in the last export of the page, at `pagehide`. Thus it depends on the exporter of the page ([survivorship](/docs/concepts/survivorship)).
 - **A browser crash or a quit.** When the browser stops all pages at the same time, no page is left to report. The watch keeps no record of its own.
+- **No `localStorage`.** The record of a reported hang can stay in the journal. Without the marks, the journal reader of a later page then counts the hang again.
 
 ## Tests
 
 Unit tests:
 
 - `PeerHangWatch.test.ts`: the tests use a simulated origin (`test-peers.ts`). It has a `BroadcastChannel` hub, and a Web Lock manager with a queue for each lock name. The tests examine the lock of a visible page, and its release when the page becomes hidden. A page that the browser stops during a hang gives a report, with the time of its last beat.
-- `PeerHangWatch.test.ts`, no report of another page: the page survives, closes normally, becomes hidden, or ends less than 5 s after its last beat. One report only, also with four pages and after the reporter stops. The wait for a late `away`, with a delay of the messages.
-- `PeerHangWatch.test.ts`, the own page at its close: a close at the end of a hang, with and without a heartbeat before the close. The limits of exactly 5 s. No report for a normal close or for a close some time after a hang. No report for a hang that the worker monitor counted, or for a page that becomes hidden.
+- `PeerHangWatch.test.ts`, no report of another page: the page survives, closes normally, becomes hidden, or ends less than 5 s after its last beat. One report only, also with four pages and after the reporter stops. The reporter keeps the claim for 60 s, and releases it when it stops or goes into the cache. The wait for a late `away`, with a delay of the messages.
+- `PeerHangWatch.test.ts`, the own page at its close: a close at the end of a hang, with and without a heartbeat before the close. The page removes the record of its worker and writes its mark, and a failed removal does not stop the report. The limits of exactly 5 s. No report for a normal close or for a close some time after a hang. No report for a hang that the worker monitor counted, or for a page that becomes hidden.
 - `PeerHangWatch.test.ts`, the back/forward cache: the page closes its channel while it is in the cache, and gets no messages. No report for a page that closes normally in that time. The page opens its channel again after the restore, and watches again.
-- `PeerHangWatch.test.ts`, other cases: the record of the worker from the journal, and the own times when the journal fails. A hidden page watches. The protocol names. The checks of the messages.
-- `instrumented/peer-hang-watch.test.ts`: the metrics and the event in the catalog, the context of the hung page, and the record of the journal. The own report at `pagehide`, and no report when the page becomes hidden or goes into the back/forward cache. The lock only while the page is visible. The closed channel while the page is in the cache.
-- `setup-all-monitors.test.ts`: the setup adds the watch, gives the page-view ID to its beats, and gives the worker and the watch one page ID. The watch learns of each hang that the worker monitor counts as ended, but not of an abandoned hang from the journal.
-- `browser-deps.test.ts`: `BroadcastChannel` and `navigator.locks`, bound to `navigator.locks`, and the option `peerHangWatch: false`.
+- `PeerHangWatch.test.ts`, the waiting lock requests: the page cancels them when it is suspended and when it stops, and it logs nothing for them. Thus it has one request for each page after many suspends. A frozen page gets no lock of another page. Without `AbortController`, the watch operates, but it cannot cancel its requests.
+- `PeerHangWatch.test.ts`, other cases: the record of the worker from the journal, and the own times when the journal fails. A stop during the take puts the record back. A hidden page watches. The protocol names. The checks of the messages.
+- `PeerHangWatch.test.ts`, a page that becomes visible again: the page stays watched, also when it becomes visible again during the wait for its last messages. A late beat from before the lock makes no new request.
+- `instrumented/peer-hang-watch.test.ts`: the metrics and the event in the catalog, the context of the hung page, and the record of the journal. An own hang counts one time, also when the worker leaves its record and a later page reads the journal. The own report at `pagehide`, and no report when the page becomes hidden or goes into the back/forward cache. The lock only while the page is visible. The closed channel while the page is in the cache.
+- `setup-all-monitors.test.ts`: the setup adds the watch, gives the page-view ID to its beats, and gives the worker and the watch one page ID. The watch learns of each hang that the worker monitor counts as ended, but not of an abandoned hang from the journal. A page without a worker does not read the journal at its start, but its watch takes the record of a hung page.
+- `browser-deps.test.ts`: `BroadcastChannel`, `AbortController` and `navigator.locks`, bound to `navigator.locks`, and the option `peerHangWatch: false`. The hang journal with the watch and without a worker. The marks in `localStorage`, also when the read of `localStorage` throws.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), and the CI job in Safari):
 

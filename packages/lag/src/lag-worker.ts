@@ -53,8 +53,8 @@ export type WorkerHandler = {
  * - a heartbeat loop on the timer of the worker, with a timestamp in each
  *   heartbeat
  * - answers to clock synchronization requests
- * - hang detection: when the main thread does not acknowledge heartbeats for
- *   `hang.thresholdMs`, the worker reports a hang itself
+ * - hang detection: when a heartbeat waits `hang.thresholdMs` for its
+ *   acknowledgement, the worker reports a hang itself
  * - with a journal, a persistent record of each hang in progress.
  *
  * The handler is idle until the main thread sends `start`.
@@ -69,6 +69,12 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
     let seq = 0;
     let hang : HangOptions | undefined;
     let lastAckAt = 0;
+    /**
+     * The start of the wait for an acknowledgement. It is the send of the
+     * oldest heartbeat without an acknowledgement, or a later acknowledgement
+     * of an earlier heartbeat. It is `undefined` when no heartbeat waits.
+     */
+    let pendingSince : number | undefined;
     let hangStartedAt : number | undefined;
     let liveness : LivenessWatcher | undefined;
     let pageId : string | undefined;
@@ -98,14 +104,18 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
         const now = clock.now();
         const workerSelfLagMs = Math.max(0, now - expectedAt);
         postMessage({ type : "heartbeat", seq : ++seq, sentAt : now, workerSelfLagMs });
+        // The main thread cannot acknowledge a heartbeat before the worker sends it. Thus the
+        // time between two heartbeats is not a wait: the wait starts at the send.
+        pendingSince ??= now;
 
         if (hang) {
             // The worker itself did not run (for example, the system slept): do not blame the main thread
             if (workerSelfLagMs >= hang.thresholdMs) {
                 lastAckAt = now;
+                pendingSince = now;
                 if (hangStartedAt !== undefined) hangStartedAt += workerSelfLagMs;
             }
-            if (hangStartedAt === undefined && now - lastAckAt >= hang.thresholdMs) {
+            if (hangStartedAt === undefined && now - pendingSince >= hang.thresholdMs) {
                 hangStartedAt = lastAckAt;
                 reportHang?.({ phase : "started", startedAt : lastAckAt, durationMs : now - lastAckAt, attributes : context }, hang);
                 writeJournal(hangStartedAt, now);
@@ -127,9 +137,11 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
         postMessage({ type : "hang-ended", startedAt, durationMs });
     }
 
-    function onAck() : void {
+    function onAck(ackedSeq : number) : void {
         const now = clock.now();
         lastAckAt = now;
+        // The later heartbeats continue to wait, but the main thread operated now
+        pendingSince = ackedSeq >= seq ? undefined : now;
         endHang(now);
     }
 
@@ -150,6 +162,7 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
                 hang = message.hang;
                 pageId = message.pageId;
                 lastAckAt = clock.now();
+                pendingSince = undefined;
                 schedule();
                 break;
             }
@@ -162,7 +175,7 @@ export function createWorkerHandler(deps : WorkerDeps) : WorkerHandler {
                 break;
             }
             case "ack": {
-                onAck();
+                onAck(message.seq);
                 break;
             }
             case "sync": {

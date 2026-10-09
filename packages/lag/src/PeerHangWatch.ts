@@ -1,5 +1,5 @@
 import type { ClearIntervalFn, ClearTimeoutFn, Clock, Logger, SetIntervalFn, SetTimeoutFn, WallClock } from "./types.js";
-import type { HangJournal, HangRecord } from "./hang-journal.js";
+import type { HangJournal, HangRecord, HangReportMarks } from "./hang-journal.js";
 
 /** The name of the BroadcastChannel of the watch. */
 export const PEER_CHANNEL_NAME = "lag-peer-hang-watch";
@@ -24,6 +24,14 @@ export const PEER_HANG_THRESHOLD_MS = 5_000;
 export const PEER_GRACE_MS = 1_000;
 
 /**
+ * The page that reports a hang keeps the claim for this long. The other
+ * pages that watch the hung page try the claim after their wait for the last
+ * messages. Their lock grants and their timers can be late by some seconds,
+ * thus this time is much longer than the wait.
+ */
+export const PEER_CLAIM_HOLD_MS = 60_000;
+
+/**
  * The page that reports an abandoned hang: another page of the origin
  * (`peer`), or the hung page itself at its close (`self`).
  */
@@ -45,18 +53,36 @@ export type BroadcastChannelLike = {
 
 export type BroadcastChannelConstructor = new (name : string) => BroadcastChannelLike;
 
+/** The part of `AbortSignal` that the watch and the lock manager use. */
+export type AbortSignalLike = {
+    readonly aborted : boolean;
+    addEventListener(type : "abort", listener : () => void) : void;
+};
+
+/** The part of `AbortController` that the watch uses. */
+export type AbortControllerLike = {
+    readonly signal : AbortSignalLike;
+    abort() : void;
+};
+
+export type AbortControllerConstructor = new () => AbortControllerLike;
+
 /**
  * The part of the Web Locks API (`navigator.locks`) that the watch uses. The
  * callback gets `null` when `ifAvailable` is true and another holder has the
  * lock. The holder keeps the lock until the promise of the callback settles.
+ * When `signal` aborts, a request that waits stops and rejects with an
+ * `AbortError`.
  */
 export type LockManagerLike = {
-    request(name : string, options : { ifAvailable? : boolean }, callback : (lock : unknown) => unknown) : Promise<unknown>;
+    request(name : string, options : { ifAvailable? : boolean; signal? : AbortSignalLike }, callback : (lock : unknown) => unknown) : Promise<unknown>;
 };
 
 export type PeerHangWatchDeps = {
     BroadcastChannel : BroadcastChannelConstructor;
     locks : LockManagerLike;
+    /** With `AbortController`, the watch cancels its waiting lock requests when the page is suspended or stops. */
+    AbortController? : AbortControllerConstructor;
     /** The wall clock: the pages of an origin compare their times with it. */
     wallClock : WallClock;
     /** The monotonic clock of the page, for the time between its own heartbeats. */
@@ -79,9 +105,16 @@ export type PeerHangWatchOptions = {
     /**
      * The hang journal. The worker of a page that hangs writes its record
      * there, except in WebKit. The page that reports the hang takes the
-     * record, thus the next page does not report it again.
+     * record, thus the next page does not report it again. A page that
+     * reports its own hang removes its record.
      */
     journal? : HangJournal;
+    /**
+     * The marks of reported hangs. The watch marks each hang that it reports
+     * without the record of the journal, also its own hang. The journal
+     * reader of a later page does not count a marked hang again.
+     */
+    marks? : HangReportMarks;
     /** The watch uses this function for each page that closed during a hang, also for its own page. */
     onAbandonedHang : (hang : HangRecord, source : AbandonedHangSource) => void;
 };
@@ -89,6 +122,8 @@ export type PeerHangWatchOptions = {
 type Peer = {
     /** The wall-clock time of the last heartbeat of the page. */
     lastBeatAt : number;
+    /** The wall-clock time at which the watch got the lock of the page. */
+    endedAt? : number;
     /** The page said that it became hidden or closes. */
     away : boolean;
     attributes : Readonly<Record<string, string>>;
@@ -126,8 +161,8 @@ export function isPeerMessage(value : unknown) : value is PeerMessage {
  *   hang. One page reports it: the first page that gets the claim lock.
  *
  * The watch needs a second visible or hidden page of the origin. A hidden
- * page does not send heartbeats and holds no lock, but it watches the
- * others.
+ * page does not send heartbeats, but it watches the others. It holds no lock,
+ * except a claim for `PEER_CLAIM_HOLD_MS` after it reports a hang.
  *
  * Firefox and Safari on macOS do not stop a hung page that the user closes.
  * Firefox stops the blocked script, and Safari lets the script continue
@@ -161,9 +196,12 @@ export class PeerHangWatch {
     /** The monotonic time at which the worker monitor of this page counted the end of a hang. */
     private hangEndedAt : number | undefined;
     private stopped = false;
-    private resolveStopped! : () => void;
-    /** The claim locks stay held until the watch stops. */
-    private readonly stoppedPromise = new Promise<void>((resolve) => { this.resolveStopped = resolve; });
+    /** The page is in the back/forward cache, or the browser froze it. */
+    private suspended = false;
+    /** The functions that release the claims that the page holds. */
+    private readonly claimReleases = new Set<() => void>();
+    /** The controller of the signal of the waiting lock requests. */
+    private waits : AbortControllerLike | undefined;
 
     constructor(private readonly deps : PeerHangWatchDeps, private readonly options : PeerHangWatchOptions) {
         this.beatIntervalMs = options.beatIntervalMs ?? PEER_BEAT_INTERVAL_MS;
@@ -183,7 +221,7 @@ export class PeerHangWatch {
         if (this.stopped || this.ownRequest) return;
         const request = {};
         this.ownRequest = request;
-        this.request(peerLockName(this.options.pageId), {}, () => {
+        this.request(peerLockName(this.options.pageId), this.waitOptions(), () => {
             if (this.ownRequest !== request) return undefined;
             this.beat();
             const timer = this.deps.setIntervalFn(() => this.beat(), this.beatIntervalMs);
@@ -218,19 +256,27 @@ export class PeerHangWatch {
 
     /**
      * The page goes into the back/forward cache, or the browser freezes it.
-     * The page says "away", releases its lock and closes its channel.
+     * The page says "away", releases its locks, cancels its waiting lock
+     * requests and closes its channel.
      */
     suspend() : void {
         this.hide();
+        this.suspended = true;
+        // A frozen page can get a lock, and it keeps the lock until it operates again
+        this.cancelWaits();
         this.closeChannel();
         // Without the channel, the page misses the "away" of the other pages. Thus it forgets them:
         // a page that closes normally in this time must not look like a page that closed during a hang.
         this.peers.clear();
+        // Chromium does not keep a page that holds a lock in the back/forward cache
+        this.releaseClaims();
     }
 
     /** The page operates again after a freeze or a restore from the back/forward cache: it opens its channel again. */
     resume() : void {
-        if (this.stopped || this.channel) return;
+        if (this.stopped) return;
+        this.suspended = false;
+        if (this.channel) return;
         try {
             this.channel = this.openChannel();
         } catch (error) {
@@ -238,11 +284,12 @@ export class PeerHangWatch {
         }
     }
 
-    /** This method stops the watch. The page says "away", and releases its locks. */
+    /** This method stops the watch. The page says "away", releases its locks and cancels its waiting lock requests. */
     stop() : void {
         this.hide();
         this.stopped = true;
-        this.resolveStopped();
+        this.cancelWaits();
+        this.releaseClaims();
         for (const timer of this.graceTimers) this.deps.clearTimeoutFn(timer);
         this.closeChannel();
     }
@@ -283,9 +330,14 @@ export class PeerHangWatch {
         if (hangStart === undefined) return;
         // The worker monitor counted this hang as ended
         if ((this.hangEndedAt ?? Number.NEGATIVE_INFINITY) >= hangStart) return;
+        const { pageId, journal, marks } = this.options;
         const wallNow = this.deps.wallClock.now();
+        // The worker can stop before it removes its record, for example in Firefox. The page cannot wait
+        // for IndexedDB at its close, thus the removal is not certain. The mark is synchronous.
+        marks?.add(pageId, wallNow);
+        journal?.remove(pageId).catch(() => {});
         this.options.onAbandonedHang({
-            pageId : this.options.pageId,
+            pageId,
             startedAt : wallNow - (now - hangStart),
             lastSeenAt : wallNow,
             attributes : this.attributes,
@@ -301,10 +353,25 @@ export class PeerHangWatch {
         }
     }
 
+    /** The options of a lock request that can wait: the signal that cancels the waiting requests, if the watch has one. */
+    private waitOptions() : { signal? : AbortSignalLike } {
+        if (!this.deps.AbortController) return {};
+        this.waits ??= new this.deps.AbortController();
+        return { signal : this.waits.signal };
+    }
+
+    /** The waiting lock requests stop. A request that has its lock already continues. */
+    private cancelWaits() : void {
+        this.waits?.abort();
+        this.waits = undefined;
+    }
+
     /** A lock request that fails (for example in an opaque origin) stops only that request. */
-    private request(name : string, options : { ifAvailable? : boolean }, callback : (lock : unknown) => unknown) : void {
+    private request(name : string, options : { ifAvailable? : boolean; signal? : AbortSignalLike }, callback : (lock : unknown) => unknown) : void {
         try {
             this.deps.locks.request(name, options, callback).catch((error : unknown) => {
+                // The watch cancelled the request: this is not a failure
+                if (options.signal?.aborted) return;
                 this.deps.logger.log("debug", "A Web Lock request failed.", { error, name, type : "PeerHangWatch" });
             });
         } catch (error) {
@@ -319,16 +386,18 @@ export class PeerHangWatch {
             if (known) known.away = true;
             return;
         }
-        if (known) {
+        // A late heartbeat, which the page sent before its lock came free, belongs to the known entry
+        if (known && (known.endedAt === undefined || data.sentAt < known.endedAt)) {
             known.lastBeatAt = Math.max(known.lastBeatAt, data.sentAt);
             known.away = false;
             known.attributes = data.attributes;
             return;
         }
+        // A new page, or a page that operates after its lock came free (for example after a short hide)
         const peer : Peer = { lastBeatAt : data.sentAt, away : false, attributes : data.attributes };
         this.peers.set(data.pageId, peer);
         // The browser gives the lock when the page releases it: when it becomes hidden, closes or stops
-        this.request(peerLockName(data.pageId), {}, () => {
+        this.request(peerLockName(data.pageId), this.waitOptions(), () => {
             if (!this.stopped) this.peerEnded(data.pageId, peer);
         });
     }
@@ -337,9 +406,11 @@ export class PeerHangWatch {
         // The lock of a page that the watch forgot (refer to `suspend()`)
         if (this.peers.get(pageId) !== peer) return;
         const endedAt = this.deps.wallClock.now();
+        peer.endedAt = endedAt;
         const timer = this.deps.setTimeoutFn(() => {
             this.graceTimers.delete(timer);
-            // A later heartbeat of the page makes a new entry and a new lock request
+            // A heartbeat after the lock grant made a new entry, thus the page operates. Or the watch forgot the page.
+            if (this.peers.get(pageId) !== peer) return;
             this.peers.delete(pageId);
             if (peer.away || endedAt - peer.lastBeatAt < this.thresholdMs) return;
             this.claim(pageId, peer, endedAt);
@@ -351,10 +422,36 @@ export class PeerHangWatch {
         this.request(claimLockName(pageId), { ifAvailable : true }, async (lock) => {
             if (lock === null || this.stopped) return;
             // The record of the worker of the page, if the worker could write it
-            const record = await this.options.journal?.take(pageId, Number.POSITIVE_INFINITY).catch(() => undefined);
+            const journal = this.options.journal;
+            const record = await journal?.take(pageId, Number.POSITIVE_INFINITY).catch(() => undefined);
+            if (this.stopped) {
+                // Keep the record for the next page
+                if (journal && record) await journal.put(record).catch(() => {});
+                return;
+            }
+            // Without the record, the journal can still have it: the take failed, or this page has no journal
+            if (!record) this.options.marks?.add(pageId, endedAt);
             this.options.onAbandonedHang(record ?? { pageId, startedAt : peer.lastBeatAt, lastSeenAt : endedAt, attributes : peer.attributes }, "peer");
-            // No other page may report the same hang. Thus this page keeps the claim.
-            await this.stoppedPromise;
+            // No other page may report the same hang. Thus this page keeps the claim for a time.
+            await this.holdClaim();
         });
+    }
+
+    /** The page keeps a claim for `PEER_CLAIM_HOLD_MS`, or until it is suspended or stops. */
+    private holdClaim() : Promise<void> {
+        if (this.stopped || this.suspended) return Promise.resolve();
+        return new Promise<void>((resolve) => {
+            const release = () : void => {
+                this.deps.clearTimeoutFn(timer);
+                this.claimReleases.delete(release);
+                resolve();
+            };
+            const timer = this.deps.setTimeoutFn(release, PEER_CLAIM_HOLD_MS);
+            this.claimReleases.add(release);
+        });
+    }
+
+    private releaseClaims() : void {
+        for (const release of [...this.claimReleases]) release();
     }
 }
