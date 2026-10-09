@@ -5,9 +5,36 @@
  * (`metric-catalog.ts`), which also gives the attribute rules.
  */
 
-import type { Logger } from "../types.js";
+import type { Clock, Logger } from "../types.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import type { MeasurementConditions, SampleValidator } from "../measurement-conditions.js";
+import type { AbsoluteClockDeps, PerformanceDeps } from "../dep-groups.js";
+import type { EventOptions } from "../events.js";
+import { createAbsoluteClock, type AbsoluteClock } from "../absolute-clock.js";
+
+/**
+ * This function gives the clock for the times of the events of a factory:
+ * the absolute clock of `setupAllMonitors`, or a new one from `performance`.
+ * Without both, the events have no time, and the sink uses the time of the
+ * call.
+ */
+export function eventClock(deps : Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>) : AbsoluteClock | undefined {
+    return deps.absoluteClock ?? (deps.performance ? createAbsoluteClock(deps.performance) : undefined);
+}
+
+/** The options of an event that occurred at `monotonicTime` (`performance.now()` time, for example the start time of an entry). */
+export function occurredAt(clock : AbsoluteClock | undefined, monotonicTime : number | undefined) : EventOptions {
+    return clock && monotonicTime !== undefined ? { time : clock.origin + monotonicTime } : {};
+}
+
+/**
+ * The options of an event that occurred at `clockTime`, a time of the clock
+ * of the monitors (`deps.clock`). The function uses the distance from the
+ * present time. Thus the time base of that clock does not matter.
+ */
+export function occurredAtClockTime(absoluteClock : AbsoluteClock | undefined, clock : Clock, clockTime : number) : EventOptions {
+    return absoluteClock ? { time : absoluteClock.now() - (clock.now() - clockTime) } : {};
+}
 
 /**
  * This function starts `build` behind an error boundary. If the construction

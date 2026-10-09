@@ -67,7 +67,8 @@ describe("createInstrumentedWorkerLag with a hang journal", () => {
             "lag.hang.page_id" : "closed-page",
             "lag.hang.source" : "journal",
             "lag.page_view.id" : "view-of-closed-page",
-        });
+        // At the start of the hang in the record
+        }, { time : NOW - HANG_JOURNAL_STALE_MS - 1 - 12_000 });
         expect((await t.journal.list()).map(r => r.pageId).sort()).toEqual(["live-page", "this-page"]);
         expectCatalogInstruments(t.meter);
         expectCatalogEvents(t.events.emit);
@@ -276,12 +277,13 @@ describe("createInstrumentedWorkerLag with the messages of a worker", () => {
     it("counts a hang that the worker ended, with the outcome ended, and records its duration", () => {
         const t = withWorker();
 
-        t.deliver({ type : "hang-ended", startedAt : NOW - 8_000, durationMs : 8_000 });
+        t.deliver({ type : "hang-ended", startedAt : NOW - 9_000, durationMs : 8_000 });
         t.handle.stop();
 
         expect(t.meter.records().get("lag_main_thread_hangs")).toEqual([{ value : 1, attributes : { outcome : "ended" } }]);
         expect(t.meter.records().get("lag_main_thread_hang_duration_histogram")).toEqual([{ value : 8_000, attributes : { outcome : "ended" } }]);
-        expect(t.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", { phase : "ended", duration_ms : 8_000 });
+        // At the start of the hang that the worker gives, not at the time of the message
+        expect(t.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", { phase : "ended", duration_ms : 8_000 }, { time : NOW - 9_000 });
         expectCatalogInstruments(t.meter);
         expectCatalogEvents(t.events.emit);
     });

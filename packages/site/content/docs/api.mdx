@@ -98,8 +98,9 @@ Refer to [measurement validity](/docs/concepts/measurement-validity).
 | `createHistogram(meter, definition)`, `createCounter(meter, definition)` | Make an instrument from a catalog definition. They fail if the type does not agree. |
 | `Meter`, `Histogram`, `Counter`, `Attributes` | The meter port. An OpenTelemetry `Meter` fits it. |
 | `createNoopMeter()` | A meter that records nothing. |
-| `EventSink`, `createNoopEventSink()`, `withEventContext(sink, context)` | The event port, a sink that sends nothing, and a sink that adds context attributes to each event. |
-| `createOtelEventSink(logger)` | Sends each event as an OpenTelemetry log record with an event name. The body is the line of the event: the name and the sorted `key=value` pairs (`formatEventLine` in `@lag/core/event-line.js`). |
+| `EventSink`, `EventOptions`, `createNoopEventSink()`, `withEventContext(sink, context)` | The event port, the options of an event (`time`, the time of the occurrence in Unix milliseconds), a sink that sends nothing, and a sink that adds context attributes to each event. |
+| `createOtelEventSink(logger, options?)` | Sends each event as an OpenTelemetry log record with an event name. The body is the line of the event: the name and the sorted `key=value` pairs (`formatEventLine` in `@lag/core/event-line.js`). The time of the occurrence becomes the time of the record. The options are `maxTimeOffsetMs` (refer to `MAX_EVENT_TIME_OFFSET_MS`) and `now`. |
+| `placeEventTime(time, now, maxOffsetMs?)`, `MAX_EVENT_TIME_OFFSET_MS`, `EVENT_TIME_ATTRIBUTE` | The rule for the time of a record: the time of the occurrence when it is no more than 30 minutes from the time of the call, else the time of the call and the attribute `lag.event.time`. |
 | `createOtelLoggerAdapter(logger)`, `createTeeLogger(...loggers)` | Send the diagnostic messages to OpenTelemetry logs, or to more than one logger. |
 | `encodeOtlpLogs(...)` | Makes the OTLP/HTTP JSON body of log records. The worker uses it for its hang reports. |
 
