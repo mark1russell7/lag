@@ -22,10 +22,15 @@ export type OtlpLogRecordInput = {
 type AnyValue = { stringValue : string } | { doubleValue : number } | { intValue : string } | { boolValue : boolean };
 type KeyValue = { key : string; value : AnyValue };
 
+/**
+ * A safe integer becomes `intValue`, and each other number becomes
+ * `doubleValue`. `String()` of a large integer (for example 1e21) gives an
+ * exponent, and OTLP does not accept it as an int64.
+ */
 function encodeValue(value : OtlpAttributeValue) : AnyValue {
     if (typeof value === "string") return { stringValue : value };
     if (typeof value === "boolean") return { boolValue : value };
-    return Number.isInteger(value) ? { intValue : String(value) } : { doubleValue : value };
+    return Number.isSafeInteger(value) ? { intValue : String(value) } : { doubleValue : value };
 }
 
 function encodeAttributes(attributes : Record<string, OtlpAttributeValue>) : KeyValue[] {
