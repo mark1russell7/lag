@@ -268,8 +268,10 @@ describe("DriftLag with a probe when the timer granularity changes", () => {
         d.monitor.stop();
     });
 
-    it("adds the first step to the recent steps", () => {
+    it("adds the first step after the 11 warm-up steps to the recent steps", () => {
         const d = createDriftLag(1);
+        d.thread.advance(11 * 6);
+        expect(d.monitor.getBaselineMs()).toBe(5);
         d.thread.advance(6);
 
         expect(d.monitor.getBaselineMs()).toBe(6);
@@ -338,6 +340,25 @@ describe("DriftLag when the granularity changes at any time in a window", () => 
 });
 
 describe("DriftLag probe rules", () => {
+    it("starts no probe during the 11 warm-up steps after a restart", () => {
+        // Each message waits 3 ms, thus no check confirms a value, and each window asks for a probe
+        const d = createDriftLag(11);
+        d.thread.messageDelayMs = 3;
+        d.thread.advance(3_000);
+        d.thread.post(() => d.monitor.stop());
+        d.thread.advance(500);
+        d.thread.post(() => d.monitor.start());
+        const posted = d.thread.postedMessages;
+        // The message of start() waits 3 ms. A window of 6 steps of 16 ms ends during the warm-up.
+        d.thread.advance(3 + 11 * 16 - 1);
+        expect(d.thread.postedMessages).toBe(posted);
+
+        // The 11th step ends the warm-up, and the probe starts
+        d.thread.advance(2);
+        expect(d.thread.postedMessages).toBeGreaterThan(posted);
+        d.monitor.stop();
+    });
+
     it("probes the step after the 5th step of a row of longer steps", () => {
         const d = createDriftLag(1);
         d.thread.advance(3_000);

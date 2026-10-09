@@ -69,6 +69,51 @@ describe("DriftLag with the timer alignment of WebKit", () => {
             d.monitor.stop();
         });
 
+        for (const [alignmentMs, baselineMs] of [[4, 8], [30, 30]] as const) {
+            // The 11th step after a start goes from a time that is not aligned to the next boundary.
+            // Thus it can take 5 ms plus the grid, and give that time minus the baseline as lag.
+            const startLimitMs = 5 + alignmentMs - baselineMs + 0.5;
+
+            // A start outside a timer task gives 10 steps of 5 ms that WebKit does not align. These steps
+            // were recent steps. After a start, the windows had up to 18 ms of lag on an idle thread.
+            it(`gives no lag after the start and after a restart in a task, with a grid of ${alignmentMs} ms (offset ${offset})`, () => {
+                const d = createDriftLag(alignmentMs, offset);
+                d.thread.advance(3_000);
+                d.thread.post(() => d.monitor.stop());
+                d.thread.advance(500);
+                d.thread.post(() => d.monitor.start());
+                d.thread.advance(3_000);
+
+                expect(Math.max(...d.windows.map(w => w.lag))).toBeLessThan(startLimitMs);
+                expect(d.monitor.getBaselineMs()).toBeCloseTo(baselineMs, 0);
+                d.monitor.stop();
+            });
+
+            // On the grid of 30 ms, each step of 5 ms after a restart subtracted a baseline of 30 ms. Thus
+            // only 25 ms of the block showed. Then the steps of 5 ms decreased the baseline, and 22 windows
+            // had approximately 9 ms of lag each.
+            it(`measures a block during the warm-up after a restart, with a grid of ${alignmentMs} ms (offset ${offset})`, () => {
+                const d = createDriftLag(alignmentMs, offset);
+                d.thread.advance(3_000);
+                d.thread.post(() => d.monitor.stop());
+                d.thread.advance(500);
+                const restart = d.thread.now;
+                d.thread.post(() => d.monitor.start());
+                d.thread.advance(20);
+                d.thread.post(() => d.thread.busy(150));
+                d.thread.advance(3_000);
+
+                const lags = lagsBetween(d.windows, restart, Infinity);
+                const largest = Math.max(...lags);
+                // A warm-up step gives its duration minus the baseline
+                expect(largest).toBeGreaterThan(150 - baselineMs - 1);
+                expect(largest).toBeLessThan(150 + 1);
+                const others = lags.filter(lag => lag !== largest).reduce((sum, lag) => sum + Math.max(0, lag), 0);
+                expect(others).toBeLessThan(startLimitMs);
+                d.monitor.stop();
+            });
+        }
+
         // This test found a library bug. A window with the accepted row of 8 ms steps used the new
         // baseline also for its steps of 30 ms before the row: up to 44 ms of lag on an idle thread.
         it(`gives no lag when the grid changes out of Low Power Mode at any time in a window (offset ${offset})`, () => {
