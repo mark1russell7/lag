@@ -8,7 +8,8 @@ import type { PageView } from "../vitals/ViewCollector.js";
 import { EVENTS, METRICS, createHistogram, type MetricDefinition } from "../metric-catalog.js";
 import type { EventAttributes, EventSink } from "../events.js";
 import type { AbsoluteClock } from "../absolute-clock.js";
-import { createHandle, eventClock, occurredAt } from "./shared.js";
+import { createHandle, eventClock, occurredAt, PAGE_VIEW_SPAN_ID, PAGE_VIEW_TRACE_ID } from "./shared.js";
+import type { SpanIdentity } from "../spans.js";
 
 const DEFINITIONS : Readonly<Record<VitalName, MetricDefinition>> = {
     INP : METRICS.vitalInp,
@@ -95,10 +96,10 @@ export function createInstrumentedPageViewVitals(
         if (events || pageViewSpans) {
             let previous = monitor.getView();
             pageViewSpans?.viewStarted(previous);
-            if (events) emitViewStart(events, previous, undefined, clock);
+            if (events) emitViewStart(events, previous, undefined, clock, pageViewSpans?.current());
             unsubscribers.push(monitor.subscribe((view) => {
                 pageViewSpans?.viewStarted(view);
-                if (events) emitViewStart(events, view, previous, clock);
+                if (events) emitViewStart(events, view, previous, clock, pageViewSpans?.current());
                 previous = view;
             }));
         }
@@ -137,12 +138,17 @@ function emitVital(events : EventSink, view : PageView, vital : VitalValue, last
     events.emit(EVENTS.webVital.name, attributes, occurredAt(clock, vital.time));
 }
 
-/** This function sends one `lag.page_view.start` event, at the start of the view. */
-function emitViewStart(events : EventSink, view : PageView, previous : PageView | undefined, clock : AbsoluteClock | undefined) : void {
+/**
+ * This function sends one `lag.page_view.start` event, at the start of the
+ * view. With a sampled span of the view, the event has the identity of the
+ * span. Thus a dashboard can link the view to its trace.
+ */
+function emitViewStart(events : EventSink, view : PageView, previous : PageView | undefined, clock : AbsoluteClock | undefined, span : SpanIdentity | undefined) : void {
     events.emit(EVENTS.pageViewStart.name, {
         navigation_type : view.navigationType,
         "lag.page_view.id" : view.id,
         ...(view.url !== undefined ? { "lag.page_view.url" : view.url } : {}),
         ...(previous ? { "lag.page_view.previous_id" : previous.id } : {}),
+        ...(span && span.sampled !== false ? { [PAGE_VIEW_TRACE_ID] : span.traceId, [PAGE_VIEW_SPAN_ID] : span.spanId } : {}),
     }, occurredAt(clock, view.startTime));
 }

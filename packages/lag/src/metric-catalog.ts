@@ -324,8 +324,8 @@ export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
     pageViewStart : {
         name : "lag.page_view.start",
         monitor : "PageViewVitals",
-        description : "The start of one page view: the load, a restore from the back/forward cache, or a soft navigation. The time is the start of the view.",
-        attributes : ["navigation_type", "lag.page_view.id", "lag.page_view.url", "lag.page_view.previous_id"],
+        description : "The start of one page view: the load, a restore from the back/forward cache, or a soft navigation. The time is the start of the view. With a span sink, the event has the identity of the sampled span of the view, thus a dashboard can link the view to its trace.",
+        attributes : ["navigation_type", "lag.page_view.id", "lag.page_view.url", "lag.page_view.previous_id", "lag.page_view.trace_id", "lag.page_view.span_id"],
     },
     pressureChange : {
         name : "lag.pressure.change",
