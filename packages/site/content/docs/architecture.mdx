@@ -52,7 +52,7 @@ The core depends on small interfaces (ports). Adapters connect the ports to real
 | `EventSink` | Structured events | `createOtelEventSink(logger)`: OpenTelemetry log records with an event name. `withEventContext()` adds the page-view ID. |
 | `Logger` | Diagnostic messages of the monitors | `createOtelLoggerAdapter()`, `createTeeLogger()` |
 | `Clock`, `WallClock`, `AbsoluteClock` | `performance.now()`, `Date.now()`, and the absolute time of the context | `createAbsoluteClock(performance)` |
-| `PageSource` | The navigation entry, the prerender state and the hidden times | `createPageSource(document, performance)` |
+| `PageSource` | The navigation entry, the prerender state, the hidden times and the URL of the document | `createPageSource(document, performance)` |
 | `HangJournal` | Storage for hangs in progress | `createIndexedDbHangJournal(indexedDB)`, `createMemoryHangJournal()` |
 | `WorkerLike` | The message channel to the worker | `createLagWorker()` of `@lag/worker` |
 | `CrashReportContextLike` | The crash-report context of Chromium | `window.crashReport` |
