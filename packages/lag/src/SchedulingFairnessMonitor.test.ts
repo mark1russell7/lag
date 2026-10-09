@@ -3,8 +3,21 @@ import {
     SchedulingFairnessMonitor,
     type MessageChannelLike,
     type MessageChannelConstructor,
+    type MessagePortLike,
     type SchedulingMeasurement,
 } from "./SchedulingFairnessMonitor.js";
+import { SimulatedThread } from "./test-thread.js";
+
+/** A MessageChannel on the simulated thread: each message is a task of the thread. */
+function threadChannel(thread : SimulatedThread) : MessageChannelConstructor {
+    return class {
+        readonly port1 : MessagePortLike = { postMessage : () => {}, onmessage : null };
+        readonly port2 : MessagePortLike = {
+            postMessage : () => thread.post(() => (this.port1.onmessage as (() => void) | null)?.()),
+            onmessage : null,
+        };
+    } as unknown as MessageChannelConstructor;
+}
 
 function createMockMessageChannel() {
     let onmessage : ((event : { data : unknown }) => void) | null = null;
@@ -296,6 +309,31 @@ describe("SchedulingFairnessMonitor", () => {
             const m = createMonitor(Broken);
 
             expect(() => m.monitor.stop()).not.toThrow();
+        });
+
+        // This test found a library bug. The callback of the last primitive called report() outside
+        // the try/catch of the cycle. Thus an error of report() went into the task of the browser.
+        it("logs an error when the report function throws, and continues with the next cycle", () => {
+            const thread = new SimulatedThread();
+            const logger = { log : vi.fn() };
+            const report = vi.fn(() => { throw new Error("report failed"); });
+            const monitor = new SchedulingFairnessMonitor(
+                1_000,
+                report,
+                logger,
+                thread.setInterval,
+                thread.clearInterval,
+                thread.setTimeout,
+                // The simulated thread has no microtask queue: the microtask starts at once
+                (cb) => cb(),
+                threadChannel(thread),
+                thread.clock,
+            );
+
+            expect(() => thread.advance(2_100)).not.toThrow();
+            monitor.stop();
+            expect(report).toHaveBeenCalledTimes(2);
+            expect(logger.log).toHaveBeenCalledWith("error", "Error in scheduling fairness measurement.", { error : expect.any(Error), type : "SchedulingFairnessMonitor" });
         });
 
         it("logs an error when a cycle cannot start, and continues with the next cycle", () => {

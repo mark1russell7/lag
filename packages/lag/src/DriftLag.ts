@@ -1,7 +1,7 @@
 import { BaselineConfirmation } from "./BaselineConfirmation.js";
 import { BusyTimeProbe } from "./BusyTimeProbe.js";
 import { driftStepMs } from "./constants.js";
-import { MIN_JITTER_MS, idleStepMs, isIdleStep, spreadMs, stepsUpTo, usedBaselineMs } from "./drift-baseline.js";
+import { MIN_JITTER_MS, idleStepMs, isIdleStep, outsideStepMs, spreadMs, stepsUpTo, usedBaselineMs } from "./drift-baseline.js";
 import { LagMonitor } from "./LagMonitor.js";
 import type { PostTaskFn } from "./message-task.js";
 
@@ -38,6 +38,16 @@ const MAX_GRANULARITY_MS = 40;
 /** A row of longer steps starts a probe after this number of steps. */
 const PROBE_ROW_STEPS = 5;
 
+/**
+ * The steps after `start()` that are a warm-up. WebKit aligns a timer only
+ * from the nesting level 10 (`DOMTimer.cpp`). A chain that starts outside a
+ * timer task has the level 0, thus its first 10 steps are not aligned. They
+ * are shorter than the aligned steps. The 11th step starts at a time that is
+ * not aligned, thus its duration is between 5 ms and 35 ms on the grid of
+ * 30 ms.
+ */
+const WARM_UP_STEPS = 11;
+
 /** The probe of a monitor with `postTask`, and the confirmed idle duration of one step. */
 type Probing = {
     readonly probe : BusyTimeProbe;
@@ -71,6 +81,18 @@ type Probing = {
  * A long step is a block, not jitter. Thus, a block does not change the
  * baseline.
  *
+ * WebKit aligns only the timers of the nesting level 10 or more. `start()`
+ * starts a new chain at a low level, for example in a `visibilitychange`
+ * task. Thus, the first 11 steps after `start()` are a warm-up. A warm-up
+ * step that is shorter than the baseline is not a step of the window. It is
+ * not a recent step, it is not in a row, and it gives no lag.
+ *
+ * A longer warm-up step is a usual step, because the granularity can change
+ * while the monitor is stopped. For example, the steps of Chromium on
+ * Windows changed from 5.5 ms to 15.6 ms after the page was hidden and shown
+ * again. At the first start, the baseline is the requested delay, and no
+ * step is shorter.
+ *
  * The timer granularity can change while the monitor operates. For example,
  * Windows can change the timer resolution of the browser process on battery
  * power, or when a window is hidden and shown again. Then all steps change
@@ -79,8 +101,15 @@ type Probing = {
  * with each other, but not with the baseline, starts a new baseline.
  *
  * A window that ends during such a row continues until the row ends, or
- * until the monitor accepts the new granularity. Thus, the change gives no
- * lag. Steps of more than 40 ms are not a granularity.
+ * until the monitor accepts the new granularity. The steps of the window
+ * before the row keep the old baseline, and the other steps get the new
+ * baseline. Thus, the change gives no lag. Steps of more than 40 ms are not
+ * a granularity.
+ *
+ * A step before the row that is outside the old baseline can have the new
+ * granularity. It can also be the step in which the granularity changed, or
+ * a block. Its value is between the two baselines (`outsideStepMs`). Thus no
+ * step before the row gives false lag.
  *
  * A sustained load can also make the steps longer. Tasks of the same length
  * give a row of equal steps. If the thread is busy during more than half of
@@ -131,6 +160,26 @@ export class DriftLag extends LagMonitor {
     private rowMax! : number;
     /** The result of the last probe during the row. */
     private rowProbe : "idle" | "busy" | undefined;
+    /** The step of the window at which the row started, from 0. The value -1 is a row of an earlier window. */
+    private rowStart = -1;
+    /**
+     * The durations of the steps of the window that were outside the
+     * baseline, after the early steps. The last steps are the steps of the row.
+     */
+    private readonly outsideSteps : number[] = [];
+    /**
+     * The steps of the window before an accepted row. They do not get the
+     * baseline of the end of the window.
+     */
+    private earlySteps = 0;
+    /** The idle duration of the steps before an accepted row, at the old baseline. */
+    private preRowIdleMs = 0;
+    /** The time of the warm-up steps of the window that were shorter than the baseline. */
+    private shortWarmUpMs = 0;
+    /** The number of warm-up steps that did not end. */
+    private warmUpLeft = 0;
+    /** The probed steps and the steps after a probe in the window. They are not in a row. */
+    private skippedSteps = 0;
     private readonly probing : Probing | undefined;
     private readonly stepMs : number;
     private readonly maxSteps : number;
@@ -155,9 +204,9 @@ export class DriftLag extends LagMonitor {
     public start() : void {
         if (this.handle !== undefined) return;
         const now = this.clock.now();
-        this.windowStart = now;
         this.lastStepAt = now;
-        this.stepsInWindow = 0;
+        this.startWindow(now);
+        this.warmUpLeft = WARM_UP_STEPS;
         this.endRow();
         this.step();
     }
@@ -183,13 +232,20 @@ export class DriftLag extends LagMonitor {
      * The length of the last window that `measure()` ended, with its lag.
      * The window is near `expectedElapsedTimeMs` only when the baseline
      * divides it. In Firefox and WebKit on Windows, a window has 6 steps of
-     * 15.6 ms (93 ms). The first window has 20 steps.
+     * 15.6 ms (93 ms). The first window has 20 steps. With steps of 15.6 ms,
+     * it has 21 steps, because it waits for the row of these steps after the
+     * warm-up.
      */
     getLastWindowMs() : number {
         return this.lastWindowMs;
     }
 
-    /** This method gives the lag of the window that ends at this time, and starts the next window. */
+    /**
+     * This method gives the lag of the window that ends at this time, and
+     * starts the next window. Each step of the window gets the baseline,
+     * except the steps before an accepted row. They get the old baseline. A
+     * short warm-up step is not a step of the window.
+     */
     measure() : number {
         const now = this.clock.now();
         let baseline = this.recentBaselineMs();
@@ -199,11 +255,21 @@ export class DriftLag extends LagMonitor {
             if (window.probe) this.probing.wanted = true;
         }
         this.lastWindowMs = now - this.windowStart;
-        const lag = this.lastWindowMs - this.stepsInWindow * baseline;
+        const idleMs = this.shortWarmUpMs + this.preRowIdleMs + (this.stepsInWindow - this.earlySteps) * baseline;
+        this.startWindow(now);
+        this.windowBaseline = baseline;
+        return this.lastWindowMs - idleMs;
+    }
+
+    private startWindow(now : number) : void {
         this.windowStart = now;
         this.stepsInWindow = 0;
-        this.windowBaseline = baseline;
-        return lag;
+        this.earlySteps = 0;
+        this.preRowIdleMs = 0;
+        this.shortWarmUpMs = 0;
+        this.outsideSteps.length = 0;
+        this.skippedSteps = 0;
+        this.rowStart = -1;
     }
 
     private recentBaselineMs() : number {
@@ -234,6 +300,7 @@ export class DriftLag extends LagMonitor {
     private followGranularity(durationMs : number) : void {
         const baseline = this.windowBaseline;
         const outside = Math.abs(durationMs - baseline) > Math.max(MIN_JITTER_MS, baseline / 2);
+        if (outside) this.outsideSteps.push(durationMs);
         if (!outside || durationMs > MAX_GRANULARITY_MS) {
             this.endRow();
             return;
@@ -248,6 +315,7 @@ export class DriftLag extends LagMonitor {
             // The step does not agree with the row: a new row starts with it
             this.startRow(durationMs);
         }
+        if (this.rowCount === 1) this.rowStart = this.stepsInWindow;
         // Equal tasks on a busy thread also give a row of longer steps. Thus, after the first confirmed
         // value, a row of longer steps is a granularity only if the last probe during the row was idle.
         const probing = this.probing;
@@ -256,11 +324,25 @@ export class DriftLag extends LagMonitor {
         if (this.rowCount >= GRANULARITY_CHANGE_STEPS && (!needsProbe || this.rowProbe === "idle")) this.acceptRow();
     }
 
-    /** A new granularity: the baseline comes only from the steps of the row. */
+    /**
+     * A new granularity: the baseline comes only from the steps of the row.
+     * The steps of the window before the row operated at the old granularity,
+     * thus they keep the old baseline. A step before the row that was outside
+     * the old baseline gets a value between the two baselines
+     * (`outsideStepMs`).
+     */
     private acceptRow() : void {
+        const oldMs = this.windowBaseline;
         this.recentSteps.splice(0, this.recentSteps.length - this.rowCount);
         this.windowBaseline = idleStepMs(this.recentSteps);
         this.probing?.confirmation.accept(this.windowBaseline);
+        if (this.rowStart > this.earlySteps) {
+            const outsideBefore = this.outsideSteps.slice(0, this.outsideSteps.length - this.rowCount);
+            this.preRowIdleMs += (this.rowStart - this.earlySteps - outsideBefore.length) * oldMs;
+            for (const durationMs of outsideBefore) this.preRowIdleMs += outsideStepMs(durationMs, oldMs, this.windowBaseline);
+            this.earlySteps = this.rowStart;
+        }
+        this.outsideSteps.length = 0;
         this.endRow();
     }
 
@@ -282,21 +364,32 @@ export class DriftLag extends LagMonitor {
         const handle : number = this.setTimeoutFn(() => {
             const now = this.clock.now();
             const durationMs = now - this.lastStepAt;
+            const warmUp = this.warmUpLeft > 0;
+            if (warmUp) this.warmUpLeft--;
             // A probe that operated during this step gives the busy time of the thread. A probe also
-            // changes the next step: in Chromium, the thread woke 3 ms later after a probe.
+            // changes the next step: in Chromium, the thread woke 3 ms later after a probe. A short
+            // warm-up step is not a step of the window (refer to the class description).
             if (this.probing?.probe.isRunning()) {
                 this.addProbedStep(durationMs, this.probing.probe.stop(), this.probing);
                 this.probing.afterProbe = true;
+                this.skippedSteps++;
             } else if (this.probing?.afterProbe) {
                 this.probing.afterProbe = false;
+                this.skippedSteps++;
+            } else if (warmUp && durationMs < this.windowBaseline) {
+                this.shortWarmUpMs += durationMs;
+                this.lastStepAt = now;
+                this.step();
+                return;
             } else {
                 this.addStep(durationMs);
             }
             this.stepsInWindow++;
             this.lastStepAt = now;
             // During a row that can be a new granularity, the window continues (for not more than
-            // the length of a row), so that its lag uses the correct baseline
-            const waitForRow = this.rowCount > 0 && this.rowProbe !== "busy" && this.stepsInWindow < this.stepsPerWindow + GRANULARITY_CHANGE_STEPS;
+            // the length of a row), so that its lag uses the correct baseline. The skipped steps are not in the row.
+            const waitForRow = this.rowCount > 0 && this.rowProbe !== "busy"
+                && this.stepsInWindow - this.skippedSteps < this.stepsPerWindow + GRANULARITY_CHANGE_STEPS;
             if (this.stepsInWindow < this.stepsPerWindow || waitForRow) {
                 this.step();
                 return;
