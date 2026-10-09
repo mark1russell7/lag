@@ -5,7 +5,7 @@ order: 17
 status: final
 ---
 
-import { bucketTable, eventTable } from "./diagrams.data";
+import { bucketTable, eventTable, spanTable } from "./diagrams.data";
 import { allMetrics } from "../monitors/metrics.data";
 import { DataTable } from "../../../src/components/DataTable/DataTable";
 
@@ -87,6 +87,19 @@ events.emit("lag.stall", { kind : "suspend", duration_ms : 60000 });
 ```
 
 The wrapper uses the context function again for each event, thus each event gets the page view at the time of the event. An attribute of the event replaces an attribute of the context with the same name. The ID connects an event with the Web Vitals of its page view. Refer to [page views](/docs/concepts/page-views).
+
+## Spans for the periods
+
+A hang, a stall, a long animation frame and a hidden period have a start and an end. An event gives only the start and the duration. With a span sink (`spans`), the monitors also send each of these periods as a span, with its real start and end. A trace viewer, for example Grafana Tempo, then shows each page view as a timeline.
+
+- **One trace for each page view.** The span `lag.page_view` starts at the start of the view. It is the root of the trace of the view. The other spans of the monitors are in it.
+- **The end of the span of a view.** The span ends when the page is hidden for the first time in the view, or at the final report of the view. The browser can discard a hidden page without an event, and an exporter sends only the spans that ended. The span gets the values of the Web Vitals at its end as attributes (`lag.web_vital.lcp`, for example). A value that changes after that time is in the metrics and in the events.
+- **A hang that another page reports.** The page-view context of a page has the identity of the span of its view (`lag.page_view.trace_id` and `lag.page_view.span_id`). The hang journal and the peer hang watch keep this context. Thus the span of an abandoned hang is in the trace of the page view that hung. It has a link to the page view that reported it.
+- **Sampling.** The sampler of the SDK decides for the span of a view. The spans in a view are sampled as the view. A page whose view was not sampled puts no span identity into its context.
+
+<DataTable spec={spanTable} label="Spans" />
+
+The event of a period stays. The dashboards and the alerts use the events and the metrics. The spans are for the investigation of one page view.
 
 ## Writer identity
 

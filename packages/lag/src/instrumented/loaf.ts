@@ -1,9 +1,9 @@
-import type { AbsoluteClockDeps, CoreDeps, EventDeps, ObserverDeps, PerformanceDeps } from "../dep-groups.js";
+import type { AbsoluteClockDeps, CoreDeps, EventDeps, ObserverDeps, PerformanceDeps, SpanDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { LongAnimationFrameMonitor } from "../LongAnimationFrameMonitor.js";
-import { EVENTS, METRICS, createHistogram } from "../metric-catalog.js";
+import { EVENTS, METRICS, SPANS, createHistogram } from "../metric-catalog.js";
 import { RateLimiter, stripUrlParameters } from "../rate-limiter.js";
-import { createHandle, eventClock, occurredAt } from "./shared.js";
+import { createHandle, eventClock, occurredAt, recordSpan } from "./shared.js";
 
 /** Frames that block at least this long get an attribution event. */
 const ATTRIBUTION_THRESHOLD_MS = 150;
@@ -32,7 +32,7 @@ function stripInvokerUrl(invoker : string, invokerType : string) : string {
  * fragment.
  */
 export function createInstrumentedLoaf(
-    deps : CoreDeps & ObserverDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
+    deps : CoreDeps & ObserverDeps & Partial<EventDeps> & Partial<SpanDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
 ) : MonitorHandle<LongAnimationFrameMonitor> {
     return createHandle("loaf", deps.logger, () => {
         const blockingHist = createHistogram(deps.meter, METRICS.loafBlocking);
@@ -44,9 +44,9 @@ export function createInstrumentedLoaf(
             (entry) => {
                 blockingHist.record(entry.blockingDuration);
                 durationHist.record(entry.duration);
-                if (deps.events && entry.blockingDuration >= ATTRIBUTION_THRESHOLD_MS && limiter.tryAcquire()) {
+                if ((deps.events || deps.spans) && entry.blockingDuration >= ATTRIBUTION_THRESHOLD_MS && limiter.tryAcquire()) {
                     const script = entry.topScript;
-                    deps.events.emit(EVENTS.longAnimationFrame.name, {
+                    const attributes = {
                         duration_ms : entry.duration,
                         blocking_duration_ms : entry.blockingDuration,
                         ...(script ? {
@@ -55,7 +55,10 @@ export function createInstrumentedLoaf(
                             "script.source_url" : stripUrlParameters(script.sourceURL),
                             "script.duration_ms" : script.duration,
                         } : {}),
-                    }, occurredAt(clock, entry.startTime));
+                    };
+                    const options = occurredAt(clock, entry.startTime);
+                    deps.events?.emit(EVENTS.longAnimationFrame.name, attributes, options);
+                    if (options.time !== undefined) recordSpan(deps, SPANS.longAnimationFrame.name, options.time, options.time + entry.duration, attributes);
                 }
             },
             deps.logger,

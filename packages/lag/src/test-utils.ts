@@ -1,7 +1,8 @@
 import { vi, expect, type Mock } from 'vitest';
 import type { LagMonitor, LagMonitorConstructor } from "./LagMonitor.js";
 import type { InstrumentAdvice, Meter } from "./meter.js";
-import { EVENT_CATALOG, METRIC_CATALOG } from "./metric-catalog.js";
+import { EVENT_CATALOG, METRIC_CATALOG, SPAN_CATALOG } from "./metric-catalog.js";
+import type { SpanIdentity, SpanOptions, SpanSink } from "./spans.js";
 
 /**
  * A test utility for `MacrotaskLag`. It controls the order of the
@@ -181,6 +182,68 @@ export function expectCatalogEvents(emit : Mock, contextAttributes : readonly st
             const listed = contextAttributes.includes(key)
                 || definition!.attributes.some(a => a === key || (a.endsWith(".*") && key.startsWith(a.slice(0, -1))));
             expect(listed, `${name}: ${key}`).toBe(true);
+        }
+    }
+}
+
+/** A span that the recording span sink got. `endTime` is undefined while the span is open. */
+export type RecordedSpan = {
+    name : string;
+    identity : SpanIdentity;
+    startTime : number;
+    endTime : number | undefined;
+    attributes : Record<string, unknown>;
+    parent : SpanIdentity | undefined;
+    links : readonly SpanIdentity[];
+};
+
+/**
+ * A span sink that records each span. Each span gets a new valid identity.
+ * A span with a parent is in the trace of the parent.
+ */
+export function createRecordingSpanSink() : SpanSink & { spans : RecordedSpan[]; named(name : string) : RecordedSpan[] } {
+    let next = 1;
+    const spans : RecordedSpan[] = [];
+    const add = (name : string, options : SpanOptions, endTime : number | undefined) : RecordedSpan => {
+        const n = next++;
+        const span : RecordedSpan = {
+            name,
+            identity : { traceId : options.parent?.traceId ?? n.toString(16).padStart(32, "0"), spanId : n.toString(16).padStart(16, "0") },
+            startTime : options.startTime,
+            endTime,
+            attributes : { ...options.attributes },
+            parent : options.parent,
+            links : options.links ?? [],
+        };
+        spans.push(span);
+        return span;
+    };
+    return {
+        spans,
+        named : (name) => spans.filter(span => span.name === name),
+        start(name, options) {
+            const span = add(name, options, undefined);
+            return {
+                identity : span.identity,
+                setAttributes : (attributes) => { Object.assign(span.attributes, attributes); },
+                end : (endTime) => { if (span.endTime === undefined) span.endTime = endTime; },
+            };
+        },
+        record(name, options) {
+            add(name, options, options.endTime);
+        },
+    };
+}
+
+/** This function makes sure that each recorded span has a name and attributes of the span catalog. */
+export function expectCatalogSpans(spans : readonly RecordedSpan[]) : void {
+    const byName = new Map(SPAN_CATALOG.map(definition => [definition.name, definition]));
+    for (const span of spans) {
+        const definition = byName.get(span.name);
+        expect(definition, span.name).toBeDefined();
+        for (const key of Object.keys(span.attributes)) {
+            const allowed = definition!.attributes.some(name => name === key || (name.endsWith("*") && key.startsWith(name.slice(0, -1))));
+            expect(allowed, `${span.name}: ${key}`).toBe(true);
         }
     }
 }

@@ -1,9 +1,9 @@
-import type { CoreDeps, EventDeps, PeerDeps, TimerDeps, WallClockDeps, WorkerMonitorDeps } from "../dep-groups.js";
+import type { CoreDeps, EventDeps, PeerDeps, SpanDeps, TimerDeps, WallClockDeps, WorkerMonitorDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { isVisibleState, type LifecycleStateMachine } from "../LifecycleStateMachine.js";
 import { PeerHangWatch } from "../PeerHangWatch.js";
 import { EVENTS, METRICS, createCounter, createHistogram } from "../metric-catalog.js";
-import { createHandle } from "./shared.js";
+import { createHandle, recordHangSpan } from "./shared.js";
 import { createRandomId } from "../random-id.js";
 
 /**
@@ -31,7 +31,7 @@ import { createRandomId } from "../random-id.js";
  * cache.
  */
 export function createInstrumentedPeerHangWatch(
-    deps : CoreDeps & PeerDeps & WallClockDeps & TimerDeps & Partial<EventDeps> & Pick<WorkerMonitorDeps, "hangJournal" | "hangReportMarks" | "pageId">,
+    deps : CoreDeps & PeerDeps & WallClockDeps & TimerDeps & Partial<EventDeps> & Partial<SpanDeps> & Pick<WorkerMonitorDeps, "hangJournal" | "hangReportMarks" | "pageId">,
     lifecycle : LifecycleStateMachine,
 ) : MonitorHandle<PeerHangWatch> {
     return createHandle("peer-hang-watch", deps.logger, () => {
@@ -54,6 +54,13 @@ export function createInstrumentedPeerHangWatch(
                     "lag.hang.page_id" : record.pageId,
                     "lag.hang.source" : source,
                 }, { time : record.startedAt });
+                // In the trace of the page that hung: its beats and its record have the identity of its page view
+                recordHangSpan(deps, {
+                    startedAt : record.startedAt,
+                    durationMs,
+                    attributes : { phase : "abandoned", duration_ms : durationMs, "lag.hang.page_id" : record.pageId, "lag.hang.source" : source },
+                    hungPage : record.attributes,
+                });
             },
         });
         // A page in the back/forward cache or a frozen page closes its channel: Chrome removes a page from

@@ -1,7 +1,7 @@
 import { vi, expect } from "vitest";
 import { setupAllMonitors, type AllMonitorDeps, type AllMonitorHandles } from "./setup-all-monitors.js";
 import { createWorkerHandler, type HangEvent } from "./lag-worker.js";
-import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "./test-utils.js";
+import { createRecordingMeter, createRecordingSpanSink, expectCatalogEvents, expectCatalogInstruments, expectCatalogSpans } from "./test-utils.js";
 import { METRIC_CATALOG, METRICS } from "./metric-catalog.js";
 import type {
     EventTimingEntry,
@@ -945,6 +945,75 @@ describe("setupAllMonitors with an exporter that gets the pagehide event first",
         expect(exported).toEqual([{ from : "active", to : "terminated", trigger : "pagehide" }]);
         expect(browser.events.emit).toHaveBeenCalledWith("lag.lifecycle.transition", expect.objectContaining({ to : "terminated" }), { time : expect.any(Number) });
         expect(browser.meter.records().get("lag_lifecycle_transitions")).toHaveLength(1);
+        handles.stop();
+    });
+});
+
+describe("setupAllMonitors with a span sink", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+
+    it("makes one trace for each page view, with the spans of the monitors in the span of the view", async () => {
+        const browser = createFakeBrowser();
+        const spans = createRecordingSpanSink();
+        const handles = setupAllMonitors({ ...browser.deps, spans });
+        await generateActivity(browser);
+        browser.addLag(6_000);
+        await advance(5_000);
+        browser.setVisibility("hidden");
+
+        const [view, ...others] = spans.spans;
+        expect(view).toMatchObject({
+            name : "lag.page_view",
+            // At the time origin of the page: the start of the load
+            startTime : 1_700_000_000_000,
+            attributes : { "lag.page_view.id" : handles.vitals!.getView().id, navigation_type : "navigate" },
+            parent : undefined,
+        });
+        // The page is hidden: the span of the view ended, thus the exporter can send it
+        expect(view!.endTime).toBeGreaterThan(view!.startTime);
+        expect(spans.named("lag.stall")).toEqual([expect.objectContaining({ attributes : { kind : "hang", duration_ms : expect.any(Number) } })]);
+        expect(spans.named("lag.long_animation_frame")).toHaveLength(1);
+        expect(spans.named("lag.page.hidden")).toHaveLength(1);
+        for (const span of others) {
+            expect(span.parent, span.name).toEqual(view!.identity);
+            expect(span.identity.traceId, span.name).toBe(view!.identity.traceId);
+        }
+        expectCatalogSpans(spans.spans);
+        handles.stop();
+    });
+
+    it("gives the identity of the span of the view to the hang reports of the worker, for the trace of an abandoned hang", async () => {
+        const browser = createFakeBrowser();
+        const spans = createRecordingSpanSink();
+        const handles = setupAllMonitors({ ...browser.deps, spans });
+        await advance(1_000);
+
+        browser.blockMain();
+        await advance(8_000);
+
+        const view = spans.named("lag.page_view")[0]!;
+        expect(browser.reportHang).toHaveBeenCalledWith(
+            expect.objectContaining({
+                phase : "started",
+                attributes : {
+                    "lag.page_view.id" : handles.vitals!.getView().id,
+                    "lag.page_view.trace_id" : view.identity.traceId,
+                    "lag.page_view.span_id" : view.identity.spanId,
+                },
+            }),
+            expect.anything(),
+        );
+        browser.unblockMain();
+        handles.stop();
+    });
+
+    it("makes no spans without a span sink", async () => {
+        const browser = createFakeBrowser();
+        const handles = setupAllMonitors(browser.deps);
+        await advance(1_000);
+
+        expect(handles.pageViewContext!.getAttributes()).toEqual({ "lag.page_view.id" : handles.vitals!.getView().id });
         handles.stop();
     });
 });

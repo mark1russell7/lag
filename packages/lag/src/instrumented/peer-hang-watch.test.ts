@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInstrumentedPeerHangWatch } from "./peer-hang-watch.js";
-import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "../test-utils.js";
+import { createRecordingMeter, createRecordingSpanSink, expectCatalogEvents, expectCatalogInstruments, expectCatalogSpans } from "../test-utils.js";
+import { PAGE_VIEW_SPAN_ID, PAGE_VIEW_TRACE_ID } from "./shared.js";
 import { createFakeLifecycle } from "../vitals/test-fakes.js";
 import { SimulatedOrigin, type SimulatedPage } from "../test-peers.js";
 import { createMemoryHangJournal, createStorageHangReportMarks } from "../hang-journal.js";
@@ -232,5 +233,34 @@ describe("createInstrumentedPeerHangWatch", () => {
         expect(handle.monitor).toBeUndefined();
         expect(log).toHaveBeenCalledWith("warn", "Failed to create the \"peer-hang-watch\" monitor.", expect.anything());
         handle.stop();
+    });
+});
+
+describe("createInstrumentedPeerHangWatch with spans", () => {
+    const VIEW_A = { traceId : "a".repeat(32), spanId : "1".repeat(16) };
+    const VIEW_B = { traceId : "b".repeat(32), spanId : "2".repeat(16) };
+
+    it("puts the span of the hang of a closed page into the trace of the page view that hung, with a link to the view that reports it", async () => {
+        const spans = createRecordingSpanSink();
+        const a = open("a", "visible", { spans, pageViewSpans : { viewStarted() {}, viewHidden() {}, viewEnded() {}, current : () => VIEW_A } });
+        const b = open("b");
+        b.handle.monitor!.setContext({ "lag.page_view.id" : "view-b", [PAGE_VIEW_TRACE_ID] : VIEW_B.traceId, [PAGE_VIEW_SPAN_ID] : VIEW_B.spanId });
+        await vi.advanceTimersByTimeAsync(1_500);
+        b.page.hang();
+        await vi.advanceTimersByTimeAsync(7_500);
+        b.page.kill();
+        await vi.advanceTimersByTimeAsync(2_000);
+
+        expect(spans.spans).toEqual([expect.objectContaining({
+            name : "lag.main_thread.hang",
+            startTime : 1_700_000_001_000,
+            endTime : 1_700_000_009_000,
+            attributes : { phase : "abandoned", duration_ms : 8_000, "lag.hang.page_id" : "b", "lag.hang.source" : "peer" },
+            parent : VIEW_B,
+            links : [VIEW_A],
+        })]);
+        expectCatalogSpans(spans.spans);
+        a.handle.stop();
+        b.handle.stop();
     });
 });

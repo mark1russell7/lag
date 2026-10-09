@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInstrumentedLifecycle } from "./lifecycle.js";
 import { createFakeLifecycle } from "../vitals/test-fakes.js";
-import { createRecordingMeter, expectCatalogEvents, expectCatalogInstruments } from "../test-utils.js";
+import { createRecordingMeter, createRecordingSpanSink, expectCatalogEvents, expectCatalogInstruments, expectCatalogSpans } from "../test-utils.js";
 
 function setup(withClock = true) {
     const fake = createFakeLifecycle();
@@ -50,5 +50,68 @@ describe("createInstrumentedLifecycle", () => {
         t.handle.stop();
         t.fake.setVisibility("visible");
         expect(t.events.emit).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("createInstrumentedLifecycle with spans", () => {
+    const VIEW = { traceId : "a".repeat(32), spanId : "b".repeat(16) };
+
+    function withSpans(withClock = true, withViews = true) {
+        const fake = createFakeLifecycle();
+        const spans = createRecordingSpanSink();
+        const handle = createInstrumentedLifecycle({
+            logger : { log : vi.fn() },
+            clock : fake.clock,
+            meter : createRecordingMeter().meter,
+            document : fake.document,
+            window : fake.window,
+            spans,
+            ...(withViews ? { pageViewSpans : { viewStarted() {}, viewHidden() {}, viewEnded() {}, current : () => VIEW } } : {}),
+            ...(withClock ? { performance : { timeOrigin : 1_700_000_000_000, now : () => fake.clock.now() } } : {}),
+        });
+        return { fake, spans, handle };
+    }
+
+    it("records each hidden and frozen period as a span in the current page view, to the next transition", () => {
+        const t = withSpans();
+        t.fake.setNow(5_000);
+        t.fake.setVisibility("hidden", 4_200);
+        t.fake.setNow(9_000);
+        t.fake.pagehide(true);
+        t.fake.setNow(60_000);
+        t.fake.pageshow(true, 59_000);
+
+        expect(t.spans.spans.map(span => [span.name, span.startTime, span.endTime, span.attributes["trigger"], span.parent])).toEqual([
+            ["lag.page.hidden", 1_700_000_004_200, 1_700_000_009_000, "visibilitychange", VIEW],
+            ["lag.page.frozen", 1_700_000_009_000, 1_700_000_059_000, "pagehide", VIEW],
+        ]);
+        expectCatalogSpans(t.spans.spans);
+        t.handle.stop();
+    });
+
+    it("ends the open period at stop(), and records no period after the stop", () => {
+        const t = withSpans();
+        t.fake.setNow(1_000);
+        t.fake.setVisibility("hidden");
+        t.fake.setNow(3_000);
+        t.handle.stop();
+        t.fake.setVisibility("visible");
+        t.fake.setVisibility("hidden");
+
+        expect(t.spans.spans.map(span => [span.startTime, span.endTime])).toEqual([[1_700_000_001_000, 1_700_000_003_000]]);
+    });
+
+    it("uses Date.now() without a clock, also at stop(), and starts a new trace without page-view spans", () => {
+        vi.useFakeTimers({ now : 50_000 });
+        const t = withSpans(false, false);
+        t.fake.setVisibility("hidden");
+        vi.advanceTimersByTime(2_000);
+        t.fake.setVisibility("visible");
+        t.fake.setVisibility("hidden");
+        vi.advanceTimersByTime(1_000);
+        t.handle.stop();
+
+        expect(t.spans.spans.map(span => [span.startTime, span.endTime, span.parent])).toEqual([[50_000, 52_000, undefined], [52_000, 53_000, undefined]]);
+        vi.useRealTimers();
     });
 });
