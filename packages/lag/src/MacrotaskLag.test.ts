@@ -1,10 +1,16 @@
 import type { Mock } from 'vitest';
 import { macrotaskLagIntervalMs } from "./constants.js";
 import { MacrotaskLag } from "./MacrotaskLag.js";
+import { SimulatedThread } from "./test-thread.js";
 import { MacrotaskLagTestDriver } from "./test-utils.js";
 
 
 const INTERVAL = macrotaskLagIntervalMs;
+
+/** The report of a sample comes in a microtask after the timeout callback. */
+async function flushPromises() : Promise<void> {
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+}
 
 describe('MacrotaskLag', () => {
     let mockReport : Mock;
@@ -109,6 +115,36 @@ describe('MacrotaskLag', () => {
             await Promise.resolve();
 
             expect(mockReport).not.toHaveBeenCalled();
+        });
+
+        // This test found a library bug. The monitor checked only that it operated when the sample
+        // ended. Thus after stop() and start(), it reported the sample of 300 ms from before the stop.
+        it('drops a sample that was in flight across stop() and start()', async () => {
+            const thread = new SimulatedThread();
+            const report = vi.fn();
+            const monitor = new MacrotaskLag(
+                1_000, report, { log : vi.fn() },
+                thread.setInterval, thread.clearInterval, thread.setTimeout, thread.clearTimeout, thread.clock,
+                thread.post,
+            );
+            // The interval posts the measurement. A task of 300 ms waits before the timeout of the
+            // measurement, and the page is hidden and visible again in that task.
+            thread.advance(1_000);
+            thread.post(() => {
+                thread.busy(300);
+                monitor.stop();
+                monitor.start();
+            });
+            thread.advance(400);
+            await flushPromises();
+            expect(report).not.toHaveBeenCalled();
+
+            // The next sample after the start reports
+            thread.advance(1_000);
+            await flushPromises();
+            expect(report).toHaveBeenCalledTimes(1);
+            expect(report.mock.calls[0]![0]).toBeLessThan(1);
+            monitor.stop();
         });
 
         it('start() while the monitor operates adds no second interval', () => {

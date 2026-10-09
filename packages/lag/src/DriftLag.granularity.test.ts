@@ -103,6 +103,22 @@ describe("DriftLag when the timer granularity changes", () => {
         d.monitor.stop();
     });
 
+    // This test found a library bug. The lag of the window used the new baseline of 6 ms also for the
+    // 4 steps of 16 ms before the row, thus the window had 4 * 10 = 40 ms of lag on an idle thread.
+    it("gives the old baseline to the steps of the window before the row of a finer granularity", () => {
+        const d = createDriftLag(11);
+        // The first window has 20 steps of 16 ms. The second window has round(100 / 16) = 6 steps; 3 of them come before the change.
+        vi.advanceTimersByTime(20 * 16 + 3 * 16);
+        d.lags.length = 0;
+        d.setGranularity(1);
+        // One step of 16 ms started before the change. The window waits for the row, and the 10th step of 6 ms ends it.
+        vi.advanceTimersByTime(16 + 10 * 6);
+
+        expect(d.monitor.getLastWindowMs()).toBe(4 * 16 + 10 * 6);
+        expect(d.lags).toEqual([0]);
+        d.monitor.stop();
+    });
+
     it("follows a change to a finer granularity, and then measures a block correctly", () => {
         const d = createDriftLag(11);
         vi.advanceTimersByTime(3_000);
