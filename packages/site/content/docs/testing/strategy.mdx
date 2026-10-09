@@ -155,7 +155,7 @@ The mutation report comes from the weekly mutation workflow, thus it is usually 
 |---|---|---|
 | `ci.yml` | Each push and each pull request | The build, the type check, the unit tests, the coverage, the browser tests in each engine, Safari on a macOS runner, Safari in the iOS Simulator, and the tests and the build of the site |
 | `e2e.yml` | Each week, or manually | The Grafana stack in Docker, and the E2E tests |
-| `mutation.yml` | Each week, or manually | Stryker, with the incremental file from the cache |
+| `mutation.yml` | Each week, or manually | Stryker. A manual run uses the incremental file of its branch, or of `main`, from the cache. The weekly run tests all mutants again (`--force`). |
 | `pages.yml` | Each push to `main`, or manually | Safari and Safari in the iOS Simulator on a macOS runner, then `pnpm results` with their reports and the mutation report of the newest completed `mutation.yml` run of `main`, the build of this site and its deployment to GitHub Pages |
 
 ## Limits
