@@ -5,6 +5,8 @@ import { LiveChart } from "./LiveChart";
 import { LoadPanel } from "./LoadPanel";
 import type { PlaygroundSession, PlaygroundSnapshot } from "./session";
 import { StatePanel } from "./StatePanel";
+import { EpochPanel } from "./timeline/EpochPanel";
+import { InpScatterPanel } from "./timeline/InpScatterPanel";
 import { SessionTimeline } from "./timeline/SessionTimeline";
 import { useSession } from "./use-session";
 import styles from "./Playground.module.css";
@@ -86,6 +88,23 @@ function Timeline({ snapshot } : { snapshot : PlaygroundSnapshot }) {
     );
 }
 
+function Analysis({ snapshot } : { snapshot : PlaygroundSnapshot }) {
+    return (
+        <section className={styles.section} aria-labelledby="analysis-heading">
+            <h2 id="analysis-heading">Blocks and interactions</h2>
+            <p className={styles.lead}>
+                These two charts use the data of the timeline. They fill as you make load. The test results have no data of this
+                type, because the collector keeps only the values of each metric, without their times. Thus the charts are only
+                here.
+            </p>
+            <div className={styles.analysis}>
+                <EpochPanel model={snapshot.timeline} />
+                <InpScatterPanel model={snapshot.timeline} />
+            </div>
+        </section>
+    );
+}
+
 /** A live demo that runs the real monitors in this page. */
 export function PlaygroundPage() {
     const { session, snapshot, error } = useSession("full");
@@ -118,6 +137,7 @@ export function PlaygroundPage() {
                 <>
                     <LoadPanel session={session} snapshot={snapshot} />
                     <Timeline snapshot={snapshot} />
+                    <Analysis snapshot={snapshot} />
                     <Charts snapshot={snapshot} />
                     <StatePanel snapshot={snapshot} />
                 </>
