@@ -616,6 +616,35 @@ describe("PageViewVitals", () => {
             expect(t.vitals.getValues().map(v => v.name)).not.toContain("INP");
         });
 
+        it("starts no new view when the report function calls it at the final report before a soft navigation", () => {
+            const t = setup({ softNavigations : true });
+            t.report.mockImplementation((r : VitalsReport) => {
+                t.reports.push(r);
+                if (r.final) t.vitals.stop();
+            });
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9", presentationTime : 3_100 }));
+
+            // The view that ended stays the current view, with its values
+            expect(t.vitals.getView()).toEqual({ id : "view-1", navigationType : "navigate", startTime : 0, url : "https://shop.example/cart" });
+            expect(Object.fromEntries(t.vitals.getValues().map(v => [v.name, v.value]))).toEqual({ TTFB : 200 });
+        });
+
+        it("starts no new view when the report function calls it at the final report before a restore from the back/forward cache", () => {
+            const t = setup();
+            t.report.mockImplementation((r : VitalsReport) => {
+                t.reports.push(r);
+                if (r.final) t.vitals.stop();
+            });
+            t.pagehide(true);
+            t.pageshow(true, 10_000);
+            t.runFrames();
+            t.runFrames();
+
+            expect(t.reports.at(-1)).toMatchObject({ final : true, view : { id : "view-1" } });
+            expect(t.vitals.getView()).toMatchObject({ id : "view-1", navigationType : "navigate" });
+            expect(Object.fromEntries(t.vitals.getValues().map(v => [v.name, v.value]))).toEqual({ TTFB : 200 });
+        });
+
         it("makes no observer for an entry type that the browser does not have, and no warning", () => {
             const t = setup({ supported : ["event", "paint", "largest-contentful-paint"] });
             expect(t.observer.observedTypes()).toEqual(["event", "paint", "largest-contentful-paint"]);
