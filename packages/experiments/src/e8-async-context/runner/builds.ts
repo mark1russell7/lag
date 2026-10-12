@@ -19,6 +19,7 @@ import { gzipSync } from "node:zlib";
 import { build, type InlineConfig, type Plugin } from "vite";
 import { asyncContext } from "async-browser-context/vite";
 import type { SetupId } from "../shared/types.js";
+import type { BundleSize } from "./summary.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const PAGE_DIR = path.resolve(here, "../page");
@@ -67,26 +68,11 @@ export function setupConfig(setup : SetupId, kind : BuildKind, outDir : string) 
     };
 }
 
-/** The size of the JavaScript of one build, in bytes. */
-export type BundleSize = {
-    setup : SetupId;
-    /** The JavaScript of the page, without the worker of lag. */
-    pageBytes : number;
-    pageGzipBytes : number;
-    /** The worker of lag. It is the same in each setup, because the plugins of the page do not change the worker. */
-    workerBytes : number;
-    workerGzipBytes : number;
-    /** True if the JavaScript of the page contains zone.js. */
-    containsZone : boolean;
-    /** True if the JavaScript of the page contains the runtime of async-browser-context. */
-    containsAsyncContext : boolean;
-};
-
 /** This function measures the JavaScript files of a build. gzip uses the default level of zlib (6). */
 export function bundleSize(setup : SetupId, outDir : string) : BundleSize {
     const assets = path.join(outDir, "assets");
     const files = readdirSync(assets).filter(file => file.endsWith(".js"));
-    const size = { setup, pageBytes : 0, pageGzipBytes : 0, workerBytes : 0, workerGzipBytes : 0, containsZone : false, containsAsyncContext : false };
+    const size : BundleSize = { setup, pageBytes : 0, pageGzipBytes : 0, workerBytes : 0, workerGzipBytes : 0, containsZone : false, containsAsyncContext : false };
     for (const file of files) {
         const content = readFileSync(path.join(assets, file));
         const gzip = gzipSync(content).length;
