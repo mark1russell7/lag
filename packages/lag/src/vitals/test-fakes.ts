@@ -92,15 +92,20 @@ export function createFakePerformanceObserver(supportedEntryTypes? : readonly st
     };
 }
 
-/** A real LifecycleStateMachine on fake `document` and `window` targets, with a settable clock. */
+/**
+ * A real LifecycleStateMachine on fake `document` and `window` targets, with a settable clock.
+ * `logger` is the logger of the machine: it gets the errors of the subscribers.
+ */
 export function createFakeLifecycle(initialVisibility : "visible" | "hidden" = "visible") {
     let now = 0;
     const clock = { now : () => now };
     const document = Object.assign(createFakeEventTarget(), { visibilityState : initialVisibility as string, hasFocus : () => true });
     const window = createFakeEventTarget();
-    const lifecycle = new LifecycleStateMachine(document, window, clock, { log : vi.fn() });
+    const logger = { log : vi.fn() };
+    const lifecycle = new LifecycleStateMachine(document, window, clock, logger);
     return {
         lifecycle,
+        logger,
         clock,
         document,
         window,
