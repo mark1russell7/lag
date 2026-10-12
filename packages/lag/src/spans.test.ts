@@ -24,6 +24,10 @@ describe("isSpanIdentity", () => {
         expect(isSpanIdentity({ traceId : TRACE, spanId : SPAN })).toBe(true);
     });
 
+    it("accepts IDs that start or end with zeros", () => {
+        expect(isSpanIdentity({ traceId : "0af7651916cd43dd8448eb211c803190", spanId : "0b7ad6b716920330" })).toBe(true);
+    });
+
     it("rejects missing, malformed and all-zero IDs", () => {
         for (const value of [
             undefined,
@@ -31,12 +35,21 @@ describe("isSpanIdentity", () => {
             { traceId : TRACE },
             { traceId : TRACE.toUpperCase(), spanId : SPAN },
             { traceId : TRACE.slice(1), spanId : SPAN },
+            { traceId : `-${TRACE}`, spanId : SPAN },
+            { traceId : `${TRACE}0`, spanId : SPAN },
             { traceId : "0".repeat(32), spanId : SPAN },
             { traceId : TRACE, spanId : "0".repeat(16) },
+            { traceId : TRACE, spanId : `-${SPAN}` },
+            { traceId : TRACE, spanId : `${SPAN}0` },
             { traceId : TRACE, spanId : 7 },
         ]) {
             expect(isSpanIdentity(value as never), JSON.stringify(value)).toBe(false);
         }
+    });
+
+    it("rejects IDs that are not strings, also when their text is a valid ID", () => {
+        expect(isSpanIdentity({ traceId : [TRACE], spanId : SPAN })).toBe(false);
+        expect(isSpanIdentity({ traceId : TRACE, spanId : [SPAN] })).toBe(false);
     });
 });
 
@@ -69,12 +82,13 @@ describe("createOtelSpanSink", () => {
         const span = t.sink.start("lag.page_view", { startTime : 1_000, attributes : { a : 1, gone : undefined as never, none : null as never } });
 
         expect(span.identity).toEqual({ traceId : TRACE, spanId : "0000000000000001" });
-        expect(t.started[0]).toMatchObject({ name : "lag.page_view", options : { startTime : 1_000, attributes : { a : 1 } }, context : "root" });
-        span.setAttributes({ "lag.web_vital.lcp" : 900 });
+        expect(t.started[0]).toMatchObject({ name : "lag.page_view", context : "root" });
+        expect(t.started[0]!.options).toStrictEqual({ startTime : 1_000, attributes : { a : 1 } });
+        span.setAttributes({ "lag.web_vital.lcp" : 900, "lag.web_vital.inp" : undefined as never, "lag.web_vital.cls" : null as never });
         span.end(5_000);
         span.end(6_000);
         span.setAttributes({ late : 1 });
-        expect(t.started[0]!.attributes).toEqual([{ "lag.web_vital.lcp" : 900 }]);
+        expect(t.started[0]!.attributes).toStrictEqual([{ "lag.web_vital.lcp" : 900 }]);
         expect(t.started[0]!.ended).toEqual([5_000]);
     });
 
@@ -161,6 +175,48 @@ describe("createPageViewSpans", () => {
             ["v1", 1_000_000, 1_030_000],
             ["v2", 1_030_000, undefined],
         ]);
+    });
+
+    it("gives the span of a view without a URL no URL attribute", () => {
+        const sink = createRecordingSpanSink();
+        const spans = createPageViewSpans(sink, clock);
+        spans.viewStarted(view("v1", 0));
+
+        expect(sink.spans[0]!.attributes).toStrictEqual({ "lag.page_view.id" : "v1", navigation_type : "navigate" });
+    });
+
+    it("ends the span when the page of its view is hidden, and ignores a hidden page of a view that is not open", () => {
+        const sink = createRecordingSpanSink();
+        const spans = createPageViewSpans(sink, clock);
+        // No view is open
+        spans.viewHidden(view("v0", 0), [], 1_000);
+        spans.viewStarted(view("v1", 0));
+        spans.viewStarted(view("v2", 30_000));
+        spans.viewHidden(view("v1", 0), [{ name : "LCP", value : 900, attribution : {} }], 40_000);
+        expect(sink.spans[1]!.endTime).toBeUndefined();
+
+        spans.viewHidden(view("v2", 30_000), [{ name : "INP", value : 120, attribution : {} }], 45_000);
+        // The span of the view stays the parent of the other spans until the final report of the view
+        expect(spans.current()).toEqual(sink.spans[1]!.identity);
+        // The span ended at the first hidden time: a later hidden time and the final report do not change it
+        spans.viewHidden(view("v2", 30_000), [{ name : "INP", value : 300, attribution : {} }], 50_000);
+        spans.viewEnded(view("v2", 30_000), [{ name : "INP", value : 300, attribution : {} }]);
+
+        expect(sink.spans.map(span => [span.attributes["lag.page_view.id"], span.endTime, span.attributes["lag.web_vital.inp"]])).toEqual([
+            ["v1", 1_030_000, undefined],
+            ["v2", 1_045_000, 120],
+        ]);
+        expect(spans.current()).toBeUndefined();
+    });
+
+    it("ignores the final report of a view when no view is open", () => {
+        const sink = createRecordingSpanSink();
+        const spans = createPageViewSpans(sink, clock);
+        spans.viewStarted(view("v1", 0));
+        spans.viewEnded(view("v1", 0), []);
+
+        expect(() => spans.viewEnded(view("v1", 0), [])).not.toThrow();
+        expect(sink.spans.map(span => span.endTime)).toEqual([1_060_000]);
     });
 
     it("uses Date.now() without a clock", () => {

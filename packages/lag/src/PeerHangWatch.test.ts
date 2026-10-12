@@ -343,6 +343,31 @@ describe("PeerHangWatch", () => {
         }
     });
 
+    it("puts nothing back when it stops during the take and the journal has no record", async () => {
+        const memory = createMemoryHangJournal();
+        let release : () => void = () => {};
+        const put = vi.fn(memory.put);
+        const journal : HangJournal = {
+            ...memory,
+            put,
+            take : (pageId, latestSeenAt) => new Promise(resolve => { release = () => resolve(memory.take(pageId, latestSeenAt)); }),
+        };
+        const a = open("a", { journal });
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+        a.watch.stop();
+        release();
+        await advance(10);
+
+        expect(put).not.toHaveBeenCalled();
+        expect(await memory.list()).toEqual([]);
+        expect(a.page.logs).toEqual([]);
+    });
+
     it("watches the others while hidden, but sends no heartbeat and holds no lock", async () => {
         const a = open("a", { visible : false });
         const b = open("b");
@@ -401,6 +426,36 @@ describe("PeerHangWatch", () => {
         await advance(3_000);
         expect(a.hangs).toEqual([]);
         expect(origin.waitingBy(a.page)).toEqual([]);
+    });
+
+    it("keeps all late heartbeats that the page sent before its lock came free with the earlier entry: a page that ends soon after a heartbeat did not hang", async () => {
+        origin.messageDelayMs = 2_000;
+        const a = open("a", { graceMs : 3_000, thresholdMs : 1_500 });
+        const b = open("b");
+        // a sees the first heartbeat of b at 2000 ms, and waits for the lock of b
+        await advance(2_100);
+        // b crashes at 2500 ms. Its heartbeats of 1000 ms and 2000 ms arrive after its lock came free.
+        await advance(400);
+        b.page.kill();
+        await advance(10_000);
+
+        expect(a.hangs).toEqual([]);
+    });
+
+    it("watches a page again when the page becomes visible again in the millisecond in which its lock came free", async () => {
+        const a = open("a");
+        const b = open("b");
+        await advance(1_500);
+        b.watch.hide();
+        b.watch.show();
+        // a gets the lock of b, and b gets its lock again and sends a heartbeat, all at the same time
+        await advance(0);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        await advance(2_000);
+
+        expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
     });
 
     it("does not use a lock that it got after the page became hidden again", async () => {
@@ -569,6 +624,48 @@ describe("PeerHangWatch", () => {
         ]);
     });
 
+    it("logs a failed lock request also without AbortController", async () => {
+        const page = origin.page();
+        const deps = page.deps();
+        delete deps.AbortController;
+        const watch = new PeerHangWatch({
+            ...deps,
+            locks : { request : () => Promise.reject(new Error("SecurityError")) },
+        }, { pageId : "f", visible : true, onAbandonedHang : () => {} });
+        await advance(10);
+        watch.stop();
+
+        expect(page.logs).toEqual(["debug: A Web Lock request failed."]);
+        expect(page.logAttributes).toEqual([{ error : expect.any(Error), name : "lag-page:f", type : "PeerHangWatch" }]);
+    });
+
+    it("clears no timer at the stop when all its timers fired", async () => {
+        const page = origin.page();
+        const deps = page.deps();
+        const cleared : number[] = [];
+        const hangs : HangRecord[] = [];
+        const a = new PeerHangWatch({
+            ...deps,
+            clearTimeoutFn : (handle) => {
+                cleared.push(handle);
+                deps.clearTimeoutFn(handle);
+            },
+        }, { pageId : "a", visible : true, onAbandonedHang : (hang) => hangs.push(hang) });
+        const b = open("b");
+        await advance(1_500);
+        b.page.hang();
+        await advance(8_000);
+        b.page.kill();
+        // The wait for the last messages of b, and then the claim, end
+        await advance(1_000 + PEER_CLAIM_HOLD_MS + 10);
+        expect(hangs.map(hang => hang.pageId)).toEqual(["b"]);
+        expect(origin.heldBy(page)).toEqual([peerLockName("a")]);
+        const clearedBefore = cleared.length;
+
+        a.stop();
+        expect(cleared.slice(clearedBefore)).toEqual([]);
+    });
+
     it("logs a message that the channel cannot send", async () => {
         const page = origin.page();
         const deps = page.deps();
@@ -709,6 +806,8 @@ describe("PeerHangWatch in the back/forward cache", () => {
         b.page.kill();
         await advance(2_000);
         expect(a.hangs.map(hang => hang.pageId)).toEqual(["b"]);
+        // After the resume, the page keeps its claims again
+        expect(origin.heldBy(a.page)).toContain("lag-page-claim:b");
     });
 
     it("opens no channel after a stop, and logs a channel that it cannot open", async () => {

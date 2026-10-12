@@ -104,6 +104,13 @@ describe('MacrotaskLag', () => {
             expect(driver.mockClearInterval).toHaveBeenCalledWith(123);
         });
 
+        it('clears the interval one time when it stops two times', () => {
+            const monitor = driver.createMonitor(MacrotaskLag);
+            monitor.stop();
+            monitor.stop();
+            expect(driver.mockClearInterval).toHaveBeenCalledTimes(1);
+        });
+
         it('drops a sample that was in flight when stop() was called', async () => {
             driver.mockPerformanceTimes(1000, 1010);
             const monitor = driver.createMonitor(MacrotaskLag);

@@ -66,6 +66,15 @@ describe("ClockReliabilityChecker", () => {
         expect(checker.getTimeOrigin()).toBe(1234567890);
     });
 
+    it("reads the clock not more than 100 001 times: a first tick after these reads is not measured", () => {
+        // The clock gives 0 for 100 001 reads, then 1
+        const clock = coarseClock(1, 100_001);
+        const checker = new ClockReliabilityChecker(clock);
+
+        expect(checker.getResolutionMs()).toBe(0);
+        expect(clock.calls).toBe(100_001);
+    });
+
     it("returns 0 and is not high-resolution for a clock that never advances", () => {
         const checker = new ClockReliabilityChecker({ now : () => 42, timeOrigin : 0 });
         expect(checker.getResolutionMs()).toBe(0);

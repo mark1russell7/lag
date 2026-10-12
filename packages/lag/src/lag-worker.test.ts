@@ -97,6 +97,23 @@ describe("lag-worker handler", () => {
         expect(w.postMessage).toHaveBeenCalledTimes(1);
     });
 
+    it("clears its timer one time when it stops two times, and clears nothing at a stop before the start", () => {
+        const cleared : number[] = [];
+        const handler = createWorkerHandler({
+            postMessage : vi.fn(),
+            setTimeoutFn : () => 7,
+            clearTimeoutFn : (handle) => { cleared.push(handle); },
+            clock : { now : () => 0 },
+        });
+
+        handler.handleMessage({ type : "stop" });
+        handler.handleMessage({ type : "start", intervalMs : 100 });
+        handler.handleMessage({ type : "stop" });
+        handler.handleMessage({ type : "stop" });
+
+        expect(cleared).toEqual([7]);
+    });
+
     it("restarting with a new interval replaces the old loop instead of adding one", () => {
         const w = createHandler();
         w.handler.handleMessage({ type : "start", intervalMs : 100 });
@@ -238,6 +255,19 @@ describe("lag-worker handler", () => {
             w.advance(100, 1_100);
 
             expect(w.messages("heartbeat")).toEqual([expect.objectContaining({ workerSelfLagMs : 1_000 })]);
+            expect(w.reportHang).not.toHaveBeenCalled();
+        });
+
+        it("does not blame the main thread for a heartbeat that waits when the worker itself was late by exactly the threshold", () => {
+            const w = createHandler();
+            w.handler.handleMessage({ type : "start", intervalMs : 100, hang : { thresholdMs : 1_000 } });
+            // The first heartbeat waits for its acknowledgement
+            w.advance(100);
+
+            // The next timer of the worker fires 1000 ms late
+            w.advance(100, 1_100);
+
+            expect(w.messages("heartbeat")).toEqual([expect.objectContaining({ workerSelfLagMs : 0 }), expect.objectContaining({ workerSelfLagMs : 1_000 })]);
             expect(w.reportHang).not.toHaveBeenCalled();
         });
 

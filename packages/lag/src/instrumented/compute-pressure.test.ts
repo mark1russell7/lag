@@ -17,8 +17,9 @@ function setup(options : { pressureSources? : PressureSource[]; pressureSampleIn
     }
     const meter = createRecordingMeter();
     const events = { emit : vi.fn() };
+    const logger = { log : vi.fn() };
     const handle = createInstrumentedComputePressure({
-        logger : { log : vi.fn() },
+        logger,
         clock : { now : () => 0 },
         meter : meter.meter,
         PressureObserver : FakePressureObserver as unknown as PressureObserverInit,
@@ -26,7 +27,7 @@ function setup(options : { pressureSources? : PressureSource[]; pressureSampleIn
         ...(withEvents ? { events } : {}),
         ...options,
     });
-    return { observed, meter, events, handle, emit : (records : PressureRecord[]) => callback?.(records) };
+    return { observed, meter, events, logger, handle, emit : (records : PressureRecord[]) => callback?.(records) };
 }
 
 describe("createInstrumentedComputePressure", () => {
@@ -39,6 +40,8 @@ describe("createInstrumentedComputePressure", () => {
         expect(t.observed).toEqual([{ source : "cpu", options : { sampleInterval : 1_000 } }]);
         expect(t.meter.records().get("lag_pressure_state_histogram")).toEqual([{ value : 2, attributes : { source : "cpu" } }]);
         expectCatalogInstruments(t.meter);
+        // A change of the state without an event sink is not an error
+        expect(t.logger.log).not.toHaveBeenCalled();
     });
 
     it("emits an event for each change of the state of a source, at the time of the record", () => {

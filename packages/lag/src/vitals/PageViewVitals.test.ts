@@ -586,6 +586,36 @@ describe("PageViewVitals", () => {
             expect(Object.keys(valuesOf(t.reports.at(-1))).sort()).toEqual(["FCP", "LCP", "TTFB"]);
         });
 
+        it("does nothing at a second call: no report, and no listener is removed again", () => {
+            const t = setup();
+            const remove = vi.spyOn(t.window, "removeEventListener");
+            t.vitals.stop();
+            t.vitals.stop();
+
+            // The keydown and the click listener, one time each
+            expect(remove).toHaveBeenCalledTimes(2);
+            expect(t.reports).toHaveLength(1);
+        });
+
+        it("ends the processing when the report function calls it at the final report of a view: the later entries of the delivery count nowhere, no listener gets a new view, and no report comes after it", () => {
+            const t = setup({ softNavigations : true });
+            const listener = vi.fn();
+            t.vitals.subscribe(listener);
+            t.report.mockImplementation((r : VitalsReport) => {
+                t.reports.push(r);
+                if (r.final) t.vitals.stop();
+            });
+            // One delivery: the soft navigation ends the load, and an interaction after it waits in its observer
+            t.observer.queue("event", eventEntry({ interactionId : 90, startTime : 3_500, duration : 300 }));
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9" }));
+            t.vitals.flush();
+            t.setVisibility("hidden", 8_000);
+
+            expect(t.reports).toEqual([expect.objectContaining({ final : true, view : expect.objectContaining({ id : "view-1" }) })]);
+            expect(listener).not.toHaveBeenCalled();
+            expect(t.vitals.getValues().map(v => v.name)).not.toContain("INP");
+        });
+
         it("makes no observer for an entry type that the browser does not have, and no warning", () => {
             const t = setup({ supported : ["event", "paint", "largest-contentful-paint"] });
             expect(t.observer.observedTypes()).toEqual(["event", "paint", "largest-contentful-paint"]);
@@ -621,6 +651,24 @@ describe("PageViewVitals", () => {
             expect(load).toMatch(/^lag-1700000000000-\d{13}$/);
             expect(restore).toMatch(/^lag-1700000000000-\d{13}$/);
             expect(restore).not.toBe(load);
+        });
+
+        it("keeps 13 random digits also for the smallest and the largest random value", () => {
+            vi.spyOn(Math, "random").mockReturnValueOnce(0).mockReturnValueOnce(1 - Number.EPSILON / 2);
+            const fake = createFakeLifecycle();
+            const vitals = new PageViewVitals(() => {}, {
+                logger : { log : vi.fn() },
+                clock : fake.clock,
+                PerformanceObserver : createFakePerformanceObserver(ALL_TYPES).PerformanceObserver,
+                lifecycle : fake.lifecycle,
+            });
+            const smallest = vitals.getView().id;
+            fake.pagehide(true);
+            fake.pageshow(true, 5_000);
+            const largest = vitals.getView().id;
+
+            expect(smallest).toBe("lag-1700000000000-1000000000000");
+            expect(largest).toBe("lag-1700000000000-9999999999998");
         });
     });
 
@@ -918,6 +966,19 @@ describe("PageViewVitals", () => {
 
             expect(valuesOf(t.reports.filter(r => r.view.id === "view-1").at(-1))).toMatchObject({ INP : 80 });
             expect(valuesOf(t.reports.filter(r => r.view.id === "view-2").at(-1))).toMatchObject({ INP : 300 });
+        });
+
+        it("gives a pending soft navigation from before a restore to the view that ends, and processes it one time", () => {
+            const t = setup({ softNavigations : true });
+            const listener = vi.fn();
+            t.vitals.subscribe(listener);
+            t.pagehide(true);
+            t.observer.queue("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9" }));
+            t.setNow(6_500);
+            t.pageshow(true, 5_000);
+
+            expect(listener.mock.calls.map(([view]) => view.navigationType)).toEqual(["soft-navigation", "back-forward-cache"]);
+            expect(t.vitals.getView()).toMatchObject({ id : "view-3", navigationType : "back-forward-cache", startTime : 5_000 });
         });
 
         it("gives a restored view the URL of the document at the restore, without the query string and the fragment", () => {

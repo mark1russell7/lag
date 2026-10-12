@@ -456,6 +456,19 @@ describe("createInstrumentedWorkerLag with the messages of a worker", () => {
         expect(t.logger.log).not.toHaveBeenCalled();
     });
 
+    it("takes no record from the journal when the monitor stops before the read of the journal ends", async () => {
+        const journal = createMemoryHangJournal();
+        await journal.put(record("closed-page", NOW - 60_000));
+        const take = vi.fn(journal.take);
+        const t = withWorker({ journal : { ...journal, take } });
+        t.handle.stop();
+        await vi.advanceTimersByTimeAsync(0);
+
+        // The other pages of the origin can report the hang
+        expect(take).not.toHaveBeenCalled();
+        expect((await journal.list()).map(r => r.pageId)).toEqual(["closed-page"]);
+    });
+
     it("puts a record back for the next page when the monitor stops while it takes the record", async () => {
         const journal = createMemoryHangJournal();
         await journal.put(record("closed-page", NOW - 60_000));
