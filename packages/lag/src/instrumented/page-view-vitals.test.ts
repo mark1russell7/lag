@@ -10,7 +10,7 @@ import {
     type FakePage,
 } from "../vitals/test-fakes.js";
 import { createRecordingMeter, createRecordingSpanSink, expectCatalogEvents, expectCatalogSpans } from "../test-utils.js";
-import { createPageViewSpans } from "./page-view-spans.js";
+import { createPageViewSpans, type PageViewSpans } from "./page-view-spans.js";
 import { createAbsoluteClock } from "../absolute-clock.js";
 import { METRICS } from "../metric-catalog.js";
 import type { PerformanceEntryLike } from "../perf-types.js";
@@ -28,6 +28,7 @@ function setup(options : {
     withoutEvents? : boolean;
     window? : boolean;
     spans? : boolean;
+    pageViewSpans? : PageViewSpans;
 } = {}) {
     const fake = createFakeLifecycle();
     const observer = createFakePerformanceObserver([...LOAD_TYPES, "soft-navigation", "interaction-contentful-paint"]);
@@ -35,9 +36,11 @@ function setup(options : {
     const events = { emit : vi.fn() };
     const spans = createRecordingSpanSink();
     const page = "page" in options ? options.page : createFakePage();
-    const pageViewSpans = options.spans ? createPageViewSpans(spans, createAbsoluteClock({ timeOrigin : 1_000_000, now : () => fake.clock.now() })) : undefined;
+    const pageViewSpans = options.pageViewSpans
+        ?? (options.spans ? createPageViewSpans(spans, createAbsoluteClock({ timeOrigin : 1_000_000, now : () => fake.clock.now() })) : undefined);
+    const logger = { log : vi.fn() };
     const handle = createInstrumentedPageViewVitals({
-        logger : { log : vi.fn() },
+        logger,
         clock : fake.clock,
         meter : recording.meter,
         PerformanceObserver : observer.PerformanceObserver,
@@ -50,7 +53,7 @@ function setup(options : {
         ...(options.window ? { window : fake.window } : {}),
         ...(pageViewSpans ? { pageViewSpans } : {}),
     }, fake.lifecycle);
-    return { fake, observer, recording, events, spans, vitals : handle.monitor!, handle };
+    return { fake, observer, recording, events, spans, logger, vitals : handle.monitor!, handle };
 }
 
 /** The attributes of the `browser.web_vital` events of one vital, in the sequence of the events. */
@@ -164,6 +167,19 @@ describe("createInstrumentedPageViewVitals", () => {
         expect(t.events.emit).not.toHaveBeenCalled();
     });
 
+    it("operates without page-view spans: a hidden page and the final report give no error", () => {
+        for (const withoutEvents of [false, true]) {
+            const t = setup({ withoutEvents });
+            t.observer.deliver("paint", paintEntry(500));
+            t.fake.setVisibility("hidden");
+            t.fake.pagehide(false);
+
+            expect(t.recording.values("lag_web_vital_fcp_histogram")).toEqual([500]);
+            expect(t.logger.log).not.toHaveBeenCalled();
+            expect(t.fake.logger.log).not.toHaveBeenCalled();
+        }
+    });
+
     it("counts the interactions of the page with performance.interactionCount", () => {
         const t = setup({ performance : { timeOrigin : 0, now : () => 0, interactionCount : 120 } });
         t.observer.deliver("event",
@@ -215,6 +231,14 @@ describe("createInstrumentedPageViewVitals", () => {
         t.fake.pagehide(true);
         t.fake.pageshow(true, 20_000);
         expect(t.events.emit.mock.calls.filter(([name]) => name === "lag.page_view.start")).toHaveLength(2);
+    });
+
+    it("sends a lag.page_view.start event without a URL attribute for a view without a URL", () => {
+        const t = setup({ page : undefined });
+
+        const [start] = t.events.emit.mock.calls.filter(([name]) => name === "lag.page_view.start");
+        expect(start![1]).toEqual({ navigation_type : "navigate", "lag.page_view.id" : t.vitals.getView().id });
+        expect(Object.keys(start![1] as object)).not.toContain("lag.page_view.url");
     });
 
     it("sends each vital at the time of its occurrence, not at the time of the report", () => {
@@ -336,5 +360,40 @@ describe("createInstrumentedPageViewVitals with page-view spans", () => {
         t.fake.pagehide(true);
         t.fake.pageshow(true, 20_000);
         expect(t.spans.spans.map(span => span.endTime)).toEqual([1_005_000, 1_012_000]);
+    });
+
+    it("starts the span of each view without an event sink", () => {
+        const t = setup({ spans : true, withoutEvents : true });
+        const load = t.vitals.getView();
+        t.fake.setNow(5_000);
+        t.fake.pagehide(true);
+        t.fake.setNow(10_000);
+        t.fake.pageshow(true, 10_000);
+
+        expect(t.spans.spans.map(span => span.attributes["lag.page_view.id"])).toEqual([load.id, t.vitals.getView().id]);
+        expect(t.logger.log).not.toHaveBeenCalled();
+    });
+
+    it("sends no span identity in the lag.page_view.start events when the span of the view is not sampled", () => {
+        const unsampled = { traceId : "a".repeat(32), spanId : "b".repeat(16), sampled : false };
+        const t = setup({ pageViewSpans : { viewStarted : vi.fn(), viewHidden : vi.fn(), viewEnded : vi.fn(), current : () => unsampled } });
+        t.fake.pagehide(true);
+        t.fake.pageshow(true, 10_000);
+
+        const starts = t.events.emit.mock.calls.filter(([name]) => name === "lag.page_view.start").map(([, attributes]) => Object.keys(attributes as object));
+        expect(starts).toHaveLength(2);
+        for (const keys of starts) expect(keys).not.toContain("lag.page_view.trace_id");
+    });
+
+    it("gives the page-view spans no hidden page after stop()", () => {
+        const pageViewSpans = { viewStarted : vi.fn(), viewHidden : vi.fn(), viewEnded : vi.fn(), current : () => undefined };
+        const t = setup({ pageViewSpans });
+        t.fake.setVisibility("hidden");
+        t.fake.setVisibility("visible");
+        expect(pageViewSpans.viewHidden).toHaveBeenCalledTimes(1);
+
+        t.handle.stop();
+        t.fake.setVisibility("hidden");
+        expect(pageViewSpans.viewHidden).toHaveBeenCalledTimes(1);
     });
 });
