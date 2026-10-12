@@ -240,12 +240,14 @@ A soak test of 10 minutes kept the heap after garbage collection at 9.50 MB to 9
 
 ### The quality of the tests
 
-| Measurement | First measurement | After the new tests |
-|---|---|---|
-| Unit tests of `@mark1russell7/lag` | 458 | 895 |
-| Statement coverage of `@mark1russell7/lag` | 96.1% | 99.3% |
-| Branch coverage of `@mark1russell7/lag` | 89.0% | 98.2% |
-| Mutation score of `@mark1russell7/lag` | 77.8% of 4095 mutants | 96.9% of 4690 mutants |
+| Measurement | First measurement | After the new tests (8 October 2026) | 9 October 2026 |
+|---|---|---|---|
+| Unit tests of `@mark1russell7/lag` | 458 | 895 | 999 |
+| Statement coverage of `@mark1russell7/lag` | 96.1% | 99.3% | 99.3% |
+| Branch coverage of `@mark1russell7/lag` | 89.0% | 98.2% | 98.2% |
+| Mutation score of `@mark1russell7/lag` | 77.8% of 4095 mutants | 96.9% of 4690 mutants | 95.9% of 5166 mutants |
+
+The last column is from commit `31e4ef4`. The unit tests and the coverage are from the CI workflow, and the mutation score is from the mutation workflow. Between the two last columns, the package got spans, the lifecycle tracker of `page-lifecycle-tracker` and the worker as a subpath. The new code added 476 mutants. 205 mutants survive, and 5 have no test. The mutation score is thus 1 point lower than on 8 October.
 
 The export works from end to end. On 8 October 2026, the E2E tests (20 tests) found the metrics of the test pages in Mimir, as native histograms. The pipeline check of grafana-infra passed 297 of 297 checks with its sample data.
 
