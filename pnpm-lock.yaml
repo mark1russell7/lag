@@ -100,7 +100,7 @@ importers:
     devDependencies:
       '@mark1russell7/grafana-infra':
         specifier: github:mark1russell7/grafana-infra
-        version: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b7b253111dde889de8a7085929e87745b1942a93
+        version: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/1caf0205edc94252098bd572818e0c622322ee3f
       '@types/node':
         specifier: ^25.3.0
         version: 25.3.0
@@ -914,8 +914,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b7b253111dde889de8a7085929e87745b1942a93':
-    resolution: {tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b7b253111dde889de8a7085929e87745b1942a93}
+  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/1caf0205edc94252098bd572818e0c622322ee3f':
+    resolution: {tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/1caf0205edc94252098bd572818e0c622322ee3f}
     version: 0.0.0
 
   '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8':
@@ -4444,7 +4444,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b7b253111dde889de8a7085929e87745b1942a93': {}
+  '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/1caf0205edc94252098bd572818e0c622322ee3f': {}
 
   '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.1)':
     dependencies:
