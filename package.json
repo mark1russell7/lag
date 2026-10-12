@@ -6,7 +6,7 @@
     "new": "tsx packages/scripts/src/new-package.ts",
     "build": "tsc -b",
     "typecheck": "tsc -b && pnpm -r --if-present typecheck",
-    "test": "pnpm --filter @mark1russell7/lag --filter @lag/load --filter @lag/report --filter @lag/scripts test",
+    "test": "pnpm --filter @mark1russell7/lag --filter @lag/load --filter @lag/report --filter @lag/scripts --filter @lag/experiments test",
     "test:browser": "pnpm --filter @lag/integration-tests test:browser",
     "test:chromium": "pnpm --filter @lag/integration-tests test:chromium",
     "test:integration": "pnpm --filter @lag/integration-tests test",
@@ -16,6 +16,7 @@
     "coverage": "pnpm --filter @mark1russell7/lag coverage",
     "mutation": "pnpm --filter @mark1russell7/lag mutation",
     "results": "tsc -b && tsx packages/scripts/src/results/collect.ts",
+    "experiment:e8": "tsc -b && pnpm --filter @lag/experiments e8",
     "lint:ste": "ste-lint",
     "readme:metrics": "tsx packages/scripts/src/readme-metrics.ts",
     "readme:metrics:check": "tsx packages/scripts/src/readme-metrics.ts --check"
