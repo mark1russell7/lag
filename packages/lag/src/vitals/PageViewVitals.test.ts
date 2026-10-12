@@ -569,6 +569,30 @@ describe("PageViewVitals", () => {
             expect(t.reports).toHaveLength(1);
         });
 
+        it("removes its lifecycle subscription, thus a stopped instance keeps no reference in the lifecycle", () => {
+            const fake = createFakeLifecycle();
+            const subscribe = fake.lifecycle.subscribe.bind(fake.lifecycle);
+            const unsubscribed = vi.fn();
+            vi.spyOn(fake.lifecycle, "subscribe").mockImplementation((listener, options) => {
+                const off = subscribe(listener, options);
+                return () => {
+                    unsubscribed();
+                    off();
+                };
+            });
+            const vitals = new PageViewVitals(() => {}, {
+                logger : { log : vi.fn() },
+                clock : fake.clock,
+                PerformanceObserver : createFakePerformanceObserver(ALL_TYPES).PerformanceObserver,
+                lifecycle : fake.lifecycle,
+            });
+            expect(unsubscribed).not.toHaveBeenCalled();
+
+            vitals.stop();
+
+            expect(unsubscribed).toHaveBeenCalledOnce();
+        });
+
         it("gives no value for a vital whose entry type the browser does not have, as web-vitals", () => {
             // Firefox has no layout-shift entries. Safari before 26.2 also has no event entries.
             const t = setup({ supported : ["paint", "largest-contentful-paint"] });
