@@ -121,6 +121,46 @@ describe("FrameTimingMonitor", () => {
         expect(cancelSpy).toHaveBeenCalled();
     });
 
+    it("cancels the frame one time when it stops two times", () => {
+        const { monitor, cancelSpy } = createDriver();
+        monitor.stop();
+        monitor.stop();
+        expect(cancelSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("start() while the monitor operates requests no second frame", () => {
+        const { monitor, rAFSpy } = createDriver();
+        monitor.start();
+        expect(rAFSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("ignores a callback of the chain before stop() and start(), also when the cancel did not remove it", () => {
+        const reports : FrameMeasurement[] = [];
+        // A shim of requestAnimationFrame that cannot cancel a callback
+        const requested : Array<(time : number) => void> = [];
+        const monitor = new FrameTimingMonitor(
+            (m) => reports.push(m),
+            { log : vi.fn() },
+            (cb) => requested.push(cb),
+            vi.fn(),
+            { now : () => 0 },
+        );
+
+        requested[0]!(0);
+        requested[1]!(16);
+        monitor.stop();
+        requested[2]!(32);
+        monitor.start();
+        requested[2]!(40);
+        // The first frame after the restart only sets the baseline
+        requested[3]!(48);
+        requested[4]!(64);
+
+        expect(reports.map(r => r.frameDeltaMs)).toEqual([16, 16]);
+        // One chain: each callback of the chain requested the next one
+        expect(requested).toHaveLength(6);
+    });
+
     it("respects custom target FPS", () => {
         const reports : FrameMeasurement[] = [];
         const rAFSpy = vi.fn();
