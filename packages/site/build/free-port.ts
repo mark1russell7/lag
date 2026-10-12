@@ -47,9 +47,9 @@ function tryListen(port : number, host : string) : Promise<number | undefined> {
 }
 
 /**
- * This function gives a function that gives a free port at each call: a port
- * that no program uses on a loopback address or a wildcard address, and that
- * an earlier call did not give. The operating system selects the ports, thus
+ * This function gives a function that gives a free port at each call. No
+ * program uses the port on a loopback address or a wildcard address, and an
+ * earlier call did not give it. The operating system selects the ports, thus
  * two test processes that start at the same time get different ports. Vitest
  * binds each port with `strictPort`. If a different program takes the port
  * first, the run stops with an error. It does not continue on a shared port.
