@@ -188,6 +188,46 @@ describe("createIndexedDbHangJournal", () => {
         await expect(journal.list()).rejects.toThrow("blocked");
         expect(attempts).toBe(2);
     });
+
+    /** A database that opens, but fails each request of the store and then aborts the transaction, as a full disk does. */
+    function createFailingStoreFactory(error : Error) {
+        const transaction = {
+            error,
+            oncomplete : null,
+            onabort : null as (() => void) | null,
+            objectStore : () => ({ put : failed, get : failed, delete : failed, getAll : failed }),
+        };
+        function failed() {
+            const request = { result : undefined, error, onsuccess : null, onerror : null as (() => void) | null };
+            queueMicrotask(() => {
+                request.onerror?.();
+                transaction.onabort?.();
+            });
+            return request;
+        }
+        const database = { objectStoreNames : { contains : () => true }, createObjectStore() {}, transaction : () => transaction, close() {}, onversionchange : null, onclose : null };
+        return {
+            open() {
+                const request = { result : database, onsuccess : null as (() => void) | null, onerror : null, onupgradeneeded : null };
+                queueMicrotask(() => request.onsuccess?.());
+                return request;
+            },
+        };
+    }
+
+    it("rejects an operation whose request fails", async () => {
+        const journal = createIndexedDbHangJournal(createFailingStoreFactory(new Error("QuotaExceededError")) as never);
+
+        await expect(journal.put(record("a", 1))).rejects.toThrow("QuotaExceededError");
+        await expect(journal.remove("a")).rejects.toThrow("QuotaExceededError");
+        await expect(journal.list()).rejects.toThrow("QuotaExceededError");
+    });
+
+    it("rejects a take whose transaction aborts", async () => {
+        const journal = createIndexedDbHangJournal(createFailingStoreFactory(new Error("AbortError")) as never);
+
+        await expect(journal.take("a", 5_000)).rejects.toThrow("AbortError");
+    });
 });
 
 describe("findAbandonedHangs", () => {
@@ -228,6 +268,34 @@ describe("createStorageHangReportMarks", () => {
 
         marks.prune(5_000, new Set(["old-with-record"]));
         expect(storage.keys()).toEqual(["other-key", "lag-hang-reported:old-with-record", "lag-hang-reported:at-the-limit", "lag-hang-reported:recent"]);
+    });
+
+    it("removes each stale mark one time, and no other key", () => {
+        const storage = new MemoryStorage();
+        const marks = createStorageHangReportMarks(storage);
+        marks.add("old", 1_000);
+        marks.add("recent", 9_000);
+        const removed : string[] = [];
+        const removeItem = storage.removeItem.bind(storage);
+        storage.removeItem = (key) => {
+            removed.push(key);
+            removeItem(key);
+        };
+
+        marks.prune(5_000, new Set());
+        expect(removed).toEqual(["lag-hang-reported:old"]);
+    });
+
+    it("skips an index whose key is gone, for example because another page removed it, and removes the other stale marks", () => {
+        const storage = new MemoryStorage();
+        const marks = createStorageHangReportMarks(storage);
+        marks.add("gone", 1_000);
+        marks.add("old", 1_000);
+        const key = storage.key.bind(storage);
+        storage.key = (index) => index === 0 ? null : key(index);
+
+        marks.prune(5_000, new Set());
+        expect(storage.keys()).toEqual(["lag-hang-reported:gone"]);
     });
 
     it("does nothing when the storage refuses an operation", () => {
