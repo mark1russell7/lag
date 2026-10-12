@@ -8,8 +8,9 @@ function setup(withClock = true) {
     const fake = createFakeLifecycle();
     const meter = createRecordingMeter();
     const events = { emit : vi.fn() };
+    const logger = { log : vi.fn() };
     const handle = createInstrumentedLifecycle({
-        logger : { log : vi.fn() },
+        logger,
         clock : fake.clock,
         meter : meter.meter,
         document : fake.document,
@@ -17,7 +18,7 @@ function setup(withClock = true) {
         events,
         ...(withClock ? { performance : { timeOrigin : 1_700_000_000_000, now : () => fake.clock.now() } } : {}),
     });
-    return { fake, meter, events, handle };
+    return { fake, meter, events, logger, handle };
 }
 
 describe("createInstrumentedLifecycle", () => {
@@ -51,6 +52,17 @@ describe("createInstrumentedLifecycle", () => {
         t.handle.stop();
         t.fake.setVisibility("visible");
         expect(t.events.emit).toHaveBeenCalledTimes(1);
+    });
+
+    it("records no period span and logs no error without a span sink", () => {
+        const t = setup();
+        t.fake.setVisibility("hidden");
+        t.fake.pagehide(true);
+        t.fake.pageshow(true);
+
+        expect(t.events.emit).toHaveBeenCalledTimes(3);
+        expect(t.logger.log).not.toHaveBeenCalled();
+        t.handle.stop();
     });
 });
 
