@@ -59,7 +59,7 @@ const unsubscribe = monitors.vitals?.subscribe((next) => console.log(next.id, ne
 
 `setupAllMonitors()` wraps the event sink with `withEventContext()`. The wrapper adds the attribute `lag.page_view.id` to each event, with the ID of the current page view. It reads the ID again for each event, thus an event after a restore gets the ID of the new page view. An attribute of the event itself replaces the attribute of the context with the same name. The wrapper operates only when the page-view vitals operate, thus only where the browser has `PerformanceObserver`.
 
-These events get the ID in this way: `lag.stall`, `lag.long_animation_frame`, `lag.clock.jump`, `lag.browser_report` and `lag.main_thread.hang`. The `browser.web_vital` event sets `lag.page_view.id` itself, to the page view that the value belongs to. It also has `lag.page_view.url`. A `lag.main_thread.hang` event with the phase `abandoned` has the ID of the page view that hung, from the hang journal.
+These events get the ID in this way: `lag.stall`, `lag.long_animation_frame`, `lag.clock.jump`, `lag.browser_report` and `lag.main_thread.hang`. The event `lag.long_callback` of the add-on gets it too, through `monitors.add()`. The `browser.web_vital` event sets `lag.page_view.id` itself, to the page view that the value belongs to. It also has `lag.page_view.url`. A `lag.main_thread.hang` event with the phase `abandoned` has the ID of the page view that hung, from the hang journal.
 
 The ID is not a metric attribute. Each page view has its own ID, thus the ID has too many values for a metric series. Refer to [metrics model](/docs/concepts/metrics-model).
 

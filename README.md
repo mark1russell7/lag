@@ -116,6 +116,7 @@ All durations are in milliseconds. All metrics are counters or histograms. The a
 | ClockDriftMonitor | `lag_clock_jumps` | counter | `{jump}` | `direction`, `kind` | The number of discontinuities between the wall clock and the monotonic clock: a suspend (the monotonic clock stopped while the device slept) or a step of the system clock. |
 | BrowserReportMonitor | `lag_browser_reports` | counter | `{report}` | `type` | The number of reports from the Reporting API, for example interventions and deprecations. |
 | SharedLivenessMonitor | `lag_liveness_block_histogram` | histogram | `ms` |  | The duration of each main-thread block that a worker saw through shared memory. |
+| LongCallbackMonitor | `lag_long_callback_duration_histogram` | histogram | `ms` | `source_kind` | The duration of each long callback that the callback hook of async-browser-context measured (50 ms or more by default): a timer, a promise reaction, an event listener, an observer, a stream method, a lock callback, an animation frame callback or the step of an async function after an await. A callback that a long callback starts synchronously is in both durations. Only with the add-on @mark1russell7/lag/async-context. |
 <!-- metrics:end -->
 
 ## Design rules

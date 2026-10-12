@@ -46,6 +46,8 @@ export const clockMetrics : readonly MetricRow[] = rowsOf("ClockReliabilityCheck
 export const clockResolutionMetrics : readonly MetricRow[] = rowsOf("ClockReliabilityChecker");
 export const clockDriftMetrics : readonly MetricRow[] = rowsOf("ClockDriftMonitor");
 export const browserReportMetrics : readonly MetricRow[] = rowsOf("BrowserReportMonitor");
+/** The add-on `@mark1russell7/lag/async-context`. */
+export const longCallbackMetrics : readonly MetricRow[] = rowsOf("LongCallbackMonitor");
 
 /** Every metric of the catalog. */
 export const allMetrics : readonly MetricRow[] = METRIC_CATALOG.map(toRow);

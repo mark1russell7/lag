@@ -323,7 +323,13 @@ export type {
 } from "./worker-protocol.js";
 
 // --- Setup and the browser adapter ---
-export { setupAllMonitors, type AllMonitorDeps, type AllMonitorHandles } from "./setup-all-monitors.js";
+export {
+    setupAllMonitors,
+    type AllMonitorDeps,
+    type AllMonitorHandles,
+    type MonitorFactory,
+    type SetupDeps,
+} from "./setup-all-monitors.js";
 export { createBrowserDeps, type BrowserGlobals, type BrowserDepsOptions } from "./browser/browser-deps.js";
 export { createPageSource, type PageDocument, type PagePerformance } from "./browser/page-source.js";
 export { createIndexedDbHangJournal, type IdbFactoryLike } from "./browser/indexeddb-journal.js";

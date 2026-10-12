@@ -269,6 +269,8 @@ const NOT_IN_NORMAL_ACTIVITY = new Set([
     // Fake time does not advance in the checker's tight loop; ClockReliabilityChecker tests cover it
     METRICS.clockResolution.name,
     METRICS.livenessBlock.name,
+    // The add-on @mark1russell7/lag/async-context: the app adds it (async-context/long-callbacks.test.ts)
+    METRICS.longCallbackDuration.name,
 ]);
 
 describe("setupAllMonitors", () => {
