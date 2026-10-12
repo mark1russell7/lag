@@ -136,6 +136,28 @@ describe("WorkerClockSync", () => {
             expect(s.sync.getResult()).toEqual({ offsetMs : 30, roundTripMs : 0.5 });
         });
 
+        it("takes the first of the exchanges with the shortest round trip", () => {
+            const s = createSync(2);
+            s.sync.begin();
+            // Two exchanges with the same round trip: the worker clock reads 20 ms ahead, and then 30 ms ahead
+            for (const offsetMs of [20, 30]) {
+                const id = s.sent.at(-1)!;
+                s.sync.onReply(id, 1_000 + offsetMs);
+            }
+
+            expect(s.results).toHaveBeenCalledWith({ offsetMs : 20, roundTripMs : 0 });
+        });
+
+        it("keeps its result when a later synchronization has the same round trip, thus the correction changes only for a more accurate estimate", () => {
+            const s = createSync();
+            s.exchange(5, 12);
+            s.exchange(5, 20);
+
+            expect(s.results.mock.calls.map(c => c[0].offsetMs)).toEqual([12, 20]);
+            expect(s.sync.getResult()).toEqual({ offsetMs : 12, roundTripMs : 10 });
+            expect(s.sync.getCorrectionMs()).toBe(12);
+        });
+
         it("corrects by an offset that is larger than half the round trip plus 1 ms, but not by an offset of that size", () => {
             const larger = createSync();
             larger.exchange(5, 12);
