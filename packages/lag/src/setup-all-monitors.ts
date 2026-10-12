@@ -39,6 +39,7 @@ import { withEventContext, type EventAttributes, type EventSink } from "./events
 import { createAbsoluteClock } from "./absolute-clock.js";
 import { LIVENESS_BUFFER_BYTES, beatingSetTimeout, createLivenessBeacon } from "./shared-liveness.js";
 import { MonitorRegistry } from "./monitor-registry.js";
+import type { MonitorHandle } from "./monitor-handle.js";
 import { createMeasurementConditions, type MeasurementConditions, type StallKind } from "./measurement-conditions.js";
 import { EVENTS, METRICS, SPANS, createCounter, createHistogram } from "./metric-catalog.js";
 import { occurredAtClockTime, recordSpan } from "./instrumented/shared.js";
@@ -124,6 +125,21 @@ export type AllMonitorDeps =
     & Partial<Pick<SpanDeps, "spans">>;
 
 /**
+ * The dependencies that `setupAllMonitors` gives to its monitors. They are
+ * the dependencies of the app and the parts that the setup makes. These parts
+ * are the event sink with the page-view ID, the absolute clock, the page-view
+ * spans and the page ID.
+ */
+export type SetupDeps = AllMonitorDeps & Partial<SpanDeps>;
+
+/**
+ * A function that makes a monitor from the dependencies of the setup, for
+ * `AllMonitorHandles.add()`. An instrumented factory of the package fits, for
+ * example `(deps) => createInstrumentedLongCallbacks({ ...deps, addCallbackHook })`.
+ */
+export type MonitorFactory<T> = (deps : SetupDeps) => MonitorHandle<T>;
+
+/**
  * The handles that `setupAllMonitors` gives.
  *
  * The `registry` is the source of truth. The typed getters let a consumer
@@ -153,6 +169,15 @@ export type AllMonitorHandles = {
      * final export too.
      */
     flush(event? : unknown) : void;
+
+    /**
+     * This method makes a monitor with `factory` and the dependencies of the
+     * setup, and adds its handle to the registry. Thus `stop()` stops it with
+     * the other monitors. Use it for a monitor that is not in the setup, for
+     * example the long callbacks of `@mark1russell7/lag/async-context`
+     * (`setupLongCallbacks`). The method gives the handle.
+     */
+    add<T>(factory : MonitorFactory<T>) : MonitorHandle<T>;
 
     // Typed accessors — each is lazy via getter so they stay in sync with the registry
     readonly conditions : MeasurementConditions | undefined;
@@ -234,7 +259,7 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
         : undefined;
     // With a span sink: one trace for each page view. The other spans are in the span of their view.
     const pageViewSpans = rootDeps.spans ? createPageViewSpans(rootDeps.spans, absoluteClock) : undefined;
-    const deps : AllMonitorDeps & Partial<SpanDeps> = {
+    const deps : SetupDeps = {
         ...rootDeps,
         // One ID for the page instance: the hang journal of the worker and the peer hang watch use it
         pageId : rootDeps.pageId ?? createRandomId(),
@@ -399,6 +424,7 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
             if (event !== undefined) lifecycle?.handle(event);
             monitorOf<PageViewVitals>(registry, "page-view-vitals")?.flush();
         },
+        add : (factory) => registry.add(factory(deps)),
 
         get conditions() { return monitorOf<MeasurementConditions>(registry, "measurement-conditions"); },
         get vitals() { return monitorOf<PageViewVitals>(registry, "page-view-vitals"); },
