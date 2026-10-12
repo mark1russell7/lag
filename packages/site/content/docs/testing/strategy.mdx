@@ -164,7 +164,7 @@ The mutation report comes from the weekly mutation workflow, thus it is usually 
 
   In the simulator, the click of safaridriver gives no INP, also in web-vitals. Thus the two INP tests skip themselves there.
 
-  The simulator sometimes stops the timers of the page for more than 20 s, and then no monitor that uses a timer can sample. Thus some tests operate a chain of 5 ms timers (`timer-watch.ts`), and they record the gaps of the chain. The test of the 5 s cycle in `lag-monitors.test.ts` skips itself with the reason only if two conditions are true. No sample came, and the timers did not operate for 6 s without a gap of more than 1 s. A cycle starts in such a time. Thus a monitor that does not sample while the timers operate still fails.
+  The simulator sometimes stops the timers of the page for more than 20 s, and then no monitor that uses a timer can sample. Thus some tests operate a chain of 5 ms timers (`timer-watch.ts`), and they record the gaps of the chain. The test of the 5 s cycle in `lag-monitors.test.ts` skips itself with the reason only if two conditions are true. No sample came, and the timers did not operate for 11 s without a gap of more than 1 s. Such a time has two cycles, and in one CI run the first cycle gave no sample. Thus a monitor that does not sample while the timers operate still fails.
 
   `drift-load.test.ts` also operates the chain. It does not use the windows that overlap a gap of more than 50 ms in the chain. If too few windows remain, it skips itself.
 

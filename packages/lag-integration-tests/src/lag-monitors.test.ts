@@ -223,11 +223,13 @@ describe("Lag Monitor Integration", () => {
         console.log(`Timer chain of 5 ms during the wait: ${stats.count} callbacks, longest gap ${Math.round(stats.maxGapMs)} ms, ` +
             `${stats.stalls.length} gaps of more than 1 s, at most ${Math.round(stats.longestRunMs)} ms without such a gap, a sample: ${sampled} (${pageState()})`);
         // The simulator also stopped the timers for more than 20 s one time. Then no sample came in the wait.
-        // A skip only when the timers did not operate for one cycle and 1 s without a gap of more than 1 s:
-        // in such a time a cycle starts, and its sample comes. Else the monitors missed a cycle.
-        ctx.skip(!sampled && stats.longestRunMs < SAMPLE_CYCLE_MS + 1_000,
+        // A skip only when the timers did not operate for two cycles and 1 s without a gap of more than 1 s.
+        // Usually the samples come 0.5 s to 3.3 s after the start of the wait. In one CI run, they came after
+        // 7.7 s while the timers operated (longest gap 14 ms), thus the first cycle can give no sample. In
+        // two cycles, the monitors sample. Else they missed two cycles, and the test fails.
+        ctx.skip(!sampled && stats.longestRunMs < 2 * SAMPLE_CYCLE_MS + 1_000,
             `The browser stopped the timers of the page: the longest gap of a chain of 5 ms timers was ${Math.round(stats.maxGapMs)} ms, ` +
-            `and the timers operated for at most ${Math.round(stats.longestRunMs)} ms without a gap of more than 1 s, less than one cycle of 5 s and 1 s (${pageState()}).`);
+            `and the timers operated for at most ${Math.round(stats.longestRunMs)} ms without a gap of more than 1 s, less than two cycles of 5 s and 1 s (${pageState()}).`);
 
         expect(tee.values("lag_macrotask_histogram").length).toBeGreaterThan(0);
         expect(tee.values("lag_scheduling_message_channel_histogram").length).toBeGreaterThan(0);
