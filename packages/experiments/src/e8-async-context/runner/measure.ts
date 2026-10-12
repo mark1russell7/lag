@@ -6,8 +6,8 @@
  * The phases, in this order:
  *
  * 1. The setup alone: a window without the monitors (Chromium: CDP).
- * 2. The setup with `setupAllMonitors` and the worker of lag, after a time
- *    to settle: a window for the CPU (Chromium: CDP) and the idle values of
+ * 2. The setup with `setupAllMonitors` and the worker of lag. After a time
+ *    to settle, a window for the CPU (Chromium: CDP) and the idle values of
  *    DriftLag.
  * 3. MacrotaskLag and SchedulingFairnessMonitor with a short interval.
  * 4. Scripted clicks with a fixed handler, and tasks of a fixed duration.

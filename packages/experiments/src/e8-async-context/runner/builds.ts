@@ -2,10 +2,10 @@
  * The Vite builds of the page. All setups build the same page source. Only
  * three parts change:
  *
- * - the module of `#e8-setup`, which selects the context manager;
- * - in setups A and C, `@opentelemetry/context-zone` becomes a module
- *   without zone.js;
- * - in setup C, the Vite plugin of async-browser-context transforms each
+ * - The module of `#e8-setup` selects the context manager.
+ * - In setups A and C, `@opentelemetry/context-zone` becomes a module
+ *   without zone.js.
+ * - In setup C, the Vite plugin of async-browser-context transforms each
  *   module, also the dependencies.
  *
  * The runner measures builds without minification, so that the long
