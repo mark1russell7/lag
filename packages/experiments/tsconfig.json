@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../../ts/config/vite.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/*/page/**/*", "src/*/shared/**/*"],
+  "references": [
+    {
+      "path": "../lag"
+    },
+    {
+      "path": "../lag/tsconfig.worker.json"
+    },
+    {
+      "path": "../load"
+    }
+  ]
+}
