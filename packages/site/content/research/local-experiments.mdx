@@ -366,7 +366,7 @@ The Long Animation Frames entries of the 150 ms task changed in one way: the nam
 
 Three results were not expected. In setup C, the promise chain was faster than in setup A: 0.57 times the time. The experiment did not find the cause. In setups B and D, the `queueMicrotask` workload was also faster: 0.71 times the time. The probable cause: the zone.js library keeps its own queue of microtasks, and it starts many of them in one native microtask.
 
-Also, in setup C, a listener of an event that code dispatched outside the span got the span of the `addEventListener()` call. The README of the library gives the context of the code that dispatches the event (rule C13). In this case, that code had no context.
+In setup C, a listener of an event that code dispatched in the root context got the span of the `addEventListener()` call. The library documents this case (rule C13). A listener gets the context of the dispatch, but for a dispatch in the root context it gets the context of the registration. Code that must give no span dispatches the event in `context.with(ROOT_CONTEXT, …)`.
 
 **Recommendation.** The data of Chromium supports async-browser-context as an optional add-on of lag, not as a default:
 

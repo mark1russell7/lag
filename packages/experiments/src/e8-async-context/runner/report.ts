@@ -17,7 +17,7 @@ export const CASE_LABELS : Readonly<Record<CorrectnessCase, string>> = {
     "await" : "After `await`",
     "set-timeout" : "`setTimeout` callback",
     "listener-browser-dispatch" : "Event listener, the browser dispatches the event (`message`)",
-    "listener-code-dispatch" : "Event listener, code outside the span dispatches the event",
+    "listener-code-dispatch" : "Event listener, a dispatch in the root context (C13: the context of the registration)",
     "fetch-then" : "`fetch().then()` callback",
     "await-fetch" : "After `await fetch()`",
     "no-leak" : "No active span after the cases (control)",
