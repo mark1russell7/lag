@@ -406,6 +406,8 @@ export class PageViewVitals {
         const pending = this.draining ? [] : this.takePending();
         this.dispatch(pending.filter(item => item.entry.startTime < startTime));
         this.checkpoint(true);
+        // The report function can stop the instance at the final report. Then no new view starts.
+        if (this.stopped) return;
         this.ended = false;
         const url = extra.url ?? this.collector.view.url;
         this.collector = new ViewCollector({
