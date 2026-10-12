@@ -102,64 +102,80 @@ const E8_COMPARED : ReadonlyArray<{ setup : E8Setup; label : string }> = [
     { setup : "D", label : "D. stack, zone.js loaded" },
 ];
 
+const E8_ENGINES : ReadonlyArray<{ engine : E8Engine; label : string }> = [
+    { engine : "chromium", label : "Chromium" },
+    { engine : "firefox", label : "Firefox" },
+    { engine : "webkit", label : "WebKit" },
+];
+
 export type E8FactorRow = {
+    engine : string;
     workload : string;
     setup : string;
-    /** The main-thread time of the workload divided by that of setup A in the same round: the median of the rounds. */
+    /** The total time of the workload divided by that of setup A in the same round: the median of the rounds. */
     median : number;
     min : number;
     max : number;
 };
 
-export const e8MainThreadFactors : readonly E8FactorRow[] = E8_COMPARED.flatMap(({ setup, label }) =>
-    E8_WORKLOADS.flatMap((workload) => {
-        const factor = e8.chromium?.[setup]?.factorsVsA[`workload.${workload}.taskMs`];
-        return factor && factor.n > 0 ? [{ workload, setup : label, median : factor.median, min : factor.min, max : factor.max }] : [];
-    }));
+export const e8WorkloadFactors : readonly E8FactorRow[] = E8_ENGINES.flatMap(({ engine, label : engineLabel }) =>
+    E8_COMPARED.flatMap(({ setup, label }) =>
+        E8_WORKLOADS.flatMap((workload) => {
+            const factor = e8[engine]?.[setup]?.factorsVsA[`workload.${workload}.totalMs`];
+            return factor && factor.n > 0
+                ? [{ engine : engineLabel, workload, setup : label, median : factor.median, min : factor.min, max : factor.max }]
+                : [];
+        })));
 
-const e8Extent = (key : "min" | "max") : number => (key === "min" ? Math.min : Math.max)(...e8MainThreadFactors.map(row => row[key]));
+const E8_TICKS = [0.2, 0.5, 1, 2, 5, 10, 20, 50, 100] as const;
+/** The ticks of a narrow chart, for example on a phone. */
+const E8_NARROW_TICKS = [0.2, 1, 10, 100] as const;
 
 /**
- * A dot for each workload and setup: the median factor of the rounds, with a
- * line from the lowest to the highest round. The x axis is logarithmic, and
- * the rule at 1 is the time of setup A.
+ * One panel for each engine. In a panel, a dot for each workload and setup
+ * gives the median factor of the rounds. A line goes from the lowest round
+ * to the highest round. The x axis is logarithmic, and the rule at 1 is the
+ * time of setup A.
  */
-export const e8MainThreadChart : PlotOptionsInput = ({ Plot, theme }) => {
+export const e8WorkloadChart : PlotOptionsInput = ({ Plot, theme, width }) => {
     const labels = E8_COMPARED.map(compared => compared.label);
-    const offsets = new Map(labels.map((label, index) => [label, (index - 1) * 9]));
+    const offsets = new Map(labels.map((label, index) => [label, (index - 1) * 7]));
     return {
-        height : 70 + E8_WORKLOADS.length * 34,
+        height : 90 + E8_ENGINES.length * E8_WORKLOADS.length * 26,
         marginLeft : 110,
-        marginRight : 24,
+        marginRight : 70,
         marginBottom : 48,
         x : {
             type : "log",
-            domain : [Math.min(0.5, e8Extent("min") * 0.9), Math.max(2, e8Extent("max") * 1.1)],
-            ticks : [0.5, 1, 2, 5, 10, 20].filter(tick => tick <= Math.max(2, e8Extent("max") * 1.1)),
+            domain : [0.1, 200],
+            ticks : width < 600 ? [...E8_NARROW_TICKS] : [...E8_TICKS],
             tickFormat : (tick : number) => `×${formatNumber(tick, 1)}`,
-            label : "Main-thread time of the workload / main-thread time in setup A",
+            label : "Total time of the workload / total time in setup A",
             labelAnchor : "center",
             labelOffset : 42,
             grid : true,
         },
         y : { domain : [...E8_WORKLOADS], label : null, tickSize : 0 },
+        fy : { domain : E8_ENGINES.map(engine => engine.label), label : null },
         color : { domain : labels, range : labels.map((_, index) => seriesColor(theme, index)), legend : true },
         marks : [
             Plot.ruleX([1], { stroke : theme.chartAxis }),
+            Plot.frame({ stroke : theme.rule }),
             ...labels.flatMap((label) => {
-                const rows = e8MainThreadFactors.filter(row => row.setup === label);
+                const rows = e8WorkloadFactors.filter(row => row.setup === label);
                 const dy = offsets.get(label) ?? 0;
                 return [
-                    Plot.ruleY(rows, { y : "workload", x1 : "min", x2 : "max", stroke : "setup", strokeWidth : 2, dy }),
+                    Plot.ruleY(rows, { y : "workload", fy : "engine", x1 : "min", x2 : "max", stroke : "setup", strokeWidth : 2, dy }),
                     Plot.dot(rows, {
                         x : "median",
                         y : "workload",
+                        fy : "engine",
                         fill : "setup",
-                        r : 4,
+                        r : 3.5,
                         stroke : theme.surface,
                         strokeWidth : 1.5,
                         dy,
-                        title : (row : E8FactorRow) => `${row.workload}, ${row.setup}: ×${formatNumber(row.median, 2)} (rounds: ×${formatNumber(row.min, 2)} to ×${formatNumber(row.max, 2)})`,
+                        title : (row : E8FactorRow) => `${row.engine}, ${row.workload}, ${row.setup}: ×${formatNumber(row.median, 2)} (rounds: ×${formatNumber(row.min, 2)} to ×${formatNumber(row.max, 2)})`,
                         tip : true,
                     }),
                 ];
@@ -168,14 +184,15 @@ export const e8MainThreadChart : PlotOptionsInput = ({ Plot, theme }) => {
     };
 };
 
-export const e8MainThreadTable : DataTableSpec = {
-    caption : "Main-thread time of each workload divided by the main-thread time in setup A, Chromium: the median and the range of 5 rounds",
+export const e8WorkloadTable : DataTableSpec = {
+    caption : "Total time of each workload divided by the total time in setup A of the same round: the median and the range of 5 rounds",
     columns : [
+        { key : "engine", label : "Engine" },
         { key : "workload", label : "Workload" },
         { key : "setup", label : "Setup" },
         { key : "median", label : "Median", align : "right", format : (value) => `×${formatNumber(value as number, 2)}` },
         { key : "min", label : "Lowest round", align : "right", format : (value) => `×${formatNumber(value as number, 2)}` },
         { key : "max", label : "Highest round", align : "right", format : (value) => `×${formatNumber(value as number, 2)}` },
     ],
-    rows : e8MainThreadFactors,
+    rows : e8WorkloadFactors,
 };
