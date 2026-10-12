@@ -47,6 +47,12 @@ describe("describeNode", () => {
         expect(describeNode(text)).toBe("html>body>p>TEXT");
     });
 
+    it("removes the number sign only at the start of the name", () => {
+        // The HTML parser accepts a number sign in the name of a document type
+        const doctype : FakeNode = { nodeType : 10, nodeName : "a#b", parentNode : documentNode };
+        expect(describeNode(doctype)).toBe("A#B");
+    });
+
     it("gives an empty string for an empty value or an object that throws", () => {
         expect(describeNode(null)).toBe("");
         expect(describeNode(undefined)).toBe("");
