@@ -315,4 +315,52 @@ describe("DriftLag rules for a change of the granularity", () => {
         expect(d.lags[5]).toBe(15 * 11 + 14 * 25);
         d.monitor.stop();
     });
+
+    it("gives no lag to the next window when it accepts a row that started in the window before", () => {
+        const d = createDriftLag(0);
+        vi.advanceTimersByTime(500);
+        // After one idle step, 24 steps of 16 and 30 ms come one after the other, then steps of 12 ms
+        d.busySteps(...Array.from({ length : 24 }, (_, i) => (i % 2 === 0 ? 11 : 25)), ...Array.from({ length : 25 }, () => 7));
+        vi.advanceTimersByTime(5 + 12 * 16 + 12 * 30 + 5 * 12);
+        // The window ends after 30 steps, in a row of 5 steps of 12 ms
+        expect(d.lags[5]).toBe(12 * 11 + 12 * 25 + 5 * 7);
+
+        // The next window accepts the row at its 5th step. It has 20 steps of 12 ms.
+        vi.advanceTimersByTime(20 * 12);
+        expect(d.monitor.getBaselineMs()).toBe(12);
+        expect(d.monitor.getLastWindowMs()).toBe(20 * 12);
+        expect(d.lags[6]).toBe(0);
+        d.monitor.stop();
+    });
+
+    it("gives each step before a second accepted row in a window the baseline of the time of the step", () => {
+        const d = createDriftLag(0);
+        vi.advanceTimersByTime(500);
+        // After one idle step: a step of 7 ms, 12 steps of 12 ms and 10 steps of 24 ms
+        d.busySteps(2, ...Array.from({ length : 12 }, () => 7), ...Array.from({ length : 10 }, () => 19));
+        vi.advanceTimersByTime(5 + 7 + 12 * 12 + 10 * 24);
+
+        // The steps of 12 ms and of 24 ms are two accepted rows. Only the step of 7 ms is 2 ms late.
+        expect(d.monitor.getBaselineMs()).toBe(24);
+        expect(d.monitor.getLastWindowMs()).toBe(5 + 7 + 12 * 12 + 10 * 24);
+        expect(d.lags[5]).toBe(2);
+        d.monitor.stop();
+    });
+
+    it("ends the warm-up after 11 steps: the 12th step after a restart can start a row of a finer granularity", () => {
+        const d = createDriftLag(11);
+        vi.advanceTimersByTime(3_000);
+        d.monitor.stop();
+        d.setGranularity(1);
+        d.monitor.start();
+        // The 11 warm-up steps of 6 ms are shorter than the baseline of 16 ms: they are not steps of the window
+        vi.advanceTimersByTime(11 * 6 + 9 * 6);
+        // 9 steps of the row: the baseline is the mean of the last 100 steps
+        expect(d.monitor.getBaselineMs()).toBeCloseTo((91 * 16 + 9 * 6) / 100, 6);
+
+        // The 10th step of the row
+        vi.advanceTimersByTime(6);
+        expect(d.monitor.getBaselineMs()).toBe(6);
+        d.monitor.stop();
+    });
 });

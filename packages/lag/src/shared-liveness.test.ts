@@ -129,6 +129,24 @@ describe("shared-memory liveness", () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 
+    it("clears its poll one time when it stops two times, and clears nothing at a stop before the start", () => {
+        const cleared : number[] = [];
+        const watcher = new LivenessWatcher(
+            new SharedArrayBuffer(LIVENESS_BUFFER_BYTES),
+            () => {},
+            { now : () => 0 },
+            () => 7,
+            (id) => cleared.push(id),
+        );
+
+        watcher.stop();
+        watcher.start();
+        watcher.stop();
+        watcher.stop();
+
+        expect(cleared).toEqual([7]);
+    });
+
     it("reports a quiet period of exactly the threshold", () => {
         const w = createWatcher();
         w.watcher.start();

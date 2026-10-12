@@ -252,6 +252,45 @@ describe("WorkerLagMonitor", () => {
             vi.advanceTimersByTime(20_000);
             expect(m.logger.log).not.toHaveBeenCalled();
         });
+
+        it("clears only the clock-sync timer at a stop after the watchdog ended", () => {
+            const mock = createMockWorker();
+            const timers = new Map<number, () => void>();
+            const cleared : number[] = [];
+            let nextHandle = 1;
+            const monitor = new WorkerLagMonitor(mock.worker, vi.fn(), { log : vi.fn() }, createAbsoluteClock({ timeOrigin : 10_000, now : () => 0 }), {
+                heartbeatIntervalMs : 1000,
+                setTimeoutFn : (fn) => {
+                    timers.set(nextHandle, fn);
+                    return nextHandle++;
+                },
+                clearTimeoutFn : (handle) => { cleared.push(handle); },
+            });
+            // Handle 1 is the clock-sync timer, handle 2 the watchdog. A heartbeat came, thus the watchdog ends at its check.
+            mock.deliver({ type : "heartbeat", seq : 1, sentAt : 10_000, workerSelfLagMs : 0 });
+            timers.get(2)!();
+
+            monitor.stop();
+            expect(cleared).toEqual([1]);
+        });
+
+        it("clears no timer at a stop after a start that failed before it set its timers", () => {
+            const mock = createMockWorker();
+            const cleared : number[] = [];
+            const monitor = new WorkerLagMonitor(mock.worker, vi.fn(), { log : vi.fn() }, createAbsoluteClock({ timeOrigin : 10_000, now : () => 0 }), {
+                heartbeatIntervalMs : 1000,
+                setTimeoutFn : () => 1,
+                clearTimeoutFn : (handle) => { cleared.push(handle); },
+            });
+            monitor.stop();
+            cleared.length = 0;
+            // The worker refuses the start message, for example because the browser terminated it
+            mock.postMessage.mockImplementationOnce(() => { throw new Error("terminated"); });
+            expect(() => monitor.start()).toThrow("terminated");
+
+            monitor.stop();
+            expect(cleared).toEqual([]);
+        });
     });
 
     describe("rules of the messages and of the lifecycle of the monitor", () => {

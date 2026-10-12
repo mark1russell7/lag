@@ -280,6 +280,23 @@ describe("createMeasurementConditions", () => {
             expect(vi.getTimerCount()).toBe(0);
         });
 
+        it("dispose() clears only the timers of the outliers that still wait, one time", () => {
+            const clearTimeoutFn = vi.fn((id : number) => clearTimeout(id));
+            const { conditions } = createConditions({ clearTimeoutFn });
+            const validator = conditions.createValidator();
+
+            // This outlier gets its decision before dispose(): its timer ran
+            validator.submit(9_000, 9_000, vi.fn());
+            vi.advanceTimersByTime(2_000);
+            validator.dispose();
+            expect(clearTimeoutFn).not.toHaveBeenCalled();
+
+            validator.submit(9_000, 9_000, vi.fn());
+            validator.dispose();
+            validator.dispose();
+            expect(clearTimeoutFn).toHaveBeenCalledTimes(1);
+        });
+
         it("waits for late evidence before it records a sample at the outlier threshold", () => {
             const { conditions } = createConditions();
             const record = vi.fn();
@@ -325,6 +342,37 @@ describe("createMeasurementConditions", () => {
             vi.advanceTimersByTime(10_000);
 
             expect(kindsAndValues(onStall)).toEqual([["hang", 7_000]]);
+        });
+
+        it("reports a hang whose window ends before a suspend episode starts as a separate episode", () => {
+            const { conditions, onStall } = createConditions();
+            const validator = conditions.createValidator();
+            const start = Date.now();
+
+            // A hang sample: it waits 2 s for evidence, and its window ends at start
+            validator.submit(6_000, 1_000, vi.fn());
+            vi.advanceTimersByTime(1_000);
+            // A suspend sample: it makes an episode at once, 600 ms after the end of the hang window
+            conditions.tracker.add(start + 500, start + 1_000, "suspend");
+            validator.submit(7_000, 400, vi.fn());
+            vi.advanceTimersByTime(10_000);
+
+            expect(onStall.mock.calls).toEqual([["suspend", 7_000, start + 600], ["hang", 6_000, start - 1_000]]);
+        });
+
+        it("adds a hang whose window ends at the start of a suspend episode to the episode", () => {
+            const { conditions, onStall } = createConditions();
+            const validator = conditions.createValidator();
+            const start = Date.now();
+
+            validator.submit(6_000, 1_000, vi.fn());
+            vi.advanceTimersByTime(1_000);
+            // The window of the suspend sample starts at the end of the hang window
+            conditions.tracker.add(start + 500, start + 1_000, "suspend");
+            validator.submit(7_000, 1_000, vi.fn());
+            vi.advanceTimersByTime(10_000);
+
+            expect(onStall.mock.calls).toEqual([["suspend", 7_000, start - 1_000]]);
         });
 
         it("extends an episode with each sample that it gets, so that a later sample can overlap the extension", () => {

@@ -127,6 +127,23 @@ describe("TimerThrottleDetector", () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 
+    it("clears the calibration timer one time when it stops two times", () => {
+        const clearTimeoutSpy = vi.fn(clearTimeout);
+        const detector = new TimerThrottleDetector(
+            vi.fn(),
+            setTimeout,
+            clearTimeoutSpy,
+            { now : () => 0 },
+            { log : vi.fn() },
+        );
+
+        detector.start();
+        detector.stop();
+        detector.stop();
+
+        expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
+    });
+
     it("prevents double-start", () => {
         const mockSetTimeout = vi.fn(setTimeout);
         const clock = { now : () => 0 };

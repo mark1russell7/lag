@@ -125,6 +125,12 @@ describe("createBrowserDeps", () => {
         });
     });
 
+    it("leaves out the options that the caller did not give, thus they do not replace other values in a spread", () => {
+        const deps = { softNavigations : true, memoryIntervalMs : 30_000, workerHeartbeatIntervalMs : 500, ...createBrowserDeps(createGlobals(), options()) };
+
+        expect(deps).toMatchObject({ softNavigations : true, memoryIntervalMs : 30_000, workerHeartbeatIntervalMs : 500 });
+    });
+
     it("uses IndexedDB for the hang journal only with a worker or the peer hang watch, and only if the option permits it", () => {
         const worker : WorkerLike = { postMessage : vi.fn(), addEventListener : vi.fn(), removeEventListener : vi.fn() };
         const indexedDB = { open : vi.fn() };
@@ -159,6 +165,9 @@ describe("createBrowserDeps", () => {
         expect(createBrowserDeps(createGlobals({ localStorage }), options()).hangReportMarks).toBeUndefined();
         expect(createBrowserDeps(createGlobals({ localStorage }), { ...options(), worker, hangJournal : false }).hangReportMarks).toBeUndefined();
         expect(createBrowserDeps(createGlobals({ localStorage : {} }), { ...options(), worker }).hangReportMarks).toBeUndefined();
+        // The storage needs both getItem and setItem
+        expect(createBrowserDeps(createGlobals({ localStorage : { getItem : () => null } }), { ...options(), worker }).hangReportMarks).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ localStorage : { setItem : () => {} } }), { ...options(), worker }).hangReportMarks).toBeUndefined();
         expect(createBrowserDeps(createGlobals(), { ...options(), worker }).hangReportMarks).toBeUndefined();
         // In a sandboxed frame, the read of localStorage throws
         const blocked = createGlobals();
@@ -289,8 +298,9 @@ describe("createBrowserDeps", () => {
         Object.assign(withNull.performance, { memory : null });
 
         expect(createBrowserDeps(legacy, options()).memorySource!.readLegacy!()).toBe(memory);
-        expect(createBrowserDeps(modern, options()).memorySource!.measureModern).toBeTypeOf("function");
-        expect(createBrowserDeps(modern, options()).memorySource!.readLegacy).toBeUndefined();
+        // No key for the missing API (exactOptionalPropertyTypes)
+        expect(createBrowserDeps(legacy, options()).memorySource).toStrictEqual({ readLegacy : expect.any(Function) });
+        expect(createBrowserDeps(modern, options()).memorySource).toStrictEqual({ measureModern : expect.any(Function) });
         expect(createBrowserDeps(withNull, options()).memorySource).toBeUndefined();
     });
 
@@ -326,6 +336,24 @@ describe("createBrowserDeps and the shared lifecycle tracker", () => {
         const deps = createBrowserDeps(globalThis as unknown as BrowserGlobals, options());
         expect(deps.lifecycleTracker).toBeDefined();
         expect(deps.lifecycleTracker).toBe(getPageLifecycle());
+    });
+
+    it("makes the shared tracker with the clock of the page and the logger of the options", () => {
+        stubPage();
+        vi.stubGlobal("performance", { timeOrigin : 1_700_000_000_000, now : () => 4_200 });
+        const opts = options();
+        const tracker = createBrowserDeps(globalThis as unknown as BrowserGlobals, opts).lifecycleTracker!;
+        const transitions : unknown[] = [];
+        tracker.subscribe((transition) => {
+            transitions.push(transition);
+            throw new Error("subscriber failed");
+        });
+
+        (globalThis.document as unknown as { visibilityState : string }).visibilityState = "hidden";
+        tracker.handle({ type : "visibilitychange" });
+
+        expect(transitions).toEqual([expect.objectContaining({ to : "hidden", timestamp : 4_200 })]);
+        expect(opts.logger.log).toHaveBeenCalledWith("error", "Error in a lifecycle subscriber.", expect.objectContaining({ phase : "observe" }));
     });
 
     it("gives no shared tracker with sharedLifecycle: false, or for other globals (as in a test)", () => {

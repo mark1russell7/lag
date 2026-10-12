@@ -350,9 +350,9 @@ describe("setupAllMonitors", () => {
         expect(handles.pageViewContext!.getAttributes()).toEqual({ "lag.page_view.id" : handles.vitals!.getView().id });
     });
 
-    // This test shows a bug in the catalog. setupAllMonitors gives the attribute lag.page_view.id to each event.
-    // But the catalog does not list it for lag.long_animation_frame, lag.browser_report, lag.stall and
-    // lag.clock.jump. Thus the documentation of these events does not show it.
+    // setupAllMonitors gives the attribute lag.page_view.id to each event, thus the catalog must list it for each
+    // event: the documentation of the events comes from the catalog. The tests of the stall, the clock jump and
+    // the lifecycle transition check the same for their events.
     it("sends only the event attributes that the catalog lists", async () => {
         await generateActivity(browser);
 
@@ -438,7 +438,7 @@ describe("setupAllMonitors", () => {
         expect(browser.meter.records().get("lag_stalls")).toEqual([{ value : 1, attributes : { kind : "suspend" } }]);
         expect(browser.reportHang).not.toHaveBeenCalled();
         expectCatalogInstruments(browser.meter);
-        expectCatalogEvents(browser.events.emit, ["lag.page_view.id"]);
+        expectCatalogEvents(browser.events.emit);
     });
 
     it("detects a main-thread hang in the worker, and records it when the main thread runs again", async () => {
@@ -460,7 +460,7 @@ describe("setupAllMonitors", () => {
         expect(browser.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ phase : "ended" }), { time : expect.any(Number) });
         expect(browser.events.emit).toHaveBeenCalledWith("lag.stall", expect.objectContaining({ kind : "hang" }), { time : expect.any(Number) });
         expectCatalogInstruments(browser.meter);
-        expectCatalogEvents(browser.events.emit, ["lag.page_view.id"]);
+        expectCatalogEvents(browser.events.emit);
     });
 
     it("counts samples that it discards because the page was hidden", async () => {
@@ -479,7 +479,12 @@ describe("setupAllMonitors", () => {
         await advance(10_000);
 
         expect(browser.meter.records().get("lag_clock_jumps")?.map(r => r.attributes)).toEqual([{ direction : "backward", kind : "step" }]);
-        expect(browser.events.emit).toHaveBeenCalledWith("lag.clock.jump", expect.objectContaining({ direction : "backward", kind : "step" }), { time : expect.any(Number) });
+        expect(browser.events.emit).toHaveBeenCalledWith("lag.clock.jump", expect.objectContaining({
+            direction : "backward",
+            kind : "step",
+            "lag.page_view.id" : handles.vitals!.getView().id,
+        }), { time : expect.any(Number) });
+        expectCatalogEvents(browser.events.emit);
     });
 
     it("stop() releases every timer, listener, observer and worker loop", async () => {
@@ -615,7 +620,7 @@ describe("setupAllMonitors", () => {
             // The fake performance clock gives Date.now() after the time origin
             ["lag.lifecycle.transition", { "lag.page_view.id" : view.id, from : "active", to : "hidden", trigger : "visibilitychange" }, { time : 1_700_000_000_000 + Date.now() }],
         ]);
-        expectCatalogEvents(browser.events.emit, ["lag.page_view.id"]);
+        expectCatalogEvents(browser.events.emit);
     });
 });
 
@@ -681,6 +686,8 @@ describe("setupAllMonitors degradation", () => {
         expect(handles.driftLag).toBeDefined();
         expect(handles.conditions).toBeDefined();
         expect(browser.logger.log).toHaveBeenCalledWith("warn", 'Failed to create the "lifecycle" monitor.', expect.objectContaining({ monitor : "lifecycle" }));
+        // An exporter can give its pagehide event to flush() also then
+        expect(() => handles.flush({ type : "pagehide", persisted : false })).not.toThrow();
         handles.stop();
     });
 
@@ -973,6 +980,10 @@ describe("setupAllMonitors with a span sink", () => {
         // The page is hidden: the span of the view ended, thus the exporter can send it
         expect(view!.endTime).toBeGreaterThan(view!.startTime);
         expect(spans.named("lag.stall")).toEqual([expect.objectContaining({ attributes : { kind : "hang", duration_ms : expect.any(Number) } })]);
+        // The span of the stall lasts the duration of the stall
+        const [stall] = spans.named("lag.stall");
+        expect(stall!.attributes["duration_ms"]).toBeGreaterThan(0);
+        expect(stall!.endTime! - stall!.startTime).toBe(stall!.attributes["duration_ms"]);
         expect(spans.named("lag.long_animation_frame")).toHaveLength(1);
         expect(spans.named("lag.page.hidden")).toHaveLength(1);
         for (const span of others) {
@@ -1005,6 +1016,21 @@ describe("setupAllMonitors with a span sink", () => {
             expect.anything(),
         );
         browser.unblockMain();
+        handles.stop();
+    });
+
+    it("records no span for a stall without performance, because the stall then has no absolute time", async () => {
+        const browser = createFakeBrowser();
+        const { performance : _performance, worker : _worker, ...deps } = browser.deps;
+        const spans = createRecordingSpanSink();
+        const handles = setupAllMonitors({ ...deps, spans });
+        await advance(1_000);
+
+        browser.addLag(6_000);
+        await advance(5_000);
+
+        expect(browser.meter.sum("lag_stalls")).toBe(1);
+        expect(spans.named("lag.stall")).toEqual([]);
         handles.stop();
     });
 

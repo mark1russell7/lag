@@ -73,6 +73,17 @@ describe("ReliabilityTracker", () => {
         expect(tracker.findOverlap(0, 50)?.reason).toBe("hidden");
     });
 
+    it("keeps a closed interval until the retention time after its end has fully passed", () => {
+        const { tracker, setNow } = createTracker(1_000);
+        tracker.add(0, 100, "suspend");
+
+        // Late evidence at the end of the retention time still invalidates a window
+        setNow(1_100);
+        expect(tracker.findOverlap(50, 1_100)?.reason).toBe("suspend");
+        setNow(1_101);
+        expect(tracker.findOverlap(50, 1_101)).toBeUndefined();
+    });
+
     it("notifies subscribers of each new interval until they unsubscribe", () => {
         const { tracker } = createTracker();
         const listener = vi.fn();

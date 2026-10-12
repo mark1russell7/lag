@@ -163,6 +163,65 @@ describe("SchedulingFairnessMonitor", () => {
         expect(clearIntervalFn).toHaveBeenCalledWith(42);
     });
 
+    it("clears the interval one time when it stops two times", () => {
+        const clearIntervalFn = vi.fn();
+        const monitor = new SchedulingFairnessMonitor(
+            1000,
+            vi.fn(),
+            { log : vi.fn() },
+            vi.fn(() => 42) as never,
+            clearIntervalFn,
+            vi.fn(),
+            vi.fn(),
+            function () { return createMockMessageChannel(); } as unknown as MessageChannelConstructor,
+            { now : () => 0 },
+        );
+
+        monitor.stop();
+        monitor.stop();
+        expect(clearIntervalFn).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ["microtask", "messagechannel", "macrotask"],
+        ["macrotask", "messagechannel", "microtask"],
+        ["messagechannel", "microtask", "macrotask"],
+        ["macrotask", "microtask", "messagechannel"],
+    ])("reports one measurement after the last of the three callbacks (%s, %s, %s)", (...order) => {
+        const queued = new Map<string, () => void>();
+        const reports : SchedulingMeasurement[] = [];
+        let intervalCallback = () => {};
+        let deliver = () => {};
+        const Channel = function () {
+            const channel = createMockMessageChannel();
+            channel.port2.postMessage = vi.fn(() => {
+                deliver = () => (channel.port1.onmessage as ((event : { data : unknown }) => void) | null)?.({ data : null });
+            });
+            return channel;
+        } as unknown as MessageChannelConstructor;
+        new SchedulingFairnessMonitor(
+            1000,
+            (m) => reports.push(m),
+            { log : vi.fn() },
+            ((cb : () => void) => { intervalCallback = cb; return 1; }) as never,
+            vi.fn(),
+            ((cb : () => void) => { queued.set("macrotask", cb); return 2; }) as never,
+            (cb) => { queued.set("microtask", cb); },
+            Channel,
+            { now : () => 0 },
+        );
+
+        // The message task starts the cycle, and the cycle posts the next message task
+        intervalCallback();
+        deliver();
+        queued.set("messagechannel", deliver);
+        for (const kind of order.slice(0, 2)) queued.get(kind)!();
+        expect(reports).toHaveLength(0);
+
+        queued.get(order[2]!)!();
+        expect(reports).toEqual([{ macrotaskMs : 0, microtaskMs : 0, messageChannelMs : 0 }]);
+    });
+
     it("logs an error and does not start when the MessageChannel cannot be constructed", () => {
         const setIntervalFn = vi.fn();
         const logger = { log : vi.fn() };

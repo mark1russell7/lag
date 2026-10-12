@@ -271,8 +271,9 @@ describe("ViewCollector", () => {
             const c = collector("back-forward-cache", 5_000, () => count);
             count = 4;
             const values = byName(c.values());
-            expect(values["INP"]).toEqual({ name : "INP", value : SHORT_INTERACTION_ESTIMATE_MS, attribution : {} });
-            expect(values["CLS"]).toEqual({ name : "CLS", value : 0, attribution : {} });
+            // Strict: the values have no time property, also not one with the value undefined
+            expect(values["INP"]).toStrictEqual({ name : "INP", value : SHORT_INTERACTION_ESTIMATE_MS, attribution : {} });
+            expect(values["CLS"]).toStrictEqual({ name : "CLS", value : 0, attribution : {} });
         });
     });
 
@@ -345,6 +346,42 @@ describe("ViewCollector", () => {
             c.addEvent(event({ interactionId : 0, startTime : 120, duration : 88, name : "pointerover", processingStart : 150, processingEnd : 190 }));
 
             expect(byName(c.values())["INP"]!.attribution["processing_duration_ms"]).toBe(80);
+        });
+
+        it("looks for the frame of an entry in the 50 most recent frames", () => {
+            // An entry without an interaction renders at 100 ms, then each later entry renders in a frame of its own
+            function attributionAfter(laterFrames : number) {
+                const c = collector();
+                c.addEvent(event({ interactionId : 0, startTime : 0, duration : 100, name : "pointerover", processingStart : 5, processingEnd : 90 }));
+                for (let i = 1; i <= laterFrames; i++) c.addEvent(event({ interactionId : 0, startTime : 60 + 100 * i, duration : 40, name : "pointermove" }));
+                // A late entry of an interaction that rendered in the first frame
+                c.addEvent(event({ interactionId : 5, startTime : 50, duration : 50, name : "click", processingStart : 60, processingEnd : 70 }));
+                return byName(c.values())["INP"]!.attribution;
+            }
+
+            // 50 frames: the collector knows the first frame, and the processing of its pointerover counts
+            expect(attributionAfter(49)).toMatchObject({ input_delay_ms : 0, processing_duration_ms : 40, presentation_delay_ms : 10 });
+            // 51 frames: the collector removed the first frame, and the click makes a new frame
+            expect(attributionAfter(50)).toMatchObject({ input_delay_ms : 10, processing_duration_ms : 10, presentation_delay_ms : 30 });
+        });
+
+        it("describes the target only of an interaction that can be INP", () => {
+            const selectorOf = vi.fn(describeNode);
+            const c = new ViewCollector({ id : "view", navigationType : "navigate", startTime : 0 }, selectorOf);
+            for (let id = 1; id <= 10; id++) c.addEvent(event({ interactionId : id, startTime : id * 100, duration : 200, target : { id : `b${id}` } }));
+            // Shorter than the 10 longest interactions: the collector does not keep it, and makes no selector for it
+            c.addEvent(event({ interactionId : 11, startTime : 1_100, duration : 40, target : { id : "short" } }));
+
+            expect(selectorOf).toHaveBeenCalledTimes(10);
+            expect(selectorOf).not.toHaveBeenCalledWith({ id : "short" });
+        });
+
+        it("keeps the INP of an interaction whose target the selector function cannot describe, without an attribution", () => {
+            const c = new ViewCollector({ id : "view", navigationType : "navigate", startTime : 0 }, () => { throw new Error("detached"); });
+            // The error goes to the caller (the observer logs it), but the interaction counts
+            expect(() => c.addEvent(event({ interactionId : 5, startTime : 100, duration : 200, target : { id : "gone" } }))).toThrow("detached");
+
+            expect(byName(c.values())["INP"]).toStrictEqual({ name : "INP", value : 200, attribution : {} });
         });
 
         it("gives no interaction target when the target of the event is null or when no entry has a target", () => {
