@@ -164,9 +164,11 @@ jobs:
       # safaridriver needs a one-time permission for remote automation
       - name: Enable safaridriver
         run: sudo safaridriver --enable
+      # Safari in the simulator sometimes closes its WebDriver session in the middle of a file. Then the
+      # script operates the tests a second time, with a warning, but only if no test failed
       - name: Browser tests in Safari on iOS
         working-directory: packages/lag-integration-tests
-        run: pnpm run test:ios
+        run: ../../.github/scripts/test-ios.sh
 
   site:
     name: Site typecheck, tests, build

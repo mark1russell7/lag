@@ -249,7 +249,9 @@ A soak test of 10 minutes kept the heap after garbage collection at 9.50 MB to 9
 
 The last column is from commit `31e4ef4`. The unit tests and the coverage are from the CI workflow, and the mutation score is from the mutation workflow. Between the two last columns, the package got spans, the lifecycle tracker of `page-lifecycle-tracker` and the worker as a subpath. The new code added 476 mutants. 205 mutants survive, and 5 have no test. The mutation score is thus 1 point lower than on 8 October.
 
-The column of 12 October is from commit `287b0b9` (the mutation workflow) and commit `8dbddc2` (the CI workflow). New tests found most of the mutants that survived on 9 October. One of these mutants showed a defect. After a stop and a start in its callback, the GC signal detector counted each garbage collection two times. The add-on for long callbacks and `AllMonitorHandles.add()` added 212 mutants. 101 mutants survive. A review found no effect that a test can see for 98 of them, for example a comparison where equal values give the same result. The other 3 came with the code of 12 October, and nobody examined them yet.
+The column of 12 October is from commit `287b0b9` (the mutation workflow) and commit `8dbddc2` (the CI workflow). New tests found most of the mutants that survived on 9 October. One of these mutants showed a defect. After a stop and a start in its callback, the GC signal detector counted each garbage collection two times.
+
+The add-on for long callbacks and `AllMonitorHandles.add()` added 212 mutants. 101 mutants survive. A review found no effect that a test can see for 98 of them, for example a comparison where equal values give the same result. The other 3 came with the code of 12 October, and nobody examined them yet.
 
 The export works from end to end. On 8 October 2026, the E2E tests (20 tests) found the metrics of the test pages in Mimir, as native histograms. The pipeline check of grafana-infra passed 297 of 297 checks with its sample data.
 

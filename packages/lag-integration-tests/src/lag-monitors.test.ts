@@ -22,10 +22,14 @@ import {
 } from "./harness.js";
 import { features } from "./features.js";
 import { pageState, watchAnimationFrames } from "./animation-frames.js";
+import { watchTimers } from "./timer-watch.js";
 import { environment, recordMeasurement } from "./commands.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
 const SERVICE_NAME = "lag-integration-test";
+
+/** The cycle of MacrotaskLag and SchedulingFairnessMonitor. */
+const SAMPLE_CYCLE_MS = 5_000;
 
 /** The monitors that setupAllMonitors registers in every browser. */
 const ALWAYS = [
@@ -210,10 +214,20 @@ describe("Lag Monitor Integration", () => {
         expect(tee.max("lag_event_duration_histogram")).toBeGreaterThanOrEqual(119);
     });
 
-    it("MacrotaskLag, SchedulingFairness and idle monitors sample within one 5s cycle", async () => {
+    it("MacrotaskLag, SchedulingFairness and idle monitors sample within one 5s cycle", async (ctx) => {
         // A sample comes in each cycle of 5 s. The iOS Simulator can stop the timers of the page for some
         // seconds (a wait of 5.5 s took 16.9 s in CI), thus the test waits for the first sample, up to 20 s.
-        await waitUntil(() => tee.values("lag_macrotask_histogram").length > 0 && tee.values("lag_scheduling_message_channel_histogram").length > 0, 20_000);
+        const timers = watchTimers({ stallMs : 1_000 });
+        const sampled = await waitUntil(() => tee.values("lag_macrotask_histogram").length > 0 && tee.values("lag_scheduling_message_channel_histogram").length > 0, 20_000);
+        const stats = timers.stop();
+        console.log(`Timer chain of 5 ms during the wait: ${stats.count} callbacks, longest gap ${Math.round(stats.maxGapMs)} ms, ` +
+            `${stats.stalls.length} gaps of more than 1 s, at most ${Math.round(stats.longestRunMs)} ms without such a gap, a sample: ${sampled} (${pageState()})`);
+        // The simulator also stopped the timers for more than 20 s one time. Then no sample came in the wait.
+        // A skip only when the timers did not operate for one cycle and 1 s without a gap of more than 1 s:
+        // in such a time a cycle starts, and its sample comes. Else the monitors missed a cycle.
+        ctx.skip(!sampled && stats.longestRunMs < SAMPLE_CYCLE_MS + 1_000,
+            `The browser stopped the timers of the page: the longest gap of a chain of 5 ms timers was ${Math.round(stats.maxGapMs)} ms, ` +
+            `and the timers operated for at most ${Math.round(stats.longestRunMs)} ms without a gap of more than 1 s, less than one cycle of 5 s and 1 s (${pageState()}).`);
 
         expect(tee.values("lag_macrotask_histogram").length).toBeGreaterThan(0);
         expect(tee.values("lag_scheduling_message_channel_histogram").length).toBeGreaterThan(0);
