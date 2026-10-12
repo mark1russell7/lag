@@ -36,8 +36,8 @@ importers:
         specifier: 2.6.1
         version: 2.6.1(@opentelemetry/api@1.9.1)(zone.js@0.16.1)
       async-browser-context:
-        specifier: 0.1.1
-        version: 0.1.1(@opentelemetry/api@1.9.1)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
+        specifier: 0.2.0
+        version: 0.2.0(@opentelemetry/api@1.9.1)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
     devDependencies:
       '@types/node':
         specifier: ^25.3.0
@@ -1692,8 +1692,8 @@ packages:
     resolution: {integrity: sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==}
     hasBin: true
 
-  async-browser-context@0.1.1:
-    resolution: {integrity: sha512-ziruc5Qol/182KgiSJRaBSun5m4GZ4IV947cg+zJouYg48v6oVfIeVNSVWmqruyPSZ6eNtewN5Twr7LHsws/CA==}
+  async-browser-context@0.2.0:
+    resolution: {integrity: sha512-/BmctGKpvBy1aBrL0IFTUYuYS5s6ksHo6MG5MLcOCcsyMNc37wp0yB+H5+0JzSXdIBuHv1+AEqOHB8384AvUXw==}
     engines: {node: ^22.18.0 || >=24.11.0}
     peerDependencies:
       '@opentelemetry/api': ^1.0.0
@@ -4407,7 +4407,7 @@ snapshots:
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
-      '@jridgewell/sourcemap-codec': 1.5.5
+      '@jridgewell/sourcemap-codec': 1.6.0
       '@jridgewell/trace-mapping': 0.3.31
 
   '@jridgewell/gen-mapping@0.4.0-beta.0':
@@ -5427,7 +5427,7 @@ snapshots:
 
   astring@1.9.0: {}
 
-  async-browser-context@0.1.1(@opentelemetry/api@1.9.1)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1)):
+  async-browser-context@0.2.0(@opentelemetry/api@1.9.1)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1)):
     dependencies:
       '@babel/core': 8.0.7
       '@babel/helper-module-imports': 8.0.0

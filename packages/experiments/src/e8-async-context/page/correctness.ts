@@ -64,7 +64,12 @@ async function listenerBrowserDispatch() : Promise<boolean> {
     return kept;
 }
 
-/** The listener is added in the span. Code outside the span dispatches the event. */
+/**
+ * The listener is added in the span. Code in the root context dispatches the
+ * event. The rule C13 of async-browser-context: a listener gets the context of
+ * the dispatch. For a dispatch in the root context, it gets the context of the
+ * registration.
+ */
 async function listenerCodeDispatch() : Promise<boolean> {
     const span = newSpan();
     const target = new EventTarget();
