@@ -101,6 +101,8 @@ A hang, a stall, a long animation frame and a hidden period have a start and an 
 
 The event of a period stays. The dashboards and the alerts use the events and the metrics. The spans are for the investigation of one page view. The [playground](/playground) records the spans and the events of its own page, and it shows them on a timeline with the metrics.
 
+In the [Grafana stack](/docs/operations/grafana-stack#traces-in-tempo) of this project, Tempo stores the traces. The Lag Monitor dashboard links each page view to its trace: the Trace column of the page views, and the table [Page view traces](/docs/operations/dashboards#page-view-traces-tempo). In Explore, the `lag.page_view.start` event of a view also has a link to its trace.
+
 ## Writer identity
 
 Each SDK instance must write its own series. Without a writer identity, all browsers of a service write to the same series. Then Mimir rejects samples with the errors `new-value-for-timestamp` and `sample-out-of-order`. The samples that it accepts mix the running totals of different browsers. PromQL sees a counter reset at almost each sample, thus `rate()`, `increase()` and `histogram_quantile()` give incorrect values.

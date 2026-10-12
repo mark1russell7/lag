@@ -164,6 +164,16 @@ The monitor does not pause while the page is hidden, and it uses no `SampleValid
 
 With `setupLongCallbacks()`, each event also has `lag.page_view.id`. The span `lag.long_callback` has the same attributes, without the page-view ID. Its parent is the span of the current page view.
 
+## Dashboard
+
+The Lag Monitor dashboard of the Grafana stack has the row [Long callbacks](/docs/operations/dashboards#long-callbacks-longcallbackmonitor-the-add-on-mark1russell7lagasync-context):
+
+- The p50, the p95 and the p99 of the duration.
+- The p95 and the number of long callbacks each minute, for each source kind.
+- A table of the `lag.long_callback` events: the total time and the number of the long callbacks of each operation, function, source and source kind.
+
+The annotation layer Long callbacks shows each event on the charts. It is off by default. The spans of the long callbacks are in the [trace of their page view](/docs/operations/dashboards#page-view-traces-tempo).
+
 ## Cost
 
 - **Hooks:** one hook. For each callback of the library, `before` and `after` each read the clock one time, and they use a stack of numbers. For a short callback, the hook makes no object, and it does not read the name of the function.

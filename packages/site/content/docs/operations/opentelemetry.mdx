@@ -113,6 +113,6 @@ The worker uses `fetch` with `keepalive`, because workers do not have `sendBeaco
 
 ## The number of series
 
-Each SDK instance writes its own series. Thus the number of active series depends on the number of page loads. The catalog has 42 metrics. With native histograms, one page load can write at most 271 series. Usually it writes much fewer, because a page uses only some of the attribute values.
+Each SDK instance writes its own series. Thus the number of active series depends on the number of page loads. The catalog has 43 metrics. With native histograms, one page load can write at most 280 series. Usually it writes much fewer, because a page uses only some of the attribute values.
 
 R1 gives a rough rule for the Mimir limit. Multiply the page loads in one hour by 2.5, and multiply the result by the series of one page load. If the number is too high, increase the limits, then sample the sessions.
