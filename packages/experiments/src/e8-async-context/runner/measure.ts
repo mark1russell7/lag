@@ -236,6 +236,7 @@ export async function measureRun(plan : RunPlan) : Promise<RunResult> {
             engine,
             round : plan.round,
             position : plan.position,
+            measuredAt : new Date().toISOString(),
             setup : plan.setup,
             facts,
             metrics,

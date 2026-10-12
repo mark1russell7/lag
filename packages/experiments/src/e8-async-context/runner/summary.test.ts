@@ -9,6 +9,7 @@ function run(engine : Engine, setup : SetupId, round : number, metrics : Record<
         engine,
         round,
         position : 0,
+        measuredAt : "2026-10-11T00:00:00.000Z",
         setup,
         facts : { setup, contextManager : "stack", zoneLoaded : false, asyncContextInstalled : false, userAgent : "test" },
         metrics,

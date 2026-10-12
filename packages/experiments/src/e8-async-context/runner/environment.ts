@@ -78,6 +78,8 @@ function repoCommit() : string {
 /** The versions of the packages that the page and the runner use. */
 export function packageVersions() : Record<string, string> {
     const otelTs = dependencyDir(PACKAGE_DIR, "@mark1russell7/otel-ts");
+    // zone.js is a peer dependency of @opentelemetry/context-zone
+    const contextZone = otelTs ? dependencyDir(otelTs, "@opentelemetry/context-zone") : undefined;
     const asyncContext = dependencyDir(PACKAGE_DIR, "async-browser-context");
     const vite = dependencyDir(PACKAGE_DIR, "vite");
     return {
@@ -88,7 +90,7 @@ export function packageVersions() : Record<string, string> {
         "@opentelemetry/sdk-trace-web" : otelTs ? version(otelTs, "@opentelemetry/sdk-trace-web") : "unknown",
         "@opentelemetry/context-zone" : otelTs ? version(otelTs, "@opentelemetry/context-zone") : "unknown",
         "@opentelemetry/context-zone-peer-dep" : version(PACKAGE_DIR, "@opentelemetry/context-zone-peer-dep"),
-        "zone.js" : otelTs ? version(otelTs, "zone.js") : "unknown",
+        "zone.js" : contextZone ? version(contextZone, "zone.js") : "unknown",
         "async-browser-context" : version(PACKAGE_DIR, "async-browser-context"),
         "@babel/core (of async-browser-context)" : asyncContext ? version(asyncContext, "@babel/core") : "unknown",
         "vite" : version(PACKAGE_DIR, "vite"),

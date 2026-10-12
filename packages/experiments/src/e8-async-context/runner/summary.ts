@@ -16,6 +16,8 @@ export type RunResult = {
     round : number;
     /** The position of the setup in the order of its round, from 0. */
     position : number;
+    /** The end of the run (ISO 8601, UTC). */
+    measuredAt : string;
     setup : SetupId;
     facts : SetupFacts;
     /** The values of the run, for example `"workload.fetch.totalMs"`. A metric that the engine cannot measure is absent. */
@@ -106,13 +108,15 @@ export type E8Results = {
     experiment : "E8";
     title : string;
     quick : boolean;
-    started : string;
-    ended : string;
+    /** The end of the first run and of the last run (ISO 8601, UTC). With `--resume`, the runs can come from more than one invocation. */
+    measured : { first : string; last : string };
     machine : Record<string, string | number>;
     packages : Record<string, string>;
     browsers : Partial<Record<Engine, string>>;
     timing : Record<string, number>;
     rounds : number;
+    /** The runs that the runner took from the file of `--resume`, without a new measurement. */
+    resumedRuns : number;
     setups : Array<{ id : SetupId; label : string }>;
     facts : Partial<Record<Engine, Partial<Record<SetupId, SetupFacts>>>>;
     bundles : BundleSize[];
