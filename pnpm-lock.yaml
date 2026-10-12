@@ -27,7 +27,7 @@ importers:
         specifier: workspace:*
         version: link:../lag
       '@mark1russell7/otel-ts':
-        specifier: github:mark1russell7/otel-ts
+        specifier: github:mark1russell7/otel-ts#92cd39311d7d3dd161b33b884bf23a53d74700b8
         version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.1)
       '@opentelemetry/api':
         specifier: ^1.9.0
@@ -911,6 +911,10 @@ packages:
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b7b253111dde889de8a7085929e87745b1942a93':
     resolution: {tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b7b253111dde889de8a7085929e87745b1942a93}
     version: 0.0.0
+
+  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8':
+    resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8}
+    version: 0.0.1
 
   '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/a29133115e58761121038cae2fd8dc8577e68c3a':
     resolution: {tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/a29133115e58761121038cae2fd8dc8577e68c3a}
@@ -4435,6 +4439,31 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
 
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/b7b253111dde889de8a7085929e87745b1942a93': {}
+
+  '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.1)':
+    dependencies:
+      '@grafana/faro-web-sdk': 2.3.1
+      '@grafana/faro-web-tracing': 2.3.1
+      '@opentelemetry/api': 1.9.1
+      '@opentelemetry/api-logs': 0.213.0
+      '@opentelemetry/auto-instrumentations-web': 0.59.0(@opentelemetry/api@1.9.1)(zone.js@0.16.1)
+      '@opentelemetry/context-zone': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/exporter-logs-otlp-http': 0.213.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/exporter-metrics-otlp-http': 0.213.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/exporter-trace-otlp-http': 0.213.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation': 0.213.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/instrumentation-long-task': 0.58.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/resources': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-logs': 0.213.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-metrics': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-base': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/sdk-trace-web': 2.6.1(@opentelemetry/api@1.9.1)
+      '@opentelemetry/semantic-conventions': 1.40.0
+      page-lifecycle-tracker: 0.1.0
+    transitivePeerDependencies:
+      - supports-color
+      - zone.js
 
   '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/a29133115e58761121038cae2fd8dc8577e68c3a(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))(zone.js@0.16.1)':
     dependencies:
