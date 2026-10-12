@@ -17,6 +17,7 @@ function createMonitor(options : ClockDriftOptions = {}, initialReadSpread = 0) 
     const report = vi.fn();
     const onJump = vi.fn();
     const logger = { log : vi.fn() };
+    const clearIntervalFn = vi.fn((id : number) => clearInterval(id));
     const performance = {
         timeOrigin : TIME_ORIGIN,
         now : () => {
@@ -32,11 +33,11 @@ function createMonitor(options : ClockDriftOptions = {}, initialReadSpread = 0) 
         createAbsoluteClock(performance),
         { now : () => wall },
         (fn, ms) => setInterval(fn, ms) as unknown as number,
-        (id) => clearInterval(id),
+        clearIntervalFn,
         options,
     );
     return {
-        monitor, report, onJump, logger,
+        monitor, report, onJump, logger, clearIntervalFn,
         advance(ms : number, wallExtra = 0) {
             mono += ms;
             wall += ms + wallExtra;
@@ -161,6 +162,14 @@ describe("ClockDriftMonitor", () => {
         const m = createMonitor();
         m.monitor.stop();
         expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("clears its timer one time when it stops two times", () => {
+        const m = createMonitor();
+        m.monitor.stop();
+        m.monitor.stop();
+
+        expect(m.clearIntervalFn).toHaveBeenCalledTimes(1);
     });
 
     it("logs instead of throwing when report throws", () => {

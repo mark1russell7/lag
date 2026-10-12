@@ -152,6 +152,25 @@ describe("MemoryMonitor", () => {
         expect(clearIntervalSpy).toHaveBeenCalledWith(99);
     });
 
+    it("clears the interval one time when it stops two times", () => {
+        const clearIntervalSpy = vi.fn();
+        const monitor = new MemoryMonitor(
+            10_000,
+            { readLegacy : () => ({
+                usedJSHeapSize : 1, totalJSHeapSize : 2, jsHeapSizeLimit : 100,
+            }) },
+            vi.fn(),
+            { log : vi.fn() },
+            vi.fn(() => 99) as never,
+            clearIntervalSpy,
+            { now : () => 0 },
+        );
+
+        monitor.stop();
+        monitor.stop();
+        expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
+    });
+
     it("drops a modern sample that resolves after stop()", async () => {
         const reports : MemoryMeasurement[] = [];
         let resolveModern : (r : { bytes : number; breakdown : [] }) => void = () => {};
