@@ -280,6 +280,23 @@ describe("createMeasurementConditions", () => {
             expect(vi.getTimerCount()).toBe(0);
         });
 
+        it("dispose() clears only the timers of the outliers that still wait, one time", () => {
+            const clearTimeoutFn = vi.fn((id : number) => clearTimeout(id));
+            const { conditions } = createConditions({ clearTimeoutFn });
+            const validator = conditions.createValidator();
+
+            // This outlier gets its decision before dispose(): its timer ran
+            validator.submit(9_000, 9_000, vi.fn());
+            vi.advanceTimersByTime(2_000);
+            validator.dispose();
+            expect(clearTimeoutFn).not.toHaveBeenCalled();
+
+            validator.submit(9_000, 9_000, vi.fn());
+            validator.dispose();
+            validator.dispose();
+            expect(clearTimeoutFn).toHaveBeenCalledTimes(1);
+        });
+
         it("waits for late evidence before it records a sample at the outlier threshold", () => {
             const { conditions } = createConditions();
             const record = vi.fn();
