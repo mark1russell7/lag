@@ -36,8 +36,8 @@ importers:
         specifier: 2.6.1
         version: 2.6.1(@opentelemetry/api@1.9.1)(zone.js@0.16.1)
       async-browser-context:
-        specifier: 0.2.0
-        version: 0.2.0(@opentelemetry/api@1.9.1)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
+        specifier: 0.2.2
+        version: 0.2.2(@opentelemetry/api@1.9.1)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
     devDependencies:
       '@types/node':
         specifier: ^25.3.0
@@ -1695,8 +1695,8 @@ packages:
     resolution: {integrity: sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==}
     hasBin: true
 
-  async-browser-context@0.2.0:
-    resolution: {integrity: sha512-/BmctGKpvBy1aBrL0IFTUYuYS5s6ksHo6MG5MLcOCcsyMNc37wp0yB+H5+0JzSXdIBuHv1+AEqOHB8384AvUXw==}
+  async-browser-context@0.2.2:
+    resolution: {integrity: sha512-NNNZkfXd2uDM5fmOH3gFaBWdXJwdSELp5EPei7ahCMave30VQXhC9hY1OT1iEmF18/kKWea72Sk19WLXzGahjg==}
     engines: {node: ^22.18.0 || >=24.11.0}
     peerDependencies:
       '@opentelemetry/api': ^1.0.0
@@ -5430,7 +5430,7 @@ snapshots:
 
   astring@1.9.0: {}
 
-  async-browser-context@0.2.0(@opentelemetry/api@1.9.1)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1)):
+  async-browser-context@0.2.2(@opentelemetry/api@1.9.1)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1)):
     dependencies:
       '@babel/core': 8.0.7
       '@babel/helper-module-imports': 8.0.0

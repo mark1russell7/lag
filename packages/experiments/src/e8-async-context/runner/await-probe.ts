@@ -3,9 +3,12 @@
  * of one microtask. It builds the probe page three times: without an async
  * context (`plain`), with the plugin and the patches of async-browser-context
  * (`async-context`), and with zone.js (`zone`). Then it measures 50,000
- * sequential steps in each form, in Chromium and in Firefox with three
- * settings of the async stacks. When Firefox records async stacks, it records
- * one for each promise reaction.
+ * sequential steps in each form. The browsers are Chromium, WebKit, and
+ * Firefox with three settings of the async stacks. When Firefox records
+ * async stacks, it records one for each promise reaction.
+ *
+ * An await of a value and an await of a resolved promise are two different
+ * forms. A patch of `Promise.prototype.then` can change only the second form.
  *
  * Use it from the package folder: `pnpm e8:await-probe`. The probe prints a
  * Markdown table. It writes no file in the repository.
@@ -13,7 +16,7 @@
 import path from "node:path";
 import { build } from "vite";
 import { asyncContext } from "async-browser-context/vite";
-import { chromium, firefox, type Browser, type Page } from "playwright";
+import { chromium, firefox, webkit, type Browser, type Page } from "playwright";
 import { PAGE_DIR } from "./builds.js";
 import { PACKAGE_DIR } from "./environment.js";
 import { serveDirectory } from "./server.js";
@@ -37,7 +40,14 @@ const BROWSERS : readonly BrowserSetup[] = [
     { name : "Firefox, asyncstack off", launch : () => firefox.launch({ headless : true, firefoxUserPrefs : { "javascript.options.asyncstack" : false } }) },
     // Async stacks only while a debugger observes the page: the setting of a release build of Firefox
     { name : "Firefox, async stacks only for a debuggee", launch : () => firefox.launch({ headless : true, firefoxUserPrefs : { "javascript.options.asyncstack_capture_debuggee_only" : true } }) },
+    { name : "WebKit", launch : () => webkit.launch({ headless : true }) },
 ];
+
+/** The form of the build `plain` that a factor compares with: the native form of the same type of step. */
+function baseForm(variant : string) : string {
+    if (variant === "queue-microtask") return "queue-microtask";
+    return variant.endsWith("-promise") ? "native-await-promise" : "native-await";
+}
 
 async function buildProbe(kind : ProbeBuild) : Promise<void> {
     await build({
@@ -82,11 +92,10 @@ async function main() : Promise<void> {
                         if (repetition > 0) item.times.push(ms);
                     }
                 }
-                // A microtask chain compares with the chain of the build `plain`, an await with a native `await` there
                 const plain = (variant : string) : number => median(cases.find(item => item.kind === "plain" && item.variant === variant)!.times);
                 for (const item of cases) {
                     const ms = median(item.times);
-                    const base = plain(item.variant === "queue-microtask" ? "queue-microtask" : "native-await");
+                    const base = plain(baseForm(item.variant));
                     rows.push([setup.name, item.kind, `\`${item.variant}\``, ms.toFixed(1), ((ms * 1_000) / COUNT).toFixed(2), `×${(ms / base).toFixed(1)}`]);
                 }
                 console.log(`${setup.name} ${browser.version()}: done`);
