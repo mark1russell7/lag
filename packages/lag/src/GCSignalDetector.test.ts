@@ -149,6 +149,25 @@ describe("GCSignalDetector", () => {
         expect(t.fr.pendingCanaries).toBe(1);
     });
 
+    it("keeps one canary when onGC stops and starts the detector", () => {
+        const fr = createMockFinalizationRegistry();
+        const detector : GCSignalDetector = new GCSignalDetector(
+            fr.Ctor,
+            { now : () => 0 },
+            { log : vi.fn() },
+            () => {
+                detector.stop();
+                detector.start();
+            },
+        );
+
+        fr.gc();
+        expect(fr.pendingCanaries).toBe(1);
+        // One GC gives one event
+        expect(fr.gc()).toBe(1);
+        expect(detector.getTotalGCEvents()).toBe(2);
+    });
+
     it("logs an error and keeps detecting if the cleanup callback throws", () => {
         let broken = false;
         const t = createDetector({

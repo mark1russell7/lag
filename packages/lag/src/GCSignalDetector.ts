@@ -133,6 +133,7 @@ export class GCSignalDetector {
                 type : "GCSignalDetector",
             });
         }
-        this.armCanary();
+        // If onGC stopped and started the detector, start() armed the next canary
+        if (!this.canaryInFlight) this.armCanary();
     }
 }
