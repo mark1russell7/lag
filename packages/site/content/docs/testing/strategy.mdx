@@ -163,6 +163,14 @@ The mutation report comes from the weekly mutation workflow, thus it is usually 
 - **Safari on iOS.** The tests operate in Safari on iOS only in the iOS Simulator of a macOS runner. A simulator has the CPU and the power of the Mac, not of a phone. To open the first session, safaridriver needed up to 131 s and more than one try. Thus the iOS project has a connect timeout of 600 s.
 
   In the simulator, the click of safaridriver gives no INP, also in web-vitals. Thus the two INP tests skip themselves there.
+
+  The simulator sometimes stops the timers of the page for more than 20 s, and then no monitor that uses a timer can sample. Thus some tests operate a chain of 5 ms timers (`timer-watch.ts`), and they record the gaps of the chain. The test of the 5 s cycle in `lag-monitors.test.ts` skips itself with the reason only if two conditions are true. No sample came, and the timers did not operate for 6 s without a gap of more than 1 s. A cycle starts in such a time. Thus a monitor that does not sample while the timers operate still fails.
+
+  `drift-load.test.ts` also operates the chain. It does not use the windows that overlap a gap of more than 50 ms in the chain. If too few windows remain, it skips itself.
+
+  In some runs, the timers of the simulator are also slower for some seconds: more steps take 12 ms, not 8 ms. Then DriftLag reports lag on an idle page, for example a median of 31 ms in windows of 113 ms. Thus, in the iOS Simulator only, `drift-load.test.ts` also skips itself if the chain had longer steps after the load than before it. The lag above the limit must not be more than the lag of these longer steps. A baseline that stays too low does not change the steps of the chain. Thus the test still finds that error.
+
+  Safari in the simulator sometimes closes its WebDriver session in the middle of a test file. Then Vitest stops the run, and the next files do not operate. A test cannot see this, thus the iOS job of CI can operate the tests a second time (`.github/scripts/test-ios.sh`). It does this only if the output has the message of a closed session and no test failed. Then the job shows a warning with the reason. Other failures fail the job at once, and the second run gets no third run.
 - **Low Power Mode.** A macOS runner refuses Low Power Mode on AC power. Thus no browser test operates in Low Power Mode. `DriftLag.power.test.ts` uses the timer rule of the WebKit source instead: a grid of 30 ms for nested timers.
 - **Safari on a shared runner.** Safari on a macOS runner of GitHub sometimes slows the timers of its window, for example by 9 s. Then a timing test fails for a reason that is not in the code. Thus the Safari job of CI reports its results, but it does not block a pull request.
 
