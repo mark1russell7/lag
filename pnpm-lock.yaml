@@ -54,6 +54,9 @@ importers:
       vitest:
         specifier: ^4.1.2
         version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@25.3.0)(@vitest/browser-playwright@4.1.2)(@vitest/browser-webdriverio@4.1.2)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
+      zone.js:
+        specifier: 0.16.1
+        version: 0.16.1
 
   packages/lag:
     dependencies:
