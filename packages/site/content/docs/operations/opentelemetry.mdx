@@ -10,7 +10,7 @@ The monitors record into an OpenTelemetry `Meter` and send events to an OpenTele
 <Callout type="note" title="The version of otel-ts">
   This page uses the otel-ts features `serviceInstanceId`, `createInstanceId()`, `histogramAggregation` and `onBeforeFlush`. They are in otel-ts from commit `a4a7722` (the `main` branch on 2026-10-08). The browser attributes are in otel-ts from commit `327e625`.
 
-  From commit `92cd393`, otel-ts flushes in the `export` phase of the shared lifecycle tracker (`page-lifecycle-tracker` 0.1.0). From that commit, `cause.event` of `onBeforeFlush` is not set, and `cause.transition` gives the transition. The lockfile of this repository has commit `92cd393`. An earlier version puts `session.id` on the resource, sets no `service.instance.id`, uses explicit-bucket histograms and has no `onBeforeFlush`.
+  From commit `92cd393`, otel-ts flushes in the `export` phase of the shared lifecycle tracker (`page-lifecycle-tracker` 0.1.0). From that commit, `cause.event` of `onBeforeFlush` is not set, and `cause.transition` gives the transition. From commit `a291331` (version 0.1.0), the context manager of the main entry is the one of async-browser-context. The entry `@mark1russell7/otel-ts/zone` uses zone.js, and the entry `@mark1russell7/otel-ts/core` uses no context library. The experiment E8 gives the reasons ([local experiments](/research/local-experiments)). The lockfile of this repository has commit `a291331`. An earlier version puts `session.id` on the resource, sets no `service.instance.id`, uses explicit-bucket histograms and has no `onBeforeFlush`.
 </Callout>
 
 ## The settings
