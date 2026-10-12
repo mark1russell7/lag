@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createHandle, pageViewSpanOf, recordHangSpan, recordSpan, validatedRecorder, PAGE_VIEW_SPAN_ID, PAGE_VIEW_TRACE_ID } from "./shared.js";
+import { createHandle, occurredAt, pageViewSpanOf, recordHangSpan, recordSpan, validatedRecorder, PAGE_VIEW_SPAN_ID, PAGE_VIEW_TRACE_ID } from "./shared.js";
+import { createAbsoluteClock } from "../absolute-clock.js";
 import { createRecordingSpanSink, expectCatalogSpans } from "../test-utils.js";
 import type { PageViewSpans } from "./page-view-spans.js";
 import type { SpanIdentity } from "../spans.js";
@@ -34,6 +35,19 @@ describe("validatedRecorder", () => {
         vi.advanceTimersByTime(5_000);
 
         expect(record.mock.calls).toEqual([[12, 100]]);
+    });
+});
+
+describe("occurredAt", () => {
+    const clock = createAbsoluteClock({ timeOrigin : 1_000_000, now : () => 0 });
+
+    it("gives the absolute time of a monotonic time", () => {
+        expect(occurredAt(clock, 250)).toEqual({ time : 1_000_250 });
+    });
+
+    it("gives no time without a clock or without a monotonic time", () => {
+        expect(occurredAt(undefined, 250)).toEqual({});
+        expect(occurredAt(clock, undefined)).toEqual({});
     });
 });
 
