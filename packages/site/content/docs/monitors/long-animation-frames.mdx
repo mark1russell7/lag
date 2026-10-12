@@ -114,6 +114,7 @@ if (deps.PerformanceObserver) {
 - **The longest script only.** The event names the script with the longest duration. The other scripts of the frame are not in the event.
 - **Events are limited.** After 10 events in a period of 60 s, the factory sends no more events in that period. The histograms still record each frame.
 - **The attribution gaps of the API.** Scripts of 5 ms or less, cross-origin iframes, workers and extensions give no attribution.
+- **Wrappers.** A library that wraps the callbacks of the page hides the function of the page. With async-browser-context, for example as the context manager of otel-ts, the function name is `asyncBrowserContextWrapper` ([experiment E8](/research/local-experiments)). The add-on [long callbacks](/docs/monitors/long-callbacks) gives the real function, also in Firefox and Safari.
 - **Duration is not blocking.** `duration` also contains time that did not block input. Use `blockingDuration` for the effect on input.
 
 ## Tests

@@ -1,0 +1,204 @@
+---
+title: Long callbacks (add-on)
+description: "An optional add-on with async-browser-context: the function, the API and the operation of each callback of 50 ms or more, in Chromium, Firefox and Safari."
+order: 26.5
+status: draft
+---
+
+import { longCallbackMetrics } from "./metrics.data";
+
+`LongCallbackMonitor` measures each callback that the library async-browser-context starts. For each callback of 50 ms or more, it records the duration. It also names the function, the API and the operation of the callback. The monitor is an optional add-on in the export `@mark1russell7/lag/async-context`. The main export of the package does not load it.
+
+## Why an add-on
+
+Only Chromium has the Long Animation Frames API (LoAF), which names the script of a long task. Firefox and Safari do not tell which code blocked the page. The timer monitors and the [worker monitor](/docs/monitors/worker-lag) measure the blocked time in all browsers, but not its cause.
+
+The library [async-browser-context](https://github.com/mark1russell7/AsyncBrowserContext) patches the callback APIs of the browser: the timers, `Promise.then`, the event listeners, the observers and other APIs. From version 0.2, its function `addCallbackHook()` adds a hook. The library starts the hook before and after each callback that it starts. The hook gets the function and the name of the API. It operates in the context of the callback, thus it can also read the operation of the callback.
+
+With this hook, the add-on names the code of a long task in each browser. In Chromium, it also gives back the attribution that the library removes from LoAF. With async-browser-context, each LoAF entry names the wrapper of the library, `asyncBrowserContextWrapper`, in place of the function of the page ([experiment E8](/research/local-experiments)). The add-on gives the real function.
+
+<Callout type="note" title="Pages with otel-ts">
+  otel-ts changes its default context manager to async-browser-context. With that default, the LoAF entries of each page with otel-ts name the wrapper, and lag loses the script attribution of LoAF. If your app uses the default of otel-ts, enable this add-on.
+</Callout>
+
+## What it measures
+
+The monitor measures the time of each callback, from `before` to `after` of the hook, with the clock of the monitors (`performance.now()`). For each callback of the threshold or more, it gives these fields. The default threshold is 50 ms, the limit of a long task.
+
+| Field | Value |
+|---|---|
+| Name | `callback.name`, or `(anonymous)` for a function without a name. For the step of an async function after an `await`, the name of the async function. |
+| Source | The API that got the callback, for example `setTimeout`, `Promise.then`, `addEventListener:click`, `onclick`, `MutationObserver` or `await`. |
+| Source kind | The group of the source: one value of a closed set (refer to the next table). |
+| Duration | The time from the start to the end of the callback, in milliseconds. |
+| Start | The start of the callback. |
+| Operation | The value of the `operation` function in the context of the callback, for example the name of the active span. |
+
+The source kinds:
+
+| Source kind | Sources |
+|---|---|
+| `timer` | `setTimeout`, `setInterval`, `setImmediate`, `requestIdleCallback`, `Scheduler.postTask` |
+| `promise` | `Promise.then` (thus also `catch`, `finally` and the combinators), `queueMicrotask` |
+| `event` | `addEventListener:<type>`, the `on...` properties (for example `onclick`), `NavigateEvent.intercept` |
+| `await` | The step of a transformed async function after an `await` |
+| `observer` | `MutationObserver`, `ResizeObserver`, `IntersectionObserver`, `PerformanceObserver`, `ReportingObserver`, `PressureObserver`, `FinalizationRegistry` |
+| `stream` | The methods of the underlying objects of `ReadableStream`, `WritableStream` and `TransformStream` |
+| `lock` | `LockManager.request` (`navigator.locks.request`) |
+| `frame` | `requestAnimationFrame`, `requestVideoFrameCallback`, `XRSession.requestAnimationFrame`, `Document.startViewTransition` |
+| `other` | All other sources, for example `Geolocation.watchPosition`, and each source of a later version of the library |
+
+The source can contain each event type, thus it is not a metric attribute. The source kind has 9 values, thus the histogram has it as an attribute.
+
+## How it works
+
+The monitor adds one hook with `addCallbackHook()`. `before` puts the time of the clock on a stack. `after` takes the time from the stack and calculates the duration. The library starts `after` also when the callback throws an error.
+
+A callback can start other callbacks synchronously, for example with `dispatchEvent()` or `element.click()`. The library starts their hooks between the hooks of the first callback, and it starts the `after` methods in the opposite sequence. Thus each callback gets its own start from the stack. The duration of a callback includes the callbacks that it starts synchronously. When both are long, the monitor reports both.
+
+The monitor reads the operation only after a long callback, in the context of that callback. Thus the `operation` function has no cost for a short callback.
+
+The factory records the duration of each long callback into `lag_long_callback_duration_histogram`, with the attribute `source_kind`. With an event sink, it sends a `lag.long_callback` event. With a span sink, it records a `lag.long_callback` span in the current page view. As for the long animation frames, it sends at most 10 events and spans in each period of 60 s. The time of the event and the start of the span are the start of the callback.
+
+`stop()` removes the hook. The library can start `after` for a callback that started before the removal, and the monitor ignores these calls.
+
+## Set up the add-on
+
+1. Install async-browser-context 0.2.2 or later. The package declares it as an optional peer dependency.
+
+   ```bash
+   npm install async-browser-context
+   ```
+
+2. Import async-browser-context first in the entry file of the app. The library patches the global functions when it loads.
+3. Add the monitor to the monitors of `setupAllMonitors()` with `setupLongCallbacks()`:
+
+```ts
+import { AsyncLocalStorage, addCallbackHook } from "async-browser-context";
+import { createBrowserDeps, setupAllMonitors } from "@mark1russell7/lag";
+import { setupLongCallbacks } from "@mark1russell7/lag/async-context";
+
+export const operation = new AsyncLocalStorage<string>();
+
+const monitors = setupAllMonitors(createBrowserDeps(window, options));
+setupLongCallbacks(monitors, addCallbackHook, { operation : () => operation.getStore() });
+```
+
+`setupLongCallbacks(monitors, addCallbackHook, options)` uses `monitors.add()`, thus the monitor gets the dependencies of the setup. Its events have the page-view ID, and its spans are in the span of the page view. `monitors.stop()` removes the hook.
+
+The add-on does not import async-browser-context: the app gives `addCallbackHook`. Thus the app keeps the control of the import sequence.
+
+| Option | Default | What it does |
+|---|---|---|
+| `thresholdMs` | 50 | A callback of this duration or more is long. |
+| `operation` | none | A function that gives the operation of the current context, or `undefined`. |
+
+### The operation from OpenTelemetry
+
+With OpenTelemetry, the operation can be the name of the active span. `activeSpanName(api)` gives this function. Give it the module `@opentelemetry/api`, as for `createOtelSpanSink()`:
+
+```ts
+import * as api from "@opentelemetry/api";
+import { addCallbackHook } from "async-browser-context";
+import { activeSpanName, setupLongCallbacks } from "@mark1russell7/lag/async-context";
+
+setupLongCallbacks(monitors, addCallbackHook, { operation : activeSpanName(api) });
+```
+
+The active span stays correct through timers, listeners and `await` only with the context manager of async-browser-context: `AsyncContextManager` of `async-browser-context/opentelemetry`. The OpenTelemetry SDK keeps the name of a span in its property `name`. A span that the sampler did not record has no name, thus it gives no operation.
+
+### Without setupAllMonitors
+
+`createInstrumentedLongCallbacks(deps, options)` makes the monitor alone, as the other factories do:
+
+```ts
+function createInstrumentedLongCallbacks(
+    deps : CoreDeps & CallbackHookDeps & Partial<EventDeps> & Partial<SpanDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>,
+    options? : LongCallbackOptions,
+) : MonitorHandle<LongCallbackMonitor>;
+```
+
+`CallbackHookDeps` has one field, `addCallbackHook`. The other groups are the same as for the [long animation frames](/docs/monitors/long-animation-frames#configuration). Without `absoluteClock` and `performance`, the events get the time of the call, and the factory records no spans.
+
+## The transform and its cost
+
+The patched APIs need only the runtime of the library. These are the timers, the promise reactions, the event listeners and the other sources of the table of source kinds. The steps of an async function after an `await` are different. The hook sees them only in code that the Vite plugin or the Babel preset of async-browser-context transforms. Without the transform, a native `await` continues without the library, and the monitor does not see that step.
+
+The transform is a decision of the app, not of lag. It changes each async function into a generator, and it has a cost. [Experiment E8](/research/local-experiments) measured it:
+
+- **Chromium.** The library added 1.6 ms of main-thread time each second on an idle page with the monitors. The workloads with `await` took 1.6 to 1.9 times the time of the page without the library.
+- **Firefox.** Version 0.2.2 of the library removed the large cost of the transformed `await` steps in Firefox. The patch of `then` still adds approximately 0.8 µs to each awaited promise, the same as zone.js.
+- **The hook.** A hook that does nothing adds approximately 60% to each transformed `await` step in Chromium, and 25% to 40% in Firefox. This cost applies only while a hook is registered. Thus the hook of this add-on operates only when the app enables the add-on, and it does very little work.
+
+Thus measure the transform in your app, in each browser, before you use it in production. E8 gives all the numbers and the method.
+
+## Browser support
+
+| Browser | Long callbacks |
+|---|---|
+| Chromium | Yes |
+| Firefox | Yes |
+| Safari | Yes |
+
+The add-on operates where async-browser-context operates: the current versions of Chrome, Edge, Firefox and Safari. The browser test examines it in Chromium, Firefox, WebKit and Chrome. On Node.js, `addCallbackHook()` of the library does nothing, thus the monitor reports nothing.
+
+## Measurement validity
+
+The monitor does not pause while the page is hidden, and it uses no `SampleValidator`. It uses no timers, thus the timer throttling of hidden pages does not change it. A suspend of the system during a callback adds the time of the suspend to the duration of the callback. The `lag.stall` events of the measurement conditions show such a suspend.
+
+## Metrics
+
+<MetricTable metrics={longCallbackMetrics} />
+
+### The long callback event
+
+`lag.long_callback` has these attributes:
+
+| Attribute | Value |
+|---|---|
+| `duration_ms` | The duration of the callback. |
+| `callback.name` | The name of the function, or `(anonymous)`. |
+| `callback.source` | The API that got the callback, for example `setTimeout` or `addEventListener:click`. |
+| `source_kind` | The source kind, as in the histogram. |
+| `operation` | The operation of the callback. The event has it only when the `operation` function gives a value. |
+
+With `setupLongCallbacks()`, each event also has `lag.page_view.id`. The span `lag.long_callback` has the same attributes, without the page-view ID. Its parent is the span of the current page view.
+
+## Cost
+
+- **Hooks:** one hook. For each callback of the library, `before` and `after` each read the clock one time, and they use a stack of numbers. For a short callback, the hook makes no object, and it does not read the name of the function.
+- **The operation:** one call of the `operation` function for each long callback, and none for a short callback.
+- **Records:** one histogram value for each long callback.
+- **Events and spans:** at most 10 each minute.
+
+The library itself also has a cost. Refer to [the transform and its cost](#the-transform-and-its-cost).
+
+## Limits
+
+- **Only the callbacks of the library.** Work of the browser, for example style, layout and paint, is not a callback. A script that loads before async-browser-context, or that keeps a reference to a native function, does not use the wrappers of the library. In Chromium, use [long animation frames](/docs/monitors/long-animation-frames) for this work.
+- **The steps after an `await` need the transform.** Without it, the monitor does not see them.
+- **Names.** A minifier can change the names of the functions. To keep the names in the reports, set the minifier to keep them. A bound function has the name `bound <name>`.
+- **Nested callbacks.** The duration of a callback includes the callbacks that it starts synchronously. When both are long, the histogram has both values.
+- **Events are limited.** After 10 events in a period of 60 s, the factory sends no more events and spans in that period. The histogram still records each long callback.
+- **A long task of short callbacks.** A task can have many short callbacks, for example many promise reactions after one script. The monitor reports none of them. Use [DriftLag](/docs/monitors/drift-lag) and the worker monitor for the blocked time.
+
+## Tests
+
+Unit tests:
+
+- `async-context/source-kind.test.ts`: the source kind of each source of async-browser-context 0.2, of the patterns of the events and the streams, and `other` for all other sources.
+- `async-context/LongCallbackMonitor.test.ts`: a fake hook. The threshold, the names of an anonymous callback and of an `await` step, the nested callbacks, and a callback that throws an error. Also the operation (only for a long callback), an error of the operation function or of the report, and `stop()`.
+- `async-context/long-callbacks.test.ts`: the histogram with `source_kind`, the event and the span with the catalog, and the limit of 10 events each minute. Also the error boundary of the factory and `activeSpanName()`. `setupLongCallbacks()` with `setupAllMonitors()` gives the page-view ID, the parent span and the removal of the hook at `stop()`.
+- `setup-all-monitors.add.test.ts`: `monitors.add()` gives the dependencies of the setup to the factory, and `stop()` stops the added monitor first.
+
+Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
+
+- `async-context.test.ts`: the test loads the real runtime of async-browser-context, without the transform. A named function blocks the main thread for 150 ms in a `setTimeout` callback. In each engine, the monitor reports the name of the function, the source `setTimeout` and a duration of 150 ms or more. The operation of an `AsyncLocalStorage` goes into the event. An event listener and a promise reaction get their sources.
+
+On 2026-10-12, on Windows 11 with async-browser-context 0.2.2, the measured durations were 150.1 ms in Chromium, 150.0 ms in Firefox and 151.0 ms in WebKit.
+
+## Source
+
+- [`async-context/LongCallbackMonitor.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/async-context/LongCallbackMonitor.ts): the monitor.
+- [`async-context/long-callbacks.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/async-context/long-callbacks.ts): the factory, `setupLongCallbacks()` and `activeSpanName()`.
+- [`async-context/source-kind.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag/src/async-context/source-kind.ts): the source kinds.
