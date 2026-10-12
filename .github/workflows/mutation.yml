@@ -2,6 +2,11 @@ name: Mutation testing
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Test all mutants again (--force), without the results of the incremental file"
+        type: boolean
+        default: false
   schedule:
     # Every Sunday at 03:41 UTC
     - cron: "41 3 * * 0"
@@ -38,9 +43,12 @@ jobs:
             stryker-incremental-${{ github.ref_name }}-
             stryker-incremental-main-
       # The weekly run tests all mutants again (--force) and writes a new incremental file.
-      # Thus a stale kill stays for one week at most. A manual run stays incremental and fast.
+      # Thus a stale result stays for one week at most. A manual run stays incremental and fast,
+      # unless its input force is true. The incremental file can also keep a stale "survived":
+      # a mutant that operates when a module loads has no covering tests in the report, thus
+      # Stryker keeps its old result when the tests change. Use force for numbers to publish.
       - name: Stryker
-        run: pnpm --filter @mark1russell7/lag run mutation ${{ github.event_name == 'schedule' && '--force' || '' }}
+        run: pnpm --filter @mark1russell7/lag run mutation ${{ (github.event_name == 'schedule' || inputs.force) && '--force' || '' }}
       - name: Upload the mutation report
         if: always()
         uses: actions/upload-artifact@v4

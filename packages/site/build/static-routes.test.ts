@@ -114,6 +114,7 @@ describe("static routes", () => {
         expect(homeRoute(template).description?.length ?? 0).toBeLessThanOrEqual(160);
     });
 
+    // It reads the content of all pages: on a busy machine it took 5.1 s, thus the limit is 20 s
     it("gives each page of the site a unique title and a description of a useful length", async () => {
         const template = await readFile(path.join(siteDir, "index.html"), "utf8");
         const routes = await siteRoutes(template, path.join(siteDir, "content"), null);
@@ -125,7 +126,7 @@ describe("static routes", () => {
             // Search engines show approximately 160 characters. A longer description must still start with the main point.
             expect(r.description?.length ?? 0, r.path).toBeLessThanOrEqual(200);
         }
-    });
+    }, 20_000);
 
     it("puts the title and the description of the route into the HTML, with escapes", () => {
         const html = routeHtml(TEMPLATE, route({ path : "x", title : "A <b> & \"c\" – lag", description : "Why 1 < 2 costs $1 and $&" }));
