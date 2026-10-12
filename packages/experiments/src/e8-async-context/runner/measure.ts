@@ -14,6 +14,7 @@
  * 5. The workloads, without the monitors (Chromium: CDP around each one).
  * 6. The context check.
  */
+import os from "node:os";
 import { chromium, firefox, webkit, type Browser, type CDPSession, type Page } from "playwright";
 import { BLOCKING_TASK_MS, CLICK_TARGET, WORKLOAD_NAMES, type E8Page, type SetupId } from "../shared/types.js";
 import { median, quantile } from "./stats.js";
@@ -117,9 +118,22 @@ async function waitForPage(page : Page, url : string) : Promise<void> {
     await page.waitForFunction(() => (globalThis as unknown as Partial<E8Global>).e8?.ready === true);
 }
 
+/** The idle time and the total time of all CPUs of the machine so far, in ms. */
+function cpuTimes() : { idle : number; total : number } {
+    let idle = 0;
+    let total = 0;
+    for (const cpu of os.cpus()) {
+        idle += cpu.times.idle;
+        total += cpu.times.user + cpu.times.nice + cpu.times.sys + cpu.times.idle + cpu.times.irq;
+    }
+    return { idle, total };
+}
+
 /** This function does one page run. */
 export async function measureRun(plan : RunPlan) : Promise<RunResult> {
     const { engine, timing } = plan;
+    // The load of the whole machine during the run, also the browser of the run
+    const cpuStart = cpuTimes();
     const browser = await launch(engine);
     try {
         const context = await browser.newContext();
@@ -214,6 +228,9 @@ export async function measureRun(plan : RunPlan) : Promise<RunResult> {
 
         // 6. The context check
         const correctness = await page.evaluate(() => (globalThis as unknown as E8Global).e8.correctness());
+
+        const cpuEnd = cpuTimes();
+        metrics["machine.cpuBusyPercent"] = 100 * (1 - (cpuEnd.idle - cpuStart.idle) / (cpuEnd.total - cpuStart.total));
 
         return {
             engine,

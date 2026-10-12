@@ -86,6 +86,40 @@ function summarizeSetup(runs : readonly RunResult[], baselines : ReadonlyMap<num
     return { metrics, factorsVsA, differencesVsA, correctness, loafScripts, rounds : runs.length };
 }
 
+/** The size of the JavaScript of one minified build, in bytes. gzip uses the default level of zlib (6). */
+export type BundleSize = {
+    setup : SetupId;
+    /** The JavaScript of the page, without the worker of lag. */
+    pageBytes : number;
+    pageGzipBytes : number;
+    /** The worker of lag. It is the same in each setup, because the plugins of the page do not change the worker. */
+    workerBytes : number;
+    workerGzipBytes : number;
+    /** True if the JavaScript of the page contains zone.js. */
+    containsZone : boolean;
+    /** True if the JavaScript of the page contains the runtime of async-browser-context. */
+    containsAsyncContext : boolean;
+};
+
+/** The file that the runner writes. */
+export type E8Results = {
+    experiment : "E8";
+    title : string;
+    quick : boolean;
+    started : string;
+    ended : string;
+    machine : Record<string, string | number>;
+    packages : Record<string, string>;
+    browsers : Partial<Record<Engine, string>>;
+    timing : Record<string, number>;
+    rounds : number;
+    setups : Array<{ id : SetupId; label : string }>;
+    facts : Partial<Record<Engine, Partial<Record<SetupId, SetupFacts>>>>;
+    bundles : BundleSize[];
+    summary : Partial<Record<Engine, EngineSummary>>;
+    runs : RunResult[];
+};
+
 /** This function summarizes the runs of each engine and setup. */
 export function summarize(runs : readonly RunResult[]) : Partial<Record<Engine, EngineSummary>> {
     const summary : Partial<Record<Engine, EngineSummary>> = {};

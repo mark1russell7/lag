@@ -19,12 +19,13 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { SETUP_IDS, SETUP_LABELS, type SetupFacts, type SetupId } from "../shared/types.js";
-import { bundleSize, buildSetup, type BundleSize } from "./builds.js";
+import { bundleSize, buildSetup } from "./builds.js";
 import { machine, packageVersions, PACKAGE_DIR, REPO_ROOT } from "./environment.js";
 import { FULL_TIMING, QUICK_TIMING, launch, measureRun } from "./measure.js";
 import { roundOrder } from "./plan.js";
 import { serveDirectory } from "./server.js";
-import { ENGINES, summarize, type Engine, type RunResult } from "./summary.js";
+import { renderTables } from "./report.js";
+import { ENGINES, summarize, type BundleSize, type E8Results, type Engine, type RunResult } from "./summary.js";
 
 const DEFAULT_OUT = path.join(REPO_ROOT, "packages/site/content/research/local-experiments.e8.json");
 const WORK_DIR = path.join(PACKAGE_DIR, "dist/e8");
@@ -101,7 +102,8 @@ async function main() : Promise<void> {
                     (facts[engine] ??= {})[setup] ??= run.facts;
                     log(`  ${setup}: drift median ${format(run.metrics["drift.medianMs"])} ms, ` +
                         `idle task ${format(run.metrics["idle.monitors.taskMsPerS"])} ms/s, ` +
-                        `operations ${format(run.metrics["workload.operations.totalMs"])} ms, errors ${run.errors.length}`);
+                        `operations ${format(run.metrics["workload.operations.totalMs"])} ms, ` +
+                        `machine CPU ${format(run.metrics["machine.cpuBusyPercent"])} %, errors ${run.errors.length}`);
                     for (const error of run.errors) log(`    error: ${error}`);
                     // A file after each run: a stopped run keeps its data
                     mkdirSync(WORK_DIR, { recursive : true });
@@ -113,7 +115,7 @@ async function main() : Promise<void> {
         await server.close();
     }
 
-    const result = {
+    const result : E8Results = {
         experiment : "E8",
         title : "The cost of an async context in the browser",
         quick,
@@ -132,6 +134,7 @@ async function main() : Promise<void> {
     };
     mkdirSync(path.dirname(out), { recursive : true });
     writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`);
+    console.log(renderTables(result));
     log(`Results: ${path.relative(REPO_ROOT, out)}`);
 }
 
