@@ -4,9 +4,19 @@
  * sequential steps.
  */
 
-/** A native async function with `count` awaits. */
+/** A native async function with `count` awaits of a value that is not a promise. */
 export async function nativeAwait(count : number) : Promise<void> {
     for (let i = 0; i < count; i++) await null;
+}
+
+/**
+ * A native async function with `count` awaits of a resolved promise. The
+ * promise comes from the global `Promise`, thus in the build `zone` it is a
+ * promise of zone.js.
+ */
+export async function nativeAwaitPromise(count : number) : Promise<void> {
+    const resolved = Promise.resolve();
+    for (let i = 0; i < count; i++) await resolved;
 }
 
 /** A chain of `count` `queueMicrotask` callbacks, one after the other, as `microtaskFlood` of `@lag/load`. */

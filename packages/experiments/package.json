@@ -19,7 +19,7 @@
     "@mark1russell7/otel-ts": "github:mark1russell7/otel-ts",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/context-zone-peer-dep": "2.6.1",
-    "async-browser-context": "0.2.0"
+    "async-browser-context": "0.2.2"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
