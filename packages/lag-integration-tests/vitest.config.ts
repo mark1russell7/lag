@@ -161,8 +161,9 @@ function crossOriginIsolation() : Plugin {
         return {
         resolve : {
             alias : {
-                // The export "./worker" first: the alias of the package also matches its subpaths
+                // The exports "./worker" and "./async-context" first: the alias of the package also matches its subpaths
                 "@mark1russell7/lag/worker" : path.join(sourceOf("lag"), "worker", "index.ts"),
+                "@mark1russell7/lag/async-context" : path.join(sourceOf("lag"), "async-context", "index.ts"),
                 "@mark1russell7/lag" : sourceOf("lag"),
                 "@lag/load" : sourceOf("load"),
             },
@@ -171,7 +172,7 @@ function crossOriginIsolation() : Plugin {
             // Pre-bundle every dependency that a test imports, so that Vite does
             // not reload the page in the middle of a run
             // page-lifecycle-tracker is a dependency of @mark1russell7/lag, which the tests import as source
-            include : ["@mark1russell7/otel-ts", "web-vitals", "web-vitals/attribution", "@mark1russell7/lag > page-lifecycle-tracker"],
+            include : ["@mark1russell7/otel-ts", "web-vitals", "web-vitals/attribution", "@mark1russell7/lag > page-lifecycle-tracker", "async-browser-context"],
         },
         test : {
             testTimeout : 60_000,
