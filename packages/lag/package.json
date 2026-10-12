@@ -50,6 +50,10 @@
       "types": "./dist/worker/index.d.ts",
       "default": "./dist/worker/index.js"
     },
+    "./async-context": {
+      "types": "./dist/async-context/index.d.ts",
+      "default": "./dist/async-context/index.js"
+    },
     "./event-line.js": {
       "types": "./dist/event-line.d.ts",
       "default": "./dist/event-line.js"
@@ -81,11 +85,20 @@
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@vitest/coverage-v8": "4.1.2",
+    "async-browser-context": "^0.2.2",
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.7.0",
     "vitest": "^4.1.2"
   },
   "dependencies": {
     "page-lifecycle-tracker": "^0.1.0"
+  },
+  "peerDependencies": {
+    "async-browser-context": "^0.2.2"
+  },
+  "peerDependenciesMeta": {
+    "async-browser-context": {
+      "optional": true
+    }
   }
 }

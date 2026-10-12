@@ -13,6 +13,7 @@
 
 import type { Attributes, Counter, Histogram, InstrumentOptions, Meter } from "./meter.js";
 import { NAVIGATION_TYPES } from "./vitals/types.js";
+import { CALLBACK_SOURCE_KINDS } from "./async-context/source-kind.js";
 
 export type MetricKind = "histogram" | "counter";
 
@@ -85,7 +86,8 @@ export type MetricKey =
     | "timerCalibrations"
     | "clockResolution" | "clockSkew" | "clockJumps"
     | "browserReports"
-    | "livenessBlock";
+    | "livenessBlock"
+    | "longCallbackDuration";
 
 const LIFECYCLE_STATES = ["active", "passive", "hidden", "frozen", "terminated"] as const;
 const INTERACTION_TYPES = ["pointer", "keyboard", "other"] as const;
@@ -233,6 +235,10 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
 
     livenessBlock : metric("lag_liveness_block_histogram", "histogram", "ms", "SharedLivenessMonitor",
         "The duration of each main-thread block that a worker saw through shared memory."),
+
+    longCallbackDuration : metric("lag_long_callback_duration_histogram", "histogram", "ms", "LongCallbackMonitor",
+        "The duration of each long callback that the callback hook of async-browser-context measured (50 ms or more by default): a timer, a promise reaction, an event listener, an observer, a stream method, a lock callback, an animation frame callback or the step of an async function after an await. A callback that a long callback starts synchronously is in both durations. Only with the add-on @mark1russell7/lag/async-context.",
+        { source_kind : CALLBACK_SOURCE_KINDS }),
 };
 
 export const METRIC_CATALOG : readonly MetricDefinition[] = Object.values(METRICS);
@@ -255,7 +261,8 @@ export type EventKey =
     | "stall"
     | "lifecycleTransition"
     | "pageViewStart"
-    | "pressureChange";
+    | "pressureChange"
+    | "longCallback";
 
 /**
  * Events carry the details that metrics must not carry: IDs, URLs, CSS
@@ -333,6 +340,12 @@ export const EVENTS : Readonly<Record<EventKey, EventDefinition>> = {
         description : "One change of the compute pressure state of one source. The first record of a source is a change from no state.",
         attributes : ["source", "state", "previous_state", "lag.page_view.id"],
     },
+    longCallback : {
+        name : "lag.long_callback",
+        monitor : "LongCallbackMonitor",
+        description : "One long callback (50 ms or more by default), with its name, the API that started it, the source kind and the operation of its context. It names the code that blocked the main thread also in Firefox and Safari, which have no Long Animation Frames. Only with the add-on @mark1russell7/lag/async-context. The time is the start of the callback.",
+        attributes : ["duration_ms", "callback.name", "callback.source", "source_kind", "operation", "lag.page_view.id"],
+    },
 };
 
 export const EVENT_CATALOG : readonly EventDefinition[] = Object.values(EVENTS);
@@ -346,7 +359,7 @@ export type SpanDefinition = {
     attributes : readonly string[];
 };
 
-export type SpanKey = "pageView" | "hang" | "stall" | "longAnimationFrame" | "hidden" | "frozen";
+export type SpanKey = "pageView" | "hang" | "stall" | "longAnimationFrame" | "hidden" | "frozen" | "longCallback";
 
 /**
  * The spans of the monitors (refer to `SpanSink`): the periods that they
@@ -390,6 +403,12 @@ export const SPANS : Readonly<Record<SpanKey, SpanDefinition>> = {
         monitor : "LifecycleStateMachine",
         description : "A period in which the browser froze the page or kept it in the back/forward cache, to the next transition.",
         attributes : ["trigger"],
+    },
+    longCallback : {
+        name : "lag.long_callback",
+        monitor : "LongCallbackMonitor",
+        description : "One long callback (50 ms or more by default), from its start to its end, with its name, its source and its operation. Only with the add-on @mark1russell7/lag/async-context.",
+        attributes : ["duration_ms", "callback.name", "callback.source", "source_kind", "operation"],
     },
 };
 
