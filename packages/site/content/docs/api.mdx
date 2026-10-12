@@ -13,12 +13,13 @@ This page lists the public API of each package. The TSDoc comment of each export
 npm install @mark1russell7/lag
 ```
 
-The package has three entry points:
+The package has four entry points:
 
 | Entry point | What it contains |
 |---|---|
 | `@mark1russell7/lag` | The exports of the sections from [Setup](#setup) to [Utilities](#utilities). |
 | `@mark1russell7/lag/worker` | `createLagWorker()` and the worker module that it starts. Refer to the section `@mark1russell7/lag/worker`. |
+| `@mark1russell7/lag/async-context` | The optional add-on with async-browser-context: the long callbacks. Refer to the section `@mark1russell7/lag/async-context`. |
 | `@mark1russell7/lag/event-line.js` | `formatEventLine()`, which makes the line of each event. |
 
 `@lag/load` and `@lag/report` are private packages of the repository. They are not on npm.
@@ -40,6 +41,7 @@ The function starts each monitor whose dependencies are in `deps`, and gives the
 | `registry` | The `MonitorRegistry` with the handle of each monitor. `registry.get(name)` gives one handle. |
 | `stop()` | Stops all monitors in the reverse sequence of their start. |
 | `flush()` | Records the values that the monitors keep until a checkpoint (the page-view vitals). Connect it to the before-flush hook of the exporter. |
+| `add(factory)` | Makes a monitor with `factory` and the dependencies of the setup (`SetupDeps`), and registers its handle. `stop()` stops it with the other monitors. A factory has the type `MonitorFactory<T>`. |
 | `conditions`, `vitals`, `driftLag`, `workerMonitor`, `pageViewContext` and the other accessors | The monitor of one handle, or `undefined` if the monitor did not start. |
 
 ### `createBrowserDeps(window, options)`
@@ -176,6 +178,19 @@ This entry point is separate from the main entry point, because only this module
 |---|---|
 | `createLagWorker()` | Starts the module worker and gives a `LagWorker`. |
 | `LagWorker` | A `WorkerLike` with `terminate()`. The caller owns the worker. |
+
+## @mark1russell7/lag/async-context
+
+This entry point is an optional add-on. It finds the function and the operation of each long callback, in all browsers, with the callback hook of async-browser-context 0.2.2 or later. The package declares async-browser-context as an optional peer dependency. The add-on does not import it: the app gives `addCallbackHook`. The main entry point does not import this entry point. Refer to [long callbacks](/docs/monitors/long-callbacks).
+
+| Export | What it does |
+|---|---|
+| `setupLongCallbacks(monitors, addCallbackHook, options?)` | Adds the long callback monitor to the monitors of `setupAllMonitors()` with `monitors.add()`, and gives its handle. |
+| `createInstrumentedLongCallbacks(deps, options?)` | The factory: the histogram `lag_long_callback_duration_histogram`, and the event and the span `lag.long_callback`. `deps` has `addCallbackHook` (`CallbackHookDeps`). |
+| `LongCallbackMonitor`, `LongCallback`, `LongCallbackOptions` | The monitor, the report of one long callback, and the options `thresholdMs` (default 50) and `operation`. |
+| `activeSpanName(api)` | An `operation` function that gives the name of the active span. `api` is the module `@opentelemetry/api`. |
+| `CALLBACK_SOURCE_KINDS`, `callbackSourceKind(source)`, `CallbackSourceKind` | The 9 source kinds and the function that gives the kind of a source. |
+| `AddCallbackHookFn`, `CallbackHookLike`, `LONG_CALLBACK_THRESHOLD_MS`, `ANONYMOUS_CALLBACK` | The type of `addCallbackHook`, the type of a hook, the default threshold (50 ms), and the name of a callback without a name. |
 
 ## @lag/load
 

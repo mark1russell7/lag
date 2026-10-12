@@ -82,6 +82,27 @@ The worker sends its hang reports without the OpenTelemetry SDK, because the mai
   Connect `monitors.flush()` to the exporter. The otel-ts library flushes after the monitors recorded the end of the page, because both use the lifecycle tracker that the page shares. An exporter that listens to `pagehide` itself can flush before the monitors record their final values in Chromium. Refer to [page lifecycle](/docs/concepts/page-lifecycle).
 </Callout>
 
+## Optional: find the code of long callbacks
+
+In Firefox and Safari, no browser API names the code of a long task. The add-on `@mark1russell7/lag/async-context` names the function, the API and the operation of each callback of 50 ms or more, in all browsers. It uses the callback hook of async-browser-context.
+
+1. Install async-browser-context 0.2.2 or later:
+
+   ```bash
+   npm install async-browser-context
+   ```
+
+2. Import async-browser-context first in the entry file. Then add the monitor after `setupAllMonitors()`:
+
+```ts
+import { addCallbackHook } from "async-browser-context";
+import { setupLongCallbacks } from "@mark1russell7/lag/async-context";
+
+setupLongCallbacks(monitors, addCallbackHook);
+```
+
+`monitors.stop()` also removes the hook. If the context manager of otel-ts is async-browser-context, enable the add-on. With that context manager, the Long Animation Frames entries name the wrapper of the library, not your function. The steps of async functions after `await` need the transform of async-browser-context, which has a cost. Refer to [long callbacks](/docs/monitors/long-callbacks).
+
 ## What the monitors need
 
 `setupAllMonitors()` starts a monitor only when its dependencies exist:

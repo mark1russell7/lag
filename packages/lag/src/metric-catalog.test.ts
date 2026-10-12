@@ -4,6 +4,7 @@ import type { InstrumentOptions, Meter } from "./meter.js";
 import { VITAL_THRESHOLDS } from "./vitals/types.js";
 import { createRecordingMeter } from "./test-utils.js";
 import * as lag from "./index.js";
+import * as asyncContext from "./async-context/index.js";
 import type { DiscardReason, StallKind } from "./measurement-conditions.js";
 import type { interactionType } from "./EventTimingMonitor.js";
 import type { NavigationType } from "./vitals/types.js";
@@ -129,7 +130,8 @@ describe("metric catalog", () => {
     });
 
     it("names a monitor of the package for each metric and each event", () => {
-        const exported = new Set(Object.keys(lag));
+        // The monitors of the main export and of the add-on @mark1russell7/lag/async-context
+        const exported = new Set([...Object.keys(lag), ...Object.keys(asyncContext)]);
         const known = (monitor : string) => exported.has(monitor) || exported.has(`create${monitor}`);
 
         for (const m of METRIC_CATALOG) expect(known(m.monitor), `${m.name}: ${m.monitor}`).toBe(true);
@@ -143,7 +145,7 @@ describe("metric catalog", () => {
     it("has unique span names with the lag. prefix, attributes, a description and a monitor of the package", () => {
         const names = SPAN_CATALOG.map(s => s.name);
         expect(new Set(names).size).toBe(names.length);
-        const exported = new Set(Object.keys(lag));
+        const exported = new Set([...Object.keys(lag), ...Object.keys(asyncContext)]);
         for (const s of SPAN_CATALOG) {
             expect(s.name, s.name).toMatch(/^lag\.[a-z_.]+$/);
             expect(s.attributes.length, s.name).toBeGreaterThan(0);

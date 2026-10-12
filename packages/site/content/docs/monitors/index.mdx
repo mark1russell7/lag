@@ -35,6 +35,12 @@ Each monitor measures one signal of the health of the main thread, of the page o
 | [Clock drift](/docs/monitors/clock-drift) | The skew between the clocks, suspends and clock steps | `Date.now()`, `performance.now()`, `performance.timeOrigin` | All | 1 callback each second |
 | [Browser reports](/docs/monitors/browser-reports) | Intervention and deprecation reports | `ReportingObserver` | Chromium 69 (two types), Firefox 149 (deprecations) | 1 observer |
 
+The add-on `@mark1russell7/lag/async-context` has one more monitor. `setupAllMonitors` does not start it, and the app adds it with one line:
+
+| Monitor | Signal | Browser API | Browsers | Cost |
+|---|---|---|---|---|
+| [Long callbacks](/docs/monitors/long-callbacks) | The function, the API and the operation of each callback of 50 ms or more | `addCallbackHook()` of async-browser-context 0.2 | All | 2 clock reads for each callback of the library, and the cost of the library |
+
 "All" means that the monitor starts in Chromium, Firefox and Safari. The versions come from [browser support](/research/browser-support). The research gives no versions for the timer APIs, `MessageChannel`, `requestAnimationFrame`, IndexedDB and the lifecycle events. The costs come from the code. The timer counts of DriftLag are estimates from the measured timer steps ([experiment E3](/research/local-experiments)). Each page gives the details.
 
 The overhead benchmark (`overhead/overhead.test.ts`) measures all monitors together on an idle page, in Chromium in the new headless mode. Its budgets are 3% of one core, 210 timer callbacks and 340 wake-ups each second. The comment of the test gives 22 ms to 25 ms of main-thread time each second for all monitors, on a desktop computer. Measured alone, three loops use most of the budget each second: DriftLag 11 ms, frame timing 14 ms and idle availability 3 ms. Refer to [the testing strategy](/docs/testing/strategy).
@@ -48,6 +54,7 @@ The overhead benchmark (`overhead/overhead.test.ts`) measures all monitors toget
 | How long does an event that arrives at a random time wait for the main thread? | [Worker lag](/docs/monitors/worker-lag): the delivery delay | The heartbeats come on the schedule of the worker. During a long block, many heartbeats wait, and each records its own wait. |
 | How much of each 100 ms was the main thread blocked? | [DriftLag](/docs/monitors/drift-lag) | Each block in a window adds its length to the lag of the window. |
 | Which script blocked a frame? | [Long animation frames](/docs/monitors/long-animation-frames), only in Chromium | The browser names the scripts of each long frame. |
+| Which function and which operation blocked the main thread, also in Firefox and Safari? | [Long callbacks](/docs/monitors/long-callbacks), an add-on with async-browser-context | A hook measures each callback of the library, in the context of the callback. |
 | How long does an interaction wait for the next paint? | [Event Timing](/docs/monitors/event-timing) and [page-view vitals](/docs/monitors/page-view-vitals) (INP) | The browser measures each interaction to the next paint, in three phases. |
 | Did the main thread hang, also until the page closed? | [Worker lag](/docs/monitors/worker-lag): hangs and the hang journal | The worker detects a hang while it continues. A later page reports a hang that the page did not survive, except in WebKit and Safari. |
 | Did a page close during a hang, also in WebKit and Safari? | [Peer hang watch](/docs/monitors/peer-hang-watch) | Another open page of the origin gets the Web Lock of the hung page when the page ends. It needs a second page of the origin. |
@@ -134,7 +141,9 @@ const started = monitors.registry.getAll().filter(handle => handle.monitor !== u
 console.log(started.map(handle => handle.name));
 ```
 
-`AllMonitorHandles` gives the `registry`, `stop()`, `flush()` and one accessor for each monitor, for example `driftLag` or `workerMonitor`. An accessor gives `undefined` for a monitor that did not start. `stop()` stops the monitors in the reverse sequence of their start. `flush()` records the values that wait for a checkpoint (the page-view vitals). Connect it to the before-flush hook of the exporter: refer to [lifecycle](/docs/monitors/lifecycle#capture-listeners-and-the-flush-hook).
+`AllMonitorHandles` gives the `registry`, `stop()`, `flush()`, `add()` and one accessor for each monitor, for example `driftLag` or `workerMonitor`. An accessor gives `undefined` for a monitor that did not start. `stop()` stops the monitors in the reverse sequence of their start. `flush()` records the values that wait for a checkpoint (the page-view vitals). Connect it to the before-flush hook of the exporter: refer to [lifecycle](/docs/monitors/lifecycle#capture-listeners-and-the-flush-hook).
+
+`add(factory)` makes one more monitor with the dependencies of the setup and registers it, for example the [long callbacks](/docs/monitors/long-callbacks). Then `stop()` also stops that monitor.
 
 To keep a monitor off, remove its dependency before the setup:
 
