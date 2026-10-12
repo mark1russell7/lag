@@ -108,7 +108,7 @@ export type E8Results = {
     experiment : "E8";
     title : string;
     quick : boolean;
-    /** The end of the first run and of the last run (ISO 8601, UTC). With `--resume`, the runs can come from more than one invocation. */
+    /** The end of the first page run and of the last page run (ISO 8601, UTC). With `--resume`, the page runs can come from more than one invocation. */
     measured : { first : string; last : string };
     machine : Record<string, string | number>;
     packages : Record<string, string>;

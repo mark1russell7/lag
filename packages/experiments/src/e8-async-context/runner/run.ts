@@ -10,16 +10,17 @@
  *    page "Local experiments" of the site.
  *
  * Options: `--rounds=<n>` (default 5), `--engines=chromium,firefox,webkit`,
- * `--setups=A,B,C,D`, `--out=<file>`, and `--quick` (short windows and one
- * round, only to examine the harness; its file goes to `dist/e8`).
+ * `--setups=A,B,C,D`, `--out=<file>`, and `--quick`. The option `--quick`
+ * gives short windows and one round, only to examine the harness. Its file
+ * goes to `dist/e8`.
  *
- * After each page run, the runner writes all runs so far to
- * `dist/e8/partial.json`. With `--resume=<file>`, it takes the runs of that
- * file (a partial file or a results file), and it measures only the page
- * runs that the file does not have.
+ * After each page run, the runner writes all results so far to
+ * `dist/e8/partial.json`. With `--resume=<file>`, it takes the results of
+ * that file (a partial file or a results file). Then it measures only the
+ * missing combinations of engine, round and setup.
  *
- * Use it from the root of the repository: `pnpm experiment:e8`. The
- * workspace packages must be built (`tsc -b`) before the run.
+ * Use it from the root of the repository: `pnpm experiment:e8`. That script
+ * builds the workspace packages (`tsc -b`) first.
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
