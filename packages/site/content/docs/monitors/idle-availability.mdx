@@ -99,7 +99,7 @@ Unit tests:
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
 
-- `lag-monitors.test.ts`: where the browser has `requestIdleCallback`, `lag_idle_time_remaining_histogram` has at least one value after 5.5 s. Without it, as in WebKit, the setup starts no idle monitor.
+- `lag-monitors.test.ts`: where the browser has `requestIdleCallback`, `lag_idle_time_remaining_histogram` has at least one value when the first values of MacrotaskLag and SchedulingFairness come (in 20 s or less). Without it, as in WebKit, the setup starts no idle monitor.
 - `browser-apis.test.ts` (only with `requestIdleCallback`): on an idle page, the monitor gets idle periods in 1 s, and each deadline is 50 ms or less.
 - `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no value while the page is hidden or frozen.
 

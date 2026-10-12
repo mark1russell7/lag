@@ -107,7 +107,7 @@ Unit tests:
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
 
-- `lag-monitors.test.ts`: after 5.5 s, `lag_scheduling_message_channel_histogram` has at least one value.
+- `lag-monitors.test.ts`: `lag_scheduling_message_channel_histogram` gets at least one value in 20 s. If no value came, the test skips itself only when the timers of the page stopped. Refer to [the limits of the tests](/docs/testing/strategy#limits).
 - `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): `lag_scheduling_macrotask_histogram` gets no value while the page is hidden or frozen.
 
 ## Source
