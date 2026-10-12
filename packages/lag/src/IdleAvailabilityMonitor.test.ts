@@ -106,6 +106,49 @@ describe("IdleAvailabilityMonitor", () => {
         expect(cancelIdleSpy).toHaveBeenCalled();
     });
 
+    it("cancels the idle callback one time when it stops two times", () => {
+        const { monitor, cancelIdleSpy } = createDriver();
+        monitor.stop();
+        monitor.stop();
+        expect(cancelIdleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("start() while the monitor operates requests no second idle callback", () => {
+        const { monitor, requestIdleSpy } = createDriver();
+        monitor.start();
+        expect(requestIdleSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("ignores a callback of the chain before stop() and start(), also when the cancel did not remove it", () => {
+        let currentTime = 0;
+        const reports : IdleMeasurement[] = [];
+        // A shim of requestIdleCallback that cannot cancel a callback
+        const requested : Array<(deadline : IdleDeadline) => void> = [];
+        const monitor = new IdleAvailabilityMonitor(
+            (m) => reports.push(m),
+            { log : vi.fn() },
+            (cb) => requested.push(cb),
+            vi.fn(),
+            { now : () => currentTime },
+        );
+        const idle = (index : number, time : number) => {
+            currentTime = time;
+            requested[index]!({ didTimeout : false, timeRemaining : () => 10 });
+        };
+
+        idle(0, 100);
+        monitor.stop();
+        idle(1, 200);
+        monitor.start();
+        idle(1, 300);
+        idle(2, 400);
+        idle(3, 450);
+
+        expect(reports.map(r => r.timeSinceLastIdleMs)).toEqual([0, 0, 50]);
+        // One chain: each callback of the chain requested the next one
+        expect(requested).toHaveLength(5);
+    });
+
     describe("rules of the gaps and of the callback chain", () => {
         /** A monitor whose idle callbacks the test starts. Each request gets a new handle. */
         function createChain() {
