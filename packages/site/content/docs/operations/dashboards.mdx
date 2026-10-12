@@ -5,22 +5,22 @@ order: 51
 status: draft
 ---
 
-The [Grafana stack](/docs/operations/grafana-stack) provisions two dashboards from the [grafana-infra](https://github.com/mark1russell7/grafana-infra) repository. The Lag Monitor dashboard shows the metrics of the monitors in Mimir and their events in Loki. The Frontend Observability dashboard shows span metrics, traces and logs. This page describes each panel and the query that it uses.
+The [Grafana stack](/docs/operations/grafana-stack) provisions two dashboards from the [grafana-infra](https://github.com/mark1russell7/grafana-infra) repository. The Lag Monitor dashboard shows the metrics of the monitors in Mimir, their events in Loki and the traces of the page views in Tempo. The Frontend Observability dashboard shows span metrics, traces and logs. This page describes each panel and the query that it uses.
 
 <Callout type="note" title="The version">
-  This page describes the dashboards of grafana-infra at commit `6ebe0dc`, the `main` branch on 2026-10-09, after pull request 5 ("annotations"). The lockfile of this repository has this commit, and `pnpm test:e2e` starts its stack.
+  This page describes the dashboards of grafana-infra at commit `1caf020`, the `main` branch on 2026-10-12, after pull request 8 ("long callbacks"). The lockfile of this repository has this commit, and `pnpm test:e2e` starts its stack. Three pull requests came after commit `6ebe0dc`. Pull request 6 added the traces of the page views. Pull request 7 changed the package name to `@mark1russell7/lag`. Pull request 8 added the long callbacks.
 </Callout>
 
 ## The dashboards
 
 | Dashboard | UID | File | Content |
 |---|---|---|---|
-| Lag Monitor | `lag-monitor` | `lag-monitor.json` | 72 panels in 21 rows, and 8 annotation layers: the metrics of the monitors in Mimir, and their events in Loki. The script `scripts/build-dashboards.mjs` writes the file. |
+| Lag Monitor | `lag-monitor` | `lag-monitor.json` | 77 panels in 23 rows, and 9 annotation layers: the metrics of the monitors in Mimir, their events in Loki, and the traces of the page views in Tempo. The script `scripts/build-dashboards.mjs` writes the file. |
 | Frontend Observability | `frontend-observability` | `frontend.json` | 11 panels in 5 rows: the span metrics of Tempo, the traces in Tempo, and the logs in Loki. It does not use the lag metrics. |
 
 The files are in `config/grafana/provisioning/dashboards` of grafana-infra. The file provider `Default` of Grafana loads them. Grafana reads the files again in 30 seconds or less (`updateIntervalSeconds: 30`). By default, both dashboards show the last hour, and they refresh each 30 seconds.
 
-The verification script of grafana-infra loads one dashboard through the Grafana API and sends each panel query and the query of each annotation layer. The option `--dashboard` selects the dashboard, and the default is `lag-monitor`. Refer to [the verification workflow](#the-verification-workflow).
+The verification script of grafana-infra loads one dashboard through the Grafana API and sends each panel query and the query of each annotation layer. The option `--dashboard` selects the dashboard, and the default is `lag-monitor`. The script also reads the traces of the sample data from Tempo, and it examines the links from the events to the traces. Refer to [the verification workflow](#the-verification-workflow).
 
 ## Variables
 
@@ -37,7 +37,9 @@ The default value of each query variable is All, and All sends the regular expre
 
 The `service_name` label comes from the resource attribute `service.name`. Mimir promotes it to a label, and Loki indexes it. The Service list shows only the services that send `lag_drift_histogram` as a native histogram. A service with explicit-bucket histograms has only `_bucket`, `_sum` and `_count` series, thus the list does not show it.
 
-The `instance` variable selects one page load: one SDK instance. Mimir makes the `instance` label from the resource attribute `service.instance.id`. In Loki, the same value is in the structured metadata `service_instance_id`. Each Mimir query has the matcher `instance=~"$instance"`, and each Loki query has the filter `service_instance_id=~"$instance"`. Thus, with one page load, each panel and each annotation layer shows only that page load. The row [Long range](#long-range-recording-rules-all-page-loads) is different: its recording rules sum all page loads, thus the variable does not apply to it.
+The `instance` variable selects one page load: one SDK instance. Mimir makes the `instance` label from the resource attribute `service.instance.id`. In Loki, the same value is in the structured metadata `service_instance_id`.
+
+Each Mimir query has the matcher `instance=~"$instance"`, and each Loki query has the filter `service_instance_id=~"$instance"`. The TraceQL query of the [Page view traces](#page-view-traces-tempo) table has the condition `resource.service.instance.id =~ "$instance"`. Thus, with one page load, each panel and each annotation layer shows only that page load. The row [Long range](#long-range-recording-rules-all-page-loads) is different: its recording rules sum all page loads, thus the variable does not apply to it.
 
 The Page load list has the page loads that sent `lag_drift_histogram` in the time range. The list is in alphabetical order, and each value is a UUID. To find a page load, use the [Page loads table](#events-loki). A click on a page load in the table sets the variable.
 
@@ -61,6 +63,7 @@ Each kind of lag event has an annotation layer. A layer shows a mark on each tim
 | Clock jumps | `lag.clock.jump` | No | Gray (`#8f8f8f`) | `Clock {{kind}} {{direction}}` | `{{magnitude_ms}} ms` | `kind` |
 | Long animation frames | `lag.long_animation_frame` | No | Purple (`#b877d9`) | `Long animation frame` | `{{blocking_duration_ms}} ms blocking, {{script_invoker}}` | `script_invoker_type` |
 | Browser reports | `lag.browser_report` | No | Blue (`#5794f2`) | `{{type}}: {{id}}` | `{{message}}` | `type` |
+| Long callbacks | `lag.long_callback` | No | Orange (`#ff9830`) | `Long callback: {{callback_name}}` | `{{duration_ms}} ms, {{callback_source}}, operation {{operation}}` | `source_kind` |
 
 The marks show these items:
 
@@ -72,6 +75,7 @@ The marks show these items:
 - Clock jumps: the kind, the direction and the magnitude of each jump.
 - Long animation frames: the blocking duration of each frame that the monitor sent as an event, and the script that blocked the frame most.
 - Browser reports: the type, the ID and the message of each report.
+- Long callbacks: the function, the duration, the source and the operation of each long callback of the add-on `@mark1russell7/lag/async-context`. Some events have no operation. Refer to [Long callbacks](#long-callbacks-longcallbackmonitor-the-add-on-mark1russell7lagasync-context).
 
 The Hangs and Stalls layers are on by default. The other layers can have many events, thus they are off by default. With all page loads, the marks of all pages are on the panels. Thus, first select one page load, then turn on the layers. A layer gets at most 500 events (`maxLines: 500`).
 
@@ -100,8 +104,11 @@ The verification script makes sure that the query of each layer finds events in 
 3. To find the page loads of one session, write the start of its session ID in Session.
 4. In the Page loads table, click the ID of a page load. If Grafana shows a menu, click "Show only this page load".
 5. At the top of the dashboard, turn on the annotation layers that you want to see.
+6. To see the timeline of one page view, find the table Recent page views and lifecycle transitions. In the Trace column, click "Open trace".
 
 The link of step 4 opens the dashboard with the Page load variable, the Service value and the time range in the URL. To see all page loads again, set Page load to All.
+
+The link of step 6 opens the trace of the page view in Explore, with the Tempo data source. The [Page view traces](#page-view-traces-tempo) table also gives the traces of the selected page load.
 
 ## Read a panel
 
@@ -110,7 +117,8 @@ The queries of the Lag Monitor dashboard obey these rules:
 - A histogram query first sums the rates of all page loads, then it takes the quantile, for example `histogram_quantile(0.95, sum(rate(x[$__rate_interval])))`. Thus a p95 line is the p95 of all samples of the selected page loads. It is not a mean of the quantiles of each page load. Refer to [aggregation in PromQL](/docs/concepts/metrics-model#aggregation-in-promql).
 - A counter query uses `rate()` or `increase()`, not the cumulative value. A Mimir panel with "per minute" in its title multiplies the rate in each second by 60.
 - Each query filters by the Service and the Page load variables. Only the queries of the row Long range do not filter by Page load.
-- No Mimir query groups by `instance` or by session. Only the Page loads table groups by page load and by session. It counts the events of each page load in Loki.
+- No Mimir query groups by `instance` or by session. Only the Page loads table groups by page load and by session. It counts the events of each page load in Loki. It is a `topk(50)` instant query over the time range, thus it gives at most 50 rows and no time series for each page load.
+- The Page view traces table uses TraceQL in Tempo. Its query filters by the resource attributes `service.name` and `service.instance.id`, with the Service and Page load variables.
 - A rate in a time series uses the range `$__rate_interval`. The Mimir data source sets `timeInterval` to `15s`, the export interval. Then `$__rate_interval` is 60 seconds or more.
 - A stat panel with "(time range)" in its title uses an instant query with `increase(...[$__range])`. The panels INP p75, Hangs, Stalls and `performance.now()` resolution also use such a query. These panels give one value for the full time range of the dashboard.
 - A mean line uses `histogram_avg()`. A count of observations uses `histogram_count()`.
@@ -145,27 +153,36 @@ The names are in these files:
 
 | Repository | File | What it has |
 |---|---|---|
-| lag | `packages/lag/src/metric-catalog.ts` | The catalog: the name, kind, unit and permitted attribute values of each metric, and the events with their attributes. |
-| grafana-infra | `scripts/lib/lag-catalog.mjs` | A copy of the catalog. The dashboard script, the sample-data script and the verification script use it. |
+| lag | `packages/lag/src/metric-catalog.ts` | The catalog: the name, kind, unit and permitted attribute values of each metric, and the events and the spans with their attributes. |
+| grafana-infra | `scripts/lib/lag-catalog.mjs` | A copy of the catalog: the metrics, the events and the spans. The dashboard script, the sample-data script and the verification script use it. |
 | grafana-infra | `scripts/build-dashboards.mjs` | The panel queries, the annotation layers and the variables. The script writes `lag-monitor.json`. |
 | grafana-infra | `config/mimir/rules/anonymous/lag.yaml` | The recording rules of 11 histograms. |
 | grafana-infra | `config/grafana/provisioning/dashboards/lag-monitor.json` | The dashboard that the script writes. |
 
-The attribute names are also part of the contract. The panels group by attributes, for example `outcome`, `kind` and `navigation_type`. The Loki panels use the event names and the event attributes, for example `blocking_duration_ms`. The annotation layers use the event names, and their marks use the event attributes, for example `lag_hang_source`.
+The attribute names are also part of the contract. The panels group by attributes, for example `outcome`, `kind` and `navigation_type`. The Loki panels use the event names and the event attributes, for example `blocking_duration_ms`. The annotation layers use the event names, and their marks use the event attributes, for example `lag_hang_source`. The Trace column and the derived field of the Loki data source use `lag_page_view_trace_id`. The Page view traces table uses the span name `lag.page_view`.
 
-On 2026-10-09, the copy of commit `6ebe0dc` agrees with the catalog on the `main` branch of this repository. Both have 42 metrics (32 histograms and 10 counters) and 9 events, with the same names, kinds, units, attributes and permitted values. The 9 events are `browser.web_vital`, `lag.main_thread.hang`, `lag.clock.jump`, `lag.long_animation_frame`, `lag.browser_report`, `lag.stall`, `lag.lifecycle.transition`, `lag.page_view.start` and `lag.pressure.change`. The check `verify --catalog` of grafana-infra compares the two catalogs, and it found no difference.
+On 2026-10-12, the copy of commit `1caf020` agrees with the catalog on the `main` branch of this repository (commit `287b0b9`). Both have 43 metrics (33 histograms and 10 counters), 10 events and 7 spans, with the same names, kinds, units, attributes and permitted values. One metric, `lag_long_callback_duration_histogram`, comes only from the add-on `@mark1russell7/lag/async-context`.
 
-The copy also has a list of optional attributes (`optional`) for 3 events. Some events of these names do not have these attributes:
+- The 10 events are `browser.web_vital`, `lag.main_thread.hang`, `lag.clock.jump`, `lag.long_animation_frame`, `lag.browser_report`, `lag.stall`, `lag.lifecycle.transition`, `lag.page_view.start`, `lag.pressure.change` and `lag.long_callback`.
+- The 7 spans are `lag.page_view`, `lag.main_thread.hang`, `lag.stall`, `lag.long_animation_frame`, `lag.page.hidden`, `lag.page.frozen` and `lag.long_callback`.
 
-| Event | Optional attributes |
+The check `verify --catalog` of grafana-infra compares the two catalogs. On 2026-10-12, it passed its 61 checks of the catalog: one for each metric, event and span, and one for the list of spans. It found no difference.
+
+The copy also has a list of optional attributes (`optional`) for 4 events and 3 spans. Some events and spans of these names do not have these attributes:
+
+| Event or span | Optional attributes |
 |---|---|
-| `lag.main_thread.hang` | `lag.hang.page_id`, `lag.hang.source` |
-| `lag.page_view.start` | `lag.page_view.url`, `lag.page_view.previous_id` |
-| `lag.pressure.change` | `previous_state` |
+| Event `lag.main_thread.hang` | `lag.hang.page_id`, `lag.hang.source` |
+| Event `lag.page_view.start` | `lag.page_view.url`, `lag.page_view.previous_id`, `lag.page_view.trace_id`, `lag.page_view.span_id` |
+| Event `lag.pressure.change` | `previous_state` |
+| Event `lag.long_callback` | `operation` |
+| Span `lag.page_view` | `lag.page_view.url` |
+| Span `lag.main_thread.hang` | `lag.hang.page_id`, `lag.hang.source` |
+| Span `lag.long_callback` | `operation` |
 
-The catalog of this repository has no such list. The verification script does not expect the optional attributes in the structured metadata of each event.
+The catalog of this repository has no such list. The verification script does not expect the optional attributes in the structured metadata of each event. In each span, it expects the other attributes of the span catalog, and it accepts no attribute outside the catalog except `session.id`.
 
-The dashboard uses all 42 metric names, and no other metric name that starts with `lag_`. The other `lag_` names in the dashboard are the structured metadata of the events: `lag_page_view_id`, `lag_page_view_url`, `lag_page_view_previous_id`, `lag_hang_page_id` and `lag_hang_source`.
+The dashboard uses all 43 metric names, and no other metric name that starts with `lag_`. The other `lag_` names in the dashboard are the structured metadata of the events: `lag_page_view_id`, `lag_page_view_url`, `lag_page_view_previous_id`, `lag_page_view_trace_id`, `lag_hang_page_id` and `lag_hang_source`.
 
 ### Examine a change of a name
 
@@ -194,9 +211,11 @@ The dashboard uses all 42 metric names, and no other metric name that starts wit
    pnpm verify --summary sample-summary.json --catalog ../lag/packages/lag/src/metric-catalog.ts
    ```
 
-With `--catalog`, the verification script compares the copy with the catalog. It compares the names, the kinds, the units, the attribute names and the attributes of each event. It does not compare the permitted values of the attributes. It also examines if Mimir stores each metric under its catalog name, if each panel query gives data, and if each annotation layer finds events. The path in the example is correct when lag and grafana-infra are in the same directory.
+With `--catalog`, the verification script compares the copy with the catalog. It compares the names, the kinds, the units, the attribute names, and the attributes of each event and of each span. It does not compare the permitted values of the attributes. It also examines if Mimir stores each metric under its catalog name, if each panel query gives data, and if each annotation layer finds events. The path in the example is correct when lag and grafana-infra are in the same directory.
 
 The comparison of the catalogs is the first part of the output, and it does not use the stack. Without the stack, the next checks fail, and the script stops at the CORS check with the error `fetch failed`. The CI workflow of grafana-infra does not use `--catalog`, because it does not have a copy of this repository.
+
+A change of the name of the span `lag.page_view` also needs other changes. Change the TraceQL query of the Page view traces table, and the checks of the traces in `scripts/verify-pipeline.mjs`.
 
 ## Add a panel
 
@@ -204,8 +223,8 @@ The script `scripts/build-dashboards.mjs` writes the Lag Monitor dashboard. Do n
 
 1. Open `scripts/build-dashboards.mjs` in grafana-infra.
 2. Find the `row()` call of the row for the new panel.
-3. After the last panel of that row, add a call to `timeseries()`, `stat()`, `metricTable()` or `eventTable()`.
-4. Give the targets with `prom()`, `promInstant()`, `loki()` or `lokiInstant()`.
+3. After the last panel of that row, add a call to `timeseries()`, `stat()`, `metricTable()`, `eventTable()` or `traceTable()`.
+4. Give the targets with `prom()`, `promInstant()`, `loki()` or `lokiInstant()`. For `traceTable()`, give a TraceQL query in place of the targets.
 5. Write each PromQL query with the helpers, for example `quantile()`, `sumRate()`, `perMinute()` and `observationsPerMinute()`. The helpers add the matchers `service_name=~"$service_name"` and `instance=~"$instance"`.
 6. Start each LogQL query with the helper `events()`, for example `events('="lag.stall"')`. It adds the Service matcher and the Page load filter.
 7. Make sure that the query obeys the rules in [Read a panel](#read-a-panel).
@@ -239,6 +258,12 @@ timeseries("Drift lag p75",
 
 By default, a time series panel has the unit `ms`, a width of 12 and a height of 8. A stat panel has the unit `ms`, a width of 4 and a height of 4. The layout puts the panels from left to right. It starts a new line when a panel does not fit in the 24 columns of the grid.
 
+The function `eventTable()` has the options `rename`, `units`, `links`, `widths` and `mappings` for its columns. The Trace column of the page views uses the last three options:
+
+- `links`: an internal data link to Tempo (`traceLink()`).
+- `widths`: 110 pixels.
+- `mappings`: the text "Open trace" in place of the 32 digits of the trace ID.
+
 A panel for a new metric needs more steps. First add the metric to `scripts/lib/lag-catalog.mjs`. Then record the metric in `scripts/send-sample-data.mjs`. That script stops with "Metrics without values" if a metric of the copy has no values.
 
 ### Add an annotation layer
@@ -253,23 +278,37 @@ A layer for a new event needs more steps. First add the event to `EVENTS` in `sc
 
 ## The verification workflow
 
-The CI workflow `.github/workflows/verify.yml` of grafana-infra examines the stack, the sample data and the dashboard from end to end. It starts for each pull request, for each push to `main`, and by hand (`workflow_dispatch`). The job uses Node.js 24 and the pnpm version of `packageManager` in `package.json`. It stops after 30 minutes.
+The CI workflow `.github/workflows/verify.yml` of grafana-infra examines the stack, the sample data, the traces and the dashboard from end to end. It starts for each pull request, for each push to `main`, and by hand (`workflow_dispatch`). The job uses Node.js 24 and the pnpm version of `packageManager` in `package.json`. It stops after 30 minutes.
 
 | Step | What it does |
 |---|---|
 | The dashboard file agrees with `scripts/build-dashboards.mjs` | Writes the dashboard again. The step fails if `git diff --exit-code` finds a change in `config/grafana/provisioning/dashboards/`. |
-| Start the stack | `docker compose up -d`. Then it waits up to 5 minutes for Alloy, Mimir, Loki and Grafana. |
+| Start the stack | `docker compose up -d` |
+| Wait for Alloy, Mimir, Loki, Tempo and Grafana | Waits up to 5 minutes for the ready addresses of the five services. |
 | Send sample data | `node scripts/send-sample-data.mjs --summary sample-summary.json` |
 | Verify the pipeline and the dashboard | `node scripts/verify-pipeline.mjs --summary sample-summary.json`, without `--catalog` |
-| Screenshots of the dashboard | Installs Chromium for Playwright, then `node scripts/screenshot-dashboard.mjs --summary sample-summary.json --out screenshots`. |
+| Install Chromium for the screenshots | `pnpm exec playwright install --with-deps chromium` |
+| Screenshots of the dashboard | `node scripts/screenshot-dashboard.mjs --summary sample-summary.json --out screenshots` |
 | Upload the screenshots | Uploads the directory `screenshots/` as the artifact `dashboard-screenshots`. |
-| Stop the stack | `docker compose down -v`. When a step fails, the workflow first writes the last 200 log lines of the containers. |
+| Logs of the stack | Only when a step fails: the last 200 log lines of the containers. |
+| Stop the stack | `docker compose down -v` |
 
-The screenshots, the upload and the stop of the stack also occur when an earlier step fails.
+The installation of Chromium, the screenshots, the upload and the stop of the stack also occur when an earlier step fails.
 
 ### The sample data
 
 `scripts/send-sample-data.mjs` simulates six page loads of two services, with the OpenTelemetry JS SDK. It sends each event of the catalog copy, also `lag.page_view.start`, `lag.lifecycle.transition` and `lag.pressure.change`. Each event has the line of the event as its body, in the form of `formatEventLine` of the lag library. Thus the lines in Loki, which the annotation layers parse, have the same form as the lines of the library. A hang event and its stall event have the start of the hang as their time.
+
+The script also sends the spans, as `createOtelSpanSink` of the lag library sends them:
+
+- **One trace for each page view.** A `TracerProvider` with the resource of the page load sends OTLP/HTTP JSON to `/v1/traces`, with `session.id` on each span, as otel-ts does. The root span `lag.page_view` ends when the page is hidden for the first time in the view, or at the end of the view. At its end, it gets the values of the Web Vitals.
+- **The spans in a view.** The hangs, the stalls, the long animation frames, the long callbacks, and the hidden and frozen periods are spans in the span of their view. Each span has its real start and end.
+- **The trace IDs on the events.** Each `lag.page_view.start` event has the trace ID and the span ID of its view.
+- **An abandoned hang.** The script also sends the trace of an earlier page that hung and closed during its hang. The sample has only the trace of that page, not its metrics or its events. A page of the sample reports the hang from the hang journal (`lag.hang.source` is `journal`). The span of the hang is in the trace of the page that hung. It has a link to the view of the page that reported the hang.
+
+Three page loads of the sample have the add-on `@mark1russell7/lag/async-context`, also the Safari page load, which has no long animation frames. They send the long callbacks: the histogram, the `lag.long_callback` event and the span in the view. Some callbacks have an operation, and some do not.
+
+The summary file (`--summary`) has the trace ID and the span ID of each view, the spans in each view, and the abandoned hangs. The verification script and the screenshot script read it.
 
 ### The checks of the dashboard
 
@@ -277,26 +316,45 @@ The screenshots, the upload and the stop of the stack also occur when an earlier
 
 - Grafana loads the dashboard.
 - Each `label_values()` variable gives values. The Session text box has no query.
-- Each panel query gives data. The script sends the query to `/api/ds/query`. It replaces `$service_name` with the services of the sample, `$navigation_type` and `$instance` with `.+`, and `${session_id:regex}` with an empty text.
+- Each panel query gives data. The script sends the query to `/api/ds/query`. It replaces `$service_name` with the services of the sample, `$navigation_type` and `$instance` with `.+`, and `${session_id:regex}` with an empty text. For the TraceQL query, it sends the same fields as the query editor of Tempo. A frame of traces has data when it has one row or more.
 - The query of each annotation layer finds events. The script sends the query of the `target` of the layer.
+- Grafana reads the trace of the first view of two page loads, and the trace of the abandoned hang, from Tempo. Each trace has the number of spans that the sample sent.
+- The Loki data source has a derived field from `lag_page_view_trace_id` to Tempo.
+- The Trace column of the table Recent page views and lifecycle transitions has an internal data link to Tempo, with the query `${__value.raw}`.
 
 Before these checks, the script compares the number of events of each name in Loki with the number that the sample sent. It waits up to 30 seconds for the last events of the sample. Then it examines the structured metadata of one event of each name, without the optional attributes of the catalog copy.
 
-On 2026-10-09, the workflow passed on the merge commit `6ebe0dc` (workflow run 37920009653). All 134 panel queries gave data, each of the 8 annotation layers found events, and the script passed 269 of 269 checks.
+The script also examines the long callbacks and the traces:
+
+- **Long callbacks.** The `source_kind` label of `lag_long_callback_duration_histogram` has only the values of the closed set. Each `lag.long_callback` event has a callback name, a source, a source kind of the set and a duration of 50 ms or more. Some events have an operation, and some do not.
+- **One trace for each view.** For each page view of the sample, Tempo has one trace. The trace has one root, the span `lag.page_view` with the ID of the view, from the page load of the view, with `lag.web_vital.lcp`. Each other span has the root as its parent, and the trace has the spans of the summary. Each span has the attributes of the span catalog, and no span ends before its start.
+- **The abandoned hang.** Its span is in the trace of the page that hung, with the phase `abandoned` and the ID of the hung page. The span has the resource of the page that reported the hang, and a link to the view of that page.
+- **The trace IDs on the events.** Each `lag.page_view.start` event has the `lag_page_view_trace_id` and the `lag_page_view_span_id` of its view.
+
+The traces of the last views can still be in the batch of Alloy. Thus the script waits up to 30 seconds for their spans.
+
+On 2026-10-12, the workflow passed on the merge commit `1caf020` (workflow run 38291307682). All 142 panel queries gave data, each of the 9 annotation layers found events, and the script passed 303 of 303 checks. Tempo had the trace of each of the 8 page views of the sample, and the trace of the page that hung. Loki had 61 `lag.long_callback` events, and 40 of them had an operation.
 
 ### The screenshots
 
-`scripts/screenshot-dashboard.mjs` takes screenshots of the dashboard with Playwright and Chromium, after the sample data. It reads the dashboard from Grafana and saves a copy with all annotation layers on: the UID `lag-monitor-review` and the title "Lag Monitor (all annotations)". A URL cannot turn on a layer, thus the script needs this copy. The time range is from 1 minute before the start of the sample to 1 minute after its end. The browser window is 1600 by 1200 pixels, and Grafana shows the dashboard in kiosk mode.
+`scripts/screenshot-dashboard.mjs` takes screenshots of the dashboard and of the traces with Playwright and Chromium, after the sample data. It reads the dashboard from Grafana and saves a copy with all annotation layers on: the UID `lag-monitor-review` and the title "Lag Monitor (all annotations)". A URL cannot turn on a layer, thus the script needs this copy. The time range is from 1 minute before the start of the sample to 1 minute after its end. The browser window is 1600 by 1200 pixels, and Grafana shows the dashboard in kiosk mode.
 
 The script writes these files into the directory of `--out`. The default directory is `screenshots`.
 
 | File | Content |
 |---|---|
 | `fleet.png` | The full dashboard as provisioned, for all page loads. |
-| `table-<title>.png` | One screenshot for each table of events: Page loads, Recent page views and lifecycle transitions, Recent hangs and stalls, Recent clock jumps, and LoAF attribution. |
-| `tables.json` | For each table: the title, the file and the first 400 characters of its text, or the error. |
+| `table-<title>.png` | One screenshot for each table: Page loads, Recent page views and lifecycle transitions, Recent hangs and stalls, Recent clock jumps, LoAF attribution, and Page view traces. |
+| `tables.json` | For each table: the title, the file, the first 400 characters of its text and the first 20 links of its cells, or the error. |
+| `table-page-views-page-<index>.png` | The table Recent page views and lifecycle transitions for one page load, with the Trace column. The option `--trace-page` selects the page load. The default is `1`, a page load with a hang, a stall and long animation frames in its first view. |
+| `trace-page-<index>.png` | The trace of the first view of the same page load. The script opens it with a click on the Trace link of the table. Thus the screenshot also shows that the link works. Without the link, the script opens the trace with an Explore URL. |
+| `trace-abandoned-hang.png` | The trace of the page that hung, with the details of the abandoned hang span open. Its references are open too: the parent, and the link to the view that reported the hang. |
+| `explore-loki-trace-link.png` | A `lag.page_view.start` event in Explore, with the link of the derived field to its trace. |
+| `traces.json` | For each trace screenshot: the file, the trace ID and how the trace opened, or the error. |
 | `page-<index>.png` | The review copy for one page load of the sample, with all annotation layers on. The option `--pages` selects the page loads. The default is `0,1`. |
 | `annotations.json` | The annotation queries that Grafana sent, with the number of frames and rows of each result. Also the console errors of the browser, and the fields of the log frames of the Loki panels. |
+
+In workflow run 38291307682, `traces.json` shows that the trace of page load 1 opened with a click on the Trace link of the table. Grafana sent 24 annotation queries, and the browser had no console errors.
 
 To take the screenshots on your computer, do these steps:
 
@@ -530,6 +588,36 @@ sum by (script_invoker_type, script_invoker, script_source_url) (count_over_time
 ```
 
 The annotation layer Long animation frames shows each `lag.long_animation_frame` event on the charts, at the start of the frame. It is off by default.
+
+### Long callbacks (LongCallbackMonitor, the add-on @mark1russell7/lag/async-context)
+
+Refer to [long callbacks](/docs/monitors/long-callbacks). Only an app that enables the add-on `@mark1russell7/lag/async-context` sends these data. Without the add-on, the panels of this row are empty.
+
+| Panel | Type | Unit | What it shows |
+|---|---|---|---|
+| Long callback duration p50 / p95 / p99 | Time series | `ms` | The duration of each callback of 50 ms or more that the callback hook of async-browser-context measured. Firefox and Safari also send it, and they have no long animation frames. |
+| Long callback duration p95, by source kind | Time series | `ms` | The p95 of the long callbacks of each `source_kind`: `timer`, `promise`, `event`, `await`, `observer`, `stream`, `lock`, `frame` or `other`. |
+| Long callbacks per minute, by source kind | Time series, stacked bars | `none` | The number of long callbacks of each source kind, each minute: the count of the histogram. |
+| Long callbacks by operation and callback (events) | Table | Total time: `ms`, Callbacks: `none` | One row for each combination of operation, function, source and source kind, with the columns Operation, Callback, Source and Source kind. The columns Total time and Callbacks give the sum of the durations and the number of the `lag.long_callback` events in the time range. The operation comes from a function of the app, for example the name of the active span. The add-on sends at most 10 events each minute for each page. The table sorts by the total time. As in the LoAF attribution table, two instant queries give the values, and the transformations merge them into one row for each combination. |
+
+```promql
+# Long callback duration p50 / p95 / p99
+histogram_quantile(0.5, sum (rate(lag_long_callback_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.95, sum (rate(lag_long_callback_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+histogram_quantile(0.99, sum (rate(lag_long_callback_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+# Long callback duration p95, by source kind
+histogram_quantile(0.95, sum by (source_kind) (rate(lag_long_callback_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+# Long callbacks per minute, by source kind
+60 * histogram_count(sum by (source_kind) (rate(lag_long_callback_duration_histogram{service_name=~"$service_name", instance=~"$instance"}[$__rate_interval])))
+```
+
+```logql
+# Long callbacks by operation and callback (events)
+sum by (operation, callback_name, callback_source, source_kind) (sum_over_time({service_name=~"$service_name", event_name="lag.long_callback"} | service_instance_id=~"$instance" | keep operation, callback_name, callback_source, source_kind, duration_ms | unwrap duration_ms [$__range]))
+sum by (operation, callback_name, callback_source, source_kind) (count_over_time({service_name=~"$service_name", event_name="lag.long_callback"} | service_instance_id=~"$instance" | keep operation, callback_name, callback_source, source_kind [$__range]))
+```
+
+The annotation layer Long callbacks shows each `lag.long_callback` event on the charts, at the start of the callback. It is off by default. With a span sink, each long callback is also a span in the trace of its page view. Refer to [Page view traces](#page-view-traces-tempo).
 
 ### Event timing (EventTimingMonitor)
 
@@ -776,11 +864,19 @@ The panels of this row read the events in Loki. Refer to [events in Loki](/docs/
 |---|---|---|---|
 | Events per minute, by event name | Time series | `none` | The lag events in Loki in the minute before each point, for each `event_name`. The panel has an interval of 15 s. |
 | Page loads | Table | – | The page loads (SDK instances) with lag events in the time range. Each row has the columns Page load (`service_instance_id`), Session (`session_id`) and Events, the number of events in the time range. The table has at most 50 rows (`topk(50, ...)`), and it sorts by Events. The Session variable filters the rows. Each page load ID has the link "Show only this page load", which sets the Page load variable. The query also filters by Page load, thus with one page load the table has only that page load. |
-| Recent page views and lifecycle transitions | Table | – | The latest `lag.page_view.start` and `lag.lifecycle.transition` events (at most 200 lines), with the columns Time, Event, Navigation, From, To, Trigger, URL, Page view, Previous view, Session and Instance. A page view start fills Navigation, URL and Previous view. The first page view of a page load has no previous view. A transition fills From, To and Trigger. The annotation layers Page views and Lifecycle show the same events on the charts. |
-| Recent hangs and stalls | Table | Duration: `ms` | The latest `lag.main_thread.hang` and `lag.stall` events (at most 200 lines): the time, the service, the event, the phase, the kind, the duration, the sender (`scope_name`), the page view, the hung page, the session and the instance. The worker sends the start of a hang itself, with the scope `@mark1russell7/lag/worker`. An abandoned hang comes from the next page of the origin (`journal`), from another open page of the origin (`peer`), or from the page itself at its close (`self`). The table has no column for this source, `lag_hang_source`. The Hangs annotation layer shows it. |
+| Recent page views and lifecycle transitions | Table | – | The latest `lag.page_view.start` and `lag.lifecycle.transition` events (at most 200 lines), with the columns Time, Event, Navigation, From, To, Trigger, URL, Page view, Trace, Previous view, Session and Instance. A page view start fills Navigation, URL, Trace and Previous view. The first page view of a page load has no previous view. A transition fills From, To and Trigger. The annotation layers Page views and Lifecycle show the same events on the charts. |
+| Recent hangs and stalls | Table | Duration: `ms` | The latest `lag.main_thread.hang` and `lag.stall` events (at most 200 lines): the time, the service, the event, the phase, the kind, the duration, the sender (`scope_name`), the page view, the hung page, the source (`lag_hang_source`), the session and the instance. The worker sends the start of a hang itself, with the scope `@mark1russell7/lag/worker`. An abandoned hang comes from the next page of the origin (Source `journal`), from another open page of the origin (`peer`), or from the page itself at its close (`self`). The other hang events and the stall events have no source. |
 | Recent clock jumps | Table | Magnitude: `ms`, Skew: `ms`, Lateness: `ms` | The latest `lag.clock.jump` events (at most 200 lines): the time, the service, the kind, the direction, the magnitude, the skew, the lateness, the page view and the session. |
 
 The Page loads table uses the transformations of the LoAF attribution table: one column for each label, then one row for each series. The value of its instant query is `Value` or `Value #A`, by the version of Grafana, and the table shows it as Events. The other tables get their columns from the structured metadata of each log line (`extractFields`), and they sort by the time.
+
+The Trace column shows the `lag_page_view_trace_id` of each `lag.page_view.start` event:
+
+- **The text.** A value mapping shows "Open trace" in place of a trace ID of 32 hexadecimal digits. The column is 110 pixels wide.
+- **The link.** A click on "Open trace" opens the trace of the page view in Explore, with the Tempo data source. The link is an internal data link to the data source `tempo`, with the raw trace ID as the TraceQL query (`${__value.raw}`). Grafana makes the URL of Explore.
+- **No trace.** A lifecycle transition has no trace ID. A page view has no trace ID when the app gives the monitors no span sink. It also has none when the sampler did not sample the span of the view.
+
+The trace shows the view as a timeline, with the spans in the view.
 
 ```logql
 # Events per minute, by event name
@@ -794,6 +890,21 @@ topk(50, sum by (service_instance_id, session_id) (count_over_time({service_name
 # Recent clock jumps
 {service_name=~"$service_name", event_name="lag.clock.jump"} | service_instance_id=~"$instance"
 ```
+
+### Page view traces (Tempo)
+
+The panel of this row reads the traces of the page views in Tempo. Refer to [spans for the periods](/docs/concepts/metrics-model#spans-for-the-periods) and [traces in Tempo](/docs/operations/grafana-stack#traces-in-tempo).
+
+| Panel | Type | Unit | What it shows |
+|---|---|---|---|
+| Page view traces | Table | – | The traces of the page views in the time range: a TraceQL search in Tempo, with at most 50 traces. Each row is one page view, with the columns Trace ID, Start time, Service, Name and Duration. The root span `lag.page_view` ends when the page is hidden for the first time in the view. The other spans of the view are in it. An abandoned hang is in the trace of the page that hung. A click on a trace ID opens the trace in Explore. |
+
+```traceql
+# Page view traces
+{ name = "lag.page_view" && resource.service.name =~ "$service_name" && resource.service.instance.id =~ "$instance" }
+```
+
+The query finds the root spans `lag.page_view`, thus the table has one row for each view. It follows the Service and Page load variables. To see only the views of one page load, select the page load. The table has traces only when the app gives the monitors a span sink (`createOtelSpanSink`). Refer to [spans](/docs/operations/opentelemetry#spans).
 
 ### Long range (recording rules, all page loads)
 
@@ -888,11 +999,12 @@ sum(count_over_time({service_name=~".+"} [1h]))
 
 - [grafana-infra](https://github.com/mark1russell7/grafana-infra) on GitHub.
 - `scripts/build-dashboards.mjs`: the panels, the annotation layers and the variables of the Lag Monitor dashboard, and the query rules.
-- `scripts/lib/lag-catalog.mjs`: the copy of the metric catalog.
+- `scripts/lib/lag-catalog.mjs`: the copy of the catalog of the metrics, the events and the spans.
 - `config/grafana/provisioning/dashboards`: `lag-monitor.json`, `frontend.json` and the dashboard provider.
-- `scripts/send-sample-data.mjs`: the sample data.
-- `scripts/verify-pipeline.mjs`: the verification of each panel query and each annotation layer, and the comparison of the catalogs.
-- `scripts/screenshot-dashboard.mjs`: the screenshots of the dashboard.
+- `config/grafana/provisioning/datasources/datasources.yaml`: the derived field of Loki to the traces, and the link of Tempo to the logs.
+- `scripts/send-sample-data.mjs`: the sample data, with the traces of the page views.
+- `scripts/verify-pipeline.mjs`: the verification of each panel query, each annotation layer and the traces, and the comparison of the catalogs.
+- `scripts/screenshot-dashboard.mjs`: the screenshots of the dashboard and of the traces.
 - `.github/workflows/verify.yml`: the CI workflow.
 - `packages/lag/src/metric-catalog.ts` in this repository: the metric catalog.
 - The Grafana documentation of [provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/).

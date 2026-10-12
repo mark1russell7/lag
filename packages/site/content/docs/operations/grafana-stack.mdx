@@ -5,10 +5,10 @@ order: 50
 status: draft
 ---
 
-The [grafana-infra](https://github.com/mark1russell7/grafana-infra) repository has a Docker Compose stack for development and for the integration tests. The browser exports the metrics and the events with OTLP over HTTP. Grafana Alloy receives the data and sends the metrics to Mimir, the logs to Loki and the traces to Tempo. Grafana shows the [dashboards](/docs/operations/dashboards). The page [OpenTelemetry setup](/docs/operations/opentelemetry) tells you how to configure the SDK in the page.
+The [grafana-infra](https://github.com/mark1russell7/grafana-infra) repository has a Docker Compose stack for development and for the integration tests. The browser exports the metrics, the events and the traces with OTLP over HTTP. Grafana Alloy receives the data and sends the metrics to Mimir, the logs to Loki and the traces to Tempo. Grafana shows the [dashboards](/docs/operations/dashboards). The page [OpenTelemetry setup](/docs/operations/opentelemetry) tells you how to configure the SDK in the page.
 
 <Callout type="note" title="The versions">
-  This page describes grafana-infra at commit `6ebe0dc`, the `main` branch on 2026-10-09. The lockfile of this repository has this commit. The scripts `infra:up` and `test:e2e` of `@lag/integration-tests` start the stack from `node_modules/@mark1russell7/grafana-infra`. The settings of [OpenTelemetry setup](/docs/operations/opentelemetry) need otel-ts at commit `a4a7722` or later, and the lockfile has that commit too.
+  This page describes grafana-infra at commit `1caf020`, the `main` branch on 2026-10-12. The lockfile of this repository has this commit. The scripts `infra:up` and `test:e2e` of `@lag/integration-tests` start the stack from `node_modules/@mark1russell7/grafana-infra`. The settings of [OpenTelemetry setup](/docs/operations/opentelemetry) need otel-ts at commit `a4a7722` or later, and the lockfile has that commit too.
 </Callout>
 
 ## The services
@@ -64,8 +64,9 @@ A page sends its data to the OTLP/HTTP receiver of Alloy on port 4318:
 |---|---|---|
 | Metrics | `http://localhost:4318/v1/metrics` | Mimir |
 | Logs and events | `http://localhost:4318/v1/logs` | Loki |
+| Traces | `http://localhost:4318/v1/traces` | Tempo |
 
-The traces go to the same receiver, and Alloy sends them to Tempo. With otel-ts, set `endpoint: "http://localhost:4318"`. The worker of `@mark1russell7/lag/worker` sends its hang reports itself, as OTLP/HTTP JSON. For this stack, set `workerHangReport.url` to `http://localhost:4318/v1/logs`. Refer to [the hang reports of the worker](/docs/operations/opentelemetry#the-hang-reports-of-the-worker).
+With otel-ts, set `endpoint: "http://localhost:4318"`. The worker of `@mark1russell7/lag/worker` sends its hang reports itself, as OTLP/HTTP JSON. For this stack, set `workerHangReport.url` to `http://localhost:4318/v1/logs`. Refer to [the hang reports of the worker](/docs/operations/opentelemetry#the-hang-reports-of-the-worker).
 
 ### CORS
 
@@ -130,7 +131,7 @@ An explicit-bucket histogram becomes `_bucket`, `_sum` and `_count` series. The 
 | `max_global_series_per_metric` | `100000` | The series budget of one metric. |
 | `query_scheduler.max_outstanding_requests_per_tenant` | `4096` | Lets the Lag Monitor dashboard send all its queries at the same time. |
 
-The Lag Monitor dashboard sends approximately 135 queries when it loads: 134 panel queries, and one query for each annotation layer that is on. Query sharding splits each query into up to 16 requests. With the default limit of 100, Mimir answers 429 "too many outstanding requests" to some panels.
+The Lag Monitor dashboard sends approximately 144 queries when it loads: 142 panel queries, and one query for each annotation layer that is on. 128 of the panel queries go to Mimir. Query sharding splits each query into up to 16 requests. With the default limit of 100, Mimir answers 429 "too many outstanding requests" to some panels.
 
 The series limits use the rule `in-memory series = R × 2.5 h × S`. `S` is the number of series of one page load, and the configuration uses `S = 100`. `R` is the number of page loads in one hour, and the stack plans for `R = 2,000`. Thus `2,000 × 2.5 × 100 = 500,000`. The series of a closed page stay in memory until the next head compaction, thus the rule uses 2.5 h. Refer to [the number of series](/docs/operations/opentelemetry#the-number-of-series).
 
@@ -229,7 +230,28 @@ Loki has no authentication in this stack (`auth_enabled: false`). It stores the 
 
 ## Traces in Tempo
 
-Alloy sends the traces to Tempo with OTLP/gRPC, on port 4317 in the Docker network. Tempo stores them in the local file system. The lag monitors send no traces. The traces come from the tracing of the SDK, for example otel-ts with `tracing: true`.
+Alloy sends the traces to Tempo with OTLP/gRPC, on port 4317 in the Docker network. Tempo stores them in the local file system. A page sends its traces to `/v1/traces` of the receiver, on the same port as the metrics and the logs.
+
+With a span sink (`createOtelSpanSink`), the lag monitors send one trace for each page view. Refer to [spans for the periods](/docs/concepts/metrics-model#spans-for-the-periods) and [spans](/docs/operations/opentelemetry#spans).
+
+- **The span of the view.** The root span `lag.page_view` starts at the start of the view. It ends when the page is hidden for the first time in the view, or at the end of the view. At its end, the span gets the values of the Web Vitals as attributes, for example `lag.web_vital.lcp`.
+- **The spans in the view.** `lag.main_thread.hang`, `lag.stall`, `lag.long_animation_frame`, `lag.page.hidden`, `lag.page.frozen` and `lag.long_callback` are in the span of the view. Each one has the real start and end of its period. The event of the same period gives only the start and the duration.
+- **An abandoned hang.** When another page reports the hang, its span is in the trace of the page that hung. The span has a link to the view of the page that reported it.
+- **The trace ID on the events.** The `lag.page_view.start` event has the identity of the span of its view: `lag.page_view.trace_id` and `lag.page_view.span_id`. Only a sampled span gives them. Loki keeps them as the structured metadata `lag_page_view_trace_id` and `lag_page_view_span_id`.
+- **The resource.** The spans have the same resource as the metrics and the logs: `service.name` and `service.instance.id`. The README of grafana-infra says that otel-ts puts `session.id` on each span.
+
+The dashboards and the alerts use the events and the metrics. The traces are for the investigation of one page view. The [Lag Monitor dashboard](/docs/operations/dashboards#page-view-traces-tempo) has a table of the page view traces, and a Trace column in the table of the page views. The traces of the SDK itself, for example from otel-ts with `tracing: true`, also go to Tempo.
+
+The data sources link the events and the traces:
+
+- **From Loki to Tempo.** The derived field `Page view trace` of the Loki data source reads the structured metadata `lag_page_view_trace_id`, with a label matcher. In Explore, a `lag.page_view.start` event shows the link "Open the trace of the page view".
+- **From Tempo to Loki.** "Logs for this span" (`tracesToLogsV2`) shows the lag events of the same page load (`service_instance_id`), from 1 minute before the span to 1 minute after it.
+
+To find a trace without the dashboard, use this TraceQL query in Explore, with the Tempo data source:
+
+```traceql
+{ name = "lag.page_view" && resource.service.name = "shop" }
+```
 
 The metrics generator of Tempo makes service graphs and span metrics, with the dimension `service.name`. It writes them to Mimir at `http://mimir:9009/api/v1/push`, with exemplars. The Frontend Observability dashboard uses these span metrics.
 
@@ -238,7 +260,7 @@ The metrics generator of Tempo makes service graphs and span metrics, with the d
 Grafana gets its configuration from `config/grafana/grafana.ini` and from the provisioning files in `config/grafana/provisioning`:
 
 - The administrator is `admin` with the password `admin`. The variables `GF_SECURITY_ADMIN_USER` and `GF_SECURITY_ADMIN_PASSWORD` in `.env` set these values.
-- `grafana.ini` enables the anonymous access, with the role `Admin`. The README of grafana-infra says the same, and it tells you to use this setting only on your own computer. The screenshot script of grafana-infra saves a dashboard through the API without credentials, and this step passed in the CI workflow on 2026-10-09. You can also sign in as `admin` to edit a dashboard.
+- `grafana.ini` enables the anonymous access, with the role `Admin`. The README of grafana-infra says the same, and it tells you to use this setting only on your own computer. The screenshot script of grafana-infra saves a dashboard through the API without credentials, and this step passed in the CI workflow on 2026-10-12. You can also sign in as `admin` to edit a dashboard.
 - `grafana.ini` also sets `allow_embedding = true` and the dark theme.
 - The variable `GF_INSTALL_PLUGINS` in `docker-compose.yml` adds the plugin `grafana-pyroscope-app`.
 
@@ -247,9 +269,17 @@ The provisioning files add these data sources:
 | Name | Type | UID | URL | Settings |
 |---|---|---|---|---|
 | Mimir (default) | `prometheus` | `mimir` | `http://mimir:9009/prometheus` | `httpMethod: POST` and `timeInterval: 15s`. Exemplars link to the traces in Tempo. |
-| Loki | `loki` | `loki` | `http://loki:3100` | The derived field `TraceID` links the trace IDs in a log line to Tempo. |
-| Tempo | `tempo` | `tempo` | `http://tempo:3200` | Links from traces to the metrics in Mimir and to the logs in Loki (tag `service.name`). A node graph and a service map. |
+| Loki | `loki` | `loki` | `http://loki:3100` | The derived field `TraceID` links the trace IDs in a log line to Tempo. The derived field `Page view trace` links the structured metadata `lag_page_view_trace_id` to Tempo. |
+| Tempo | `tempo` | `tempo` | `http://tempo:3200` | Links from traces to the metrics in Mimir. "Logs for this span" (`tracesToLogsV2`) gives the lag events of the same page load in Loki, from 1 minute before the span to 1 minute after it. A node graph and a service map. |
 | Pyroscope | `grafana-pyroscope-datasource` | – | `http://pyroscope:4040` | – |
+
+The query of "Logs for this span" is a custom query:
+
+```logql
+{service_name="${__span.tags["service.name"]}"} | service_instance_id="${__span.tags["service.instance.id"]}"
+```
+
+Loki keeps `service.name` as the index label `service_name`, and `service.instance.id` as the structured metadata `service_instance_id`. Before commit `dc6d2b4` of grafana-infra, the link used the tag `service.name` and gave `{service.name="..."}`, which is not a valid LogQL query.
 
 `timeInterval: 15s` is the export interval of the browser. Then `$__rate_interval` is 60 seconds or more. The file provider `Default` loads the dashboards in `config/grafana/provisioning/dashboards` and reads them again each 30 seconds. Refer to [dashboards](/docs/operations/dashboards).
 
@@ -259,7 +289,7 @@ The file `.env` sets the host ports. In the Docker network, the services use the
 
 | Service | Address on the host | Variable | What it gives |
 |---|---|---|---|
-| Alloy OTLP/HTTP | `http://localhost:4318` | `OTLP_HTTP_PORT` | The endpoint for pages and workers: `/v1/metrics` and `/v1/logs`. |
+| Alloy OTLP/HTTP | `http://localhost:4318` | `OTLP_HTTP_PORT` | The endpoint for pages and workers: `/v1/metrics`, `/v1/logs` and `/v1/traces`. |
 | Alloy OTLP/gRPC | `localhost:4317` | `OTLP_GRPC_PORT` | The endpoint for OTLP/gRPC senders. |
 | Alloy UI | `http://localhost:12345` | `ALLOY_UI_PORT` | The user interface of Alloy, and `/-/ready`. |
 | Mimir | `http://localhost:9009` | `MIMIR_PORT` | The Prometheus API at `/prometheus`, the OTLP endpoint at `/otlp`, `/metrics` and `/ready`. |
@@ -311,6 +341,7 @@ These addresses tell you if a service is ready:
 | Alloy | `http://localhost:12345/-/ready` | `ready` |
 | Mimir | `http://localhost:9009/ready` | `ready` |
 | Loki | `http://localhost:3100/ready` | `ready` |
+| Tempo | `http://localhost:3200/ready` | `ready` |
 | Grafana | `http://localhost:3000/api/health` | `ok` |
 
 To examine the full pipeline, send sample data and start the verification script:
@@ -334,21 +365,28 @@ To examine the full pipeline, send sample data and start the verification script
    pnpm verify --summary sample-summary.json
    ```
 
-`scripts/send-sample-data.mjs` uses the OpenTelemetry JS SDK in the same way as a browser. It simulates six page loads of two services, `lag-sample-shop` and `lag-sample-docs`. Each page load has its own `service.instance.id`. The script records each metric of the catalog and sends each lag event, with the line of the event as the body. It also posts hang reports in the JSON format of the lag worker, with `fetch`, `keepalive` and the origin `http://localhost:5173`. The options `--duration`, `--interval`, `--pages`, `--seed` and `--endpoint` change the run.
+`scripts/send-sample-data.mjs` uses the OpenTelemetry JS SDK in the same way as a browser. It simulates six page loads of two services, `lag-sample-shop` and `lag-sample-docs`. Each page load has its own `service.instance.id`. The script records each metric of the catalog and sends each lag event, with the line of the event as the body. It also posts hang reports in the JSON format of the lag worker, with `fetch`, `keepalive` and the origin `http://localhost:5173`.
+
+The script also sends one trace for each page view, as `createOtelSpanSink` sends it, and the trace of an earlier page that hung. Three page loads also send the long callbacks of the add-on `@mark1russell7/lag/async-context`. Refer to [the sample data](/docs/operations/dashboards#the-sample-data). The options `--duration`, `--interval`, `--pages`, `--seed` and `--endpoint` change the run.
 
 `scripts/verify-pipeline.mjs` examines these items:
 
-- Alloy, Mimir, Loki and Grafana are ready.
+- Alloy, Mimir, Loki, Tempo and Grafana are ready.
 - The receiver answers the CORS preflight of `localhost` pages. It does not answer the preflight of other origins, for example `https://example.com`.
 - Mimir stores each metric of the catalog under its catalog name, and each histogram as a native histogram.
 - The `instance` label is the `service.instance.id`. No series has a `session_id` label.
 - The recording rules are healthy and have data.
 - Loki has only the index labels `service_name` and `event_name`. It has all the lag events with their structured metadata, and the hang reports of the worker. For each event name, Loki has the number of events that the sample sent. The script waits up to 30 seconds for the last events.
+- The histogram of the long callbacks has only the source kinds of the closed set. Each `lag.long_callback` event has a callback name, a source and 50 ms or more, and some events have an operation.
+- Tempo has one trace for each page view of the sample. The root span `lag.page_view` has the ID of the view, and each other span of the trace has the root as its parent. The spans have the attributes of the span catalog.
+- The abandoned hang is in the trace of the page that hung, and it has a link to the view that reported it.
+- The `lag.page_view.start` events have the trace ID and the span ID of their view.
 - Grafana loads the Lag Monitor dashboard, each panel query gives data, and each annotation layer finds events.
+- Grafana reads the traces from Tempo. The Loki derived field and the Trace column link to Tempo.
 
-The exit code is 1 if a check fails. If Grafana uses a different port, add `--grafana http://localhost:3300`. To compare the catalog copy `scripts/lib/lag-catalog.mjs` with the lag catalog, add `--catalog ../lag/packages/lag/src/metric-catalog.ts`.
+The exit code is 1 if a check fails. If Grafana uses a different port, add `--grafana http://localhost:3300`. To compare the catalog copy `scripts/lib/lag-catalog.mjs` with the lag catalog (the metrics, the events and the spans), add `--catalog ../lag/packages/lag/src/metric-catalog.ts`.
 
-The script `scripts/screenshot-dashboard.mjs` takes screenshots of the dashboard after the sample data. The CI workflow `.github/workflows/verify.yml` of grafana-infra starts the stack, sends the sample data, starts the verification script and uploads the screenshots. Refer to [the verification workflow](/docs/operations/dashboards#the-verification-workflow).
+The script `scripts/screenshot-dashboard.mjs` takes screenshots of the dashboard and of the traces after the sample data. The CI workflow `.github/workflows/verify.yml` of grafana-infra starts the stack, sends the sample data, starts the verification script and uploads the screenshots. Refer to [the verification workflow](/docs/operations/dashboards#the-verification-workflow).
 
 ### The integration tests
 
@@ -384,6 +422,8 @@ To stop the stack of `node_modules`, use `pnpm run infra:down` in `packages/lag-
 | Mimir rejects samples. | Mimir counts each rejection, with its reason, in `cortex_discarded_samples_total`. | Look at `cortex_discarded_samples_total` at `http://localhost:9009/metrics`. |
 | The browser shows a CORS error. | The origin of the page is not in `allowed_origins`. | Add the origin to `allowed_origins` in `config/alloy/config.alloy`. Then restart Alloy. |
 | A panel shows the error "too many outstanding requests". | The dashboard sends more requests than the limit of the query scheduler. | Increase `max_outstanding_requests_per_tenant` in `config/mimir/mimir.yaml`. |
+| The Trace column is empty. | The app gives no span sink to the lag monitors, or the sampler did not sample the span of the view. Without a sampled span, the `lag.page_view.start` event has no trace ID. | Give the monitors a span sink (`createOtelSpanSink`). Refer to [spans](/docs/operations/opentelemetry#spans). |
+| The trace of a view has no root span. | The page closed before the span of the view ended, or before the exporter sent it. | Flush the tracer provider when the page becomes hidden. |
 
 ## Source
 
@@ -392,7 +432,7 @@ To stop the stack of `node_modules`, use `pnpm run infra:down` in `packages/lag-
 - `config/alloy/config.alloy`: the receiver, the CORS settings, the `transform` processor and the exporters.
 - `config/mimir/mimir.yaml` and `config/mimir/rules/anonymous/lag.yaml`: the Mimir settings and the recording rules.
 - `config/loki/loki.yaml` and `config/tempo/tempo.yaml`: the labels of Loki, and the metrics generator of Tempo.
-- `config/grafana`: `grafana.ini`, the data sources and the dashboard provider.
+- `config/grafana`: `grafana.ini`, the data sources with their links between the events and the traces, and the dashboard provider.
 - `scripts/send-sample-data.mjs` and `scripts/verify-pipeline.mjs`: the sample data and the verification.
-- `scripts/screenshot-dashboard.mjs` and `.github/workflows/verify.yml`: the screenshots of the dashboard and the CI workflow.
+- `scripts/screenshot-dashboard.mjs` and `.github/workflows/verify.yml`: the screenshots of the dashboard and the traces, and the CI workflow.
 - The Grafana documentation of [Alloy](https://grafana.com/docs/alloy/latest/), [Mimir](https://grafana.com/docs/mimir/latest/), [Loki](https://grafana.com/docs/loki/latest/) and [Tempo](https://grafana.com/docs/tempo/latest/).
