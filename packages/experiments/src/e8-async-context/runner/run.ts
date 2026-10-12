@@ -13,10 +13,15 @@
  * `--setups=A,B,C,D`, `--out=<file>`, and `--quick` (short windows and one
  * round, only to examine the harness; its file goes to `dist/e8`).
  *
+ * After each page run, the runner writes all runs so far to
+ * `dist/e8/partial.json`. With `--resume=<file>`, it takes the runs of that
+ * file (a partial file or a results file), and it measures only the page
+ * runs that the file does not have.
+ *
  * Use it from the root of the repository: `pnpm experiment:e8`. The
  * workspace packages must be built (`tsc -b`) before the run.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { SETUP_IDS, SETUP_LABELS, type SetupFacts, type SetupId } from "../shared/types.js";
 import { bundleSize, buildSetup } from "./builds.js";
@@ -45,12 +50,21 @@ function listOption<T extends string>(name : string, allowed : readonly T[]) : T
     return items as T[];
 }
 
+/** A path of an option: relative to the folder where pnpm started (`INIT_CWD`), thus `pnpm experiment:e8` takes paths from the root. */
+const fromStartFolder = (file : string) : string => path.resolve(process.env["INIT_CWD"] ?? process.cwd(), file);
+
 const quick = process.argv.includes("--quick");
 const rounds = Number(option("rounds") ?? (quick ? 1 : 5));
 const engines = listOption<Engine>("engines", ENGINES);
 const setups = listOption<SetupId>("setups", SETUP_IDS);
-const out = path.resolve(option("out") ?? (quick ? path.join(WORK_DIR, "quick.json") : DEFAULT_OUT));
+const outOption = option("out");
+const out = outOption ? fromStartFolder(outOption) : (quick ? path.join(WORK_DIR, "quick.json") : DEFAULT_OUT);
 const timing = quick ? QUICK_TIMING : FULL_TIMING;
+const resumeOption = option("resume");
+const resumeFile = resumeOption ? fromStartFolder(resumeOption) : undefined;
+const previousRuns : readonly RunResult[] = resumeFile
+    ? (JSON.parse(readFileSync(resumeFile, "utf8")) as { runs : RunResult[] }).runs
+    : [];
 
 if (!Number.isInteger(rounds) || rounds < 1) throw new Error("--rounds must be a positive integer.");
 if (!setups.includes("A")) throw new Error("--setups must contain A: the runner compares each setup with A.");
@@ -64,7 +78,6 @@ function format(value : number | undefined) : string {
 }
 
 async function main() : Promise<void> {
-    const started = new Date();
     log(`Build of the setups ${setups.join(", ")}`);
     const bundles : BundleSize[] = [];
     for (const setup of setups) {
@@ -89,6 +102,13 @@ async function main() : Promise<void> {
                 const order = roundOrder(setups, round);
                 log(`${engine}, round ${round + 1} of ${rounds}: ${order.join(" ")}`);
                 for (const [position, setup] of order.entries()) {
+                    const previous = previousRuns.find(run => run.engine === engine && run.round === round && run.setup === setup);
+                    if (previous) {
+                        runs.push(previous);
+                        (facts[engine] ??= {})[setup] ??= previous.facts;
+                        log(`  ${setup}: from ${path.relative(REPO_ROOT, resumeFile ?? "")}`);
+                        continue;
+                    }
                     const run = await measureRun({
                         engine,
                         setup,
@@ -115,17 +135,18 @@ async function main() : Promise<void> {
         await server.close();
     }
 
+    const times = runs.map(run => run.measuredAt).sort();
     const result : E8Results = {
         experiment : "E8",
         title : "The cost of an async context in the browser",
         quick,
-        started : started.toISOString(),
-        ended : new Date().toISOString(),
+        measured : { first : times[0] ?? "", last : times.at(-1) ?? "" },
         machine : machine(),
         packages : packageVersions(),
         browsers,
         timing,
         rounds,
+        resumedRuns : runs.filter(run => previousRuns.includes(run)).length,
         setups : setups.map(id => ({ id, label : SETUP_LABELS[id] })),
         facts,
         bundles,

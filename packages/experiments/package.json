@@ -9,7 +9,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
-    "e8": "tsx src/e8-async-context/runner/run.ts"
+    "e8": "tsx src/e8-async-context/runner/run.ts",
+    "e8:tables": "tsx src/e8-async-context/runner/tables.ts"
   },
   "dependencies": {
     "@lag/load": "workspace:*",
