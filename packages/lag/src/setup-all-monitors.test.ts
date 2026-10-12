@@ -686,6 +686,8 @@ describe("setupAllMonitors degradation", () => {
         expect(handles.driftLag).toBeDefined();
         expect(handles.conditions).toBeDefined();
         expect(browser.logger.log).toHaveBeenCalledWith("warn", 'Failed to create the "lifecycle" monitor.', expect.objectContaining({ monitor : "lifecycle" }));
+        // An exporter can give its pagehide event to flush() also then
+        expect(() => handles.flush({ type : "pagehide", persisted : false })).not.toThrow();
         handles.stop();
     });
 
@@ -978,6 +980,10 @@ describe("setupAllMonitors with a span sink", () => {
         // The page is hidden: the span of the view ended, thus the exporter can send it
         expect(view!.endTime).toBeGreaterThan(view!.startTime);
         expect(spans.named("lag.stall")).toEqual([expect.objectContaining({ attributes : { kind : "hang", duration_ms : expect.any(Number) } })]);
+        // The span of the stall lasts the duration of the stall
+        const [stall] = spans.named("lag.stall");
+        expect(stall!.attributes["duration_ms"]).toBeGreaterThan(0);
+        expect(stall!.endTime! - stall!.startTime).toBe(stall!.attributes["duration_ms"]);
         expect(spans.named("lag.long_animation_frame")).toHaveLength(1);
         expect(spans.named("lag.page.hidden")).toHaveLength(1);
         for (const span of others) {
@@ -1010,6 +1016,21 @@ describe("setupAllMonitors with a span sink", () => {
             expect.anything(),
         );
         browser.unblockMain();
+        handles.stop();
+    });
+
+    it("records no span for a stall without performance, because the stall then has no absolute time", async () => {
+        const browser = createFakeBrowser();
+        const { performance : _performance, worker : _worker, ...deps } = browser.deps;
+        const spans = createRecordingSpanSink();
+        const handles = setupAllMonitors({ ...deps, spans });
+        await advance(1_000);
+
+        browser.addLag(6_000);
+        await advance(5_000);
+
+        expect(browser.meter.sum("lag_stalls")).toBe(1);
+        expect(spans.named("lag.stall")).toEqual([]);
         handles.stop();
     });
 
