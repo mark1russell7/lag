@@ -18,6 +18,46 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/experiments:
+    dependencies:
+      '@lag/load':
+        specifier: workspace:*
+        version: link:../load
+      '@mark1russell7/lag':
+        specifier: workspace:*
+        version: link:../lag
+      '@mark1russell7/otel-ts':
+        specifier: github:mark1russell7/otel-ts
+        version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.1)
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.1
+      '@opentelemetry/context-zone-peer-dep':
+        specifier: 2.6.1
+        version: 2.6.1(@opentelemetry/api@1.9.1)(zone.js@0.16.1)
+      async-browser-context:
+        specifier: 0.2.2
+        version: 0.2.2(@opentelemetry/api@1.9.1)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
+    devDependencies:
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.3.0
+      playwright:
+        specifier: ^1.58.2
+        version: 1.58.2
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      vite:
+        specifier: ^7.3.1
+        version: 7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1)
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@opentelemetry/api@1.9.1)(@types/node@25.3.0)(@vitest/browser-playwright@4.1.2)(@vitest/browser-webdriverio@4.1.2)(vite@7.3.1(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
+      zone.js:
+        specifier: 0.16.1
+        version: 0.16.1
+
   packages/lag:
     dependencies:
       page-lifecycle-tracker:
@@ -4370,7 +4410,7 @@ snapshots:
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
-      '@jridgewell/sourcemap-codec': 1.5.5
+      '@jridgewell/sourcemap-codec': 1.6.0
       '@jridgewell/trace-mapping': 0.3.31
 
   '@jridgewell/gen-mapping@0.4.0-beta.0':
