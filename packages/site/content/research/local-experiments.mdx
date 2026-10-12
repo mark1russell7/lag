@@ -296,7 +296,7 @@ Each difference has a range from below 0 to more than 20 ms. The differences fol
 
 A measurement of 2026-10-11 was quieter, with a load of 25% to 41%. It used only Chromium and async-browser-context 0.1.1. Its idle differences were +5.4 ms for setup B (−1.3 to 6.3), +1.6 ms for setup C (−0.7 to 4.0) and +5.2 ms for setup D (1.9 to 8.2). The monitors alone used 30.5 ms each second. Version 0.2.0 adds a check for hooks to each callback, thus its value can be a little higher. These differences are the best estimate of this experiment for the idle cost.
 
-**Results: the workloads.** Each factor is the time of the setup divided by the time of setup A in the same round. The first table gives the main-thread time in Chromium (CDP `TaskDuration`). The other tables give the total time.
+**Results: the workloads, version 0.2.0.** These tables come from the measurement of 2026-10-12, thus setup C used async-browser-context 0.2.0. Version 0.2.2 changed the cost of `await` (refer to [version 0.2.2](#e8-version-022)). Each factor is the time of the setup divided by the time of setup A in the same round. The first table gives the main-thread time in Chromium (CDP `TaskDuration`). The other tables give the total time.
 
 | Workload, Chromium | A, main-thread time (ms) | B / A | C / A | D / A |
 | --- | --- | --- | --- | --- |
@@ -349,10 +349,10 @@ In WebKit, the first four workloads took 3 ms to 15 ms in setup A, and the clock
   description="One panel for each engine. For each workload, one dot for each of the setups B, C and D gives the total time divided by the total time of setup A in the same round. A line goes from the lowest to the highest round. In Firefox, the await loop of setup C took 84 times the time of setup A, from 79 to 140 times in the rounds. In Firefox, the microtasks of setups B and D took 14 times the time. In Chromium and WebKit, the promise chain of setups B and D took 5 to 11 times the time. Most other lines cross 1."
   options={e8WorkloadChart}
   table={e8WorkloadTable}
-  caption="Experiment E8, 2026-10-12, Windows 11, 5 rounds in each engine, on a busy machine. The x axis is logarithmic. The vertical rule at 1 is the time of setup A."
+  caption="Experiment E8, 2026-10-12, Windows 11, 5 rounds in each engine, on a busy machine. Setup C used async-browser-context 0.2.0. The x axis is logarithmic. The vertical rule at 1 is the time of setup A."
 />
 
-**Results: the `await` step in Firefox.** In Firefox, the workload `await-loop` of setup C took 84 times the time of setup A, from 79 to 140 times in the 5 rounds. A short probe on the same machine found the cause (`pnpm --filter @lag/experiments e8:await-probe`). It measured 50,000 sequential steps in each form, in turns in one browser, and it gives the median of 7 measurements. A factor compares the form with the native form without a library.
+**Results: the `await` step in Firefox, version 0.2.0.** In Firefox, the workload `await-loop` of setup C took 84 times the time of setup A, from 79 to 140 times in the 5 rounds. A short probe on the same machine found the cause (`pnpm --filter @lag/experiments e8:await-probe`). It measured 50,000 sequential steps in each form, in turns in one browser, and it gives the median of 7 measurements. A factor compares the form with the native form without a library. This table is the probe of 2026-10-12, with version 0.2.0:
 
 | Form, time of one step | Chromium | Firefox | Firefox, `javascript.options.asyncstack: false` |
 | --- | --- | --- | --- |
@@ -364,7 +364,9 @@ In WebKit, the first four workloads took 3 ms to 15 ms in setup A, and the clock
 | `queueMicrotask` chain, async-browser-context | 0.57 µs (×1.0) | 4.42 µs (×2.3) | 1.06 µs (×1.6) |
 | `queueMicrotask` chain, zone.js | 0.45 µs (×0.8) | 6.88 µs (×3.5) | 2.18 µs (×3.3) |
 
-The plugin changes each `await` into a step of a generator, and the runtime starts the next step with a native `then`. A native `await` needs no `then` in JavaScript. Firefox makes the promise reaction of such a step slow. The generator without the library was slow in the same way. It took 47 times the time of a native `await`, and the transformed `await` took 69 times. Thus the cause is the engine, not the code of the library.
+The plugin changes each `await` into a step of a generator, and the runtime starts the next step with a native `then`. A native `await` needs no `then` in JavaScript. Firefox makes the promise reaction of such a step slow.
+
+The generator without the library was slow in the same way. It took 47 times the time of a native `await`, and the transformed `await` took 69 times. Thus the cause is a slow path of the engine for such a step. Version 0.2.2 does not use that path ([version 0.2.2](#e8-version-022)).
 
 Under Playwright, Firefox also records an async stack for each promise reaction. Without async stacks, a transformed `await` took 17 times the time of a native `await`, and 24 times with a hook. With async stacks, it took 69 to 86 times.
 
@@ -446,6 +448,32 @@ In setup C, a listener of an event that code dispatched in the root context got 
 | C | 404.9 | 124.0 | +5.7 | No | Yes |
 | D | 422.7 | 131.2 | +12.9 | Yes | No |
 
+### E8: version 0.2.2
+
+Version 0.2.2 of async-browser-context changed the coroutine. In this version, a native async function drives each transformed async function, and its native `await` waits for each step. Thus no `then` callback of JavaScript remains for each step. The full measurement did not use version 0.2.2, but the await probe did. The probe also operated in WebKit, and it had a second form: the `await` of a resolved promise.
+
+During the probe, another program used all the CPUs of the machine (a load of 100%). The probe compares the forms in turns in one browser, thus the load changes the factors less than the times. A factor compares the form with the native form of the same type, without a library.
+
+| Form, time of one step | Chromium | Firefox | Firefox, `asyncstack: false` | WebKit |
+| --- | --- | --- | --- | --- |
+| Native `await` of a value (`await null`) | 0.07 µs | 0.32 µs | 0.38 µs | 0.10 µs |
+| Transformed `await` of a value | 0.13 µs (×1.9) | 0.58 µs (×1.8) | 0.74 µs (×1.9) | 0.18 µs (×1.8) |
+| Transformed `await` of a value, with a hook that does nothing | 0.26 µs (×3.8) | 0.84 µs (×2.6) | 0.84 µs (×2.2) | 0.30 µs (×3.0) |
+| Native `await` of a resolved promise | 0.05 µs | 0.48 µs | 0.48 µs | 0.10 µs |
+| Native `await` of a resolved promise, with the patches of async-browser-context | 0.05 µs (×0.9) | 2.70 µs (×5.6) | 2.38 µs (×5.0) | 0.10 µs (×1.0) |
+| Transformed `await` of a resolved promise | 0.12 µs (×2.1) | 2.80 µs (×5.8) | 2.64 µs (×5.5) | 0.20 µs (×2.0) |
+| Native `await` of a resolved promise of zone.js | 1.87 µs (×35) | 111 µs (×232) | 15.3 µs (×32) | 2.50 µs (×25) |
+| `queueMicrotask` chain, async-browser-context | ×1.1 | ×1.5 | ×1.2 | ×3.0 |
+| `queueMicrotask` chain, zone.js | ×0.8 | ×10.8 | ×4.1 | ×6.8 |
+
+The results:
+
+- **The fix.** In Firefox, a transformed `await` of a value took 0.58 µs, and 13.8 µs with version 0.2.0. Thus the factor went from 69 to 1.8. In Chromium and WebKit, the factor stayed near 2.
+- **The cost that remains in Firefox.** The runtime patches `Promise.prototype.then`, and that patch turns off the fast path of Firefox for an `await` of a promise. In the probe, each `await` of a resolved promise took approximately 2 µs more (0.48 µs and 2.70 µs). The cost is the same in code that the plugin does not transform, because the patch is global. An `await` of a value is not affected. Chromium and WebKit had no such cost.
+- **The size of that cost.** The probe operated on a machine with a load of 100%. The benchmark of the library gives approximately 0.8 µs for each `await` of a promise in Firefox.
+- **zone.js.** With zone.js, the global `Promise` is the promise of zone.js, thus each `await` of a promise starts a `then` of zone.js. In Firefox, such an `await` took 15 µs without async stacks, and 111 µs with them. It took 1.9 µs in Chromium and 2.5 µs in WebKit. Thus zone.js has the same type of cost in each engine, and more of it.
+- **The microtasks of zone.js.** In Firefox, the chain took 10.8 times the time in this probe, and 3.5 times in the probe with version 0.2.0. Thus the factor depends on the load.
+
 ### E8: the conclusions
 
 These results do not depend on time, thus the load does not change them:
@@ -457,7 +485,7 @@ These results do not depend on time, thus the load does not change them:
 
 These factors were on the same side of 1 in each round:
 
-- **The `await` step in Firefox.** The transformed `await` took 84 times the time of a native `await` (79 to 140). The probe found the cause: Firefox makes the `then` of each step slow, and async stacks make it slower.
+- **The `await` step in Firefox, version 0.2.0.** The transformed `await` took 84 times the time of a native `await` (79 to 140). The probe found the cause: Firefox makes the `then` of each step slow, and async stacks make it slower. Version 0.2.2 removes most of this cost: in the probe, the factor is 1.8.
 - **Promise chains with zone.js.** In setups B and D, the promise chain took 6 to 9 times the time in Chromium. It took 2.6 times the time in Firefox, and 5 to 11 times in WebKit. For comparison, the factors of setup C were 0.41 in Chromium, 1.02 in Firefox and 1.63 in WebKit.
 - **Microtasks with zone.js in Firefox.** In setups B and D, they took 14 times the time (6 to 19). The probe gave 3.5 times. In Chromium, zone.js made them faster (0.57 times), because it starts many of them in one native microtask.
 - **Async functions.** In Chromium, `async-calls` took 1.8 to 2.0 times the time in setups B and C. In setup C, `await-loop` took 1.3 times the time. The probe gave 1.8 times for one transformed `await` step in Chromium.
@@ -474,13 +502,15 @@ One result was not expected. In Chromium, the promise chain was faster in setup 
   - Promise chains: up to 1.6 times the time, against 2.6 to 11 times.
   - Bundle: 5.7 KiB, against 12.9 KiB.
 
-  E8 measured the runtime together with the plugin. The cases without `await` use only the patches of the runtime. The probe found no cost of the runtime on a native `await`.
+  E8 measured the runtime together with the plugin. The cases without `await` use only the patches of the runtime. The runtime has one cost on native code. In Firefox, each `await` of a promise takes approximately 0.8 µs to 2.2 µs more (version 0.2.2). With zone.js, such an `await` takes 15 µs or more in Firefox.
 - **zone.js as an option.** The data supports it. The zone.js library does not keep the span after a native `await`. Setup D shows that each user of otel-ts pays for it at this time. For the option, otel-ts must load zone.js only for `"zone"`. At this time, the static import of `@opentelemetry/context-zone` loads it for each option.
-- **The cost of the plugin for `await`.** In Chromium, a transformed `await` step costs 1.8 times a native step (0.09 µs). In Firefox, it costs 17 times without async stacks (3.4 µs), and 69 to 84 times with them (approximately 14 µs). A loop of 10,000 awaits then uses 34 ms to 140 ms of the main thread in Firefox, against 2 ms natively.
-- **The use of the plugin.** We recommend the plugin only for the code that needs the span after `await` (the options `include` and `exclude` of the plugin). The hot loops of an application stay native. The documentation of otel-ts must give this cost, and an application must measure in Firefox.
+- **The cost of the plugin for `await`.** Use version 0.2.2 or later. With version 0.2.2, a transformed `await` of a value costs approximately 2 times a native `await` in Chromium, Firefox and WebKit (0.13 µs, 0.58 µs and 0.18 µs in the probe). With version 0.2.0, it cost 69 to 84 times in Firefox.
+- **The cost of the patch of `then` in Firefox.** In Firefox, each `await` of a promise costs approximately 0.8 µs to 2.2 µs more, in transformed code and in other code. The patch of `Promise.prototype.then` causes it, and the runtime installs that patch for all code of the page. Chromium and WebKit have no such cost. The zone.js library has the same type of cost, and more of it. In Firefox, each `await` of one of its promises took 15 µs to 111 µs.
+- **The use of the plugin.** The plugin is necessary only for the code that needs the span after `await`. With version 0.2.2, its own cost is small, thus an application can also transform its hot loops. The options `include` and `exclude` of the plugin select the code that keeps the span after `await`. They do not remove the cost of the patch of `then`, because that patch is global.
+- **The documentation of otel-ts.** It must give the cost of an `await` of a promise in Firefox, for the runtime and for zone.js.
 - **The attribution of lag.** With the runtime as the default of otel-ts, the Long Animation Frames entries of each page with otel-ts name `asyncBrowserContextWrapper` in Chromium. Thus lag loses the name and the source position of the script that caused a long frame.
 - **The add-on of lag.** Version 0.2.0 makes it possible. `addCallbackHook` starts the hook before and after each callback. The hook gets the real function, the API that started it (for example `setTimeout`, `Promise.then` or `await`) and the context of the callback. Thus the add-on can give the attribution back in Chromium. It can also give a first attribution in Firefox and Safari.
-- **The cost of the hook.** The hook operates for each callback. A hook that did nothing added 60% to a transformed `await` step in Chromium, and 25% to 40% in Firefox. Thus the hook of the add-on must do little work. For example, it reads the clock at the start and at the end, and it records only a long callback. E8 did not measure the idle cost of the monitors with a hook.
+- **The cost of the hook.** The hook operates for each callback. With version 0.2.2, a hook that did nothing made each transformed `await` step 1.1 to 2 times longer, or 0.1 µs to 0.3 µs. Thus the hook of the add-on must do little work. For example, it reads the clock at the start and at the end, and it records only a long callback. E8 did not measure the idle cost of the monitors with a hook.
 - **The readings of the monitors.** Setup C did not change a value that lag measures, in a way that the load cannot explain. The zone.js library made the task latencies of WebKit 1 ms to 4 ms longer. Thus the new default needs no change to the monitors.
 
 **Run E8 again.** From the root of the repository:
@@ -499,6 +529,7 @@ After a stop, `--resume=<file>` takes the results of a results file or of `packa
 - Safari on macOS was not available on the machine, and the WebKit build for Windows is not Safari.
 - Under Playwright, Firefox recorded async stacks, also with the setting for a debuggee only. The probe did not examine Firefox without automation. Thus the cost of an `await` step for the users of Firefox is probably the value without async stacks. The experiment did not measure it.
 - The best idle cost comes from the quiet measurement of 2026-10-11, with version 0.1.1 and only Chromium.
+- The full measurement used version 0.2.0. Thus the workload factors of setup C are those of version 0.2.0. Version 0.2.2 has only the probe, which operated with a load of 100% on the machine. Its times are high, and its factors are approximate.
 - The workloads do only asynchronous work, thus their factors are the largest possible factors. In an application, the network, the rendering and the other work take more time.
 - The page turned off the instrumentations of otel-ts. They have their own cost, which this experiment did not measure. With zone.js, the user-interaction instrumentation also uses zones.
 - The runner measured builds without minification, so that the Long Animation Frames entries show the function names. The bundle sizes come from minified builds.
