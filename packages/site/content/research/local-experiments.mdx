@@ -522,6 +522,8 @@ pnpm experiment:e8
 
 The command builds the workspace and the four pages, and it measures 5 rounds in Chromium, Firefox and WebKit. A full measurement takes approximately 65 minutes. It writes `local-experiments.e8.json` beside this page and prints the tables of this section. The options are `--engines=chromium,firefox,webkit`, `--rounds=5`, `--setups=A,B,C,D` and `--quick`. The option `--quick` only examines the harness.
 
+The package `@lag/experiments` pins otel-ts at commit `92cd393`, the version that E8 measured. From version 0.1.0, otel-ts has the entries `/zone` and `/core`, and its main entry does not accept `"zone"`. A measurement of otel-ts 0.1.0 needs other setups.
+
 After a stop, `--resume=<file>` takes the results of a results file or of `packages/experiments/dist/e8/partial.json`. Then the runner measures only the missing page runs. The command `pnpm --filter @lag/experiments e8:tables` prints the tables from the file. The command `pnpm --filter @lag/experiments e8:await-probe` does the probe of the `await` step, in a few minutes. Close the other programs before a measurement: the load of this measurement made the idle cost useless.
 
 **Limits.**
