@@ -133,7 +133,9 @@ console.log(handles.peerHangWatch !== undefined);
 |---|---|---|
 | `beatIntervalMs` | 1000 | The interval of the beats of a visible page. |
 | `thresholdMs` | 5000 | The silence that makes the end of a page an abandoned hang. It is the hang threshold of the worker monitor. |
-| `graceMs` | 1000 | The wait for the last messages of a page after its lock comes free. |
+| `graceMs` | 1000 | The wait for the last messages of a page after its lock comes free. It must be longer than the delay of the messages between the pages. |
+
+The watch decides at the end of the wait for the last messages, with the messages that it has at that time. A message that arrives later does not change the decision. Thus a `graceMs` that is shorter than the delay of the messages can count one hang two times. For example, a page in Firefox reports its own hang at its close and says `away`. If the `away` arrives after the wait, another page also reports the hang. The watch cannot measure the delay of the messages before it operates, thus it does not examine the value.
 
 The channel name and the lock names are a protocol between the pages of an origin, also between pages with different versions of the library. A test keeps them.
 

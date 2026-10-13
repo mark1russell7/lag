@@ -569,6 +569,30 @@ describe("PageViewVitals", () => {
             expect(t.reports).toHaveLength(1);
         });
 
+        it("removes its lifecycle subscription, thus a stopped instance keeps no reference in the lifecycle", () => {
+            const fake = createFakeLifecycle();
+            const subscribe = fake.lifecycle.subscribe.bind(fake.lifecycle);
+            const unsubscribed = vi.fn();
+            vi.spyOn(fake.lifecycle, "subscribe").mockImplementation((listener, options) => {
+                const off = subscribe(listener, options);
+                return () => {
+                    unsubscribed();
+                    off();
+                };
+            });
+            const vitals = new PageViewVitals(() => {}, {
+                logger : { log : vi.fn() },
+                clock : fake.clock,
+                PerformanceObserver : createFakePerformanceObserver(ALL_TYPES).PerformanceObserver,
+                lifecycle : fake.lifecycle,
+            });
+            expect(unsubscribed).not.toHaveBeenCalled();
+
+            vitals.stop();
+
+            expect(unsubscribed).toHaveBeenCalledOnce();
+        });
+
         it("gives no value for a vital whose entry type the browser does not have, as web-vitals", () => {
             // Firefox has no layout-shift entries. Safari before 26.2 also has no event entries.
             const t = setup({ supported : ["paint", "largest-contentful-paint"] });
@@ -614,6 +638,35 @@ describe("PageViewVitals", () => {
             expect(t.reports).toEqual([expect.objectContaining({ final : true, view : expect.objectContaining({ id : "view-1" }) })]);
             expect(listener).not.toHaveBeenCalled();
             expect(t.vitals.getValues().map(v => v.name)).not.toContain("INP");
+        });
+
+        it("starts no new view when the report function calls it at the final report before a soft navigation", () => {
+            const t = setup({ softNavigations : true });
+            t.report.mockImplementation((r : VitalsReport) => {
+                t.reports.push(r);
+                if (r.final) t.vitals.stop();
+            });
+            t.observer.deliver("soft-navigation", softNavigation({ startTime : 3_000, interactionId : 77, url : "https://shop.example/p/9", presentationTime : 3_100 }));
+
+            // The view that ended stays the current view, with its values
+            expect(t.vitals.getView()).toEqual({ id : "view-1", navigationType : "navigate", startTime : 0, url : "https://shop.example/cart" });
+            expect(Object.fromEntries(t.vitals.getValues().map(v => [v.name, v.value]))).toEqual({ TTFB : 200 });
+        });
+
+        it("starts no new view when the report function calls it at the final report before a restore from the back/forward cache", () => {
+            const t = setup();
+            t.report.mockImplementation((r : VitalsReport) => {
+                t.reports.push(r);
+                if (r.final) t.vitals.stop();
+            });
+            t.pagehide(true);
+            t.pageshow(true, 10_000);
+            t.runFrames();
+            t.runFrames();
+
+            expect(t.reports.at(-1)).toMatchObject({ final : true, view : { id : "view-1" } });
+            expect(t.vitals.getView()).toMatchObject({ id : "view-1", navigationType : "navigate" });
+            expect(Object.fromEntries(t.vitals.getValues().map(v => [v.name, v.value]))).toEqual({ TTFB : 200 });
         });
 
         it("makes no observer for an entry type that the browser does not have, and no warning", () => {

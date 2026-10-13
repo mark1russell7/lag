@@ -101,6 +101,16 @@ export type PeerHangWatchOptions = {
     visible : boolean;
     beatIntervalMs? : number;
     thresholdMs? : number;
+    /**
+     * The wait for the last messages of a page after its lock comes free. The
+     * default is `PEER_GRACE_MS`. The value must be longer than the delay of the
+     * messages between the pages.
+     *
+     * The watch decides at the end of the wait, with the messages that it has
+     * at that time. A later message does not change the decision. For example,
+     * a page that reports its own hang at its close also says `away`. If the
+     * `away` arrives after the wait, another page reports the same hang again.
+     */
     graceMs? : number;
     /**
      * The hang journal. The worker of a page that hangs writes its record
