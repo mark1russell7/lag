@@ -1,0 +1,253 @@
+.figure {
+    display: grid;
+    gap: var(--space-4);
+    margin: var(--space-6) 0;
+    padding: var(--space-4) var(--space-4) var(--space-3);
+    border: 1px solid var(--color-rule-strong);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+}
+
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3) var(--space-6);
+}
+
+.control {
+    display: grid;
+    grid-template-columns: auto minmax(8rem, 12rem) 4.5rem;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
+.control input[type="range"] {
+    width: 100%;
+    accent-color: var(--color-accent);
+}
+
+.output {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
+.check input {
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--color-accent);
+}
+
+@media (max-width: 34rem) {
+    .control {
+        grid-template-columns: minmax(0, 1fr) 4.5rem;
+        width: 100%;
+    }
+
+    .control label {
+        grid-column: 1 / -1;
+    }
+}
+
+.plot {
+    min-width: 0;
+}
+
+.svg {
+    display: block;
+    max-width: 100%;
+    touch-action: pan-y;
+    cursor: ew-resize;
+    user-select: none;
+}
+
+/* The marks of the figure. Red pencil: the time that the main thread loses. Blue ink: the click. */
+.grid {
+    stroke: var(--color-grid);
+    stroke-width: 1;
+}
+
+.tick,
+.laneLabel,
+.muted {
+    fill: var(--color-ink-muted);
+    font-family: var(--font-mono);
+    font-size: 11px;
+}
+
+/* A halo in the color of the surface keeps a label readable over the guide line of the click */
+.laneLabel {
+    fill: var(--color-ink-secondary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    font-weight: 600;
+    paint-order: stroke;
+    stroke: var(--color-surface);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+}
+
+.laneLetter {
+    fill: var(--color-ink);
+    font-family: var(--font-mono);
+    font-weight: 800;
+}
+
+.track {
+    fill: var(--color-surface-sunken);
+}
+
+.hatchBack {
+    fill: var(--color-mark-wash);
+}
+
+.hatchLine {
+    stroke: var(--color-mark);
+    stroke-width: 2;
+}
+
+.task,
+.lag {
+    stroke: var(--color-mark);
+    stroke-width: 1;
+}
+
+.inBar {
+    fill: var(--color-ink);
+    font-size: 12px;
+    font-weight: 700;
+    paint-order: stroke;
+    stroke: var(--color-mark-wash);
+    stroke-width: 3px;
+}
+
+.handler {
+    fill: var(--color-accent);
+}
+
+.window {
+    fill: var(--color-surface);
+    stroke: var(--color-rule-strong);
+    stroke-width: 1;
+}
+
+.baseline {
+    stroke: var(--color-rule);
+    stroke-width: 1;
+}
+
+.beat {
+    fill: var(--color-surface);
+    stroke: var(--color-ink-secondary);
+    stroke-width: 1.5;
+}
+
+.beatLate {
+    fill: var(--color-surface);
+    stroke: var(--color-mark);
+    stroke-width: 2;
+}
+
+.wait {
+    stroke: var(--color-mark);
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.frame {
+    fill: var(--color-ink-muted);
+}
+
+.dropped {
+    fill: var(--color-surface);
+    stroke: var(--color-mark);
+    stroke-width: 1;
+}
+
+.presentation {
+    fill: var(--color-rule-strong);
+}
+
+.guide {
+    stroke: var(--color-accent);
+    stroke-width: 1;
+    stroke-dasharray: 3 3;
+}
+
+.pointer {
+    fill: var(--color-accent);
+}
+
+.readouts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+    gap: var(--space-3);
+    margin: 0;
+}
+
+.readout {
+    display: grid;
+    align-content: start;
+    gap: var(--space-1);
+    padding: var(--space-3);
+    border: 1px solid var(--color-rule);
+    border-top: 3px solid var(--color-mark);
+    border-radius: 0 0 var(--radius) var(--radius);
+}
+
+.readout dd {
+    margin: 0;
+}
+
+.term {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-weight: 800;
+}
+
+.letter {
+    display: inline-grid;
+    place-items: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    border: 1px solid var(--color-ink);
+    border-radius: var(--radius-small);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+}
+
+.readouts .value {
+    font-size: var(--text-xl);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+}
+
+.svg .value {
+    fill: var(--color-ink);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.detail {
+    color: var(--color-ink-secondary);
+    font-size: var(--text-sm);
+}
+
+.caption {
+    color: var(--color-ink-secondary);
+    font-size: var(--text-sm);
+}

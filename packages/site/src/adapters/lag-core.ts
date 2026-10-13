@@ -90,12 +90,6 @@ export type TimelineNames = { readonly [K in keyof typeof TIMELINE_NAMES] : stri
 /** The INP thresholds of web-vitals, in ms: at or below `good` is good, above `poor` is poor. */
 export const INP_THRESHOLDS : { readonly good : number; readonly poor : number } = VITAL_THRESHOLDS.INP;
 
-/**
- * - `all`: every monitor that the browser supports, and a worker.
- * - `timers`: only the monitors that need timers (a small cost, for the home page).
- */
-export type MonitorScope = "all" | "timers";
-
 export type MonitorLogEntry = {
     level : string;
     message : string;
@@ -182,9 +176,8 @@ export type StartedMonitors = {
 
 export type StartMonitorsOptions = {
     meter : Meter;
-    scope : MonitorScope;
     onLog? : (entry : MonitorLogEntry) => void;
-    /** The receiver of the events, the spans and the entries, for the timeline. Only the scope `all` uses it. */
+    /** The receiver of the events, the spans and the entries, for the timeline. */
     recorder? : MonitorRecorder;
 };
 
@@ -212,21 +205,6 @@ function logger(onLog : StartMonitorsOptions["onLog"]) : AllMonitorDeps["logger"
 
 /** The monitors log their own warnings. Thus the entry probes of the timeline log nothing. */
 const silentLogger : Logger = { log() {} };
-
-/** Only the deps that the timer monitors use. */
-function timerDeps(meter : Meter, onLog : StartMonitorsOptions["onLog"]) : AllMonitorDeps {
-    return {
-        meter,
-        logger : logger(onLog),
-        clock : { now : () => performance.now() },
-        setTimeoutFn : (fn, ms) => window.setTimeout(fn, ms),
-        clearTimeoutFn : (id) => window.clearTimeout(id),
-        setIntervalFn : (fn, ms) => window.setInterval(fn, ms),
-        clearIntervalFn : (id) => window.clearInterval(id),
-        document,
-        window,
-    };
-}
 
 function entrySupport(PerformanceObserver : PerformanceObserverInit | undefined) : EntrySupport {
     const types = PerformanceObserver?.supportedEntryTypes;
@@ -280,18 +258,16 @@ function startProbes(recorder : MonitorRecorder, PerformanceObserver : Performan
     };
 }
 
-/** This function starts the monitors in this page. They record into `options.meter`. */
+/** This function starts each monitor that the browser supports, and a worker. They record into `options.meter`. */
 export function startMonitors(options : StartMonitorsOptions) : StartedMonitors {
-    const worker = options.scope === "all" ? tryCreateWorker() : undefined;
-    const recorder = options.scope === "all" ? options.recorder : undefined;
-    const deps = options.scope === "all"
-        ? createBrowserDeps(window, {
-            meter : options.meter,
-            logger : logger(options.onLog),
-            ...(recorder ? { events : recorder.events, spans : recorder.spans } : {}),
-            ...(worker ? { worker, workerHeartbeatIntervalMs : PLAYGROUND_HEARTBEAT_MS } : {}),
-        })
-        : timerDeps(options.meter, options.onLog);
+    const worker = tryCreateWorker();
+    const recorder = options.recorder;
+    const deps = createBrowserDeps(window, {
+        meter : options.meter,
+        logger : logger(options.onLog),
+        ...(recorder ? { events : recorder.events, spans : recorder.spans } : {}),
+        ...(worker ? { worker, workerHeartbeatIntervalMs : PLAYGROUND_HEARTBEAT_MS } : {}),
+    });
 
     let handles : ReturnType<typeof setupAllMonitors>;
     try {
