@@ -5,7 +5,9 @@
  * 1. The unit tests of @mark1russell7/lag (with coverage), @lag/load, @lag/report and
  *    @lag/scripts.
  * 2. The browser tests of @lag/integration-tests in every engine (the
- *    browser, cdp and coi projects), then the overhead benchmark alone.
+ *    browser, cdp, bfcache and coi projects), one project at a time, as the
+ *    CI workflow does (refer to `browser-projects.ts`). Then the overhead
+ *    benchmark alone.
  * 3. The tests of @lag/site (Node and Chromium).
  * 4. With --soak and --e2e: the soak test and the e2e tests. With --safari:
  *    the browser tests in Safari (only on macOS, through safaridriver). With
@@ -19,13 +21,16 @@
  * `packages/site/public/data/results/`.
  *
  * Options: --skip-unit, --skip-browser, --skip-overhead, --skip-site,
- * --soak, --e2e, --safari, --ios, --no-mutation, --keep-temp.
+ * --soak, --e2e, --safari, --ios, --no-mutation, --keep-temp. With
+ * `--projects=<names>`, step 2 operates only these browser projects (a JSON
+ * array, or names with commas between them).
  *
- * Two options connect two machines. `--export-reports=<dir>` writes the raw
- * reports and the measurements of this machine to `<dir>`, and it writes no
- * run. `--import-reports=<dir>` adds the reports of `<dir>` to the run of
- * this machine. For example, a macOS job tests Safari and exports its
- * reports, and the Linux job of the site imports them.
+ * Two options connect machines. `--export-reports=<dir>` writes the raw
+ * reports, the measurements and the exit codes of the steps of this machine
+ * to `<dir>`, and it writes no run. `--import-reports=<dir>` adds the reports
+ * of `<dir>` and of each folder in `<dir>` to the run of this machine. For
+ * example, each browser job of the Pages workflow tests one engine on its own
+ * runner and exports its reports. The job of the site imports them.
  */
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
@@ -46,6 +51,7 @@ import {
     type StrykerReport,
     type SuiteResult,
 } from "@lag/report";
+import { BROWSER_PROJECTS, parseProjectList } from "./browser-projects.js";
 import { PROJECT_REPORT_DIR_ENV } from "./project-reporter.js";
 import { sessionLossRetry } from "./session-loss.js";
 import {
@@ -54,14 +60,17 @@ import {
     mergeIndex,
     mutationOrigin,
     parseResultLines,
+    parseStepCodes,
     runExitCode,
     runFile,
     runId,
+    STEP_CODES_FILE,
     suiteMeta,
     toBudgets,
     toMeasurements,
     type ProjectReport,
     type ResultRecord,
+    type StepCode,
 } from "./model.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -73,14 +82,20 @@ const RESULTS_DIR_ENV = "LAG_RESULTS_DIR";
 
 const flags = new Set(process.argv.slice(2));
 const has = (flag : string) : boolean => flags.has(flag);
+/** The value of an option `--name=<value>`. */
+const option = (name : string) : string | undefined => {
+    const prefix = `--${name}=`;
+    return process.argv.slice(2).find(arg => arg.startsWith(prefix))?.slice(prefix.length);
+};
 /** The value of an option `--name=<value>`, as an absolute path. */
 const pathOption = (name : string) : string | undefined => {
-    const prefix = `--${name}=`;
-    const value = process.argv.slice(2).find(arg => arg.startsWith(prefix))?.slice(prefix.length);
+    const value = option(name);
     return value ? path.resolve(process.cwd(), value) : undefined;
 };
 const exportDir = pathOption("export-reports");
 const importDir = pathOption("import-reports");
+const projectsValue = option("projects");
+const browserProjects : readonly string[] = projectsValue === undefined ? BROWSER_PROJECTS : parseProjectList(projectsValue);
 
 type Step = {
     title : string;
@@ -101,9 +116,10 @@ const steps : Step[] = [
         { title : "Unit tests of @lag/report", packageName : "@lag/report", dir : "packages/report", args : [] },
         { title : "Unit tests of @lag/scripts", packageName : "@lag/scripts", dir : "packages/scripts", args : [] },
     ]),
-    ...(has("--skip-browser") ? [] : [
-        { title : "Browser tests in every engine", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "browser", "--project", "cdp", "--project", "bfcache", "--project", "coi"] },
-    ]),
+    // One project at a time: the timing tests measure milliseconds, and the engines would use the CPU of each other
+    ...(has("--skip-browser") ? [] : browserProjects.map(project => (
+        { title : `Browser tests: ${project}`, packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", project] }
+    ))),
     // Alone, after the other browser tests: they would use the CPU that it measures
     ...(has("--skip-overhead") ? [] : [
         { title : "Overhead benchmark", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "overhead"] },
@@ -191,16 +207,17 @@ function runStep(step : Step, reportDir : string, resultsDir : string) : number 
 function suitesFrom(reportDir : string, packageName : string) : SuiteResult[] {
     if (!existsSync(reportDir)) return [];
     return readdirSync(reportDir)
-        .filter(file => file.endsWith(".json"))
+        .filter(file => file.endsWith(".json") && file !== STEP_CODES_FILE)
         .flatMap((file) => {
             const report = readJson<ProjectReport>(path.join(reportDir, file));
             return report ? [fromVitestJson(report, suiteMeta(packageName, report.project, report.environment), root)] : [];
         });
 }
 
-/** This function copies the raw reports and the measurements of this machine to `dir` (--export-reports). */
-function exportReports(dir : string, temp : string, resultsDir : string) : void {
+/** This function copies the raw reports, the measurements and the exit codes of the steps of this machine to `dir` (--export-reports). */
+function exportReports(dir : string, temp : string, resultsDir : string, stepCodes : readonly StepCode[]) : void {
     mkdirSync(dir, { recursive : true });
+    writeFileSync(path.join(dir, STEP_CODES_FILE), `${JSON.stringify(stepCodes, null, 2)}\n`);
     const reportsRoot = path.join(temp, "reports");
     let count = 0;
     for (const step of existsSync(reportsRoot) ? readdirSync(reportsRoot) : []) {
@@ -212,6 +229,31 @@ function exportReports(dir : string, temp : string, resultsDir : string) : void 
     const resultsFile = path.join(resultsDir, "results.jsonl");
     if (existsSync(resultsFile)) copyFileSync(resultsFile, path.join(dir, "results.jsonl"));
     console.log(`\nExported ${count} reports to ${dir}.`);
+}
+
+/** The reports of other machines (--import-reports): `dir` and each folder in it, for example one folder for each job. */
+type Imported = { suites : SuiteResult[]; records : ResultRecord[]; stepCodes : StepCode[] };
+
+function importReports(dir : string) : Imported {
+    const imported : Imported = { suites : [], records : [], stepCodes : [] };
+    if (!existsSync(dir)) {
+        console.warn(`No reports to import: ${dir} does not exist.`);
+        return imported;
+    }
+    const folders = [dir, ...readdirSync(dir).map(name => path.join(dir, name)).filter(folder => statSync(folder).isDirectory())];
+    for (const folder of folders) {
+        const suites = suitesFrom(folder, "@lag/integration-tests");
+        const resultsFile = path.join(folder, "results.jsonl");
+        const records = existsSync(resultsFile) ? parseResultLines(readFileSync(resultsFile, "utf8")) : [];
+        const stepCodes = parseStepCodes(readJson<unknown>(path.join(folder, STEP_CODES_FILE)));
+        if (suites.length === 0 && records.length === 0 && stepCodes.length === 0) continue;
+        imported.suites.push(...suites);
+        imported.records.push(...records);
+        // The title tells the folder, thus the log shows the machine of a failed step
+        imported.stepCodes.push(...stepCodes.map(step => ({ title : `${step.title} (${path.relative(dir, folder) || "."})`, code : step.code })));
+        console.log(`Imported ${suites.length} suites from ${folder}.`);
+    }
+    return imported;
 }
 
 /**
@@ -266,7 +308,7 @@ function main() : void {
     });
 
     if (exportDir) {
-        exportReports(exportDir, temp, resultsDir);
+        exportReports(exportDir, temp, resultsDir, exitCodes.map(([title, code]) => ({ title, code })));
         if (!has("--keep-temp")) rmSync(temp, { recursive : true, force : true });
         process.exitCode = runExitCode(0, [], exitCodes.map(([, code]) => code));
         return;
@@ -274,15 +316,12 @@ function main() : void {
 
     const resultsFile = path.join(resultsDir, "results.jsonl");
     const records : ResultRecord[] = existsSync(resultsFile) ? parseResultLines(readFileSync(resultsFile, "utf8")) : [];
-    // The reports of another machine (--import-reports), for example Safari from macOS
-    if (importDir && existsSync(importDir)) {
-        const imported = suitesFrom(importDir, "@lag/integration-tests");
-        suites.push(...imported);
-        const importedResults = path.join(importDir, "results.jsonl");
-        if (existsSync(importedResults)) records.push(...parseResultLines(readFileSync(importedResults, "utf8")));
-        console.log(`Imported ${imported.length} suites from ${importDir}.`);
-    } else if (importDir) {
-        console.warn(`No reports to import: ${importDir} does not exist.`);
+    // The reports of other machines (--import-reports), for example each engine and Safari from macOS
+    if (importDir) {
+        const imported = importReports(importDir);
+        suites.push(...imported.suites);
+        records.push(...imported.records);
+        exitCodes.push(...imported.stepCodes.map(({ title, code }) : [string, number] => [title, code]));
     }
     const run : RunReport = {
         schemaVersion : SCHEMA_VERSION,

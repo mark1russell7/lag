@@ -144,6 +144,28 @@ export function runExitCode(failedTests : number, budgets : readonly BudgetResul
     return failedTests > 0 || budgets.some(budget => !budget.pass) || stepExitCodes.some(code => code !== 0) ? 1 : 0;
 }
 
+/**
+ * The name of the file with the exit code of each step, next to the
+ * exported reports (`--export-reports`). The collector that imports the
+ * reports adds these exit codes to its own. Thus a step of another machine
+ * that failed without a failed test, for example a Vitest that did not
+ * start, also fails the run.
+ */
+export const STEP_CODES_FILE = "steps.json";
+
+/** The exit code of one step of the collector. */
+export type StepCode = { title : string; code : number };
+
+/** This function reads the content of `STEP_CODES_FILE`. It ignores the items that are not a step with an exit code. */
+export function parseStepCodes(value : unknown) : StepCode[] {
+    if (!Array.isArray(value)) return [];
+    return value.flatMap((item : unknown) => {
+        if (typeof item !== "object" || item === null) return [];
+        const { title, code } = item as Record<string, unknown>;
+        return typeof title === "string" && typeof code === "number" && Number.isInteger(code) ? [{ title, code }] : [];
+    });
+}
+
 /** The tolerance for file systems that keep the change time in whole seconds. */
 const FILE_TIME_TOLERANCE_MS = 2_000;
 
