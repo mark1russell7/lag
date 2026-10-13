@@ -168,7 +168,7 @@ function runVitest(step : Step, reportDir : string, resultsDir : string) : { sta
 /**
  * This function operates a step. A step with `retryOnSessionLoss` operates
  * one more time when Safari lost its WebDriver session and no test failed.
- * The second run replaces the reports and the measurements of the first run.
+ * The reports and the measurements of the second operation replace those of the first.
  */
 function runStep(step : Step, reportDir : string, resultsDir : string) : number {
     const resultsFile = path.join(resultsDir, "results.jsonl");

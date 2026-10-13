@@ -42,7 +42,9 @@ The factory labels each value with the attribute `interaction`:
 
 `InpCalculator` keeps the 10 longest interactions. The events of one interaction (for example `pointerdown`, `pointerup` and `click`) share one interaction ID, and the longest event counts. INP is the longest interaction, with one outlier ignored for each 50 interactions. It is the interaction at the index min(n − 1, floor(count / 50)) of the sorted list, where n is the number of kept interactions. This is the rule of web-vitals ([Web Vitals algorithms](/research/web-vitals-algorithms)).
 
-The count of interactions comes from `performance.interactionCount`, from the start of the page. The candidates also start at the start of the page, because the observer gets the buffered entries from before the start of the monitor. Thus the count and the candidates cover the same time, as for the load in web-vitals. Without `performance.interactionCount`, the calculator counts the interaction IDs that it got. `getINP()`, `getInteractionCount()` and `getWorstInteractionDuration()` give the current values. `stop()` keeps the values. Only the first observer asks for the buffered entries. Thus a restart does not report an entry two times, but the monitor does not get the entries during the stop.
+The count of interactions comes from `performance.interactionCount`, from the start of the page. The candidates also start at the start of the page, because the observer gets the buffered entries from before the start of the monitor. Thus the count and the candidates cover the same time, as for the load in web-vitals. Without `performance.interactionCount`, the calculator counts the interaction IDs that it got. `getINP()`, `getInteractionCount()` and `getWorstInteractionDuration()` give the current values.
+
+`stop()` keeps the values. Only the first observer asks for the buffered entries. Thus a restart does not report an entry two times, but the monitor does not get the entries during the stop.
 
 ## Browser support
 
