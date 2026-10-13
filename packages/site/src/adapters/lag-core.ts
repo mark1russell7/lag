@@ -18,6 +18,7 @@ import {
     SPANS,
     VITAL_THRESHOLDS,
     EventTimingMonitor,
+    HISTOGRAM_BOUNDARIES,
     LayoutShiftMonitor,
     LongAnimationFrameMonitor,
     createBrowserDeps,
@@ -28,11 +29,14 @@ import {
     type EventSink,
     type Logger,
     type Meter,
+    type MetricKey,
     type PerformanceObserverInit,
     type Rating,
     type SpanSink,
 } from "@mark1russell7/lag";
 import { createLagWorker } from "@mark1russell7/lag/worker";
+
+export type { MetricKey };
 
 export type {
     Attributes,
@@ -55,6 +59,12 @@ export type {
 
 /** Every metric, event and span that the monitors emit: the single source for the documentation. */
 export { METRIC_CATALOG, EVENT_CATALOG, SPAN_CATALOG };
+
+/** Each metric of the catalog by its key, for example `METRIC_DEFINITIONS.drift`. */
+export const METRIC_DEFINITIONS = CATALOG;
+
+/** The bucket boundaries of the histograms of the catalog (the `advice` to the SDK). */
+export { HISTOGRAM_BOUNDARIES };
 
 type LagWorker = ReturnType<typeof createLagWorker>;
 
@@ -89,6 +99,108 @@ export type TimelineNames = { readonly [K in keyof typeof TIMELINE_NAMES] : stri
 
 /** The INP thresholds of web-vitals, in ms: at or below `good` is good, above `poor` is poor. */
 export const INP_THRESHOLDS : { readonly good : number; readonly poor : number } = VITAL_THRESHOLDS.INP;
+
+/**
+ * The monitor of a live demo in the documentation. Each value is the path of
+ * the page of the monitor, below `/docs/monitors/`.
+ */
+export type DemoFocus =
+    | "drift-lag"
+    | "macrotask-lag"
+    | "long-animation-frames"
+    | "event-timing"
+    | "frame-timing"
+    | "worker-lag"
+    | "layout-shift"
+    | "gc-signal"
+    | "idle-availability"
+    | "lifecycle"
+    | "memory";
+
+/** The optional browser APIs of a demo. */
+type DemoApi = "observers" | "frames" | "idle" | "memory" | "gc" | "worker";
+
+/**
+ * The optional APIs that each demo gives to `setupAllMonitors`. The setup
+ * starts only the monitors whose APIs it gets. It always starts the
+ * lifecycle, the measurement conditions, DriftLag, MacrotaskLag, the
+ * timer-throttle detector and the clock-reliability checker. With the
+ * observers, it also starts the page-view vitals, the event-timing monitor
+ * and the layout-shift monitor.
+ */
+const DEMO_APIS : Readonly<Record<DemoFocus, readonly DemoApi[]>> = {
+    "drift-lag" : [],
+    "macrotask-lag" : [],
+    "lifecycle" : [],
+    "long-animation-frames" : ["observers"],
+    "event-timing" : ["observers"],
+    "layout-shift" : ["observers"],
+    "frame-timing" : ["frames"],
+    "idle-availability" : ["idle"],
+    "memory" : ["memory"],
+    "gc-signal" : ["gc"],
+    "worker-lag" : ["worker"],
+};
+
+/** The entry type that each observer demo needs. */
+const DEMO_ENTRY_TYPES : Partial<Readonly<Record<DemoFocus, string>>> = {
+    "long-animation-frames" : "long-animation-frame",
+    "event-timing" : "event",
+    "layout-shift" : "layout-shift",
+};
+
+type OptionalDepKey = keyof AllMonitorDeps;
+
+/** The keys of the dependencies that start the optional monitors of each API. */
+const API_KEYS : Readonly<Record<Exclude<DemoApi, "worker">, readonly OptionalDepKey[]>> = {
+    observers : ["PerformanceObserver"],
+    frames : ["requestAnimationFrame", "cancelAnimationFrame"],
+    idle : ["requestIdleCallback", "cancelIdleCallback"],
+    memory : ["memorySource"],
+    gc : ["FinalizationRegistry"],
+};
+
+/** The keys of the monitors that no demo starts: scheduling fairness, browser reports, compute pressure, shared memory and clock drift. */
+const NO_DEMO_KEYS : readonly OptionalDepKey[] = [
+    "MessageChannel", "queueMicrotask", "ReportingObserver", "PressureObserver", "pressureSources", "SharedArrayBuffer", "wallClock",
+];
+
+/** A demo of the memory monitor needs more than one sample each minute. */
+const DEMO_MEMORY_INTERVAL_MS = 2_000;
+
+/** The globals that `demoSupported` examines. In a page, `window` has them. */
+export type DemoGlobals = {
+    readonly PerformanceObserver? : unknown;
+    readonly requestAnimationFrame? : unknown;
+    readonly requestIdleCallback? : unknown;
+    readonly FinalizationRegistry? : unknown;
+    readonly Worker? : unknown;
+    readonly performance? : unknown;
+};
+
+function hasApi(api : DemoApi, focus : DemoFocus, globals : DemoGlobals) : boolean {
+    switch (api) {
+        case "observers": {
+            const types = (globals.PerformanceObserver as { supportedEntryTypes? : readonly string[] } | undefined)?.supportedEntryTypes;
+            const type = DEMO_ENTRY_TYPES[focus];
+            return Array.isArray(types) && (type === undefined || types.includes(type));
+        }
+        case "frames": return typeof globals.requestAnimationFrame === "function";
+        case "idle": return typeof globals.requestIdleCallback === "function";
+        case "gc": return typeof globals.FinalizationRegistry === "function";
+        case "worker": return typeof globals.Worker === "function";
+        case "memory": {
+            const performance = globals.performance as { memory? : unknown; measureUserAgentSpecificMemory? : unknown } | undefined;
+            return (typeof performance?.memory === "object" && performance.memory !== null)
+                || typeof performance?.measureUserAgentSpecificMemory === "function";
+        }
+    }
+}
+
+/** True if this browser has all the APIs of the demo, with the same rules as `createBrowserDeps`. */
+export function demoSupported(focus : DemoFocus, globals : DemoGlobals = globalThis) : boolean {
+    return DEMO_APIS[focus].every(api => hasApi(api, focus, globals));
+}
 
 export type MonitorLogEntry = {
     level : string;
@@ -177,6 +289,8 @@ export type StartedMonitors = {
 export type StartMonitorsOptions = {
     meter : Meter;
     onLog? : (entry : MonitorLogEntry) => void;
+    /** The monitor of a live demo. Without it, each monitor that the browser supports starts, with a worker. */
+    focus? : DemoFocus;
     /** The receiver of the events, the spans and the entries, for the timeline. */
     recorder? : MonitorRecorder;
 };
@@ -258,16 +372,52 @@ function startProbes(recorder : MonitorRecorder, PerformanceObserver : Performan
     };
 }
 
-/** This function starts each monitor that the browser supports, and a worker. They record into `options.meter`. */
-export function startMonitors(options : StartMonitorsOptions) : StartedMonitors {
+/**
+ * The dependencies of one demo: the browser dependencies without the APIs
+ * that its monitor does not use. The demo does not watch other pages for
+ * hangs, keeps no hang journal and gives no crash-report context.
+ */
+function demoDeps(focus : DemoFocus, meter : Meter, onLog : StartMonitorsOptions["onLog"]) : { deps : AllMonitorDeps; worker : LagWorker | undefined } {
+    const apis = DEMO_APIS[focus];
+    const worker = apis.includes("worker") ? tryCreateWorker() : undefined;
+    const deps : Partial<AllMonitorDeps> = createBrowserDeps(window, {
+        meter,
+        logger : logger(onLog),
+        ...(worker ? { worker, workerHeartbeatIntervalMs : PLAYGROUND_HEARTBEAT_MS } : {}),
+        memoryIntervalMs : DEMO_MEMORY_INTERVAL_MS,
+        peerHangWatch : false,
+        hangJournal : false,
+        crashReportContext : false,
+        sharedMemory : false,
+    });
+    for (const [api, keys] of Object.entries(API_KEYS) as Array<[DemoApi, readonly OptionalDepKey[]]>) {
+        if (apis.includes(api)) continue;
+        for (const key of keys) delete deps[key];
+    }
+    for (const key of NO_DEMO_KEYS) delete deps[key];
+    return { deps : deps as AllMonitorDeps, worker };
+}
+
+/** The dependencies of each monitor that the browser supports, with a worker. */
+function allDeps(options : StartMonitorsOptions, recorder : MonitorRecorder | undefined) : { deps : AllMonitorDeps; worker : LagWorker | undefined } {
     const worker = tryCreateWorker();
-    const recorder = options.recorder;
     const deps = createBrowserDeps(window, {
         meter : options.meter,
         logger : logger(options.onLog),
         ...(recorder ? { events : recorder.events, spans : recorder.spans } : {}),
         ...(worker ? { worker, workerHeartbeatIntervalMs : PLAYGROUND_HEARTBEAT_MS } : {}),
     });
+    return { deps, worker };
+}
+
+/**
+ * This function starts each monitor that the browser supports, and a worker.
+ * With `options.focus`, it starts only the monitor of that demo. The monitors
+ * record into `options.meter`.
+ */
+export function startMonitors(options : StartMonitorsOptions) : StartedMonitors {
+    const recorder = options.focus ? undefined : options.recorder;
+    const { deps, worker } = options.focus ? demoDeps(options.focus, options.meter, options.onLog) : allDeps(options, recorder);
 
     let handles : ReturnType<typeof setupAllMonitors>;
     try {

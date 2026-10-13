@@ -1,4 +1,4 @@
-import type { EntrySupport, Meter, MetricNames, MonitorLogEntry, MonitorRecorder, StartedMonitors, VitalReading } from "../adapters/lag-core";
+import type { Attributes, DemoFocus, EntrySupport, Meter, MetricNames, MonitorLogEntry, MonitorRecorder, StartedMonitors, VitalReading } from "../adapters/lag-core";
 import type { LoadActionId, ProfileId, ProfileRun } from "../adapters/lag-load";
 import { downsampleMax, percentile, sortedValues } from "../lib/stats";
 import { loadLabel } from "./catalog";
@@ -7,11 +7,11 @@ import { buildTimelineModel, EMPTY_TIMELINE, type LoadRun, type TimelineConfig, 
 import { SessionRecorder } from "./timeline/recorder";
 
 /**
- * Both kinds start every monitor and a worker, with the timeline and the load actions.
- * - `full`: the playground, with a time window of 30 s.
- * - `home`: the instrument of the home page, with a time window of 10 s and 4 snapshots each second.
+ * - `full`: the playground. It starts every monitor and a worker, with the timeline and the load actions, and a time window of 30 s.
+ * - `home`: the instrument of the home page, as `full`, with a time window of 10 s and 4 snapshots each second.
+ * - `demo:<monitor>`: the monitor of a live demo in the documentation (refer to `DemoFocus`), with the load actions.
  */
-export type SessionKind = "full" | "home";
+export type SessionKind = "full" | "home" | `demo:${DemoFocus}`;
 
 /** The monitors to start. The browser runtime uses `setupAllMonitors`, and a test gives a fake. */
 export type MonitorRuntime = {
@@ -55,6 +55,28 @@ export type LiveSeries = {
     latest : number | undefined;
     p95 : number | undefined;
     max : number | undefined;
+};
+
+/** One value of a watched instrument, with its attributes. */
+export type RecentSample = {
+    /** Seconds since the session started. */
+    t : number;
+    value : number;
+    attributes : Readonly<Attributes> | undefined;
+};
+
+/** The values of one instrument that the session watches (`PlaygroundSessionOptions.watch`). */
+export type WatchedInstrument = {
+    /** The values in the time window. */
+    series : LiveSeries;
+    /** The number of values since the session started. */
+    count : number;
+    /** The sum of the values since the session started. For a counter, it is the value of the counter. */
+    total : number;
+    /** The sum for each attribute value, with the key `name=value` (refer to `InstrumentReading`). */
+    totalsByAttribute : Readonly<Record<string, number>>;
+    /** The newest values, newest first. */
+    recent : readonly RecentSample[];
 };
 
 export type ActiveLoad =
@@ -106,6 +128,8 @@ export type PlaygroundSnapshot = {
     log : readonly LogRecord[];
     /** The data of the session timeline, from the start of the session to this time. */
     timeline : TimelineModel;
+    /** The values of each watched instrument, by its name. */
+    watched : Readonly<Record<string, WatchedInstrument>>;
 };
 
 export type PlaygroundSessionOptions = {
@@ -119,9 +143,13 @@ export type PlaygroundSessionOptions = {
     /** The maximum number of points in a series. */
     maxPoints? : number;
     meterCapacity? : number;
+    /** The names of the instruments whose values the snapshot gives in `watched`, for example for a live demo. */
+    watch? : readonly string[];
 };
 
 const HISTORY_LIMIT = 12;
+/** The number of recent values of a watched instrument. */
+const RECENT_LIMIT = 8;
 const LOG_LIMIT = 50;
 /** The timeline keeps the newest loads. */
 const LOAD_RUN_LIMIT = 500;
@@ -347,7 +375,27 @@ export class PlaygroundSession {
             history : this.history,
             log : this.log,
             timeline : this.timeline(now),
+            watched : this.watched(now),
         };
+    }
+
+    private watched(now : number) : Record<string, WatchedInstrument> {
+        const watched : Record<string, WatchedInstrument> = {};
+        for (const name of this.options.watch ?? []) {
+            const reading = this.meter?.read(name);
+            watched[name] = {
+                series : this.series(name, now),
+                count : reading?.count ?? 0,
+                total : reading?.total ?? 0,
+                totalsByAttribute : reading?.totalsByAttribute ?? {},
+                recent : (reading?.samples ?? []).slice(-RECENT_LIMIT).reverse().map(sample => ({
+                    t : (sample.t - this.startedAt) / 1000,
+                    value : sample.value,
+                    attributes : sample.attributes,
+                })),
+            };
+        }
+        return watched;
     }
 
     private timeline(now : number) : TimelineModel {

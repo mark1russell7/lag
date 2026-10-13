@@ -15,12 +15,22 @@ The signal is the lag of one window: the duration of the window minus the idle d
 
 DriftLag answers this question: how much of the last 100 ms was the main thread busy? It gives approximately 10 samples each second, thus it is the high-frequency lag signal of the library. It works in all browsers, also where Long Animation Frames are not available.
 
+## Try it in this tab
+
+This demo starts the monitor in this tab, with the real code of the library. The buttons make the load that gives its signal.
+
+<LiveDemo monitor="drift-lag" />
+
 ## How it works
 
 1. The monitor sets a timeout of 5 ms (`driftStepMs`). When the callback starts, the monitor records the duration of the step and sets the next timeout.
 2. A window has at most 20 steps (100 ms divided by 5 ms), or up to 10 more steps during a possible change of the timer granularity. After the last step of the window, the monitor calculates the lag and starts the next window.
 3. The lag of the window is its duration minus the number of its steps multiplied by the baseline.
 4. The monitor calculates the number of steps for the next window again: 100 ms divided by the baseline, rounded, from 1 to 20. Thus a window stays near 100 ms.
+
+The model below shows these rules. Move the long task over the steps, and select a browser and system. A long task delays the step whose timer comes during the task. Thus the lag of a block is less than its duration by up to one step.
+
+<DriftStepper />
 
 The baseline is the idle duration of one step. A timer step takes longer than its requested delay, also on an idle thread. The cause is the timer granularity of the browser and the operating system. The monitor keeps the durations of the last 100 steps. The baseline is the mean of the steps that are not longer than the median plus max(4 ms, half of the median). Before the first step, the baseline is the requested delay (5 ms).
 

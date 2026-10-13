@@ -101,6 +101,11 @@ Each MDX page can use these components without an import. Put the data for a com
 | `PlotFigure` | A chart. The page gives the Plot options and a text alternative. |
 | `MetricTable` | The metrics of a monitor, from the metric catalog. |
 | `SupportMatrix` | The browser support of features. |
+| `LiveDemo` | A live demo of one monitor in this tab, for example `<LiveDemo monitor="drift-lag" />`. The demos are in `packages/site/src/playground/demos.ts`. |
+| `DriftStepper` | The interactive model of the DriftLag windows. |
+| `HistogramMerge` | The interactive comparison of two aggregations of a percentile. |
+| `LifecycleLive` | The lifecycle state of this tab, live. |
+| `ProbeLoops` | The interactive comparison of a closed-loop probe and an open-loop probe. |
 
 To add a component, add it to `packages/site/src/mdx/component-map.tsx`.
 

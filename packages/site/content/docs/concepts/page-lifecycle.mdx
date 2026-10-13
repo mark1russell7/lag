@@ -26,6 +26,10 @@ At the start, the state is `hidden` if `document.visibilityState` is `hidden`. I
 
 The state machine has no "discarded" state. A discarded page does no script, thus the library can find a discard only after the reload, through `document.wasDiscarded`. The page view of that load gets the navigation type `restore`.
 
+The view below follows the state of this tab. It uses the same shared tracker as the monitors.
+
+<LifecycleLive />
+
 ## The transitions
 
 <Mermaid
