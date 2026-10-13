@@ -6,8 +6,12 @@ import { LiveMeter } from "./live-meter";
 import { buildTimelineModel, EMPTY_TIMELINE, type LoadRun, type TimelineConfig, type TimelineModel } from "./timeline/model";
 import { SessionRecorder } from "./timeline/recorder";
 
-/** `full`: every monitor and a worker (the playground). `timers`: only the timer monitors (the home page). */
-export type SessionKind = "full" | "timers";
+/**
+ * Both kinds start every monitor and a worker, with the timeline and the load actions.
+ * - `full`: the playground, with a time window of 30 s.
+ * - `home`: the instrument of the home page, with a time window of 10 s and 4 snapshots each second.
+ */
+export type SessionKind = "full" | "home";
 
 /** The monitors to start. The browser runtime uses `setupAllMonitors`, and a test gives a fake. */
 export type MonitorRuntime = {

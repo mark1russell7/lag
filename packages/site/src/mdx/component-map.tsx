@@ -2,6 +2,7 @@ import type { MDXComponents } from "mdx/types";
 import { createElement, lazy, Suspense, type ComponentType } from "react";
 import { Callout } from "../components/Callout/Callout";
 import { Figure } from "../components/Figure/Figure";
+import { FourLags } from "../components/FourLags/FourLags";
 import { MdxLink } from "../components/MdxLink/MdxLink";
 import { Mermaid } from "../components/Mermaid/Mermaid";
 import { MetricTable } from "../components/MetricTable/MetricTable";
@@ -44,6 +45,7 @@ export const mdxComponents = {
     ArchitectureMap,
     Callout,
     Figure,
+    FourLags,
     Mermaid,
     MetricTable,
     PlotFigure,
