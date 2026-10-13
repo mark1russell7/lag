@@ -9,6 +9,11 @@ import { isFrontmatterRequest } from "./frontmatter";
 import { rehypeExportToc } from "./rehype-export-toc";
 import { remarkMermaid } from "./remark-mermaid";
 
+/** True for an import of the text of a file: `file.md?raw`. */
+export function isRawRequest(id : string) : boolean {
+    return /[?&]raw(?:[&=]|$)/.test(id);
+}
+
 /**
  * This plugin compiles `.mdx` pages. Each page module exports:
  * - `default`: the page component
@@ -16,7 +21,9 @@ import { remarkMermaid } from "./remark-mermaid";
  * - `toc`: the `h2` and `h3` headings
  *
  * The wrapper skips `page.mdx?frontmatter` requests, which
- * `mdxFrontmatterPlugin` serves.
+ * `mdxFrontmatterPlugin` serves. It also skips `?raw` requests: their
+ * module is the text of the file, for example the README of the package
+ * on the home page.
  */
 export function mdxPlugin() : Plugin {
     const inner = mdx({
@@ -40,7 +47,7 @@ export function mdxPlugin() : Plugin {
             inner.config(config, env);
         },
         async transform(code, id) {
-            if (isFrontmatterRequest(id)) return undefined;
+            if (isFrontmatterRequest(id) || isRawRequest(id)) return undefined;
             return await inner.transform(code, id);
         },
     };

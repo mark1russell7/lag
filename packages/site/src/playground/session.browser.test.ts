@@ -54,15 +54,18 @@ describe("browser session", () => {
         expect(running.getSnapshot().status).toBe("stopped");
     });
 
-    it("runs only the timer monitors for the home page", async () => {
-        const running = createBrowserSession("timers");
+    it("gives the home page every monitor and a worker, with a window of 10 s", async () => {
+        const running = createBrowserSession("home");
         session = running;
         running.start();
         await vi.waitFor(() => {
-            expect(running.getSnapshot().series.drift.count).toBeGreaterThan(2);
+            const snapshot = running.getSnapshot();
+            expect(snapshot.series.drift.count).toBeGreaterThan(2);
+            expect(snapshot.series.frameDelta.count).toBeGreaterThan(2);
         }, patience);
         const snapshot = running.getSnapshot();
-        expect(snapshot.workerRunning).toBe(false);
-        expect(snapshot.series.frameDelta.count).toBe(0);
+        expect(snapshot.workerRunning).toBe(true);
+        expect(snapshot.windowSeconds).toBe(10);
+        expect(running.canRunLoad).toBe(true);
     });
 });

@@ -42,6 +42,11 @@ For example, a task blocks the main thread for 300 ms, and a click comes 100 ms 
 
 Each quantity answers its own question, thus their values do not agree. For example, a page blocks for 1 s each minute, and nobody interacts with it. In one window, the blocked time is high. Some messages wait for a long time, and many frames drop. The page has no input latency, because no interaction occurs.
 
+The figure shows the four quantities for one long task. Move the click into the task and out of it. The input latency changes by hundreds of milliseconds. The other three values change by less than 20 ms, because the handlers of the click take only 12 ms. Clear "A click occurs": the page has no input latency, but the task blocks the main thread for the same time.
+
+<FourLags />
+
+
 ### Blocked time in a window
 
 `DriftLag` chains timeouts of 5 ms in a window of approximately 100 ms. The lag of the window is its duration minus the idle duration of its steps. Each block of the main thread in the window adds its duration to the lag. Thus DriftLag measures how much of the window was blocked. It does not measure the delay of one event.
