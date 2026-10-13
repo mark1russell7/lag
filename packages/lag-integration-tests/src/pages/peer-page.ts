@@ -6,8 +6,11 @@
  * origin can see when the main thread or the worker stops, and when the
  * page closes.
  */
-/** A heartbeat of the main thread or of the worker, or the `pagehide` event of the page. */
-export type PeerHeartbeat = { id : string; source : "main" | "worker" | "pagehide"; sentAt : number };
+/**
+ * A heartbeat of the main thread or of the worker, the `pagehide` event of
+ * the page, or the start of the block of `blockSoon()`.
+ */
+export type PeerHeartbeat = { id : string; source : "main" | "worker" | "pagehide" | "block"; sentAt : number };
 
 declare global {
     interface Window {
@@ -40,6 +43,9 @@ const BLOCK_DELAY_MS = 250;
 
 window.blockSoon = (ms) => {
     setTimeout(() => {
+        // The time of the start of the block. The answer of the WebDriver command can come late (in a CI
+        // run in Safari, more than 1 s), thus the caller cannot calculate this time from the answer.
+        channel.postMessage({ id, source : "block", sentAt : Date.now() } satisfies PeerHeartbeat);
         const start = performance.now();
         while (performance.now() - start < ms) {
             // busy wait

@@ -21,6 +21,7 @@ import {
 import { createBrowserDeps, createConsoleLogger, createTeeMeter, waitForMimirCount, type TeeMeter } from "./harness.js";
 import { recordMeasurement } from "./commands.js";
 import { pageState, watchAnimationFrames, type FrameStats } from "./animation-frames.js";
+import { watchTimers, type TimerStats } from "./timer-watch.js";
 
 const OTLP_ENDPOINT = "http://localhost:4318";
 const SERVICE_NAME = "lag-stress-test";
@@ -78,13 +79,17 @@ const MEASURED = [
     ["lag_scheduling_message_channel_histogram", "ms"],
 ] as const;
 
-type ProfileResult = WorkloadResult & { frames : FrameStats };
+type ProfileResult = WorkloadResult & { frames : FrameStats; timers : TimerStats };
 
-/** This function runs a profile, and it counts the animation frames of the browser in the same time. */
+/**
+ * This function runs a profile. In the same time, it counts the animation
+ * frames of the browser and the callbacks of a chain of 5 ms timers.
+ */
 async function runProfile(options : WorkloadOptions) : Promise<ProfileResult> {
-    const watch = watchAnimationFrames();
+    const frames = watchAnimationFrames();
+    const timers = watchTimers();
     const result = await runWorkload(options);
-    return { ...result, frames : watch.stop() };
+    return { ...result, frames : frames.stop(), timers : timers.stop() };
 }
 
 async function logResult(profile : string, result : ProfileResult, tee : TeeMeter) : Promise<void> {
@@ -92,7 +97,8 @@ async function logResult(profile : string, result : ProfileResult, tee : TeeMete
         `[${profile}] seed=${result.seed} events=${result.eventCount} totalLagMs=${result.totalLagMs.toFixed(0)} ` +
         `runDurationMs=${result.durationMs.toFixed(0)} byName=${JSON.stringify(result.eventsByName)} ` +
         `driftMax=${tee.max("lag_drift_histogram").toFixed(0)} workerBlockMax=${tee.max("lag_worker_main_block_histogram").toFixed(0)} ` +
-        `frames=${result.frames.count} frameGapMax=${result.frames.maxGapMs.toFixed(0)}`,
+        `frames=${result.frames.count} frameGapMax=${result.frames.maxGapMs.toFixed(0)} ` +
+        `timerCallbacks=${result.timers.count} timerGapMax=${result.timers.maxGapMs.toFixed(0)}`,
     );
     for (const [metric, unit] of MEASURED) {
         await recordMeasurement(`stress/${profile}/${metric}`, unit, tee.values(metric), { profile });
@@ -114,6 +120,12 @@ async function logResult(profile : string, result : ProfileResult, tee : TeeMete
  *   block that the worker saw. A generator that waits for an animation frame
  *   then waits until the end of the profile. In two runs of Safari on a CI
  *   runner, the kitchen-sink profile stopped after 15 or 16 events.
+ * - A chain of 5 ms timers had no callback for more than 2 s longer than the
+ *   longest block that the worker saw. The idle gaps of the profiles are
+ *   timers, thus the profile then makes fewer events. The rule of the timer
+ *   delay above uses DriftLag, which pauses while the page is hidden and
+ *   does not record a window that overlaps an unreliable interval. The
+ *   chain of this test has no such rules.
  *
  * A block of a profile (1.5 s or less) does not cause a skip, because the
  * worker sees the block.
@@ -132,6 +144,9 @@ function skipIfThrottled(test : TestContext, result : ProfileResult, tee : TeeMe
     }
     if (result.frames.maxGapMs > blocked + THROTTLED_DELAY_MS) {
         reasons.push(`no animation frame for ${Math.round(result.frames.maxGapMs)} ms (${result.frames.count} frames), with a longest block of ${Math.round(blocked)} ms`);
+    }
+    if (result.timers.maxGapMs > blocked + THROTTLED_DELAY_MS) {
+        reasons.push(`no timer callback for ${Math.round(result.timers.maxGapMs)} ms (${result.timers.count} callbacks), with a longest block of ${Math.round(blocked)} ms`);
     }
     if (reasons.length === 0) return;
     console.log(`The browser slowed the page: ${reasons.join("; ")} (${pageState()})`);
