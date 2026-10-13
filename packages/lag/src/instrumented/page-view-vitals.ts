@@ -35,7 +35,9 @@ type VitalAttributes = { navigation_type : NavigationType };
  *
  * The time of an event is the time of the occurrence that gave the value
  * (`VitalValue.time`), not the time of the report. Each page view also
- * emits a `lag.page_view.start` event at its start.
+ * emits a `lag.page_view.start` event at its start. For a prerendered page,
+ * the factory emits it and starts the span at the activation. A prerender
+ * that the user does not see gets no event and no span.
  *
  * With `deps.pageViewSpans`, the factory starts the span of each view at its
  * start. The span ends when the page is hidden for the first time in the
@@ -95,8 +97,15 @@ export function createInstrumentedPageViewVitals(
         }
         if (events || pageViewSpans) {
             let previous = monitor.getView();
-            pageViewSpans?.viewStarted(previous);
-            if (events) emitViewStart(events, previous, undefined, clock, pageViewSpans?.current());
+            const startLoad = () : void => {
+                pageViewSpans?.viewStarted(previous);
+                if (events) emitViewStart(events, previous, undefined, clock, pageViewSpans?.current());
+            };
+            // As the vitals: the view of a prerendered page starts at the activation. A prerender that
+            // the user does not see is not a page view, thus it gets no start event and no span.
+            const page = deps.page;
+            if (page?.isPrerendering() === true) unsubscribers.push(page.onActivation(startLoad));
+            else startLoad();
             unsubscribers.push(monitor.subscribe((view) => {
                 pageViewSpans?.viewStarted(view);
                 if (events) emitViewStart(events, view, previous, clock, pageViewSpans?.current());
