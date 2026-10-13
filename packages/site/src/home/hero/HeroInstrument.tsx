@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { LoadActionId } from "../../adapters/lag-load";
+import { formatMs } from "../../lib/format";
 import { usePrefersReducedMotion } from "../../lib/use-media-query";
 import { LOAD_ACTIONS } from "../../playground/catalog";
 import { useSession } from "../../playground/use-session";
@@ -12,6 +13,9 @@ import styles from "./Hero.module.css";
 
 /** The load buttons of the home page. A hang of 6 s is only in the playground. */
 const HERO_ACTIONS : readonly LoadActionId[] = ["block-200", "block-800", "layout-thrash"];
+
+/** The long task threshold: a reading of 50 ms or more shows in red. */
+const LONG_MS = 50;
 
 /** The events that show a reader at the page. The first one starts the monitors. */
 const INPUT_EVENTS = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "scroll"] as const;
@@ -39,6 +43,7 @@ function useFirstInput(enabled : boolean, onInput : () => void) : void {
 
 /**
  * The instrument of the home page. It shows main-thread lag in this tab.
+ * A large number gives the p95 of the DriftLag windows of the last 10 s.
  * The main thread moves one dot, and the compositor moves a second dot.
  * Three buttons block the main thread. A live strip has one lane for each
  * monitor. A table gives the values that five monitors measured for the
@@ -81,6 +86,10 @@ export function HeroInstrument() {
     const report = keepMeasured(kept.current, snapshot ? snapshotReadings(snapshot) : undefined);
     kept.current = report;
 
+    // The p95 of the DriftLag windows in the time window of the series (10 s)
+    const drift = snapshot?.series.drift.p95;
+    const windowSeconds = snapshot?.windowSeconds ?? 10;
+
     return (
         <aside className={`${styles.instrument} graph-paper`} aria-labelledby="instrument-title">
             <div className={styles.instrumentHeader}>
@@ -90,6 +99,16 @@ export function HeroInstrument() {
                     {running ? "Measuring" : "Not measuring"}
                 </p>
             </div>
+
+            <p className={styles.reading}>
+                <span className={styles.readingValue} data-long={drift !== undefined && drift >= LONG_MS}>
+                    {drift === undefined ? "–" : formatMs(drift)}
+                </span>
+                <span className={styles.readingLabel}>
+                    Main-thread lag in this tab: the timer drift that <Link to="/docs/monitors/drift-lag">DriftLag</Link> measures,
+                    p95 of the last {windowSeconds}&nbsp;s. Red is {LONG_MS}&nbsp;ms or more.
+                </span>
+            </p>
 
             <MotionLanes playing={playing} />
 

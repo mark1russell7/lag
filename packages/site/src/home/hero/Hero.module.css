@@ -51,6 +51,30 @@
     }
 }
 
+/* The large reading: the p95 of the DriftLag windows. Red pencil when it is a long task. */
+.reading {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+}
+
+.readingValue {
+    font-size: clamp(var(--text-3xl), 7vw, 4rem);
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    letter-spacing: -0.02em;
+}
+
+.readingValue[data-long="true"] {
+    color: var(--color-mark);
+}
+
+.readingLabel {
+    color: var(--color-ink-secondary);
+    font-size: var(--text-sm);
+}
+
 /* Two dots: the main thread moves the first, the compositor moves the second */
 .motion {
     display: grid;
