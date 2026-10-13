@@ -32,6 +32,12 @@ const ArchitectureMap = lazyComponent(
     "Loading the architecture map.",
 );
 
+const LiveDemo = lazyComponent(() => import("../components/LiveDemo/LiveDemo"), "Loading the live demo.");
+const DriftStepper = lazyComponent(() => import("../explainers/drift/DriftStepper"), "Loading the DriftLag stepper.");
+const HistogramMerge = lazyComponent(() => import("../explainers/histogram/HistogramMerge"), "Loading the histogram explainer.");
+const LifecycleLive = lazyComponent(() => import("../explainers/lifecycle/LifecycleLive"), "Loading the lifecycle view.");
+const ProbeLoops = lazyComponent(() => import("../explainers/probes/ProbeLoops"), "Loading the probe explainer.");
+
 /**
  * The components that MDX pages can use without an import. To add a
  * component, import it and add one line here.
@@ -44,11 +50,16 @@ export const mdxComponents = {
     // Components, in alphabetical order
     ArchitectureMap,
     Callout,
+    DriftStepper,
     Figure,
     FourLags,
+    HistogramMerge,
+    LifecycleLive,
+    LiveDemo,
     Mermaid,
     MetricTable,
     PlotFigure,
+    ProbeLoops,
     SupportMatrix,
     Tab,
     Tabs,

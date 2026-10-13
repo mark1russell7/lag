@@ -15,6 +15,12 @@ The signal is the time from the start of the measurement to the start of the zer
 
 MacrotaskLag answers this question: when the page puts a new task in the queue, how long does that task wait? It is a sparse probe. [DriftLag](/docs/monitors/drift-lag) gives the high-frequency signal.
 
+## Try it in this tab
+
+This demo starts the monitor in this tab, with the real code of the library. The buttons make the load that gives its signal.
+
+<LiveDemo monitor="macrotask-lag" />
+
 ## How it works
 
 1. A `setInterval` callback starts each 5 s (`macrotaskLagIntervalMs`).

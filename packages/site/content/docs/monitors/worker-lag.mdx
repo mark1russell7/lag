@@ -19,6 +19,12 @@ The monitor gives these signals:
 
 The delivery delay answers this question: how long does an event that arrives at a random time wait for the main thread? The worker sends the heartbeats on its own schedule, not on the schedule of the main thread. The probe is open-loop. During a block of length L, the number of heartbeats that wait in the queue is approximately L divided by the interval. Each of them records its own wait. Thus a long block gives many samples, not one ([clocks and timers](/research/clocks-and-timers), coordinated omission).
 
+## Try it in this tab
+
+This demo starts the monitor in this tab, with the real code of the library. The buttons make the load that gives its signal.
+
+<LiveDemo monitor="worker-lag" />
+
 ## How it works
 
 The main-thread monitor and the worker (`@mark1russell7/lag/worker`, which operates `createWorkerHandler()`) use these messages:

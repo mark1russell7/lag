@@ -20,6 +20,12 @@ The monitor answers this question: are the frames of the page late? A frame delt
 
 Compare it with [Long animation frames](/docs/monitors/long-animation-frames) in Chromium. LoAF measures the blocking during the production of a frame. This monitor measures the delivery of frames. If LoAF shows no blocking but this monitor shows dropped frames, the cause is outside the main thread, for example the compositor or the GPU. If the two show problems, the main thread blocks the frames.
 
+## Try it in this tab
+
+This demo starts the monitor in this tab, with the real code of the library. The buttons make the load that gives its signal.
+
+<LiveDemo monitor="frame-timing" />
+
 ## How it works
 
 1. The monitor asks for an animation frame. In the callback, it keeps the frame timestamp, which `requestAnimationFrame` gives to the callback, and asks for the next frame.

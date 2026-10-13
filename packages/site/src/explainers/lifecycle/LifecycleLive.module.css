@@ -1,0 +1,85 @@
+.root .instructions {
+    margin: 0 0 var(--space-4);
+    max-width: var(--measure);
+}
+
+.root .states {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+    gap: var(--space-2);
+    margin: 0 0 var(--space-4);
+    padding: 0;
+    list-style: none;
+}
+
+.root .state {
+    position: relative;
+    display: grid;
+    align-content: start;
+    gap: var(--space-1);
+    margin: 0;
+    padding: var(--space-3);
+    border: 1px solid var(--color-rule);
+    border-radius: var(--radius);
+    background: var(--color-surface);
+    transition: border-color 160ms ease, background-color 160ms ease;
+}
+
+.root .state[data-current="true"] {
+    border-color: var(--color-accent);
+    background: var(--color-accent-wash);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .root .state {
+        transition: none;
+    }
+}
+
+.stateName {
+    font-family: var(--font-mono);
+    font-weight: 700;
+}
+
+.stateMeaning {
+    color: var(--color-ink-secondary);
+    font-size: var(--text-xs);
+}
+
+.here {
+    justify-self: start;
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-small);
+    background: var(--color-accent);
+    color: var(--color-surface);
+    font-size: var(--text-xs);
+    font-weight: 700;
+}
+
+.stateTime {
+    color: var(--color-ink-muted);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+}
+
+.root .last {
+    margin: 0 0 var(--space-3);
+}
+
+.root .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    margin: var(--space-2) 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--color-ink-secondary);
+    font-size: var(--text-xs);
+}
+
+.root .legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin: 0;
+}

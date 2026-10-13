@@ -25,6 +25,18 @@ describe("LiveMeter", () => {
         expect(meter.read("c")?.total).toBe(3);
     });
 
+    it("sums the values of each attribute value since the start, also after the oldest samples go", () => {
+        const meter = meterAt([1]);
+        const counter = meter.createCounter<{ outcome : string }>("frames", { unit : "{frame}" });
+        counter.add(60, { outcome : "delivered" });
+        counter.add(2, { outcome : "dropped" });
+        counter.add(1);
+        counter.add(3, { outcome : "dropped" });
+        counter.add(58, { outcome : "delivered" });
+        expect(meter.read("frames")?.samples).toHaveLength(3);
+        expect(meter.read("frames")?.totalsByAttribute).toEqual({ "outcome=delivered" : 118, "outcome=dropped" : 5 });
+    });
+
     it("keeps only the newest samples, but counts all of them", () => {
         const meter = meterAt([1, 2, 3, 4]);
         const histogram = meter.createHistogram("h", { unit : "ms" });

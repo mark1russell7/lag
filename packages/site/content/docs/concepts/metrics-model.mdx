@@ -148,6 +148,10 @@ Sum the rates of all writers first. Then calculate the quantile. A quantile of e
 
 For example, page A has 100 samples of 10 ms. Page B has 85 samples of 10 ms and 15 samples of 500 ms. The 95th percentile of A is 10 ms, and the 95th percentile of B is 500 ms. The mean of the two is 255 ms, but no sample has this value. The 95th percentile of the 200 samples together is 500 ms.
 
+The explainer below has three groups of browsers with different loads. Change their samples and their median latency, and compare the two aggregations.
+
+<HistogramMerge />
+
 With native histograms:
 
 ```promql

@@ -21,12 +21,12 @@ Gil Tene called the error of the closed-loop probe "coordinated omission". A pro
 
 A page is visible for 60 s. From 15 s to 45 s, one task blocks the main thread. In the other 30 s, the main thread is idle. The two probes give these samples:
 
-- **[DriftLag](/docs/monitors/drift-lag)** measures windows of approximately 100 ms. The 30 s of idle time give approximately 300 windows with a lag near 0. The block delays one window, which gets a lag of approximately 30 000 ms.
+- **[DriftLag](/docs/monitors/drift-lag)** measures windows of approximately 100 ms. The 30 s of idle time give 300 windows. The block delays one of them, which gets a lag of approximately 30 000 ms. The other 299 windows have a lag near 0.
 - **The [worker](/docs/monitors/worker-lag)** sends one heartbeat each second, at 0 s, 1 s and so on to 59 s. The heartbeats from 15 s to 44 s wait until 45 s, thus their delays are 30 s, 29 s and so on to 1 s. The other 30 heartbeats have a delay near 0.
 
 | Statistic | DriftLag (closed loop) | Worker heartbeat (open loop) |
 |---|---|---|
-| Number of samples | 301 | 60 |
+| Number of samples | 300 | 60 |
 | Samples of 1 s or more | 1 (0.3%) | 30 (50%) |
 | 95th percentile | 0 ms | 27 s |
 | Mean | Approximately 100 ms | 7.75 s |
@@ -45,6 +45,10 @@ The research gives two corrections for a closed-loop probe:
 - Statistics that use the time as the weight, for example the blocked fraction of the time.
 
 The library does not add samples to the DriftLag histogram at this time. It uses the worker heartbeat for the delay, and the sum of DriftLag for the blocked time.
+
+The explainer below calculates the same table for a block that you move. Make the block shorter than 1 s, and look at the 95th percentile of the heartbeats. Then make the heartbeat interval longer.
+
+<ProbeLoops />
 
 ## Why the worker heartbeat is the primary estimator
 
