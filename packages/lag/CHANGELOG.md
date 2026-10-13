@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Prerendered pages.** A prerender that the user did not see sent a `lag.page_view.start` event, and at its unload a `lag.page_view` span. The page view of a prerendered page now starts at the activation, as its vitals do: the start event and the span come at the activation. The worker gets the identity of the span at that time too.
+- **Observer monitors after a restart.** After `stop()` and `start()`, `LongAnimationFrameMonitor`, `EventTimingMonitor` and `LayoutShiftMonitor` reported each earlier entry again, because the new observer asked for the buffer of the browser. The histograms counted these entries two times. Now only an observer before the first entries asks for the buffer, as in `BrowserReportMonitor`. `stop()` keeps the INP and the CLS. The monitors do not get the entries during a stop.
+
 ## 0.2.0
 
 ### New

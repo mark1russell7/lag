@@ -35,7 +35,9 @@ The factory records the score of each shift in `lag_layout_shift_histogram`.
 
 These are the rules of web-vitals, also at the exact limits of 1000 ms and 5000 ms.
 
-The calculator also keeps the sources of the largest shift in the worst window, for the attribution. Of two shifts with the same score in one window, the later one is the largest, as in web-vitals. Of two windows with the same score, the first one stays the worst window. `getCLS()` gives the current CLS. `stop()` keeps the values. Only the first observer asks for the buffered entries. Thus a restart does not report an entry two times, but the monitor does not get the entries during the stop.
+The calculator also keeps the sources of the largest shift in the worst window, for the attribution. Of two shifts with the same score in one window, the later one is the largest, as in web-vitals. Of two windows with the same score, the first one stays the worst window. `getCLS()` gives the current CLS.
+
+`stop()` keeps the values. Only the first observer asks for the buffered entries. Thus a restart does not report an entry two times, but the monitor does not get the entries during the stop.
 
 ## Browser support
 
