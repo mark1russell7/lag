@@ -122,7 +122,7 @@ if (deps.PerformanceObserver) {
 Unit tests:
 
 - `LongAnimationFrameMonitor.test.ts`: the monitor reports the blocking duration and the duration of the entry. It calculates the render duration from `renderStart`, and 0 for a frame that did not render. It finds the forced layout of the scripts.
-- `ObserverMonitor.test.ts`: the observer uses `buffered: true`. The monitor skips a type that is not in `supportedEntryTypes`, and it logs a warning when `observe()` fails. An error in one entry does not stop the other entries.
+- `ObserverMonitor.test.ts`: the first observer uses `buffered: true`. After the first entries, a restart does not ask for the buffer again, thus the monitor reports each frame one time. The monitor skips a type that is not in `supportedEntryTypes`, and it logs a warning when `observe()` fails. An error in one entry does not stop the other entries.
 - `instrumented/loaf.test.ts`: the factory sends an event only for a frame that blocks for 150 ms or more, and at most 10 events each minute. The script URL and a URL in the invoker (`classic-script`, `module-script`, and `[src=…]` of an event listener) have no query string and no fragment.
 - `setup-all-monitors.test.ts`: the event has the blocking duration, the invoker, the script URL without its query string, and the page-view ID.
 

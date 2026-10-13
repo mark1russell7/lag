@@ -100,7 +100,7 @@ For the events, the spans and the hang reports of the worker, refer to the [quic
 |---|---|
 | `@mark1russell7/lag` | The monitors, `setupAllMonitors()`, `createBrowserDeps()`, the catalogs of the metrics, events and spans, and the OpenTelemetry adapters. The module reads no browser global when it loads. |
 | `@mark1russell7/lag/worker` | `createLagWorker()` and the worker module that it starts. |
-| `@mark1russell7/lag/async-context` | An optional add-on: the function, the API and the operation of each long callback, in all browsers. It uses the callback hook of [async-browser-context](https://www.npmjs.com/package/async-browser-context) 0.2.1 or later, an optional peer dependency. |
+| `@mark1russell7/lag/async-context` | An optional add-on: the function, the API and the operation of each long callback, in all browsers. It uses the callback hook of [async-browser-context](https://www.npmjs.com/package/async-browser-context) 0.2.2 or later, an optional peer dependency. |
 | `@mark1russell7/lag/event-line.js` | `formatEventLine()`, which makes the body line of each event record. |
 
 The [API reference](https://mark1russell7.github.io/lag/docs/api) lists each export.

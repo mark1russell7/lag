@@ -29,10 +29,11 @@ export type PageViewContext = {
  * With page-view spans, the context also has the identity of the span of
  * the view (`lag.page_view.trace_id` and `lag.page_view.span_id`). Thus the
  * page that reports an abandoned hang can put its span into the trace of
- * the page that hung.
+ * the page that hung. The span of a prerendered page starts at the
+ * activation, thus the factory gives the context again at that time.
  */
 export function createInstrumentedPageViewContext(
-    deps : Pick<CoreDeps, "logger"> & Partial<CrashReportDeps> & Partial<Pick<PageDeps, "pageContext">> & Partial<Pick<SpanDeps, "pageViewSpans">>,
+    deps : Pick<CoreDeps, "logger"> & Partial<CrashReportDeps> & Partial<Pick<PageDeps, "page" | "pageContext">> & Partial<Pick<SpanDeps, "pageViewSpans">>,
     vitals : PageViewVitals,
     receivers : readonly PageContextReceiver[],
 ) : MonitorHandle<PageViewContext> {
@@ -70,11 +71,15 @@ export function createInstrumentedPageViewContext(
 
         apply(vitals.getView());
         const unsubscribe = vitals.subscribe(apply);
+        // The span of the view of a prerendered page starts at the activation (refer to the page-view vitals)
+        const page = deps.page;
+        const removeActivation = page?.isPrerendering() === true ? page.onActivation(() => apply(vitals.getView())) : undefined;
 
         return {
             monitor : { getAttributes : () => ({ ...attributes }) },
             stop : () => {
                 unsubscribe();
+                removeActivation?.();
                 if (crashReport?.delete) {
                     crashContextReady.then(() => crashReport.delete?.(PAGE_VIEW_KEY)).catch(() => {});
                 }

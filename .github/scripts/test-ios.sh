@@ -10,6 +10,8 @@
 # the tests one more time with a new safaridriver and a new Safari. It shows a
 # warning with the reason. All other failures fail the step at once, and the
 # second run gets no third run.
+# The results collector of the site (packages/scripts/src/results/session-loss.ts)
+# uses the same rules for the iOS tests of the Pages workflow.
 set -uo pipefail
 
 SESSION_LOSS='Browser connection was closed while running tests|invalid session id'
