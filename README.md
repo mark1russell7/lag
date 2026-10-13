@@ -196,7 +196,7 @@ To show the test results on the site, do these steps:
 
 `pnpm results` writes the results to `packages/site/public/data/results/`. Git ignores this folder. The script includes the latest Stryker report if it exists.
 
-To include the soak test, the E2E tests, Safari or Safari on iOS (on macOS), add `--soak`, `--e2e`, `--safari` or `--ios` to `pnpm results`.
+To include the soak test, the E2E tests, Safari or Safari on iOS (on macOS), add `--soak`, `--e2e`, `--safari` or `--ios` to `pnpm results`. The browser tests operate one project at a time, as in CI. To operate only some projects, add `--projects=<names>`, for example `--projects="browser (firefox),coi (firefox)"`.
 
 GitHub Actions starts the build, the unit tests, the coverage, the browser tests and the site checks for each push and pull request (`ci.yml`). `e2e.yml` and `mutation.yml` start each week. You can also start them manually. `release.yml` publishes `@mark1russell7/lag` to npm when you push a tag `v<version>` (for example `v0.2.0`). The tag must agree with the version in `packages/lag/package.json`.
 

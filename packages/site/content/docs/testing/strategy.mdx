@@ -139,7 +139,7 @@ The stress tests use the workload profiles of `@lag/load` to make main-thread lo
 `pnpm results` collects the results:
 
 1. It builds all packages.
-2. It operates the unit tests with coverage, the browser tests, the overhead benchmark and the site tests. A reporter writes each test with its project and its engine.
+2. It operates the unit tests with coverage, the browser tests, the overhead benchmark and the site tests. A reporter writes each test with its project and its engine. The browser tests operate one project at a time, as in the CI workflow. With `--projects`, only the given browser projects operate.
 3. It reads the coverage summary, if the unit tests of this run wrote it. With `--skip-unit`, the run has no coverage. It also reads the newest Stryker report if one exists, with the commit and the time of its Stryker run.
 4. It writes one run to `packages/site/public/data/results/`. Git ignores this folder.
 
@@ -156,7 +156,7 @@ The mutation report comes from the weekly mutation workflow, thus it is usually 
 | `ci.yml` | Each push and each pull request | The build, the type check, the unit tests, the coverage, the browser tests in each engine, Safari on a macOS runner, Safari in the iOS Simulator, and the tests and the build of the site |
 | `e2e.yml` | Each week, or manually | The Grafana stack in Docker, and the E2E tests |
 | `mutation.yml` | Each week, or manually | Stryker. A manual run uses the incremental file of its branch, or of `main`, from the cache. The weekly run tests all mutants again (`--force`). |
-| `pages.yml` | Each push to `main`, or manually | Safari and Safari in the iOS Simulator on a macOS runner, then `pnpm results` with their reports and the mutation report of the newest completed `mutation.yml` run of `main`, the build of this site and its deployment to GitHub Pages |
+| `pages.yml` | Each push to `main`, or manually | The browser tests in each engine, Safari and Safari in the iOS Simulator, each on its own runner as in `ci.yml`. Then `pnpm results` with their reports and the mutation report of the newest completed `mutation.yml` run of `main`, the build of this site and its deployment to GitHub Pages |
 
 ## Limits
 
@@ -174,8 +174,13 @@ The mutation report comes from the weekly mutation workflow, thus it is usually 
 - **Low Power Mode.** A macOS runner refuses Low Power Mode on AC power. Thus no browser test operates in Low Power Mode. `DriftLag.power.test.ts` uses the timer rule of the WebKit source instead: a grid of 30 ms for nested timers.
 - **Safari on a shared runner.** Safari on a macOS runner of GitHub sometimes slows the timers of its window, for example by 9 s. Then a timing test fails for a reason that is not in the code. Thus the Safari job of CI reports its results, but it does not block a pull request.
 
-  A stress profile that the browser slowed skips itself with the reason. The profile is slow if it took more than 1.5 times its time. It is also slow if a timer delay was more than 2 s while the worker saw less than 100 ms of block. A third case is a time without animation frames that is more than 2 s longer than the longest block. Safari on a runner sometimes renders no frames for its window. Then a load generator that waits for a frame stops the profile.
-- **Safari and the collector.** Only macOS has Safari. Thus a macOS job exports its reports (`--export-reports`), and the Linux job of the site imports them (`--import-reports`). The converter removes the checkout folder of the macOS runner from the file names, thus a test file has the same name in each engine.
+  A stress profile that the browser slowed skips itself with the reason. The profile is slow if it took more than 1.5 times its time. It is also slow if a timer delay was more than 2 s while the worker saw less than 100 ms of block.
+
+  A third case is a time without animation frames that is more than 2 s longer than the longest block. Safari on a runner sometimes renders no frames for its window. Then a load generator that waits for a frame stops the profile. The fourth case is the same rule for a chain of 5 ms timers that the test operates during the profile. The idle gaps of a profile are timers, thus slow timers make fewer events.
+- **One project at a time, one engine on each runner.** The timing tests measure milliseconds, and a runner has few CPUs. Until 13 October 2026, the Pages workflow operated all the engines in one Vitest run on one runner. Then the I/O of a Firefox worker sometimes did not complete during a block of 2 s (experiment E6). This occurred in 7 of 41 runs, and in no run of `ci.yml`.
+
+  The Safari job also booted the iOS Simulator before the Safari tests. A simulator that boots uses the CPU of the Mac for minutes. Then a Safari test failed in 9 of 41 runs, and in 6 of 165 runs of `ci.yml`. At this time, the Pages workflow operates the same jobs as `ci.yml`. `browser-projects.test.ts` checks that the two workflows have the same projects.
+- **Many runners and the collector.** Each browser job exports its reports (`--export-reports`), with the exit code of each step. The Linux job of the site imports the folder of each job (`--import-reports`). Thus a step that failed without a test report also fails the run. The converter removes the checkout folder of the macOS runner from the file names, thus a test file has the same name in each engine.
 - **The E2E tests need a free port.** The Grafana stack uses port 3000 by default. Set `GRAFANA_PORT` when another program uses that port.
 - **Mimir labels.** Mimir puts `service.name` into the `job` label. The E2E query accepts `job` or `service_name`, and a native or a classic histogram.
 - **Mimir and CORS.** Mimir sends no CORS headers, thus a test page cannot read the answer of a query. A Vitest command sends the query from Node (`commands/mimir.ts`).
