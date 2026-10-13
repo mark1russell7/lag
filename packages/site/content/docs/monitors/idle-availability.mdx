@@ -19,6 +19,12 @@ The monitor gives three signals for each idle callback:
 
 The monitor is the inverse of a lag monitor: it measures the free time, not the late time. It answers this question: does the main thread have free time, and how frequently? A healthy main thread gives frequent callbacks with much remaining time. A busy main thread gives long gaps, little remaining time, or timeouts.
 
+## Try it in this tab
+
+This demo starts the monitor in this tab, with the real code of the library. The buttons make the load that gives its signal.
+
+<LiveDemo monitor="idle-availability" />
+
 ## How it works
 
 1. The monitor asks for an idle callback with a timeout of 1000 ms.

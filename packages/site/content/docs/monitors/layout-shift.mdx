@@ -15,6 +15,12 @@ The signal is the score of each layout shift (`value`), without a unit. A shift 
 
 The monitor answers this question: does the page move its content, and how much? The histogram shows the distribution of the single shifts. The CLS of each page view, with the selector of the largest shift, comes from the [page-view vitals](/docs/monitors/page-view-vitals).
 
+## Try it in this tab
+
+This demo starts the monitor in this tab, with the real code of the library. The buttons make the load that gives its signal.
+
+<LiveDemo monitor="layout-shift" />
+
 ## How it works
 
 The monitor makes a `PerformanceObserver` for the entry type `layout-shift`, with `buffered: true`. For each entry, it does these steps:

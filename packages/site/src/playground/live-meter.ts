@@ -20,12 +20,15 @@ export type InstrumentReading = {
     total : number;
     /** The newest samples, oldest first. */
     samples : readonly MeterSample[];
+    /** The sum of the values since the meter started, for each attribute value, with the key `name=value` (for example `outcome=dropped`). */
+    totalsByAttribute : Readonly<Record<string, number>>;
 };
 
 class Instrument {
     readonly buffer : RingBuffer<MeterSample>;
     count = 0;
     total = 0;
+    readonly totals = new Map<string, number>();
 
     constructor(readonly name : string, readonly kind : InstrumentKind, readonly unit : string, capacity : number) {
         this.buffer = new RingBuffer(capacity);
@@ -35,6 +38,10 @@ class Instrument {
         this.buffer.push(sample);
         this.count++;
         this.total += sample.value;
+        for (const [name, value] of Object.entries(sample.attributes ?? {})) {
+            const key = `${name}=${String(value)}`;
+            this.totals.set(key, (this.totals.get(key) ?? 0) + sample.value);
+        }
     }
 }
 
@@ -77,6 +84,7 @@ export class LiveMeter implements Meter {
             count : instrument.count,
             total : instrument.total,
             samples : instrument.buffer.toArray(),
+            totalsByAttribute : Object.fromEntries(instrument.totals),
         };
     }
 

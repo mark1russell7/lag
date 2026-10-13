@@ -15,6 +15,12 @@ The signal is the number of garbage collections that collected the canary (`lag_
 
 The detector answers this question: does the page allocate so much memory that the engine collects frequently? A high rate shows allocation pressure. A lag at the time of a collection can come from the collection. `didGCRecently(withinMs)` and `getRecentGCEvents(windowMs)` let you connect a lag with a recent collection.
 
+## Try it in this tab
+
+This demo starts the monitor in this tab, with the real code of the library. The buttons make the load that gives its signal.
+
+<LiveDemo monitor="gc-signal" />
+
 ## How it works
 
 1. The detector registers an empty object `{}` in a `FinalizationRegistry`. Nothing keeps a reference to it, thus the next garbage collection can collect it.
