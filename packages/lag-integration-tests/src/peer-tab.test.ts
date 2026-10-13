@@ -67,16 +67,22 @@ describe("experiment E7: another page of the origin watches a hang", () => {
             const visibility = document.visibilityState;
             await wait(1_000);
             await evaluateInPeerPage(peer, `window.blockSoon(${BLOCK_MS})`);
-            const blockStart = Date.now() + BLOCK_DELAY_MS;
+            // The checks wait until the end of the block that the answer gives. The answer can come late, thus the
+            // measurements below use the start of the block that the peer page sends ("block").
+            const expectedStart = Date.now() + BLOCK_DELAY_MS;
             // The lock checks during the block. A check also shows that the test page operates.
             const checks : { at : number; held : boolean }[] = [];
-            while (Date.now() < blockStart + BLOCK_MS - 500) {
+            while (Date.now() < expectedStart + BLOCK_MS - 500) {
                 await wait(200);
                 checks.push({ at : Date.now(), held : await lockHeld(lockName(id)) });
             }
-            const duringBlock = checks.filter(check => check.at > blockStart + 200 && check.at < blockStart + BLOCK_MS - 200);
             await wait(BLOCK_MS / 2 + 1_000);
             const end = Date.now();
+            const blockStart = heartbeats.arrivals.find(arrival => arrival.source === "block")?.sentAt;
+            expect(blockStart, "the start of the block, from the peer page").toBeDefined();
+            if (blockStart === undefined) return;
+            console.log(`E7 (${engine}): start of the block - start from the answer of the command = ${blockStart - expectedStart} ms`);
+            const duringBlock = checks.filter(check => check.at > blockStart + 200 && check.at < blockStart + BLOCK_MS - 200);
             const gapOf = (source : PeerHeartbeat["source"]) : number =>
                 largestGap(heartbeats.arrivals.filter(a => a.source === source).map(a => a.arrivedAt), blockStart - 500, end);
             const mainGap = gapOf("main");

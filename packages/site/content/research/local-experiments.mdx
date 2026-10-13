@@ -206,7 +206,9 @@ In Firefox, the storage APIs of a worker complete during the block, but an `XMLH
 
 **Method.** The test page watches a peer page ([`peer-tab.test.ts`](https://github.com/mark1russell7/lag/blob/main/packages/lag-integration-tests/src/peer-tab.test.ts)). A command opens the peer page as a second top-level page: with Playwright, or as a new window with WebdriverIO in Safari. The peer page holds a Web Lock until it closes. Its main thread and a dedicated worker each send a heartbeat through a BroadcastChannel each 100 ms. It also sends a message in `pagehide`.
 
-The peer page then blocks its main thread for 4 s, and the test page records the heartbeats and examines the lock. In a second case, the peer page blocks for 20 s, and the test closes it after 2 s. The test page asks for the lock of the peer page, and it records when it gets the lock. The measurements use the times of events, not of timers, because the test page can be hidden.
+The peer page then blocks its main thread for 4 s, and the test page records the heartbeats and examines the lock.
+
+At the start of the block, the peer page sends a message with the time. The measurements start at that time, because the answer to the command that starts the block can come late. In one run of Safari on a GitHub macOS runner, the answer came more than 1 s after the start of the block. In a second case, the peer page blocks for 20 s, and the test closes it after 2 s. The test page asks for the lock of the peer page, and it records when it gets the lock. The measurements use the times of events, not of timers, because the test page can be hidden.
 
 The Playwright builds operated on Windows 11 in three runs, and on Linux in CI. Safari 26.6.2 operated on a GitHub macOS runner, also with a block of 90 s. Safari 26.5 operated in the iOS Simulator of the same runner, with Xcode 26.6.
 

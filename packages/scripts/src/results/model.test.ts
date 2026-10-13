@@ -7,6 +7,7 @@ import {
     mutationOrigin,
     packageSlug,
     parseResultLines,
+    parseStepCodes,
     runExitCode,
     runFile,
     runId,
@@ -130,6 +131,22 @@ describe("the result of the collector", () => {
         expect(runExitCode(0, [passing], [0, 0])).toBe(0);
         expect(runExitCode(0, [passing], [0, 1])).toBe(1);
         expect(runExitCode(0, [], [2])).toBe(1);
+    });
+
+    it("reads the exit codes of the steps of another machine, without the items that are not a step", () => {
+        expect(parseStepCodes([
+            { title : "Browser tests: browser (firefox)", code : 1 },
+            { title : "Browser tests: coi (firefox)", code : 0 },
+            { title : "no code" },
+            { title : 2, code : 0 },
+            { title : "a code that is not an integer", code : 0.5 },
+            null,
+        ])).toEqual([
+            { title : "Browser tests: browser (firefox)", code : 1 },
+            { title : "Browser tests: coi (firefox)", code : 0 },
+        ]);
+        expect(parseStepCodes(undefined)).toEqual([]);
+        expect(parseStepCodes({ title : "x", code : 1 })).toEqual([]);
     });
 
     it("fails when a test or a budget failed", () => {

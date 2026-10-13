@@ -21,11 +21,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The browser tests in the real Safari. Only macOS has Safari. The job
-  # exports its reports, and the build job adds them to the run of the site.
+  # The browser tests of each engine on its own runner, one project at a time, as the
+  # browser jobs of ci.yml do. The timing tests measure milliseconds, and a runner has
+  # few CPUs: with all the engines in one job, the I/O of a Firefox worker did not
+  # complete during a block of 2 s (experiment E6) in 7 of 41 runs. Each job exports its
+  # reports, and the build job adds them to the run of the site. The project lists are
+  # the same as in ci.yml (packages/scripts/src/results/browser-projects.test.ts).
+  browser:
+    name: Results, browser tests (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Chrome stable is on the runner image: the "chrome" channel uses it
+          - engine: chromium
+            playwright: chromium
+            projects: '["browser (chromium)", "browser (chrome)", "cdp", "bfcache", "coi (chromium)"]'
+          - engine: firefox
+            playwright: firefox
+            projects: '["browser (firefox)", "coi (firefox)"]'
+          - engine: webkit
+            playwright: webkit
+            projects: '["browser (webkit)", "coi (webkit)"]'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Install the Playwright browser and its system dependencies
+        run: pnpm --filter @lag/integration-tests exec playwright install --with-deps ${{ matrix.playwright }}
+      - name: Browser tests
+        continue-on-error: true
+        env:
+          PROJECTS: ${{ matrix.projects }}
+        run: pnpm results --skip-unit --skip-overhead --skip-site --no-mutation "--projects=$PROJECTS" --export-reports=reports
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ matrix.engine }}
+          path: reports/
+          if-no-files-found: ignore
+
+  # The browser tests in the real Safari. Only macOS has Safari. As in ci.yml, no iOS
+  # Simulator operates on this runner: a simulator that boots uses the CPU of the Mac
+  # for minutes, and Safari then slowed the timers and the frames of the test page.
   safari:
+    name: Results, browser tests (safari)
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -45,27 +95,54 @@ jobs:
         run: |
           defaults write com.apple.Safari NSAppSleepDisabled -bool YES
           defaults write NSGlobalDomain NSAppSleepDisabled -bool YES
-      # Without a simulator, the iOS tests fail, but the Safari tests still give their reports
+      - name: Browser tests in Safari
+        continue-on-error: true
+        # caffeinate keeps the display awake: WebKit slows the timers of a window that it does not show
+        run: |
+          caffeinate -dimsu -t 3600 &
+          pnpm results --skip-unit --skip-browser --skip-overhead --skip-site --no-mutation --safari --export-reports=reports
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reports-safari
+          path: reports/
+          if-no-files-found: ignore
+
+  # Safari on iOS in the iOS Simulator of its own macOS runner, as in ci.yml
+  ios:
+    name: Results, browser tests (Safari on iOS, simulator)
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      # Without a simulator, the iOS tests fail, and the exit code of their step goes to the run of the site
       - name: Boot an iPhone simulator
         continue-on-error: true
         run: .github/scripts/boot-ios-simulator.sh
-      - name: Test in Safari and in Safari on iOS
+      - name: Enable safaridriver
+        run: sudo safaridriver --enable
+      # After a lost WebDriver session without a failed test, the collector operates the iOS tests a
+      # second time, as the CI job does (packages/scripts/src/results/session-loss.ts)
+      - name: Browser tests in Safari on iOS
         continue-on-error: true
-        # caffeinate keeps the display awake: WebKit slows the timers of a window that it does not show.
-        # After a lost WebDriver session without a failed test, the collector operates the iOS tests a
-        # second time, as the CI job does (packages/scripts/src/results/session-loss.ts)
-        run: |
-          caffeinate -dimsu -t 3600 &
-          pnpm results --skip-unit --skip-browser --skip-overhead --skip-site --no-mutation --safari --ios --export-reports=safari-reports
+        run: pnpm results --skip-unit --skip-browser --skip-overhead --skip-site --no-mutation --ios --export-reports=reports
       - uses: actions/upload-artifact@v4
         with:
-          name: safari-reports
-          path: safari-reports/
+          name: reports-ios
+          path: reports/
           if-no-files-found: ignore
 
   build:
-    # The site also builds when the Safari job fails
-    needs: safari
+    # The site also builds when a browser job fails
+    needs: [browser, safari, ios]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -84,8 +161,9 @@ jobs:
 
       - run: pnpm build
 
-      - name: Install the Playwright browsers
-        run: pnpm --filter @lag/integration-tests exec playwright install --with-deps chromium firefox webkit
+      # The browser jobs above test the engines. This job operates the overhead benchmark, which uses Chromium
+      - name: Install Chromium for the overhead benchmark
+        run: pnpm --filter @lag/integration-tests exec playwright install --with-deps chromium
 
       # The weekly mutation workflow uploads its report, also when the score is below the
       # break threshold (if: always()). Thus this step takes the newest completed run of main,
@@ -110,17 +188,18 @@ jobs:
             fi
           done
 
-      - name: Download the Safari reports
+      # One folder for each browser job: browser-reports/reports-chromium, browser-reports/reports-safari, ...
+      - name: Download the reports of the browser jobs
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          name: safari-reports
-          path: safari-reports
+          pattern: reports-*
+          path: browser-reports
 
       # The results viewer of the site reads packages/site/public/data/results
       # Failed tests do not stop the deploy: the site shows them
       - name: Make the test results
-        run: pnpm results --import-reports=safari-reports
+        run: pnpm results --skip-browser --import-reports=browser-reports
         continue-on-error: true
 
       # A crash of the collector must not deploy a site without results, as a green run
