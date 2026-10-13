@@ -9,6 +9,15 @@ import type {
 
 export abstract class ObserverMonitor {
     private observer : PerformanceObserverInstance | undefined;
+    /**
+     * True after the first entries reached the subclass. The browser keeps
+     * all entries of the page in its buffer. Thus, an observer with
+     * `buffered: true` after `stop()` and `start()` gets the earlier entries
+     * again, and the subclass reports them two times. Only an observer
+     * before the first entries asks for the buffer. The monitor does not get
+     * the entries during a stop.
+     */
+    private bufferTaken = false;
 
     /**
      * The constructor starts the observation immediately. In this base class,
@@ -46,16 +55,16 @@ export abstract class ObserverMonitor {
             const observer = new this.PerformanceObserverCtor((list : PerformanceEntryList) => {
                 const entries = list.getEntries();
                 if (!observing) {
-                    this.receive(entries);
+                    this.deliver(entries);
                     return;
                 }
                 // A delivery inside observe(): give it to the subclass after the construction.
                 // A stop() before the microtask discards it, because a restart gets the buffer again.
                 void Promise.resolve().then(() => {
-                    if (this.observer === observer) this.receive(entries);
+                    if (this.observer === observer) this.deliver(entries);
                 });
             });
-            observer.observe({ ...this.observeOptions, type : this.entryType, buffered : true });
+            observer.observe({ ...this.observeOptions, type : this.entryType, buffered : !this.bufferTaken });
             observing = false;
             this.observer = observer;
         } catch (error) {
@@ -87,7 +96,14 @@ export abstract class ObserverMonitor {
      * It gives them, but it does not process them.
      */
     protected takePendingEntries() : PerformanceEntryLike[] {
-        return this.observer?.takeRecords?.() ?? [];
+        const entries = this.observer?.takeRecords?.() ?? [];
+        if (entries.length > 0) this.bufferTaken = true;
+        return entries;
+    }
+
+    private deliver(entries : readonly PerformanceEntryLike[]) : void {
+        if (entries.length > 0) this.bufferTaken = true;
+        this.receive(entries);
     }
 
     /** The browser gives each delivery of entries to this method. By default, the method processes the entries. */

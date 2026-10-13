@@ -138,17 +138,22 @@ describe("LayoutShiftMonitor", () => {
         expect(monitor.getCLS()).toBeCloseTo(0.3);
     });
 
-    it("resets on stop", () => {
-        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
-        const logger = { log : vi.fn() };
-
-        const monitor = new LayoutShiftMonitor(vi.fn(), logger, MockCtor);
-
-        triggerEntries([makeShiftEntry({ startTime : 1000, value : 0.5 })]);
-        expect(monitor.getCLS()).toBeCloseTo(0.5);
+    it("keeps the CLS at stop(), and reports each shift one time after a restart", () => {
+        const fake = createFakePerformanceObserver(["layout-shift"]);
+        const report = vi.fn();
+        fake.buffer("layout-shift", makeShiftEntry({ startTime : 1_000, value : 0.5 }));
+        const monitor = new LayoutShiftMonitor(report, { log : vi.fn() }, fake.PerformanceObserver);
+        monitor.takeRecords();
 
         monitor.stop();
-        expect(monitor.getCLS()).toBe(0);
+        expect(monitor.getCLS()).toBeCloseTo(0.5);
+        fake.buffer("layout-shift", makeShiftEntry({ startTime : 3_000, value : 0.1 }));
+        monitor.start();
+        monitor.takeRecords();
+        fake.deliver("layout-shift", makeShiftEntry({ startTime : 9_000, value : 0.2 }));
+
+        expect(report.mock.calls.map(([shift]) => (shift as { startTime : number }).startTime)).toEqual([1_000, 9_000]);
+        expect(monitor.getCLS()).toBeCloseTo(0.5);
     });
 
     it("reports the sources of each shift, and no sources for a shift without them", () => {
