@@ -29,8 +29,9 @@ function setup(options : {
     window? : boolean;
     spans? : boolean;
     pageViewSpans? : PageViewSpans;
+    visibility? : "visible" | "hidden";
 } = {}) {
-    const fake = createFakeLifecycle();
+    const fake = createFakeLifecycle(options.visibility);
     const observer = createFakePerformanceObserver([...LOAD_TYPES, "soft-navigation", "interaction-contentful-paint"]);
     const recording = createRecordingMeter();
     const events = { emit : vi.fn() };
@@ -383,6 +384,36 @@ describe("createInstrumentedPageViewVitals with page-view spans", () => {
         const starts = t.events.emit.mock.calls.filter(([name]) => name === "lag.page_view.start").map(([, attributes]) => Object.keys(attributes as object));
         expect(starts).toHaveLength(2);
         for (const keys of starts) expect(keys).not.toContain("lag.page_view.trace_id");
+    });
+
+    it("starts the view of a prerendered page at the activation: no start event and no span for a prerender that the user does not see", () => {
+        const page = createFakePage({ prerendering : true });
+        const t = setup({ page, spans : true, visibility : "hidden" });
+        const starts = () => t.events.emit.mock.calls.filter(([name]) => name === "lag.page_view.start");
+
+        expect(starts()).toEqual([]);
+        expect(t.spans.spans).toEqual([]);
+
+        page.activate();
+        t.fake.setVisibility("visible");
+        expect(starts()).toEqual([[
+            "lag.page_view.start",
+            { navigation_type : "prerender", "lag.page_view.id" : t.vitals.getView().id, "lag.page_view.url" : "https://shop.example/cart",
+                "lag.page_view.trace_id" : t.spans.spans[0]!.identity.traceId, "lag.page_view.span_id" : t.spans.spans[0]!.identity.spanId },
+            {},
+        ]]);
+        expect(t.spans.named("lag.page_view")).toHaveLength(1);
+    });
+
+    it("makes no span for a prerendered page that unloads or stops before the activation", () => {
+        const page = createFakePage({ prerendering : true });
+        const t = setup({ page, spans : true, visibility : "hidden" });
+        t.fake.pagehide(false);
+        t.handle.stop();
+        page.activate();
+
+        expect(t.spans.spans).toEqual([]);
+        expect(t.events.emit.mock.calls.filter(([name]) => name === "lag.page_view.start")).toEqual([]);
     });
 
     it("gives the page-view spans no hidden page after stop()", () => {
