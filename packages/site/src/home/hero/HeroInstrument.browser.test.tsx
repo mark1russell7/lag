@@ -50,13 +50,22 @@ function status() : string {
     return container.querySelector("[role=status]")?.textContent ?? "";
 }
 
+/** The large number: the p95 of the DriftLag windows. */
+function reading() : string {
+    const paragraph = [...container.querySelectorAll("p")].find(element => element.textContent?.includes("Main-thread lag in this tab"));
+    return paragraph?.firstElementChild?.textContent ?? "";
+}
+
 describe("HeroInstrument", () => {
     it("starts no monitor before the first input, then starts them at the first input", async () => {
         await vi.waitFor(() => expect(button("Block for 200 ms").disabled).toBe(false), patience);
         expect(status()).toBe("Not measuring");
+        expect(reading()).toBe("–");
         expect(container.textContent).toContain("The monitors start at your first input in this page.");
         act(() => { window.dispatchEvent(new PointerEvent("pointermove")); });
         await vi.waitFor(() => expect(status()).toBe("Measuring"), patience);
+        // The DriftLag windows give the large number
+        await vi.waitFor(() => expect(reading()).toMatch(/^-?[\d.]+ ms$/), patience);
     });
 
     it("measures one block with five monitors", async () => {
