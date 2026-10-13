@@ -1,6 +1,7 @@
 import { vi, expect } from "vitest";
 import { LongAnimationFrameMonitor } from "./LongAnimationFrameMonitor.js";
 import type { PerformanceEntryList, PerformanceObserverInit, LoafEntry } from "./perf-types.js";
+import { createFakePerformanceObserver } from "./vitals/test-fakes.js";
 
 function createMockPerformanceObserver() {
     let capturedCallback : ((list : PerformanceEntryList) => void) | undefined;
@@ -191,5 +192,33 @@ describe("LongAnimationFrameMonitor", () => {
 
             expect(report.mock.calls[0]![0].topScript.sourceFunctionName).toBe("");
         });
+    });
+
+    it("reports each frame one time after stop() and start(): the restart does not read the buffer of the browser again", () => {
+        const fake = createFakePerformanceObserver(["long-animation-frame"]);
+        const report = vi.fn();
+        fake.buffer("long-animation-frame", makeLoafEntry({ startTime : 100 }));
+        const monitor = new LongAnimationFrameMonitor(report, { log : vi.fn() }, fake.PerformanceObserver);
+        monitor.takeRecords();
+        monitor.stop();
+        // The browser keeps each frame in its buffer, also the frames during the stop
+        fake.buffer("long-animation-frame", makeLoafEntry({ startTime : 500 }));
+        monitor.start();
+        monitor.takeRecords();
+        fake.deliver("long-animation-frame", makeLoafEntry({ startTime : 900 }));
+
+        expect(report.mock.calls.map(([frame]) => (frame as { startTime : number }).startTime)).toEqual([100, 900]);
+    });
+
+    it("reads the buffer at a restart when the stop came before the first delivery", () => {
+        const fake = createFakePerformanceObserver(["long-animation-frame"]);
+        const report = vi.fn();
+        fake.buffer("long-animation-frame", makeLoafEntry({ startTime : 100 }));
+        const monitor = new LongAnimationFrameMonitor(report, { log : vi.fn() }, fake.PerformanceObserver);
+        monitor.stop();
+        monitor.start();
+        monitor.takeRecords();
+
+        expect(report.mock.calls.map(([frame]) => (frame as { startTime : number }).startTime)).toEqual([100]);
     });
 });

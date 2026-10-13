@@ -113,17 +113,23 @@ describe("EventTimingMonitor", () => {
         expect(monitor.getWorstInteractionDuration()).toBe(150);
     });
 
-    it("resets on stop", () => {
-        const { MockCtor, triggerEntries } = createMockPerformanceObserver();
-        const logger = { log : vi.fn() };
-
-        const monitor = new EventTimingMonitor(vi.fn(), logger, MockCtor);
-
-        triggerEntries([makeEventEntry({ interactionId : 1, duration : 300 })]);
+    it("keeps the INP at stop(), and reports each interaction one time after a restart", () => {
+        const fake = createFakePerformanceObserver(["event"]);
+        const report = vi.fn();
+        fake.buffer("event", makeEventEntry({ interactionId : 1, duration : 300, startTime : 100 }));
+        const monitor = new EventTimingMonitor(report, { log : vi.fn() }, fake.PerformanceObserver);
+        monitor.takeRecords();
         expect(monitor.getINP()).toBe(300);
 
         monitor.stop();
-        expect(monitor.getINP()).toBe(0);
+        expect(monitor.getINP()).toBe(300);
+        fake.buffer("event", makeEventEntry({ interactionId : 2, duration : 500, startTime : 500 }));
+        monitor.start();
+        monitor.takeRecords();
+        fake.deliver("event", makeEventEntry({ interactionId : 3, duration : 200, startTime : 900 }));
+
+        expect(report.mock.calls.map(([event]) => (event as { interactionId : number }).interactionId)).toEqual([1, 3]);
+        expect(monitor.getINP()).toBe(300);
     });
 
     it("asks the browser for events down to 16ms (default threshold is 104ms)", () => {
@@ -209,11 +215,10 @@ describe("EventTimingMonitor", () => {
         // 60 interactions: one outlier ignored, as for the lifetime of the page
         expect(monitor.getINP()).toBe(120);
 
-        // A restart gets the buffered entries again, and the count still starts at the start of the page
+        // After a restart, the count still starts at the start of the page
         monitor.stop();
         browserCount = 80;
         monitor.start();
-        triggerEntries([makeEventEntry({ interactionId : 7, duration : 400 }), makeEventEntry({ interactionId : 14, duration : 120 })]);
         expect(monitor.getInteractionCount()).toBe(80);
         expect(monitor.getINP()).toBe(120);
     });
