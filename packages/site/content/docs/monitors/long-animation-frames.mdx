@@ -18,6 +18,12 @@ The monitor records two values for each long frame:
 
 The monitor answers this question: which frames blocked the page, and which script caused it? It gives the attribution that the timer monitors cannot give. Use it in Chromium together with [DriftLag](/docs/monitors/drift-lag) and the [worker monitor](/docs/monitors/worker-lag), which work in all browsers.
 
+## Try it in this tab
+
+This demo starts the monitor in this tab, with the real code of the library. The buttons make the load that gives its signal.
+
+<LiveDemo monitor="long-animation-frames" />
+
 ## How it works
 
 The monitor makes a `PerformanceObserver` for the entry type `long-animation-frame`, with `buffered: true`. Thus it also gets the frames from before its start, as far as the buffer of the browser keeps them. For each entry, the monitor gives a report with these fields:

@@ -18,6 +18,12 @@ The monitor gives two signals:
 
 The monitor answers this question: does the memory of the page increase over its life? A slow increase of the used memory can show a leak. Garbage collection also uses the main thread: in one study of Chrome, a major collection took more than 100 ms, in incremental steps ([clocks and timers](/research/clocks-and-timers)).
 
+## Try it in this tab
+
+This demo starts the monitor in this tab, with the real code of the library. The buttons make the load that gives its signal.
+
+<LiveDemo monitor="memory" />
+
 ## How it works
 
 1. At its start, the monitor takes one sample immediately. Then it takes one sample each 30 000 ms (`defaultMemoryIntervalMs`).

@@ -19,6 +19,12 @@ The signal is the number of lifecycle transitions, with the attributes `from`, `
 
 The monitor answers these questions: in which state was the page, and how frequently does the page change its state? A page in the background, in the back/forward cache or in a frozen tab gives no valid timer samples. Thus this state decides which samples of the other monitors are valid.
 
+## Try it in this tab
+
+This demo starts the monitor in this tab, with the real code of the library. The buttons make the load that gives its signal.
+
+<LiveDemo monitor="lifecycle" />
+
 ## How it works
 
 The state machine starts in `hidden` when `document.visibilityState` is `hidden`. Otherwise it starts in `active` if the document has the focus, and in `passive` if it does not. Then it changes its state on these events:
