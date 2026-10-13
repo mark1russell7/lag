@@ -40,6 +40,6 @@ describe("sessionsWithoutStart", () => {
 
     it("gives the error of the factory", async () => {
         const factory = sessionsWithoutStart(() => Promise.reject(new Error("No worker.")));
-        await expect(factory("timers")).rejects.toThrow("No worker.");
+        await expect(factory("home")).rejects.toThrow("No worker.");
     });
 });
