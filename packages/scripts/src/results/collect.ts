@@ -28,7 +28,7 @@
  * reports, and the Linux job of the site imports them.
  */
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,6 +47,7 @@ import {
     type SuiteResult,
 } from "@lag/report";
 import { PROJECT_REPORT_DIR_ENV } from "./project-reporter.js";
+import { sessionLossRetry } from "./session-loss.js";
 import {
     changedDuringRun,
     MUTATION_ORIGIN_FILE,
@@ -89,6 +90,8 @@ type Step = {
     args : string[];
     /** More environment variables for the step. */
     env? : Record<string, string>;
+    /** When true, a run that lost the session of the browser operates one more time (refer to `sessionLossRetry`). */
+    retryOnSessionLoss? : boolean;
 };
 
 const steps : Step[] = [
@@ -109,7 +112,7 @@ const steps : Step[] = [
     ...(has("--e2e") ? [{ title : "E2E tests with the Grafana stack", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "e2e"] }] : []),
     ...(has("--safari") ? [{ title : "Browser tests in Safari", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "browser (safari)"], env : { LAG_SAFARI : "1" } }] : []),
     // A booted iOS Simulator is necessary. LAG_IOS_UDID selects it.
-    ...(has("--ios") ? [{ title : "Browser tests in Safari on iOS", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "browser (ios)"], env : { LAG_IOS : "1" } }] : []),
+    ...(has("--ios") ? [{ title : "Browser tests in Safari on iOS", packageName : "@lag/integration-tests", dir : "packages/lag-integration-tests", args : ["--project", "browser (ios)"], env : { LAG_IOS : "1" }, retryOnSessionLoss : true }] : []),
     ...(has("--skip-site") ? [] : [
         { title : "Tests of @lag/site", packageName : "@lag/site", dir : "packages/site", args : [] },
     ]),
@@ -136,18 +139,53 @@ function readJson<T>(file : string) : T | undefined {
     }
 }
 
-/** This function starts the Vitest of a package with Node, so that no shell quotes the arguments. */
-function runVitest(step : Step, reportDir : string, resultsDir : string) : number {
+/**
+ * This function starts the Vitest of a package with Node, so that no shell
+ * quotes the arguments. For a step with `retryOnSessionLoss`, it keeps the
+ * output, and it gives the output after the end of the run.
+ */
+function runVitest(step : Step, reportDir : string, resultsDir : string) : { status : number; output : string } {
     const dir = path.join(root, step.dir);
     const vitest = path.join(dir, "node_modules/vitest/vitest.mjs");
     const args = [vitest, "run", ...step.args, "--reporter=default", `--reporter=${reporter}`];
     console.log(`\n=== ${step.title} (${step.dir}: vitest ${args.slice(1).join(" ")})\n`);
+    const keep = step.retryOnSessionLoss === true;
     const result = spawnSync(process.execPath, args, {
         cwd : dir,
-        stdio : "inherit",
+        stdio : keep ? ["inherit", "pipe", "pipe"] : "inherit",
+        encoding : "utf8",
+        maxBuffer : 256 * 1024 * 1024,
         env : { ...process.env, ...step.env, [PROJECT_REPORT_DIR_ENV] : reportDir, [RESULTS_DIR_ENV] : resultsDir },
     });
-    return result.status ?? 1;
+    const output = keep ? `${result.stdout ?? ""}${result.stderr ?? ""}` : "";
+    if (keep) {
+        process.stdout.write(result.stdout ?? "");
+        process.stderr.write(result.stderr ?? "");
+    }
+    return { status : result.status ?? 1, output };
+}
+
+/**
+ * This function operates a step. A step with `retryOnSessionLoss` operates
+ * one more time when Safari lost its WebDriver session and no test failed.
+ * The second run replaces the reports and the measurements of the first run.
+ */
+function runStep(step : Step, reportDir : string, resultsDir : string) : number {
+    const resultsFile = path.join(resultsDir, "results.jsonl");
+    const resultsSize = existsSync(resultsFile) ? statSync(resultsFile).size : 0;
+    const first = runVitest(step, reportDir, resultsDir);
+    if (first.status === 0 || step.retryOnSessionLoss !== true) return first.status;
+    const decision = sessionLossRetry(first.output);
+    if (!decision.retry) return first.status;
+    console.log(`::warning title=${step.title}: second run::${decision.reason}`);
+    // As .github/scripts/test-ios.sh: the safaridriver of the first run continues after Vitest stops,
+    // and it can keep the session of the simulator
+    spawnSync("pkill", ["-x", "safaridriver"], { stdio : "inherit" });
+    spawnSync("xcrun", ["simctl", "terminate", process.env["LAG_IOS_UDID"] || "booted", "com.apple.mobilesafari"], { stdio : "inherit" });
+    spawnSync("sleep", ["5"], { stdio : "inherit" });
+    rmSync(reportDir, { recursive : true, force : true });
+    if (existsSync(resultsFile)) truncateSync(resultsFile, resultsSize);
+    return runVitest(step, reportDir, resultsDir).status;
 }
 
 function suitesFrom(reportDir : string, packageName : string) : SuiteResult[] {
@@ -220,7 +258,7 @@ function main() : void {
     const exitCodes : Array<[string, number]> = [];
     steps.forEach((step, index) => {
         const reportDir = path.join(temp, "reports", String(index));
-        const code = runVitest(step, reportDir, resultsDir);
+        const code = runStep(step, reportDir, resultsDir);
         exitCodes.push([step.title, code]);
         const found = suitesFrom(reportDir, step.packageName);
         if (found.length === 0) console.warn(`No test report from "${step.title}" (exit code ${code}).`);
