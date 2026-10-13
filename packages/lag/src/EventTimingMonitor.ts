@@ -30,7 +30,8 @@ const DURATION_THRESHOLD_MS = 16;
  *
  * The observer gets the buffered entries from before the start of the
  * monitor. Thus the interaction count also starts at the start of the page,
- * as for the load in web-vitals.
+ * as for the load in web-vitals. `stop()` keeps the INP. After `start()`,
+ * the monitor gets the new entries, but not the entries during the stop.
  */
 export class EventTimingMonitor extends ObserverMonitor {
     private readonly inp : InpCalculator;
@@ -82,12 +83,6 @@ export class EventTimingMonitor extends ObserverMonitor {
 
     getInteractionCount() : number {
         return this.inp.getInteractionCount();
-    }
-
-    override stop() : void {
-        super.stop();
-        // A restart reads the browser's buffered entries again, so start clean, with the count from the start of the page
-        this.inp.reset(0);
     }
 }
 

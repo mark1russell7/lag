@@ -13,7 +13,9 @@ export type LayoutShiftReport = {
 
 /**
  * This monitor observes the layout shifts that did not follow user input,
- * and it calculates the CLS for the lifetime of the page.
+ * and it calculates the CLS for the lifetime of the page. `stop()` keeps the
+ * CLS. After `start()`, the monitor gets the new shifts, but not the shifts
+ * during the stop.
  */
 export class LayoutShiftMonitor extends ObserverMonitor {
     private readonly cls = new ClsCalculator();
@@ -47,11 +49,5 @@ export class LayoutShiftMonitor extends ObserverMonitor {
 
     getCLS() : number {
         return this.cls.getCLS();
-    }
-
-    override stop() : void {
-        super.stop();
-        // A restart reads the browser's buffered entries again, so start clean
-        this.cls.reset();
     }
 }

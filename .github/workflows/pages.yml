@@ -51,7 +51,9 @@ jobs:
         run: .github/scripts/boot-ios-simulator.sh
       - name: Test in Safari and in Safari on iOS
         continue-on-error: true
-        # caffeinate keeps the display awake: WebKit slows the timers of a window that it does not show
+        # caffeinate keeps the display awake: WebKit slows the timers of a window that it does not show.
+        # After a lost WebDriver session without a failed test, the collector operates the iOS tests a
+        # second time, as the CI job does (packages/scripts/src/results/session-loss.ts)
         run: |
           caffeinate -dimsu -t 3600 &
           pnpm results --skip-unit --skip-browser --skip-overhead --skip-site --no-mutation --safari --ios --export-reports=safari-reports

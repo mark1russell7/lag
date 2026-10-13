@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createInstrumentedPageViewContext } from "./page-view-context.js";
 import type { PageViewVitals } from "../vitals/PageViewVitals.js";
 import type { PageView } from "../vitals/ViewCollector.js";
+import { createFakePage } from "../vitals/test-fakes.js";
 
 function fakeVitals(initial : PageView) {
     const listeners = new Set<(view : PageView) => void>();
@@ -142,6 +143,28 @@ describe("createInstrumentedPageViewContext with page-view spans", () => {
             [{ "lag.page_view.id" : "view-1", "lag.page_view.trace_id" : "a".repeat(32), "lag.page_view.span_id" : "b".repeat(16) }],
             [{ "lag.page_view.id" : "view-2" }],
         ]);
+    });
+
+    it("gives the identity of the span of a prerendered page at the activation, when the span starts", () => {
+        const fake = fakeVitals(view("view-1"));
+        const receiver = { setContext : vi.fn() };
+        const page = createFakePage({ prerendering : true });
+        let current : { traceId : string; spanId : string } | undefined;
+        const pageViewSpans = { viewStarted() {}, viewHidden() {}, viewEnded() {}, current : () => current };
+        // The span of the view starts at the activation, before the context reads it
+        page.onActivation(() => { current = { traceId : "a".repeat(32), spanId : "b".repeat(16) }; });
+        const handle = createInstrumentedPageViewContext({ logger : { log : vi.fn() }, page, pageViewSpans }, fake.vitals, [receiver]);
+        page.activate();
+
+        expect(receiver.setContext.mock.calls).toEqual([
+            [{ "lag.page_view.id" : "view-1" }],
+            [{ "lag.page_view.id" : "view-1", "lag.page_view.trace_id" : "a".repeat(32), "lag.page_view.span_id" : "b".repeat(16) }],
+        ]);
+
+        // stop() removes the activation listener
+        handle.stop();
+        page.activate();
+        expect(receiver.setContext).toHaveBeenCalledTimes(2);
     });
 
     it("gives no span identity for a span that the SDK did not sample", () => {

@@ -115,6 +115,20 @@ describe("ObserverMonitor", () => {
         );
     });
 
+    it("asks for the buffer again at a restart only until the first entries arrive", () => {
+        const { MockCtor, observeSpy, triggerEntries } = createMockPerformanceObserver();
+        const monitor = new TestObserverMonitor("longtask", { log : vi.fn() }, MockCtor);
+        // An empty delivery does not take the buffer
+        triggerEntries([]);
+        monitor.stop();
+        monitor.start();
+        triggerEntries([{ entryType : "longtask", name : "self", startTime : 5, duration : 60 }]);
+        monitor.stop();
+        monitor.start();
+
+        expect(observeSpy.mock.calls.map(([options]) => (options as { buffered : boolean }).buffered)).toEqual([true, true, false]);
+    });
+
     it("disconnects on stop", () => {
         const { MockCtor, disconnectSpy } = createMockPerformanceObserver();
         const logger = { log : vi.fn() };
