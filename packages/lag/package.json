@@ -1,6 +1,6 @@
 {
   "name": "@mark1russell7/lag",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Main-thread lag monitors for browser apps, on the devices of real users: blocked time, hangs, long animation frames, INP and the Core Web Vitals of each page view, as OpenTelemetry metrics, events and spans.",
   "keywords": [
     "main thread",

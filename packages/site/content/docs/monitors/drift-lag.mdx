@@ -119,6 +119,8 @@ With `MessageChannel`, the monitor finds this case:
 
 The cost is one probe of 50 ms to find the throttling, and one probe for each 30 throttled steps. A single block starts no probe, because the next step is short. In the simulated tests, a throttling that started or ended at any time in the grid gave less than 40 ms of lag.
 
+A browser test puts a frame off the screen for 6 s, without the pause of the frame viewport (`offscreen-frame.test.ts`). In CI (pull request 54), its timers waited 1000 ms to 1001 ms in Safari 26.6.2 on macOS and in WebKit on Linux. Safari 26.5 in the iOS Simulator gave the same result. There, DriftLag found the throttling and recorded no window. In Chromium and Firefox, the timers were not throttled, and DriftLag recorded windows of 0 ms to 2 ms of lag.
+
 ### Windows and records
 
 A window has a whole number of steps. Thus its length is 100 ms only when the baseline divides 100 ms. In Firefox and WebKit on Windows, a window has 6 steps of 15.6 ms, thus approximately 93 ms. The first window has 20 steps, thus approximately 310 ms there. `getLastWindowMs()` gives the measured length of the last window, with its lag.
