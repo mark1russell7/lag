@@ -522,4 +522,114 @@ describe("createMeasurementConditions", () => {
             expect(monitor.start).toHaveBeenCalledTimes(1);
         });
     });
+
+    describe("pauseWhileHidden with the option offscreen", () => {
+        /** A frame viewport that the test changes. */
+        function createViewport(initial = true) {
+            let shown = initial;
+            const listeners = new Set<(shown : boolean) => void>();
+            return {
+                viewport : {
+                    isShown : () => shown,
+                    subscribe(listener : (shown : boolean) => void) {
+                        listeners.add(listener);
+                        return () => { listeners.delete(listener); };
+                    },
+                },
+                listeners,
+                set(value : boolean) {
+                    shown = value;
+                    for (const listener of [...listeners]) listener(value);
+                },
+            };
+        }
+
+        it("stops a monitor while its frame is off-screen, and starts it again when the frame is in the viewport", () => {
+            const frame = createViewport();
+            const { conditions } = createConditions({ viewport : frame.viewport });
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            conditions.pauseWhileHidden(monitor, { offscreen : true });
+            frame.set(false);
+            frame.set(false);
+            expect(monitor.stop).toHaveBeenCalledTimes(1);
+            frame.set(true);
+
+            expect(monitor.start).toHaveBeenCalledTimes(1);
+        });
+
+        it("starts a monitor only when the page is visible and the frame is in the viewport", () => {
+            const frame = createViewport();
+            const { conditions, page } = createConditions({ viewport : frame.viewport });
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            conditions.pauseWhileHidden(monitor, { offscreen : true });
+            page.hide();
+            frame.set(false);
+            page.show();
+            expect(monitor.start).not.toHaveBeenCalled();
+            frame.set(true);
+
+            expect(monitor.stop).toHaveBeenCalledTimes(1);
+            expect(monitor.start).toHaveBeenCalledTimes(1);
+        });
+
+        it("stops a monitor at once when the frame is off-screen at the start", () => {
+            const frame = createViewport(false);
+            const { conditions } = createConditions({ viewport : frame.viewport });
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            conditions.pauseWhileHidden(monitor, { offscreen : true });
+
+            expect(monitor.stop).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not follow the viewport without the option", () => {
+            const frame = createViewport();
+            const { conditions } = createConditions({ viewport : frame.viewport });
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            conditions.pauseWhileHidden(monitor);
+            frame.set(false);
+
+            expect(monitor.stop).not.toHaveBeenCalled();
+            expect(frame.listeners.size).toBe(0);
+        });
+
+        it("stops following the page and the viewport when the returned function runs", () => {
+            const frame = createViewport();
+            const { conditions, page } = createConditions({ viewport : frame.viewport });
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            const unpause = conditions.pauseWhileHidden(monitor, { offscreen : true });
+            unpause();
+            frame.set(false);
+            page.hide();
+
+            expect(monitor.stop).not.toHaveBeenCalled();
+            expect(frame.listeners.size).toBe(0);
+        });
+
+        it("follows only the viewport without a lifecycle, and only the page without a viewport", () => {
+            const frame = createViewport();
+            const withoutLifecycle = createMeasurementConditions({
+                clock : { now : () => Date.now() },
+                setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+                clearTimeoutFn : (id) => clearTimeout(id),
+                viewport : frame.viewport,
+            });
+            const first = { start : vi.fn(), stop : vi.fn() };
+            withoutLifecycle.pauseWhileHidden(first, { offscreen : true });
+            frame.set(false);
+            expect(first.stop).toHaveBeenCalledTimes(1);
+
+            const { conditions, page } = createConditions();
+            const second = { start : vi.fn(), stop : vi.fn() };
+            conditions.pauseWhileHidden(second, { offscreen : true });
+            page.hide();
+            page.show();
+            expect(second.stop).toHaveBeenCalledTimes(1);
+            expect(second.start).toHaveBeenCalledTimes(1);
+        });
+    });
 });

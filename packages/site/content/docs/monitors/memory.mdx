@@ -31,7 +31,7 @@ This demo starts the monitor in this tab, with the real code of the library. The
 3. If the modern API fails one time, the monitor uses the legacy API from then on, and logs the change at the level `debug`.
 4. The legacy API gives `usedJSHeapSize`, `totalJSHeapSize` and `jsHeapSizeLimit`. The monitor records `usedJSHeapSize` with `source="legacy"`, and the ratio of used to limit.
 
-The modern API can take many seconds, thus the monitor does not start a sample while one waits. It does not record a sample that comes back after `stop()`.
+The modern API can take many seconds, thus the monitor does not start a sample while one waits. It does not record a sample that comes back after `stop()`, also after a new `start()`. When the sample of the earlier run ends, the new run takes its first sample at once.
 
 `createBrowserDeps()` gives the memory source only when the browser has one of the two APIs. Without them, `setupAllMonitors()` does not start the monitor.
 
@@ -106,6 +106,7 @@ if (deps.memorySource) {
 Unit tests:
 
 - `MemoryMonitor.test.ts`: the first sample comes at the start. The monitor uses the modern API when it is available, and the legacy API when the modern API fails. After one failure, it does not use the modern API again. It takes samples at the interval and stops at `stop()`. It does not start a sample while one waits, and it drops a modern sample that comes after `stop()`.
+- `MemoryMonitor.test.ts`, a restart: a `stop()` and a `start()` come during a modern sample. The monitor drops that sample, and then it takes the first sample of the new run. After a second `stop()`, it takes no sample.
 - `browser/browser-deps.test.ts`: the adapter finds the legacy and the standard memory APIs.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):

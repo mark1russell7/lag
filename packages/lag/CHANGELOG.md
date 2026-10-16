@@ -6,6 +6,14 @@
 
 - **Prerendered pages.** A prerender that the user did not see sent a `lag.page_view.start` event, and at its unload a `lag.page_view` span. The page view of a prerendered page now starts at the activation, as its vitals do: the start event and the span come at the activation. The worker gets the identity of the span at that time too.
 - **Observer monitors after a restart.** After `stop()` and `start()`, `LongAnimationFrameMonitor`, `EventTimingMonitor` and `LayoutShiftMonitor` reported each earlier entry again, because the new observer asked for the buffer of the browser. The histograms counted these entries two times. Now only an observer before the first entries asks for the buffer, as in `BrowserReportMonitor`. `stop()` keeps the INP and the CLS. The monitors do not get the entries during a stop.
+- **MemoryMonitor after a restart.** A `stop()` and a `start()` during a sample of `measureUserAgentSpecificMemory()` gave that sample to the new run, and the new run took no first sample of its own. Now the monitor drops the sample of the earlier run. When it ends, the new run takes its first sample at once. The samples still do not overlap.
+- **ComputePressureMonitor with a source that throws.** When `observe()` threw an error for one source at once, the monitor did not observe the other sources. It also logged "PressureObserver not available in this browser." Now it logs the warning of that source and observes the other sources.
+- **The hang journal reader.** When the take or the report of one record failed, the reader stopped: it did not report the other abandoned hangs, and it did not remove the old marks. Now it logs "Could not take a record of the hang journal." with the page ID and continues.
+
+### Changed
+
+- **TimerThrottleDetector: a block is not throttling.** With `MessageChannel`, each sample also posts a message task as a control. A block of the main thread delays the timer and the message task. Throttling delays only the timer. Thus a sample counts as throttled only when its timer waits more than the threshold longer than its message task. The report of a round has the new field `blockedSamples`. `setupAllMonitors()` gives the control. Without `MessageChannel`, the detector operates as before. The metric `lag_timer_calibrations` does not change.
+- **FrameTimingMonitor: a pause while its frame is off the screen.** In an iframe off the screen, `visibilityState` stays `visible`, but the browser stops or slows the animation frames (experiment E9). Then the monitor recorded long frame gaps that were not lag. Now `createBrowserDeps()` gives `frameViewport` to a document in a frame: an `IntersectionObserver` on its `documentElement`. The frame-timing monitor of `setupAllMonitors()` pauses while the frame is off the screen. The new parts of the API are `pauseWhileHidden(monitor, { offscreen: true })`, the option `viewport` of `createMeasurementConditions()`, `createFrameViewport()` and `ViewportDeps`.
 
 ## 0.2.0
 

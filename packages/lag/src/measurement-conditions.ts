@@ -1,4 +1,5 @@
 import type { ClearTimeoutFn, Clock, SetTimeoutFn } from "./types.js";
+import type { FrameViewport } from "./frame-viewport.js";
 import { ReliabilityTracker, type UnreliableReason } from "./reliability.js";
 import { isVisibleState, type LifecycleState, type LifecycleStateMachine } from "./LifecycleStateMachine.js";
 
@@ -6,6 +7,16 @@ import { isVisibleState, type LifecycleState, type LifecycleStateMachine } from 
 export type Pausable = {
     start() : void;
     stop() : void;
+};
+
+/** The options of `pauseWhileHidden`. */
+export type PauseOptions = {
+    /**
+     * When true, the monitor also stops while the document is in a frame that
+     * is off-screen (the option `viewport`). Use it for a monitor of the
+     * rendering, for example of the animation frames.
+     */
+    offscreen? : boolean;
 };
 
 /**
@@ -41,11 +52,12 @@ export type MeasurementConditions = {
     createValidator() : SampleValidator;
     /**
      * This method stops `monitor` while the page is hidden or frozen, and
-     * starts it again when the page is visible. It gives the function that
-     * cancels this behavior. Use that function before you stop the monitor
-     * permanently.
+     * starts it again when the page is visible. With `offscreen: true`, the
+     * monitor also stops while its frame is off-screen. It gives the function
+     * that cancels this behavior. Use that function before you stop the
+     * monitor permanently.
      */
-    pauseWhileHidden(monitor : Pausable) : () => void;
+    pauseWhileHidden(monitor : Pausable, options? : PauseOptions) : () => void;
     dispose() : void;
 };
 
@@ -54,6 +66,8 @@ export type MeasurementConditionsOptions = {
     setTimeoutFn : SetTimeoutFn;
     clearTimeoutFn : ClearTimeoutFn;
     lifecycle? : LifecycleStateMachine;
+    /** The position of the frame of the document, for `pauseWhileHidden` with `offscreen: true`. Only a document in a frame has it. */
+    viewport? : FrameViewport;
     tracker? : ReliabilityTracker;
     /** Samples at or above this value wait for late evidence. The default is 5000 ms. */
     outlierThresholdMs? : number;
@@ -191,13 +205,33 @@ export function createMeasurementConditions(options : MeasurementConditionsOptio
         };
     };
 
-    const pauseWhileHidden = (monitor : Pausable) : () => void => {
-        if (!lifecycle) return () => {};
-        if (!isVisibleState(lifecycle.getState())) monitor.stop();
-        return lifecycle.subscribe(({ from, to }) => {
-            if (isVisibleState(to) && !isVisibleState(from)) monitor.start();
-            else if (!isVisibleState(to) && isVisibleState(from)) monitor.stop();
+    const pauseWhileHidden = (monitor : Pausable, pauseOptions? : PauseOptions) : () => void => {
+        const viewport = pauseOptions?.offscreen ? options.viewport : undefined;
+        if (!lifecycle && !viewport) return () => {};
+        let visible = lifecycle ? isVisibleState(lifecycle.getState()) : true;
+        let shown = viewport?.isShown() ?? true;
+        // The monitor operates when the conditions start to follow it
+        let running = true;
+        const follow = () : void => {
+            const run = visible && shown;
+            if (run === running) return;
+            running = run;
+            if (run) monitor.start();
+            else monitor.stop();
+        };
+        follow();
+        const unsubscribeLifecycle = lifecycle?.subscribe(({ to }) => {
+            visible = isVisibleState(to);
+            follow();
         });
+        const unsubscribeViewport = viewport?.subscribe((value) => {
+            shown = value;
+            follow();
+        });
+        return () => {
+            unsubscribeLifecycle?.();
+            unsubscribeViewport?.();
+        };
     };
 
     return {

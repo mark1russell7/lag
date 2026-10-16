@@ -18,6 +18,7 @@ import type {
     LifecycleDeps,
     ObserverDeps,
     FrameDeps,
+    ViewportDeps,
     IdleDeps,
     SchedulingDeps,
     MemoryDeps,
@@ -107,6 +108,7 @@ export type AllMonitorDeps =
     & LifecycleDeps
     & Partial<ObserverDeps>
     & Partial<FrameDeps>
+    & Partial<ViewportDeps>
     & Partial<IdleDeps>
     & Partial<SchedulingDeps>
     & Partial<MemoryDeps>
@@ -235,6 +237,7 @@ function createConditions(deps : AllMonitorDeps, lifecycle : LifecycleStateMachi
         setTimeoutFn : deps.setTimeoutFn,
         clearTimeoutFn : deps.clearTimeoutFn,
         ...(lifecycle ? { lifecycle } : {}),
+        ...(deps.frameViewport ? { viewport : deps.frameViewport } : {}),
         onDiscard : (reason) => discarded.add(1, { reason }),
         onStall : (kind, valueMs, startTime) => {
             stalls.add(1, { kind });

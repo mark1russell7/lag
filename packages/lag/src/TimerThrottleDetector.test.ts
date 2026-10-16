@@ -237,8 +237,8 @@ describe("TimerThrottleDetector", () => {
         }
 
         expect(report.mock.calls.map(c => c[0])).toEqual([
-            { throttled : true, throttledSamples : 5, totalSamples : 5 },
-            { throttled : false, throttledSamples : 0, totalSamples : 5 },
+            { throttled : true, throttledSamples : 5, blockedSamples : 0, totalSamples : 5 },
+            { throttled : false, throttledSamples : 0, blockedSamples : 0, totalSamples : 5 },
         ]);
     });
 
@@ -262,7 +262,7 @@ describe("TimerThrottleDetector", () => {
             const d = createDetector([100], 1);
             vi.advanceTimersByTime(100);
 
-            expect(d.report).toHaveBeenCalledWith({ throttled : false, throttledSamples : 0, totalSamples : 1 });
+            expect(d.report).toHaveBeenCalledWith({ throttled : false, throttledSamples : 0, blockedSamples : 0, totalSamples : 1 });
             d.detector.stop();
         });
 
@@ -270,7 +270,7 @@ describe("TimerThrottleDetector", () => {
             const d = createDetector([200, 5], 2);
             vi.advanceTimersByTime(205);
 
-            expect(d.report).toHaveBeenCalledWith({ throttled : false, throttledSamples : 1, totalSamples : 2 });
+            expect(d.report).toHaveBeenCalledWith({ throttled : false, throttledSamples : 1, blockedSamples : 0, totalSamples : 2 });
             d.detector.stop();
         });
 
@@ -292,9 +292,95 @@ describe("TimerThrottleDetector", () => {
             d.detector.stop();
 
             expect(d.logger.log.mock.calls).toEqual([
-                ["warn", "Timer throttling detected.", { type : "TimerThrottleDetector", throttledSamples : 1, totalSamples : 1 }],
+                ["warn", "Timer throttling detected.", { type : "TimerThrottleDetector", throttledSamples : 1, blockedSamples : 0, totalSamples : 1 }],
                 ["info", "Timer throttling ended.", { type : "TimerThrottleDetector" }],
             ]);
+        });
+    });
+
+    describe("the message task of each sample (the control)", () => {
+        /**
+         * A detector on fake timers, with a control. Each sample takes the next
+         * delay of `timerDelays`, and its message task the next delay of
+         * `messageDelays` (5 ms and 0 ms after they end).
+         */
+        function createControlled(timerDelays : number[], messageDelays : number[], calibrationSamples = 5) {
+            const report = vi.fn();
+            const logger = { log : vi.fn() };
+            const postTask = vi.fn((callback : () => void) => { setTimeout(callback, messageDelays.shift() ?? 0); });
+            const detector = new TimerThrottleDetector(
+                report,
+                (fn, ms) => setTimeout(fn, ms === 5 ? timerDelays.shift() ?? 5 : ms) as unknown as number,
+                (id) => clearTimeout(id),
+                { now : () => Date.now() },
+                logger,
+                { calibrationTargetMs : 5, throttleThresholdMs : 100, calibrationSamples, calibrationIntervalMs : 1_000 },
+                postTask,
+            );
+            detector.start();
+            return { detector, logger, report, postTask };
+        }
+
+        it("does not count a sample as throttled when a block delays the timer and the message task", () => {
+            // A busy main thread: each task of the five samples waits 200 ms
+            const c = createControlled([200, 200, 200, 200, 200], [200, 200, 200, 200, 200]);
+            vi.advanceTimersByTime(5 * 200);
+            c.detector.stop();
+
+            expect(c.postTask).toHaveBeenCalledTimes(5);
+            expect(c.report).toHaveBeenCalledWith({ throttled : false, throttledSamples : 0, blockedSamples : 5, totalSamples : 5 });
+            expect(c.detector.isThrottled()).toBe(false);
+            expect(c.logger.log).not.toHaveBeenCalled();
+        });
+
+        it("counts a sample as throttled when the message task starts on time and the timer is late", () => {
+            const c = createControlled([1_000, 1_000, 1_000, 1_000, 1_000], []);
+            vi.advanceTimersByTime(5 * 1_000);
+            c.detector.stop();
+
+            expect(c.report).toHaveBeenCalledWith({ throttled : true, throttledSamples : 5, blockedSamples : 0, totalSamples : 5 });
+        });
+
+        it("counts a sample as throttled when the timer waits much longer than the message task", () => {
+            // A block of 200 ms, and a throttled timer of 1 s
+            const c = createControlled([1_000], [200], 1);
+            vi.advanceTimersByTime(1_000);
+            c.detector.stop();
+
+            expect(c.report).toHaveBeenCalledWith({ throttled : true, throttledSamples : 1, blockedSamples : 0, totalSamples : 1 });
+        });
+
+        it("waits for the message task when the timer starts first", () => {
+            // After a block, the scheduler can start the timer before the message task
+            const c = createControlled([200], [210], 1);
+            vi.advanceTimersByTime(200);
+            expect(c.report).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(10);
+            c.detector.stop();
+
+            expect(c.report).toHaveBeenCalledWith({ throttled : false, throttledSamples : 0, blockedSamples : 1, totalSamples : 1 });
+        });
+
+        it("does not report or continue when it stops while the sample waits for the message task", () => {
+            const c = createControlled([200], [210], 1);
+            vi.advanceTimersByTime(200);
+            c.detector.stop();
+            vi.advanceTimersByTime(10_000);
+
+            expect(c.report).not.toHaveBeenCalled();
+            expect(vi.getTimerCount()).toBe(0);
+        });
+
+        it("ignores the message task of a sample of an earlier start", () => {
+            const c = createControlled([200, 5], [210, 0], 1);
+            vi.advanceTimersByTime(200);
+            c.detector.stop();
+            c.detector.start();
+            // The message task of the first sample comes now, and the new sample ends at 205 ms
+            vi.advanceTimersByTime(10);
+            c.detector.stop();
+
+            expect(c.report.mock.calls).toEqual([[{ throttled : false, throttledSamples : 0, blockedSamples : 0, totalSamples : 1 }]]);
         });
     });
 });

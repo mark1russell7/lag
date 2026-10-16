@@ -216,6 +216,22 @@ describe("ComputePressureMonitor", () => {
             expect(logger.log).toHaveBeenCalledWith("warn", 'PressureObserver source "thermals" not supported.', { error : expect.any(Error), type : "ComputePressureMonitor" });
         });
 
+        it("observes the other sources when observe() throws for one source", () => {
+            const mock = createMockPressureObserver();
+            // Some implementations throw a TypeError immediately for an unknown source, not a rejected promise
+            mock.observeSpy.mockImplementationOnce(() => { throw new TypeError("unknown source"); });
+            const logger = { log : vi.fn() };
+            const monitor = new ComputePressureMonitor(["thermals", "cpu"], vi.fn(), logger, mock.Ctor);
+
+            expect(mock.observeSpy).toHaveBeenCalledTimes(2);
+            expect(mock.observeSpy).toHaveBeenLastCalledWith("cpu", { sampleInterval : 1000 });
+            expect(logger.log).toHaveBeenCalledTimes(1);
+            expect(logger.log).toHaveBeenCalledWith("warn", 'PressureObserver source "thermals" not supported.', { error : expect.any(TypeError), type : "ComputePressureMonitor" });
+
+            mock.emit([{ source : "cpu", state : "fair", time : 0 }]);
+            expect(monitor.getCurrentState("cpu")).toBe("fair");
+        });
+
         it("gives the most severe state of all sources, also when a less severe record comes last", () => {
             const mock = createMockPressureObserver();
             const monitor = new ComputePressureMonitor(["cpu", "thermals"], vi.fn(), { log : vi.fn() }, mock.Ctor);

@@ -13,7 +13,8 @@ import { createHandle } from "./shared.js";
  * The dropped-frame rate of the fleet is
  * `rate(lag_frames{outcome="dropped"})` divided by the rate of all frames.
  * With `conditions`, the monitor pauses while the page is hidden, because
- * `requestAnimationFrame` does not operate in a hidden page. Also, the
+ * `requestAnimationFrame` does not operate in a hidden page. It also pauses
+ * while its frame is off-screen (the `viewport` of the conditions). Also, the
  * monitor does not record a frame gap that overlaps an unreliable interval.
  */
 export function createInstrumentedFrameTiming(
@@ -41,7 +42,8 @@ export function createInstrumentedFrameTiming(
             deps.cancelAnimationFrame,
             deps.clock,
         );
-        const unpause = conditions?.pauseWhileHidden(monitor);
+        // A frame off-screen gets no animation frames in Chromium and WebKit, and one each second in Firefox
+        const unpause = conditions?.pauseWhileHidden(monitor, { offscreen : true });
 
         return {
             monitor,

@@ -191,6 +191,58 @@ describe("MemoryMonitor", () => {
         expect(reports).toHaveLength(0);
     });
 
+    it("drops a modern sample of the run before a stop() and start(), and then takes the first sample of the new run", async () => {
+        const reports : MemoryMeasurement[] = [];
+        const resolvers : Array<(r : { bytes : number; breakdown : [] }) => void> = [];
+        const measureModern = vi.fn(() => new Promise<{ bytes : number; breakdown : [] }>(r => { resolvers.push(r); }));
+        const monitor = new MemoryMonitor(
+            10_000,
+            { measureModern },
+            (m) => reports.push(m),
+            { log : vi.fn() },
+            vi.fn() as never,
+            vi.fn(),
+            { now : () => 0 },
+        );
+
+        monitor.stop();
+        monitor.start();
+        // The samples do not overlap: the new run waits for the pending measurement
+        expect(measureModern).toHaveBeenCalledTimes(1);
+
+        resolvers[0]!({ bytes : 1, breakdown : [] });
+        await vi.waitFor(() => expect(measureModern).toHaveBeenCalledTimes(2));
+        expect(reports).toHaveLength(0);
+
+        resolvers[1]!({ bytes : 2, breakdown : [] });
+        await vi.waitFor(() => expect(reports).toHaveLength(1));
+        expect(reports[0]!.usedBytes).toBe(2);
+    });
+
+    it("takes no follow-up sample when the earlier measurement ends after a second stop()", async () => {
+        const reports : MemoryMeasurement[] = [];
+        let resolveModern : (r : { bytes : number; breakdown : [] }) => void = () => {};
+        const measureModern = vi.fn(() => new Promise<{ bytes : number; breakdown : [] }>(r => { resolveModern = r; }));
+        const monitor = new MemoryMonitor(
+            10_000,
+            { measureModern },
+            (m) => reports.push(m),
+            { log : vi.fn() },
+            vi.fn() as never,
+            vi.fn(),
+            { now : () => 0 },
+        );
+
+        monitor.stop();
+        monitor.start();
+        monitor.stop();
+        resolveModern({ bytes : 1, breakdown : [] });
+        for (let i = 0; i < 10; i++) await Promise.resolve();
+
+        expect(measureModern).toHaveBeenCalledTimes(1);
+        expect(reports).toHaveLength(0);
+    });
+
     it("does not start a new sample while one is still pending", () => {
         let intervalCallback = () => {};
         const measureModern = vi.fn(() => new Promise<never>(() => {}));

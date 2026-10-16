@@ -1,3 +1,4 @@
+import type { PostTaskFn } from "./message-task.js";
 import type { Clock, ClearTimeoutFn, Logger, SetTimeoutFn } from "./types.js";
 
 /**
@@ -37,9 +38,31 @@ export type TimerThrottleConfig = {
 export type ThrottleCalibration = {
     throttled : boolean;
     throttledSamples : number;
+    /**
+     * The late samples that a busy main thread explains: the message task of
+     * the sample waited as long as the timer. They do not count as
+     * throttled. Without `postTask`, this value is always 0.
+     */
+    blockedSamples : number;
     totalSamples : number;
 };
 
+/**
+ * This detector finds when the browser throttles the timers of the page.
+ *
+ * Each sample is a short timeout. With `postTask` (for example
+ * `createMessageTaskQueue(...).post`), each sample also starts a message task
+ * at the same time, as a control. A block of the main thread delays the
+ * timer and the message task by the same time. Throttling delays the timer,
+ * but not the message task: Chromium does not throttle the posted messages
+ * of a hidden page.
+ *
+ * Thus a sample is throttled only when the timer waits more than the
+ * threshold longer than the message task. A late sample that the message
+ * task explains is blocked, not throttled. When a browser throttles the
+ * message tasks as much as the timers, the detector cannot find the
+ * throttling. Without `postTask`, each late sample is throttled.
+ */
 export class TimerThrottleDetector {
     private throttled = false;
     /** The one pending timer: a sample, or the wait before the next round. It is `undefined` when the detector is stopped. */
@@ -56,6 +79,7 @@ export class TimerThrottleDetector {
         private readonly clock : Clock,
         private readonly logger : Logger,
         config : TimerThrottleConfig = {},
+        private readonly postTask : PostTaskFn | undefined = undefined,
     ) {
         this.calibrationTargetMs    = config.calibrationTargetMs    ?? DEFAULT_CALIBRATION_TARGET_MS;
         this.throttleThresholdMs    = config.throttleThresholdMs    ?? DEFAULT_THROTTLE_THRESHOLD_MS;
@@ -65,7 +89,7 @@ export class TimerThrottleDetector {
 
     start() : void {
         if (this.handle !== undefined) return;
-        this.takeSample(0, 0);
+        this.takeSample(0, 0, 0);
     }
 
     stop() : void {
@@ -78,43 +102,62 @@ export class TimerThrottleDetector {
         return this.throttled;
     }
 
-    private takeSample(sampleCount : number, throttledCount : number) : void {
+    private takeSample(sampleCount : number, throttledCount : number, blockedCount : number) : void {
         const start = this.clock.now();
+        let timerDelay : number | undefined;
+        let messageDelay : number | undefined;
+
+        // The sample ends when the timer and the message task (if there is one) both started
+        const end = () : void => {
+            if (timerDelay === undefined || (this.postTask && messageDelay === undefined)) return;
+            // stop() (or stop() and start()) while the sample waited for its message task
+            if (this.handle !== handle) return;
+            const late = timerDelay > this.throttleThresholdMs;
+            const throttled = late && timerDelay - (messageDelay ?? 0) > this.throttleThresholdMs;
+            this.endSample(handle, sampleCount + 1, throttledCount + (throttled ? 1 : 0), blockedCount + (late && !throttled ? 1 : 0));
+        };
+
+        this.postTask?.(() => {
+            messageDelay = this.clock.now() - start;
+            end();
+        });
         const handle : number = this.setTimeoutFn(() => {
-            const elapsed = this.clock.now() - start;
-            const samples = sampleCount + 1;
-            const throttledSamples = throttledCount + (elapsed > this.throttleThresholdMs ? 1 : 0);
-
-            if (samples < this.calibrationSamples) {
-                this.takeSample(samples, throttledSamples);
-                return;
-            }
-
-            const wasThrottled = this.throttled;
-            this.throttled = throttledSamples > this.calibrationSamples / 2;
-            try {
-                this.report({ throttled : this.throttled, throttledSamples, totalSamples : samples });
-            } catch (error) {
-                this.logger.log("error", "Error reporting timer calibration.", { error, type : "TimerThrottleDetector" });
-            }
-
-            if (this.throttled && !wasThrottled) {
-                this.logger.log("warn", "Timer throttling detected.", {
-                    type : "TimerThrottleDetector",
-                    throttledSamples,
-                    totalSamples : samples,
-                });
-            } else if (!this.throttled && wasThrottled) {
-                this.logger.log("info", "Timer throttling ended.", {
-                    type : "TimerThrottleDetector",
-                });
-            }
-
-            // report() or the logger may have stopped (or stopped and restarted) the detector
-            if (this.handle === handle) {
-                this.handle = this.setTimeoutFn(() => this.takeSample(0, 0), this.calibrationIntervalMs);
-            }
+            timerDelay = this.clock.now() - start;
+            end();
         }, this.calibrationTargetMs);
         this.handle = handle;
+    }
+
+    private endSample(handle : number, samples : number, throttledSamples : number, blockedSamples : number) : void {
+        if (samples < this.calibrationSamples) {
+            this.takeSample(samples, throttledSamples, blockedSamples);
+            return;
+        }
+
+        const wasThrottled = this.throttled;
+        this.throttled = throttledSamples > this.calibrationSamples / 2;
+        try {
+            this.report({ throttled : this.throttled, throttledSamples, blockedSamples, totalSamples : samples });
+        } catch (error) {
+            this.logger.log("error", "Error reporting timer calibration.", { error, type : "TimerThrottleDetector" });
+        }
+
+        if (this.throttled && !wasThrottled) {
+            this.logger.log("warn", "Timer throttling detected.", {
+                type : "TimerThrottleDetector",
+                throttledSamples,
+                blockedSamples,
+                totalSamples : samples,
+            });
+        } else if (!this.throttled && wasThrottled) {
+            this.logger.log("info", "Timer throttling ended.", {
+                type : "TimerThrottleDetector",
+            });
+        }
+
+        // report() or the logger may have stopped (or stopped and restarted) the detector
+        if (this.handle === handle) {
+            this.handle = this.setTimeoutFn(() => this.takeSample(0, 0, 0), this.calibrationIntervalMs);
+        }
     }
 }

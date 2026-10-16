@@ -6,6 +6,7 @@ import type { Logger, PerformanceLike } from "../types.js";
 import type { PerformanceEntryLike, PerformanceObserverInit } from "../perf-types.js";
 import { getPageLifecycle, type LifecycleDocument, type LifecycleWindow } from "../LifecycleStateMachine.js";
 import type { RequestAnimationFrameFn, CancelAnimationFrameFn } from "../FrameTimingMonitor.js";
+import { createFrameViewport, type FrameViewport, type IntersectionObserverInit } from "../frame-viewport.js";
 import type { RequestIdleCallbackFn, CancelIdleCallbackFn } from "../IdleAvailabilityMonitor.js";
 import type { MessageChannelConstructor, QueueMicrotaskFn } from "../SchedulingFairnessMonitor.js";
 import type { LegacyMemory, MeasureMemoryResult, MemorySource } from "../MemoryMonitor.js";
@@ -54,6 +55,9 @@ export type BrowserGlobals = LifecycleWindow & {
     readonly BroadcastChannel? : unknown;
     readonly AbortController? : unknown;
     readonly navigator? : unknown;
+    readonly IntersectionObserver? : unknown;
+    /** The window of the top-level page. In a frame, it is not the window of the document. */
+    readonly top? : unknown;
 };
 
 export type BrowserDepsOptions = {
@@ -128,6 +132,23 @@ function localStorageOf(globals : BrowserGlobals) : StorageLike | undefined {
     }
 }
 
+/**
+ * The frame viewport of a document in a frame (an iframe), or `undefined` for
+ * a top-level page. The read of `top` does not throw for a frame of another
+ * origin, but this function also accepts an error: then it gives `undefined`.
+ */
+function frameViewportOf(globals : BrowserGlobals) : FrameViewport | undefined {
+    const IntersectionObserver = constructorOf<IntersectionObserverInit>(globals.IntersectionObserver);
+    const target = (globals.document as { documentElement? : unknown }).documentElement;
+    if (!IntersectionObserver || typeof target !== "object" || target === null) return undefined;
+    try {
+        if (globals.top === undefined || globals.top === null || globals.top === globals) return undefined;
+    } catch {
+        return undefined;
+    }
+    return createFrameViewport(IntersectionObserver, target);
+}
+
 function memorySourceOf(performance : BrowserGlobals["performance"]) : MemorySource | undefined {
     const source : MemorySource = {};
     if (typeof performance.memory === "object" && performance.memory !== null) {
@@ -180,6 +201,8 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
     const lifecycleTracker = options.sharedLifecycle !== false && (globals as unknown) === globalThis
         ? getPageLifecycle({ document : globals.document, window : globals, clock : { now }, logger : options.logger })
         : undefined;
+    // Only the frame timing monitor uses it, thus a page without animation frames does not need it
+    const frameViewport = requestAnimationFrame && cancelAnimationFrame ? frameViewportOf(globals) : undefined;
     const crashReport = globals.crashReport as CrashReportContextLike | undefined;
     const crashReportContext = options.crashReportContext !== false && typeof crashReport?.set === "function" ? crashReport : undefined;
 
@@ -201,6 +224,7 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         ...(options.pageContext ? { pageContext : options.pageContext } : {}),
         ...(PerformanceObserver ? { PerformanceObserver } : {}),
         ...(requestAnimationFrame && cancelAnimationFrame ? { requestAnimationFrame, cancelAnimationFrame } : {}),
+        ...(frameViewport ? { frameViewport } : {}),
         ...(requestIdleCallback && cancelIdleCallback ? { requestIdleCallback, cancelIdleCallback } : {}),
         ...(MessageChannel && queueMicrotask ? { MessageChannel, queueMicrotask } : {}),
         ...(memorySource ? { memorySource } : {}),
