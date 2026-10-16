@@ -637,4 +637,64 @@ describe("createMeasurementConditions", () => {
             expect(second.start).toHaveBeenCalledTimes(1);
         });
     });
+
+    describe("pauseWhileHidden with the option throttled", () => {
+        it("stops a monitor while the timers are throttled, and starts it again when they are not", () => {
+            const { conditions } = createConditions();
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            conditions.pauseWhileHidden(monitor, { throttled : true });
+            conditions.setTimersThrottled(true);
+            conditions.setTimersThrottled(true);
+            expect(monitor.stop).toHaveBeenCalledTimes(1);
+            conditions.setTimersThrottled(false);
+            conditions.setTimersThrottled(false);
+
+            expect(monitor.start).toHaveBeenCalledTimes(1);
+        });
+
+        it("stops a monitor at once when the timers are throttled at the start, also without a lifecycle", () => {
+            const conditions = createMeasurementConditions({
+                clock : { now : () => Date.now() },
+                setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+                clearTimeoutFn : (id) => clearTimeout(id),
+            });
+            conditions.setTimersThrottled(true);
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            const unpause = conditions.pauseWhileHidden(monitor, { throttled : true });
+            expect(monitor.stop).toHaveBeenCalledTimes(1);
+            conditions.setTimersThrottled(false);
+            expect(monitor.start).toHaveBeenCalledTimes(1);
+            unpause();
+            conditions.setTimersThrottled(true);
+
+            expect(monitor.stop).toHaveBeenCalledTimes(1);
+        });
+
+        it("starts a monitor only when the page is visible and the timers are not throttled", () => {
+            const { conditions, page } = createConditions();
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            conditions.pauseWhileHidden(monitor, { throttled : true });
+            conditions.setTimersThrottled(true);
+            page.hide();
+            conditions.setTimersThrottled(false);
+            expect(monitor.start).not.toHaveBeenCalled();
+            page.show();
+
+            expect(monitor.stop).toHaveBeenCalledTimes(1);
+            expect(monitor.start).toHaveBeenCalledTimes(1);
+        });
+
+        it("does not follow the throttled timers without the option", () => {
+            const { conditions } = createConditions();
+            const monitor = { start : vi.fn(), stop : vi.fn() };
+
+            conditions.pauseWhileHidden(monitor, { offscreen : true });
+            conditions.setTimersThrottled(true);
+
+            expect(monitor.stop).not.toHaveBeenCalled();
+        });
+    });
 });

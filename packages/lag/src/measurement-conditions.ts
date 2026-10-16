@@ -17,6 +17,13 @@ export type PauseOptions = {
      * rendering, for example of the animation frames.
      */
     offscreen? : boolean;
+    /**
+     * When true, the monitor also stops while the timers of a visible page
+     * are throttled (`setTimersThrottled`). DriftLag gives this signal. Use it
+     * for a monitor of the rendering. Safari also halves the frame rate of a
+     * page that it does not show.
+     */
+    throttled? : boolean;
 };
 
 /**
@@ -58,6 +65,13 @@ export type MeasurementConditions = {
      * monitor permanently.
      */
     pauseWhileHidden(monitor : Pausable, options? : PauseOptions) : () => void;
+    /**
+     * This method sets the state of the timers of a visible page: throttled
+     * or not. DriftLag gives it when it finds throttled timers. A monitor
+     * that `pauseWhileHidden` follows with `throttled: true` stops while the
+     * timers are throttled.
+     */
+    setTimersThrottled(throttled : boolean) : void;
     dispose() : void;
 };
 
@@ -205,15 +219,26 @@ export function createMeasurementConditions(options : MeasurementConditionsOptio
         };
     };
 
+    // The timers of a visible page are throttled: the signal of DriftLag
+    let timersThrottled = false;
+    const throttleListeners = new Set<(throttled : boolean) => void>();
+    // A listener ignores a value that does not change the state of its monitor
+    const setTimersThrottled = (throttled : boolean) : void => {
+        timersThrottled = throttled;
+        for (const listener of [...throttleListeners]) listener(throttled);
+    };
+
     const pauseWhileHidden = (monitor : Pausable, pauseOptions? : PauseOptions) : () => void => {
         const viewport = pauseOptions?.offscreen ? options.viewport : undefined;
-        if (!lifecycle && !viewport) return () => {};
+        const followThrottle = pauseOptions?.throttled === true;
+        if (!lifecycle && !viewport && !followThrottle) return () => {};
         let visible = lifecycle ? isVisibleState(lifecycle.getState()) : true;
         let shown = viewport?.isShown() ?? true;
+        let unthrottled = !(followThrottle && timersThrottled);
         // The monitor operates when the conditions start to follow it
         let running = true;
         const follow = () : void => {
-            const run = visible && shown;
+            const run = visible && shown && unthrottled;
             if (run === running) return;
             running = run;
             if (run) monitor.start();
@@ -228,9 +253,15 @@ export function createMeasurementConditions(options : MeasurementConditionsOptio
             shown = value;
             follow();
         });
+        const onThrottle = (throttled : boolean) : void => {
+            unthrottled = !throttled;
+            follow();
+        };
+        if (followThrottle) throttleListeners.add(onThrottle);
         return () => {
             unsubscribeLifecycle?.();
             unsubscribeViewport?.();
+            throttleListeners.delete(onThrottle);
         };
     };
 
@@ -238,6 +269,7 @@ export function createMeasurementConditions(options : MeasurementConditionsOptio
         tracker,
         createValidator,
         pauseWhileHidden,
+        setTimersThrottled,
         dispose() {
             for (const dispose of disposers) dispose();
             disposers.length = 0;

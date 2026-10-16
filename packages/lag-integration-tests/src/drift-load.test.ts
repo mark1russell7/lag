@@ -1,9 +1,10 @@
 import { expect, type TestContext } from "vitest";
-import { BusyTimeProbe, DriftLag, createMessageTaskQueue } from "@mark1russell7/lag";
+import { DriftLag, createMessageTaskQueue } from "@mark1russell7/lag";
 import { blockMainThread, median, wait } from "./harness.js";
 import { environment, recordMeasurement } from "./commands.js";
 import { pageState } from "./animation-frames.js";
 import { gapsBetween, watchTimers } from "./timer-watch.js";
+import { MIN_IDLE_MESSAGES, idleProbe } from "./idle-probe.js";
 
 /**
  * DriftLag during a sustained load of equal tasks (experiment E5). Before
@@ -16,21 +17,6 @@ import { gapsBetween, watchTimers } from "./timer-watch.js";
  */
 
 const LOAD_MS = 3_000;
-
-/**
- * The probe can confirm a baseline only if one probe on an idle page posts
- * this number of messages in 100 ms, or more. In the WebKit build of
- * Playwright for Windows, each message waits for a timer of 0 ms of the
- * system. There, the most messages of three probes were 122 to 278 in 32
- * runs (9 October 2026, also with four engines in parallel). In Chromium
- * and Firefox, they were 9,681 to 34,180. In CI, the other WebKit builds
- * post fewer messages, but they confirm a baseline: WebKit for Linux 904 to
- * 920, Safari on macOS 615 to 877, Safari on iOS 580 to 609. The limit is
- * between the two groups. An earlier rule used the busy time of the probe.
- * In WebKit for Windows, that time changed from 0 ms to 87 ms with the load
- * of the computer. Then the test operated, and it failed.
- */
-const MIN_IDLE_MESSAGES = 400;
 
 /** The lag of the windows after the load, above the idle windows before it, as a part of a window. */
 const AFTER_LOAD_MARGIN = 0.1;
@@ -52,31 +38,6 @@ function chainSteps(times : readonly number[], from : number, to : number) : { m
     const gaps = gapsBetween(times, from, to);
     const steps = gaps.filter(gap => gap <= STALL_MS);
     return { meanMs : steps.reduce((sum, step) => sum + step, 0) / steps.length, maxGapMs : Math.max(0, ...gaps) };
-}
-
-/**
- * The probe on an idle page, three times for 100 ms: the most messages that
- * one probe posted, and the least busy time.
- */
-async function idleProbe() : Promise<{ messages : number; busyMs : number }> {
-    let posted = 0;
-    const queue = createMessageTaskQueue(MessageChannel);
-    const probe = new BusyTimeProbe((callback) => {
-        posted++;
-        queue.post(callback);
-    }, performance);
-    const messages : number[] = [];
-    const busyMs : number[] = [];
-    for (let i = 0; i < 3; i++) {
-        await wait(200);
-        posted = 0;
-        probe.start();
-        await wait(100);
-        busyMs.push(probe.stop());
-        messages.push(posted);
-    }
-    queue.close();
-    return { messages : Math.max(...messages), busyMs : Math.min(...busyMs) };
 }
 
 /** This function starts equal tasks until `endAt`: each task starts the next with a message, or with `setTimeout(0)`. */

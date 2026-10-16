@@ -21,7 +21,9 @@ import { createHandle, validatedRecorder } from "./shared.js";
  * window overlaps an unreliable interval, and it records the baseline only
  * with a valid sample. With `deps.MessageChannel`, a probe of message tasks
  * confirms each larger increase of the baseline. Thus, a sustained load
- * does not increase the baseline.
+ * does not increase the baseline. The probe also finds throttled timers on a
+ * visible page, and the monitor gives that state to `conditions`
+ * (`setTimersThrottled`).
  */
 export function createInstrumentedDriftLag(
     deps : CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">>,
@@ -50,7 +52,11 @@ export function createInstrumentedDriftLag(
             deps.setTimeoutFn,
             deps.clearTimeoutFn,
             deps.clock,
-            tasks ? { postTask : (callback) => tasks.post(callback) } : {},
+            tasks ? {
+                postTask : (callback) => tasks.post(callback),
+                // The monitors of the rendering pause while the timers of the visible page are throttled
+                ...(conditions ? { onThrottle : (throttled : boolean) => conditions.setTimersThrottled(throttled) } : {}),
+            } : {},
         );
         // In a frame off the screen, WebKit makes the nested timers of the chain wait approximately 1 s (experiment E9)
         const unpause = conditions?.pauseWhileHidden(monitor, { offscreen : true });
