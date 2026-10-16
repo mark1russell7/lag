@@ -2,6 +2,7 @@ import { expect } from "vitest";
 import { createNoopMeter, setupAllMonitors, type AllMonitorHandles, type BrowserGlobals } from "@mark1russell7/lag";
 import { createBrowserDeps, createTeeMeter, wait, waitUntil } from "./harness.js";
 import { environment } from "./commands.js";
+import { MIN_IDLE_MESSAGES, idleProbe } from "./idle-probe.js";
 
 /** The time that the frame stays off the screen. It is longer than one cycle of MacrotaskLag (5 s). */
 const OFFSCREEN_MS = 6_000;
@@ -65,6 +66,8 @@ type FrameRun = {
     during : Record<string, number[]>;
     resumed : boolean;
     logs : string[];
+    /** The longest frame gap that the frame-timing monitor recorded after the frame moved off the screen. */
+    longestFrameGap : number;
 };
 
 /**
@@ -126,9 +129,13 @@ describe("A frame off the screen", () => {
             name,
             tee.records(name).filter(record => record.time > offAt + NOTICE_MS && record.time < onAt).map(record => Math.round(record.value)),
         ]));
+        // A frame gap of 5 s or more waits 2 s for late evidence before the monitor records it
+        await wait(3_000);
+        const longestFrameGap = Math.max(0, ...tee.records("lag_frame_delta_histogram").filter(record => record.time > offAt).map(record => record.value));
         console.log(`${environment()}${withViewport ? "" : ", without the frame viewport"}: longest step of a 100 ms timeout chain ` +
-            `in the frame off the screen ${Math.round(longestOffscreen)} ms; records off the screen ${JSON.stringify(during)}`);
-        return { longestOffscreen, during, resumed, logs };
+            `in the frame off the screen ${Math.round(longestOffscreen)} ms; records off the screen ${JSON.stringify(during)}; ` +
+            `longest frame gap after ${Math.round(longestFrameGap)} ms`);
+        return { longestOffscreen, during, resumed, logs, longestFrameGap };
     }
 
     it("pauses DriftLag while the frame is off the screen, and starts it again after", async () => {
@@ -138,9 +145,16 @@ describe("A frame off the screen", () => {
         if (WEBKIT.has(environment())) expect(run.longestOffscreen).toBeGreaterThan(800);
         expect(run.during["lag_drift_histogram"]).toEqual([]);
         expect(run.resumed).toBe(true);
+        // Frame timing also paused: the time off the screen is not a frame gap
+        expect(run.longestFrameGap).toBeLessThan(1_000);
     }, 30_000);
 
-    it("without the frame viewport, DriftLag finds the throttled timers of WebKit and records no window of them", async () => {
+    it("without the frame viewport, DriftLag finds the throttled timers of WebKit and records no window of them", async (ctx) => {
+        if (WEBKIT.has(environment())) {
+            const idle = await idleProbe();
+            ctx.skip(idle.messages < MIN_IDLE_MESSAGES, `A message waits on an idle page in this browser (${idle.messages} messages in 100 ms). ` +
+                "Thus the probe of DriftLag cannot see an idle thread, and it cannot find throttled timers.");
+        }
         const run = await runOffscreen(false);
 
         if (WEBKIT.has(environment())) {
@@ -148,6 +162,8 @@ describe("A frame off the screen", () => {
             expect(run.logs).toContain("DriftLag: the browser throttles the timers. The windows pause.");
             expect(run.logs).toContain("DriftLag: the timers are not throttled. The windows continue.");
             expect(run.during["lag_drift_histogram"]).toEqual([]);
+            // Frame timing paused with the signal of DriftLag: WebKit renders no frame off the screen
+            expect(run.longestFrameGap).toBeLessThan(1_000);
         } else {
             // Chromium and Firefox do not throttle these timers: DriftLag measures, and finds no lag
             expect(run.logs).not.toContain("DriftLag: the browser throttles the timers. The windows pause.");

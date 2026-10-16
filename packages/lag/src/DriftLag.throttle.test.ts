@@ -12,10 +12,11 @@ type Window = { endAt : number; lag : number };
  * also with `visibilityState` "visible" (WebKit `Page::updateTimerThrottlingState`).
  * A frame off the screen gets the same alignment (`LocalFrameView.cpp`).
  */
-function createDriftLag(withPostTask = true) {
+function createDriftLag(withPostTask = true, onThrottle? : (throttled : boolean) => void) {
     const thread = new SimulatedThread(1 / 64);
     thread.nestedTimerAlignmentMs = 4;
     const windows : Window[] = [];
+    const throttleCalls : Array<{ throttled : boolean; at : number }> = [];
     const logger = { log : vi.fn() };
     const monitor = new DriftLag(
         highFrequencyLagIntervalMs,
@@ -26,9 +27,15 @@ function createDriftLag(withPostTask = true) {
         thread.setTimeout,
         thread.clearTimeout,
         thread.clock,
-        withPostTask ? { postTask : thread.post } : {},
+        withPostTask ? {
+            postTask : thread.post,
+            onThrottle : (throttled) => {
+                throttleCalls.push({ throttled, at : thread.now });
+                onThrottle?.(throttled);
+            },
+        } : {},
     );
-    return { thread, monitor, windows, logger };
+    return { thread, monitor, windows, logger, throttleCalls };
 }
 
 const lagsBetween = (windows : readonly Window[], from : number, to : number) : number[] =>
@@ -75,6 +82,22 @@ describe("DriftLag with throttled timers", () => {
         expect(largest).toBeLessThan(40);
     });
 
+    // The first windows after a start have checks of the baseline: a probe, 3 steps and a probe. A
+    // throttling that starts during a check has a probed step and a step after a probe in its row.
+    it("gives no lag for a throttling that starts during a check of the baseline", () => {
+        let largest = 0;
+        for (let offsetMs = 100; offsetMs < 700; offsetMs += 3) {
+            const t = createDriftLag();
+            t.thread.advance(offsetMs);
+            const throttledAt = t.thread.now;
+            t.thread.setNestedTimerAlignment(1_000);
+            t.thread.advance(6_000);
+            t.monitor.stop();
+            largest = Math.max(largest, ...lagsBetween(t.windows, throttledAt, Infinity));
+        }
+        expect(largest).toBeLessThan(40);
+    });
+
     it("gives no lag for a throttling that ends at any time in the grid", () => {
         let largest = 0;
         for (let offsetMs = 0; offsetMs < 1_000; offsetMs += 7) {
@@ -93,6 +116,68 @@ describe("DriftLag with throttled timers", () => {
             largest = Math.max(largest, ...after);
         }
         expect(largest).toBeLessThan(5);
+    });
+
+    it("gives the state of the timers to onThrottle: true when it finds the throttling, and false when it ends", () => {
+        const t = createDriftLag();
+        t.thread.advance(3_000);
+        t.thread.setNestedTimerAlignment(1_000);
+        t.thread.advance(10_000);
+        t.thread.setNestedTimerAlignment(4);
+        const endedAt = t.thread.now;
+        t.thread.advance(2_000);
+        t.monitor.stop();
+
+        expect(t.throttleCalls.map(call => call.throttled)).toEqual([true, false]);
+        // The partial step ends at 3370 ms, and the probed step of 1 s at 5370 ms
+        expect(t.throttleCalls[0]!.at).toBeLessThan(5_400);
+        expect(t.throttleCalls[1]!.at).toBeGreaterThan(endedAt);
+        expect(t.throttleCalls[1]!.at).toBeLessThan(endedAt + 1_100);
+    });
+
+    it("gives false to onThrottle when it stops during the throttling, and nothing at a stop without throttling", () => {
+        const t = createDriftLag();
+        t.thread.advance(3_000);
+        t.monitor.stop();
+        t.monitor.start();
+        t.thread.setNestedTimerAlignment(1_000);
+        t.thread.advance(10_000);
+        t.monitor.stop();
+        t.monitor.stop();
+
+        expect(t.throttleCalls.map(call => call.throttled)).toEqual([true, false]);
+    });
+
+    it("finds the throttling without onThrottle, and logs no error", () => {
+        const thread = new SimulatedThread(1 / 64);
+        thread.nestedTimerAlignmentMs = 4;
+        const logger = { log : vi.fn() };
+        const monitor = new DriftLag(highFrequencyLagIntervalMs, () => {}, logger, thread.setInterval, thread.clearInterval,
+            thread.setTimeout, thread.clearTimeout, thread.clock, { postTask : thread.post });
+        thread.advance(3_000);
+        thread.setNestedTimerAlignment(1_000);
+        thread.advance(10_000);
+        thread.setNestedTimerAlignment(4);
+        thread.advance(2_000);
+        monitor.stop();
+
+        expect(logger.log).toHaveBeenCalledWith("info", "DriftLag: the browser throttles the timers. The windows pause.", expect.anything());
+        expect(logger.log).not.toHaveBeenCalledWith("error", expect.anything(), expect.anything());
+    });
+
+    it("logs an error of onThrottle, and continues", () => {
+        const t = createDriftLag(true, () => { throw new Error("callback"); });
+        t.thread.advance(3_000);
+        t.thread.setNestedTimerAlignment(1_000);
+        t.thread.advance(10_000);
+        t.thread.setNestedTimerAlignment(4);
+        const endedAt = t.thread.now;
+        t.thread.advance(3_000);
+        t.monitor.stop();
+
+        expect(t.logger.log).toHaveBeenCalledWith("error", "Error in the throttle callback of DriftLag.",
+            expect.objectContaining({ type : "LagMonitor", subtype : "DriftLag", error : expect.any(Error) }));
+        expect(lagsBetween(t.windows, endedAt, Infinity).length).toBeGreaterThan(20);
     });
 
     it("finds the throttling also when it starts before the first step", () => {

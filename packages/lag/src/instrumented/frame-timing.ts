@@ -14,7 +14,8 @@ import { createHandle } from "./shared.js";
  * `rate(lag_frames{outcome="dropped"})` divided by the rate of all frames.
  * With `conditions`, the monitor pauses while the page is hidden, because
  * `requestAnimationFrame` does not operate in a hidden page. It also pauses
- * while its frame is off-screen (the `viewport` of the conditions). Also, the
+ * while its frame is off-screen (the `viewport` of the conditions), and while
+ * the timers of the visible page are throttled (the signal of DriftLag). Also, the
  * monitor does not record a frame gap that overlaps an unreliable interval.
  */
 export function createInstrumentedFrameTiming(
@@ -42,8 +43,9 @@ export function createInstrumentedFrameTiming(
             deps.cancelAnimationFrame,
             deps.clock,
         );
-        // A frame off-screen gets no animation frames in Chromium and WebKit, and one each second in Firefox
-        const unpause = conditions?.pauseWhileHidden(monitor, { offscreen : true });
+        // A frame off-screen gets no animation frames in Chromium and WebKit, and one each second in Firefox.
+        // Safari halves the frame rate of a page that it does not show, and DriftLag finds its throttled timers.
+        const unpause = conditions?.pauseWhileHidden(monitor, { offscreen : true, throttled : true });
 
         return {
             monitor,

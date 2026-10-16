@@ -116,6 +116,7 @@ With `MessageChannel`, the monitor finds this case:
 - That step is throttled if it takes 500 ms or more and the thread was idle during more than half of the probe. On an idle thread, a timer without throttling ends its step in the time of the probe. A busy thread cannot give such a step.
 - Then the window ends without a record, and the monitor logs "DriftLag: the browser throttles the timers. The windows pause." Each step of 500 ms or more is a throttled step. It is not in a window, and it does not change the baseline.
 - A probe examines one throttled step of each 30. A shorter step, or a probe that finds a busy thread, ends the throttling. The monitor logs "DriftLag: the timers are not throttled. The windows continue."
+- The option `onThrottle` gets `true` and `false` at these changes, and `false` at a stop during the throttling. The factory gives the state to the measurement conditions, and the [frame-timing monitor](/docs/monitors/frame-timing) pauses with it.
 
 The cost is one probe of 50 ms to find the throttling, and one probe for each 30 throttled steps. A single block starts no probe, because the next step is short. In the simulated tests, a throttling that started or ended at any time in the grid gave less than 40 ms of lag.
 
@@ -239,6 +240,8 @@ The callbacks of the monitor are also tasks on the main thread. Thus the monitor
 ## Limits
 
 - **Before the first check, and in some browsers.** Before a check confirms the first value, a sustained load increases the baseline, and the monitor reports less lag. This is also true without `MessageChannel`. It is also true in a browser in which a message waits on an idle thread, for example the WebKit build of Playwright for Windows. The [worker monitor](/docs/monitors/worker-lag) measures that case correctly.
+
+  In that browser, the probe also cannot find throttled timers. A check of 50 ms there read 26 ms and 31 ms of busy time on an idle thread.
 
   The cause of the wait is in the Windows port of WebKit. Its event loop schedules each task with a timer of 0 ms, and on Windows that timer can wait for the system timer tick ([local experiments](/research/local-experiments)). No major browser uses that port, thus the library does not work around it.
 - **A load at the start.** The first confirmed value is the recent baseline. After a load at the start of the page, it can be too long. It decreases with the recent baseline in 100 steps or less.
