@@ -362,6 +362,25 @@ describe("createBrowserDeps", () => {
             expect(createBrowserDeps(throwing, options()).frameViewport).toBeUndefined();
         });
 
+        it("gives no frame viewport without a top (undefined, or null in a detached frame), without a documentElement, or without animation frames", () => {
+            const fake = createObserverFake();
+            for (const top of [undefined, null]) {
+                const globals = createGlobals({ IntersectionObserver : fake.IntersectionObserver, top });
+                Object.assign(globals.document, { documentElement : {} });
+                expect(createBrowserDeps(globals, options()).frameViewport).toBeUndefined();
+            }
+            for (const documentElement of [undefined, null]) {
+                const globals = createGlobals({ IntersectionObserver : fake.IntersectionObserver, top : {} });
+                Object.assign(globals.document, { documentElement });
+                expect(createBrowserDeps(globals, options()).frameViewport).toBeUndefined();
+            }
+            for (const missing of ["requestAnimationFrame", "cancelAnimationFrame"]) {
+                const globals = createGlobals({ IntersectionObserver : fake.IntersectionObserver, top : {}, [missing] : undefined });
+                Object.assign(globals.document, { documentElement : {} });
+                expect(createBrowserDeps(globals, options()).frameViewport).toBeUndefined();
+            }
+        });
+
         it("pauses the frame-timing monitor of setupAllMonitors while the frame is off-screen", () => {
             const fake = createObserverFake();
             const cancelAnimationFrame = vi.fn();

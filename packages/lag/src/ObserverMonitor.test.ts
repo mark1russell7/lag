@@ -197,6 +197,26 @@ describe("ObserverMonitor", () => {
         expect(monitor.entries).toEqual([{ entryType : "event", name : "click", startTime : 5, duration : 40 }]);
     });
 
+    it("asks for the buffer again at a restart after an empty takeRecords(), but not after entries from takeRecords()", () => {
+        const pending : PerformanceEntryLike[] = [];
+        const buffered : boolean[] = [];
+        class QueueingObserver {
+            observe(options : { buffered : boolean }) { buffered.push(options.buffered); }
+            disconnect() {}
+            takeRecords() { return pending.splice(0); }
+        }
+        const monitor = new TestObserverMonitor("event", { log : vi.fn() }, QueueingObserver as unknown as PerformanceObserverInit);
+        monitor.takeRecords();
+        monitor.stop();
+        monitor.start();
+        pending.push({ entryType : "event", name : "click", startTime : 5, duration : 40 });
+        monitor.takeRecords();
+        monitor.stop();
+        monitor.start();
+
+        expect(buffered).toEqual([true, true, false]);
+    });
+
     it("takeRecords() does nothing without an observer or without browser support", () => {
         const mock = createMockPerformanceObserver();
         const monitor = new TestObserverMonitor("event", { log : vi.fn() }, mock.MockCtor);
