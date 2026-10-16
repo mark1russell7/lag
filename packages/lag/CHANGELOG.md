@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **DriftLag in a frame off the screen.** In a frame (an iframe) that is fully off the screen, WebKit makes the nested timers wait approximately 1 s. Safari on macOS and iOS has this rule, also for a frame of the same origin. The `visibilityState` of the frame stays `visible`, thus DriftLag did not pause, and it recorded the wait as lag: 2473 ms in one window of a browser test. Now DriftLag pauses while its frame is off the screen, as the frame-timing monitor does (`pauseWhileHidden(monitor, { offscreen: true })`). Chromium and Firefox do not slow these timers, thus there DriftLag records no samples while the frame is off the screen. MacrotaskLag does not pause: it starts its timeout in a message task, where WebKit does not slow the timeout.
+- **`createBrowserDeps()` gives `frameViewport` also without animation frames.** DriftLag uses it now. The frame viewport makes its `IntersectionObserver` only at the first subscription.
+
 ## 0.2.1
 
 ### Fixed

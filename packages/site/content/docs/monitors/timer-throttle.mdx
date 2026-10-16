@@ -26,7 +26,7 @@ The detector answers this question: does the browser delay the timers of the pag
 
 The control relies on the scheduler of Chromium. A hidden Chromium page throttles its timers, but it does not throttle its posted messages (`kPostedMessage`, [clocks and timers](/research/clocks-and-timers)). The research found no source for the posted messages of a hidden page in Firefox and Safari. If a browser throttles the message tasks as much as the timers, the samples are blocked, and the detector does not find the throttling. Without `MessageChannel`, the detector has no control, and it counts each sample of more than 100 ms as throttled.
 
-Experiment E9 found one more case of throttling, in the WebKit build of Playwright ([local experiments](/research/local-experiments)). There, the timers of a cross-origin frame off the screen wait approximately 1 s. The rule is in the WebKit source, thus Safari also has it, also for a frame of the same origin ([clocks and timers](/research/clocks-and-timers)). The detector counts such samples as throttled.
+Experiment E9 found one more case of throttling, in the WebKit build of Playwright ([local experiments](/research/local-experiments)). There, the timers of a cross-origin frame off the screen wait approximately 1 s. The rule is in the WebKit source, thus Safari also has it, also for a frame of the same origin ([clocks and timers](/research/clocks-and-timers)). The detector counts such samples as throttled. DriftLag pauses while its frame is off the screen.
 
 The defaults have these causes:
 

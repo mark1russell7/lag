@@ -362,7 +362,7 @@ describe("createBrowserDeps", () => {
             expect(createBrowserDeps(throwing, options()).frameViewport).toBeUndefined();
         });
 
-        it("gives no frame viewport without a top (undefined, or null in a detached frame), without a documentElement, or without animation frames", () => {
+        it("gives no frame viewport without a top (undefined, or null in a detached frame) or without a documentElement", () => {
             const fake = createObserverFake();
             for (const top of [undefined, null]) {
                 const globals = createGlobals({ IntersectionObserver : fake.IntersectionObserver, top });
@@ -374,11 +374,17 @@ describe("createBrowserDeps", () => {
                 Object.assign(globals.document, { documentElement });
                 expect(createBrowserDeps(globals, options()).frameViewport).toBeUndefined();
             }
-            for (const missing of ["requestAnimationFrame", "cancelAnimationFrame"]) {
-                const globals = createGlobals({ IntersectionObserver : fake.IntersectionObserver, top : {}, [missing] : undefined });
-                Object.assign(globals.document, { documentElement : {} });
-                expect(createBrowserDeps(globals, options()).frameViewport).toBeUndefined();
-            }
+        });
+
+        it("gives the frame viewport also without animation frames, because DriftLag pauses with it", () => {
+            const fake = createObserverFake();
+            const globals = createGlobals({ IntersectionObserver : fake.IntersectionObserver, top : {}, requestAnimationFrame : undefined, cancelAnimationFrame : undefined });
+            Object.assign(globals.document, { documentElement : {} });
+            const monitors = setupAllMonitors(createBrowserDeps(globals, options()));
+
+            expect(monitors.frameMonitor).toBeUndefined();
+            expect(fake.instances.filter(instance => instance.targets.length > 0)).toHaveLength(1);
+            monitors.stop();
         });
 
         it("pauses the frame-timing monitor of setupAllMonitors while the frame is off-screen", () => {

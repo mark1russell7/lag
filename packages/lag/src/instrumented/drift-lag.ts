@@ -16,7 +16,8 @@ import { createHandle, validatedRecorder } from "./shared.js";
  *
  * This monitor gives the primary high-frequency lag signal (one sample for
  * each window of approximately 100 ms). With `conditions`, the monitor
- * pauses while the page is hidden. Also, it does not record a sample whose
+ * pauses while the page is hidden, and while its frame is off the screen
+ * (the `viewport` of the conditions). Also, it does not record a sample whose
  * window overlaps an unreliable interval, and it records the baseline only
  * with a valid sample. With `deps.MessageChannel`, a probe of message tasks
  * confirms each larger increase of the baseline. Thus, a sustained load
@@ -51,7 +52,8 @@ export function createInstrumentedDriftLag(
             deps.clock,
             tasks ? { postTask : (callback) => tasks.post(callback) } : {},
         );
-        const unpause = conditions?.pauseWhileHidden(monitor);
+        // In a frame off the screen, WebKit makes the nested timers of the chain wait approximately 1 s (experiment E9)
+        const unpause = conditions?.pauseWhileHidden(monitor, { offscreen : true });
 
         return {
             monitor,

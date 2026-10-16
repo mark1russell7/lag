@@ -562,9 +562,11 @@ A top-level page on `127.0.0.1` has a frame of 300 × 300 px from `localhost`, w
 
 In the WebKit build, the timers of the frame also slow down to approximately 1 s. This is a rule of the WebKit source for each frame off the screen, thus Safari also has it ([clocks and timers](/research/clocks-and-timers)).
 
-**Change in the library.** The [frame-timing monitor](/docs/monitors/frame-timing) pauses while its frame is off the screen, through `pauseWhileHidden(monitor, { offscreen: true })` and the `frameViewport` of `createBrowserDeps()`. The [timer-throttle detector](/docs/monitors/timer-throttle) counts the slow timers of the WebKit build as throttling. The other timer monitors do not pause for it.
+**Change in the library.** The [frame-timing monitor](/docs/monitors/frame-timing) pauses while its frame is off the screen, through `pauseWhileHidden(monitor, { offscreen: true })` and the `frameViewport` of `createBrowserDeps()`. The [timer-throttle detector](/docs/monitors/timer-throttle) counts the slow timers of the WebKit build as throttling.
 
-**Check in the repository.** The unit tests of `measurement-conditions.ts`, `frame-viewport.ts`, `instrumented/frame-timing.ts` and `browser/browser-deps.ts` check the pause with a fake observer. No browser test puts a frame off the screen at this time. Thus the runner is the check of the behavior of the engines.
+Since version 0.2.2, [DriftLag](/docs/monitors/drift-lag) also pauses. Before that change, it recorded 2473 ms of lag in one window of the WebKit build. MacrotaskLag does not pause, because it starts its timeout in a message task, where the timeout is not nested. It recorded 8 ms and 9 ms in the frame off the screen.
+
+**Check in the repository.** The unit tests of `measurement-conditions.ts`, `frame-viewport.ts`, `instrumented/frame-timing.ts`, `instrumented/drift-lag.ts` and `browser/browser-deps.ts` check the pause with a fake observer. The browser test `offscreen-frame.test.ts` scrolls a frame of the same origin off the screen for 6 s, with the monitors on the globals of the frame. DriftLag records no window during that time, and it records windows again after. In WebKit, the test also makes sure that a chain of 100 ms timeouts in the frame waits more than 800 ms.
 
 ## Limits of the experiments
 
