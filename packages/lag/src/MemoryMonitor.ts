@@ -56,6 +56,12 @@ export class MemoryMonitor {
     /** The modern API can take many seconds, because it waits for a GC. Thus, the samples must not overlap. */
     private sampling = false;
     private modernFailed = false;
+    /**
+     * The number of the run: each `start()` adds 1. A sample of an earlier
+     * run does not report. When it ends, the monitor takes the first sample of
+     * the run that operates at that time.
+     */
+    private run = 0;
 
     constructor(
         private readonly intervalMs : number,
@@ -72,7 +78,8 @@ export class MemoryMonitor {
     start() : void {
         if (this.started) return;
         this.started = true;
-        // Take an immediate sample, then schedule periodic samples
+        this.run++;
+        // Take an immediate sample, then schedule periodic samples. If a sample of an earlier run is pending, the first sample comes at its end.
         void this.sample();
         this.handle = this.setIntervalFn(() => { void this.sample(); }, this.intervalMs);
     }
@@ -88,11 +95,12 @@ export class MemoryMonitor {
     private async sample() : Promise<void> {
         if (!this.started || this.sampling) return;
         this.sampling = true;
+        const run = this.run;
 
         try {
             const measurement = (await this.measureModern()) ?? this.readLegacy();
-            // stop() may have been called while the modern API was pending
-            if (measurement && this.started) {
+            // stop() may have been called while the modern API was pending, and start() after it
+            if (measurement && this.started && this.run === run) {
                 this.report(measurement);
             }
         } catch (error) {
@@ -103,6 +111,8 @@ export class MemoryMonitor {
         } finally {
             this.sampling = false;
         }
+        // The start() of a new run did not sample, because this sample was pending
+        if (this.started && this.run !== run) void this.sample();
     }
 
     /** The monitor prefers the modern API, because it is more accurate and it includes the workers. */
