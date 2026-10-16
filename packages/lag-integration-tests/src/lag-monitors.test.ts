@@ -49,7 +49,12 @@ const OPTIONAL : ReadonlyArray<[string, boolean]> = [
     ["shared-liveness", globalThis.crossOriginIsolated === true],
 ];
 
+/** The log of DriftLag when it finds throttled timers (refer to the class description of DriftLag). */
+const DRIFT_THROTTLED = "DriftLag: the browser throttles the timers. The windows pause.";
+
 describe("Lag Monitor Integration", () => {
+    /** The logs of DriftLag about throttled timers, in sequence. */
+    const driftLogs : string[] = [];
     let otel : ReturnType<typeof init>;
     let handles : AllMonitorHandles;
     let tee : TeeMeter;
@@ -77,7 +82,9 @@ describe("Lag Monitor Integration", () => {
         document.body.append(text);
         handles = setupAllMonitors(createBrowserDeps({
             // Console + OTel Logs (Loki). Unsupported entry types only warn; keep the console for errors.
-            logger : createTeeLogger(createConsoleLogger(["error"]), createOtelLoggerAdapter(otel.getLogger("lag"))),
+            logger : createTeeLogger(createConsoleLogger(["error"]), createOtelLoggerAdapter(otel.getLogger("lag")), {
+                log : (_level, message) => { if (message.startsWith("DriftLag: ")) driftLogs.push(message); },
+            }),
             meter : tee.meter,
             events : createOtelEventSink(otel.getLogger("lag-events")),
             worker,
@@ -109,7 +116,7 @@ describe("Lag Monitor Integration", () => {
         }
     });
 
-    it("DriftLag measures a blocked main thread", async () => {
+    it("DriftLag measures a blocked main thread", async (ctx) => {
         await wait(300);
         const before = tee.values("lag_drift_histogram").length;
         blockMainThread(300);
@@ -121,6 +128,8 @@ describe("Lag Monitor Integration", () => {
 
         const max = tee.max("lag_drift_histogram");
         console.log(`DriftLag max after a 300ms block: ${max.toFixed(1)}ms`);
+        // Safari on a CI runner can throttle the timers of its page ("visually idle"). Then DriftLag records no window.
+        ctx.skip(!ended && driftLogs.at(-1) === DRIFT_THROTTLED, "The browser throttles the timers of this page: DriftLag records no window.");
         expect(ended, "a DriftLag window ends in 2 s after the block").toBe(true);
         await recordMeasurement("integration/block-300ms/lag_drift_histogram", "ms", tee.values("lag_drift_histogram").slice(before), { scenario : "block-300ms" });
         expect(max).toBeGreaterThan(200);

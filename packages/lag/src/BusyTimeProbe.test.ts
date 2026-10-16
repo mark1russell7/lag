@@ -117,6 +117,33 @@ describe("BusyTimeProbe", () => {
         expect(m.probe.stop()).toBe(0);
     });
 
+    it("with a limit, operates only at the start of the interval", () => {
+        const thread = new SimulatedThread(1 / 64);
+        const probe = new BusyTimeProbe(thread.post, thread.clock);
+
+        probe.start(10);
+        thread.advance(1_000);
+
+        expect(probe.isRunning()).toBe(true);
+        expect(probe.stop()).toBe(0);
+        // One message for each task of 1/64 ms, for 10 ms
+        expect(thread.postedMessages).toBeGreaterThanOrEqual(10 * 64);
+        expect(thread.postedMessages).toBeLessThanOrEqual(10 * 64 + 1);
+    });
+
+    it("with a limit, counts the full wait of a message that waits at the limit, and adds no wait at stop()", () => {
+        const thread = new SimulatedThread(1 / 64);
+        const probe = new BusyTimeProbe(thread.post, thread.clock);
+
+        probe.start(10);
+        thread.setTimeout(() => thread.busy(300), 5);
+        thread.advance(1_000);
+
+        const busyMs = probe.stop();
+        expect(busyMs).toBeGreaterThanOrEqual(300);
+        expect(busyMs).toBeLessThan(300.1);
+    });
+
     it("stops the chain: after stop(), a message posts no other message", () => {
         const m = createManualProbe();
 

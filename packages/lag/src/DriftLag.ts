@@ -13,9 +13,9 @@ export type DriftLagOptions = {
     /**
      * A function that starts a callback in a new task, for example
      * `createMessageTaskQueue(...).post`. With it, the monitor accepts a
-     * longer baseline only after a probe shows an idle thread (refer to the
-     * class description). Without it, a sustained load can increase the
-     * baseline.
+     * longer baseline only after a probe shows an idle thread, and it finds
+     * throttled timers (refer to the class description). Without it, a
+     * sustained load can increase the baseline.
      */
     postTask? : PostTaskFn;
 };
@@ -47,6 +47,24 @@ const PROBE_ROW_STEPS = 5;
  * 30 ms.
  */
 const WARM_UP_STEPS = 11;
+
+/**
+ * A probe operates for this time at the start of a step. The time is longer
+ * than the longest step of a timer granularity, thus a probe examines all of
+ * such a step. On a thread that is idle in this time, a timer without
+ * throttling ends its step in this time.
+ */
+const PROBE_MS = 50;
+
+/**
+ * A probed step of this duration or more is a throttled step if the thread
+ * was idle during more than half of the probe. Browsers throttle nested
+ * timers to a grid of 1 s.
+ */
+const THROTTLED_STEP_MS = 500;
+
+/** While the timers are throttled, a probe checks one step of each this number of steps again. */
+const THROTTLE_RECHECK_STEPS = 30;
 
 /** The probe of a monitor with `postTask`, and the confirmed idle duration of one step. */
 type Probing = {
@@ -144,6 +162,38 @@ type Probing = {
  * without `postTask`, the monitor accepts a longer baseline without a probe.
  * Then a sustained load increases the baseline, and the monitor reports less
  * lag. The worker monitor measures that case correctly.
+ *
+ * Throttled timers: a browser can make the nested timers of a page wait for
+ * a grid of 1 s, also while `visibilityState` is "visible". Safari does this
+ * for a page that it does not show ("visually idle": WebKit
+ * `Page::updateTimerThrottlingState`), and for a frame off the screen. Then
+ * each step takes approximately 1 s on an idle thread. That is not lag, and
+ * steps of 1 s cannot measure lag. With `postTask`, the monitor finds this
+ * case:
+ *
+ * - All probes operate only for the first 50 ms of a step. A probe of a step
+ *   of 40 ms or less examines all of the step.
+ * - A window does not end at the first long step (more than 40 ms) of a row
+ *   of long steps. A second long step of 500 ms or more starts a probe of
+ *   the next step.
+ * - A probed step of 500 ms or more, with a thread that was idle during more
+ *   than half of the probe, is throttled. On that idle thread, a timer
+ *   without throttling ends the step in the time of the probe. A busy thread
+ *   cannot give such a step.
+ * - Then the window ends without a report, and the monitor logs "DriftLag:
+ *   the browser throttles the timers. The windows pause." The steps of 500
+ *   ms or more are throttled steps. They are not steps of a window, and they
+ *   do not change the baseline. A probe checks one step of each 30.
+ * - A shorter step, or a check that finds a busy thread, ends the
+ *   throttling. The monitor logs "DriftLag: the timers are not throttled.
+ *   The windows continue." A new window starts after a short step, because
+ *   the grid of 1 s gave the duration of that step. It starts with the step
+ *   of a busy check, because that step is a block.
+ *
+ * Thus a block during the throttling is not lag. The worker monitor measures
+ * it, because messages are not throttled. A task of more than 25 ms at the
+ * start of each step prevents the check. Without `postTask`, the monitor
+ * records the throttled steps as lag.
  */
 export class DriftLag extends LagMonitor {
     private handle : number | undefined;
@@ -180,6 +230,13 @@ export class DriftLag extends LagMonitor {
     private warmUpLeft = 0;
     /** The probed steps and the steps after a probe in the window. They are not in a row. */
     private skippedSteps = 0;
+    // The state of the check for throttled timers. start() sets it.
+    /** True when the probe of the next step checks for throttled timers. */
+    private throttleProbe! : boolean;
+    /** True when the last step was a long step that was not probed. */
+    private afterLongStep! : boolean;
+    /** While the timers are throttled: the throttled steps since the last check. Otherwise `undefined`. */
+    private throttledSteps : number | undefined;
     private readonly probing : Probing | undefined;
     private readonly stepMs : number;
     private readonly maxSteps : number;
@@ -208,6 +265,9 @@ export class DriftLag extends LagMonitor {
         this.startWindow(now);
         this.warmUpLeft = WARM_UP_STEPS;
         this.endRow();
+        this.throttleProbe = false;
+        this.afterLongStep = false;
+        this.throttledSteps = undefined;
         this.step();
     }
 
@@ -360,21 +420,96 @@ export class DriftLag extends LagMonitor {
         this.rowProbe = undefined;
     }
 
+    /**
+     * A long step is a block or a throttled step. The window does not end at
+     * the first long step of a row of long steps. A second long step of 500 ms
+     * or more starts a check for throttled timers: a short probe at the start
+     * of the next step. The method gives true if the window waits for the next
+     * step. Without `postTask`, it gives false.
+     */
+    private followLongSteps(durationMs : number) : boolean {
+        if (!this.probing || durationMs <= MAX_GRANULARITY_MS) {
+            this.afterLongStep = false;
+            return false;
+        }
+        if (!this.afterLongStep) {
+            this.afterLongStep = true;
+            return true;
+        }
+        if (durationMs < THROTTLED_STEP_MS) return false;
+        this.throttleProbe = true;
+        return true;
+    }
+
+    /**
+     * This method follows the throttled timers (refer to the class
+     * description). It gives true for a step that is not a step of a window:
+     * a throttled step, and the step in which the throttling ended.
+     */
+    private followThrottling(durationMs : number, busyMs : number | undefined, now : number) : boolean {
+        const idle = busyMs !== undefined && busyMs < PROBE_MS / 2;
+        if (this.throttledSteps === undefined) {
+            if (!idle || durationMs < THROTTLED_STEP_MS) return false;
+            // The window has the long step before this step, and possibly earlier throttled steps. It ends
+            // without a report: the throttling ends with a new window.
+            this.throttledSteps = 0;
+            this.logger.log("info", "DriftLag: the browser throttles the timers. The windows pause.", {
+                type : "LagMonitor",
+                subtype : "DriftLag",
+                stepMs : durationMs,
+            });
+        }
+        if ((idle || busyMs === undefined) && durationMs >= THROTTLED_STEP_MS) {
+            this.throttledSteps++;
+            if (this.throttledSteps === THROTTLE_RECHECK_STEPS) {
+                this.throttledSteps = 0;
+                this.throttleProbe = true;
+            }
+            this.lastStepAt = now;
+            return true;
+        }
+        this.throttledSteps = undefined;
+        this.logger.log("info", "DriftLag: the timers are not throttled. The windows continue.", {
+            type : "LagMonitor",
+            subtype : "DriftLag",
+            stepMs : durationMs,
+        });
+        if (durationMs < THROTTLED_STEP_MS) {
+            // The step in which the throttling ended has a duration from the grid of the throttling
+            this.startWindow(now);
+            this.lastStepAt = now;
+            return true;
+        }
+        // A check found a busy thread: the step is the first step of a new window
+        this.startWindow(this.lastStepAt);
+        return false;
+    }
+
     private step() : void {
         const handle : number = this.setTimeoutFn(() => {
             const now = this.clock.now();
             const durationMs = now - this.lastStepAt;
             const warmUp = this.warmUpLeft > 0;
             if (warmUp) this.warmUpLeft--;
+            const probing = this.probing;
+            // The probe of this step, if one operated: a check for throttled timers, or a probe of the
+            // baseline. The next step has a check only if this step asks for one.
+            this.throttleProbe = false;
+            const busyMs = probing?.probe.isRunning() ? probing.probe.stop() : undefined;
+            if (this.followThrottling(durationMs, busyMs, now)) {
+                this.step();
+                return;
+            }
             // A probe that operated during this step gives the busy time of the thread. A probe also
             // changes the next step: in Chromium, the thread woke 3 ms later after a probe. A short
             // warm-up step is not a step of the window (refer to the class description).
-            if (this.probing?.probe.isRunning()) {
-                this.addProbedStep(durationMs, this.probing.probe.stop(), this.probing);
-                this.probing.afterProbe = true;
+            let waitForCheck = false;
+            if (probing && busyMs !== undefined) {
+                this.addProbedStep(durationMs, busyMs, probing);
+                probing.afterProbe = true;
                 this.skippedSteps++;
-            } else if (this.probing?.afterProbe) {
-                this.probing.afterProbe = false;
+            } else if (probing?.afterProbe) {
+                probing.afterProbe = false;
                 this.skippedSteps++;
             } else if (warmUp && durationMs < this.windowBaseline) {
                 this.shortWarmUpMs += durationMs;
@@ -383,14 +518,16 @@ export class DriftLag extends LagMonitor {
                 return;
             } else {
                 this.addStep(durationMs);
+                waitForCheck = this.followLongSteps(durationMs);
             }
             this.stepsInWindow++;
             this.lastStepAt = now;
             // During a row that can be a new granularity, the window continues (for not more than
             // the length of a row), so that its lag uses the correct baseline. The skipped steps are not in the row.
+            // The window also continues for the check of a long step.
             const waitForRow = this.rowCount > 0 && this.rowProbe !== "busy"
                 && this.stepsInWindow - this.skippedSteps < this.stepsPerWindow + GRANULARITY_CHANGE_STEPS;
-            if (this.stepsInWindow < this.stepsPerWindow || waitForRow) {
+            if (this.stepsInWindow < this.stepsPerWindow || waitForRow || waitForCheck) {
                 this.step();
                 return;
             }
@@ -411,9 +548,10 @@ export class DriftLag extends LagMonitor {
             }
         }, this.stepMs);
         this.handle = handle;
-        if (this.probing?.wanted) {
-            this.probing.wanted = false;
-            this.probing.probe.start();
+        const probing = this.probing;
+        if (probing && (this.throttleProbe || probing.wanted)) {
+            probing.wanted = false;
+            probing.probe.start(PROBE_MS);
         }
     }
 }

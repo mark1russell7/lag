@@ -1,5 +1,8 @@
-/** A task of the simulated thread. A timer task has the nesting level of its timer. */
-type Task = { readyAt : number; order : number; run : () => void; nesting? : number };
+/**
+ * A task of the simulated thread. A timer task has the nesting level of its
+ * timer, and its fire time before the alignment.
+ */
+type Task = { readyAt : number; order : number; run : () => void; nesting? : number; unalignedAt? : number; reachedMaxNesting? : boolean };
 
 /**
  * The nesting levels of WebKit (`DOMTimer.cpp`). A one-shot timer reached
@@ -68,10 +71,25 @@ export class SimulatedThread {
     readonly setTimeout = (run : () => void, ms : number) : number => {
         const id = this.nextId++;
         const nesting = this.nesting;
-        const readyAt = this.now + Math.max(0, ms) + this.timerExtraMs;
-        this.timers.set(id, { readyAt : this.aligned(readyAt, nesting >= MAX_NESTING_LEVEL), order : this.order++, run, nesting });
+        const unalignedAt = this.now + Math.max(0, ms) + this.timerExtraMs;
+        const reachedMaxNesting = nesting >= MAX_NESTING_LEVEL;
+        this.timers.set(id, { readyAt : this.aligned(unalignedAt, reachedMaxNesting), order : this.order++, run, nesting, unalignedAt, reachedMaxNesting });
         return id;
     };
+
+    /**
+     * This method changes the alignment, and aligns the timers that wait
+     * again, from their fire time before the alignment. WebKit does this
+     * (`TimerBase::didChangeAlignmentInterval`), for example when a page
+     * becomes "visually idle" and its nested timers get a grid of 1 s. An
+     * assignment of `nestedTimerAlignmentMs` changes only the new timers.
+     */
+    setNestedTimerAlignment(ms : number) : void {
+        this.nestedTimerAlignmentMs = ms;
+        for (const task of this.timers.values()) {
+            if (task.unalignedAt !== undefined) task.readyAt = Math.max(this.now, this.aligned(task.unalignedAt, task.reachedMaxNesting === true));
+        }
+    }
 
     /**
      * The fire time of WebKit for a timer: the next boundary of the

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **DriftLag with throttled timers on a visible page.** Safari makes the nested timers of a page that it does not show ("visually idle") wait for a grid of 1 s, while `visibilityState` stays "visible" (WebKit `Page::updateTimerThrottlingState`). DriftLag recorded each step of 1 s as lag. A GitHub macOS runner was in this state. Now, with `postTask`, DriftLag finds throttled timers: a step of 500 ms or more, after a long step, with a thread that was idle during more than half of a probe of 50 ms. Then it logs "DriftLag: the browser throttles the timers. The windows pause." and it records no windows. A shorter step, or a probe each 30 throttled steps that finds a busy thread, ends the throttling. A single block starts no probe. The metric names do not change.
+
+### Changed
+
+- **The probes of DriftLag operate for 50 ms or less.** `BusyTimeProbe.start(limitMs)` stops the chain of messages after that time. A message that waits at the limit still counts its full wait. A probe of a step of 40 ms or less examines all of the step, as before.
+- **The window waits for one more step after a long step.** A window does not end at the first step of more than 40 ms of a row. Thus a throttled step cannot end a window before the check.
+
 ## 0.2.2
 
 ### Fixed
