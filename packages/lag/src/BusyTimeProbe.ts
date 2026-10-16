@@ -51,7 +51,7 @@ export class BusyTimeProbe {
      * no next message. Thus the chain operates only at the start of the
      * interval. A message that waits at the limit still counts its full wait.
      */
-    start(limitMs = Infinity) : void {
+    start(limitMs : number = Infinity) : void {
         this.running = true;
         this.busyMs = 0;
         this.startedAt = this.clock.now();
