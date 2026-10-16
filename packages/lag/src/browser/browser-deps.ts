@@ -201,8 +201,8 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
     const lifecycleTracker = options.sharedLifecycle !== false && (globals as unknown) === globalThis
         ? getPageLifecycle({ document : globals.document, window : globals, clock : { now }, logger : options.logger })
         : undefined;
-    // Only the frame timing monitor uses it, thus a page without animation frames does not need it
-    const frameViewport = requestAnimationFrame && cancelAnimationFrame ? frameViewportOf(globals) : undefined;
+    // The frame timing monitor and DriftLag pause with it. It makes its IntersectionObserver only at the first subscription.
+    const frameViewport = frameViewportOf(globals);
     const crashReport = globals.crashReport as CrashReportContextLike | undefined;
     const crashReportContext = options.crashReportContext !== false && typeof crashReport?.set === "function" ? crashReport : undefined;
 

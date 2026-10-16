@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInstrumentedDriftLag } from "./drift-lag.js";
 import { createMeasurementConditions, type MeasurementConditions } from "../measurement-conditions.js";
+import type { FrameViewport } from "../frame-viewport.js";
 import { createRecordingMeter } from "../test-utils.js";
 import { SimulatedThread } from "../test-thread.js";
 import type { MessageChannelConstructor, MessagePortLike } from "../SchedulingFairnessMonitor.js";
@@ -63,6 +64,45 @@ describe("createInstrumentedDriftLag", () => {
 
         expect(t.meter.values("lag_drift_histogram")).toEqual([]);
         expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it("pauses while its frame is off the screen, where WebKit makes each nested timer wait approximately 1 s", () => {
+        const listeners = new Set<(shown : boolean) => void>();
+        let shown = true;
+        const viewport : FrameViewport = {
+            isShown : () => shown,
+            subscribe(listener) {
+                listeners.add(listener);
+                return () => { listeners.delete(listener); };
+            },
+        };
+        const move = (value : boolean) : void => {
+            shown = value;
+            for (const listener of [...listeners]) listener(value);
+        };
+        const conditions = createMeasurementConditions({
+            clock : { now : () => Date.now() },
+            setTimeoutFn : (fn, ms) => setTimeout(fn, ms) as unknown as number,
+            clearTimeoutFn : (id) => clearTimeout(id),
+            viewport,
+        });
+        const t = setup(() => (shown ? 0 : 1_000), conditions);
+        vi.advanceTimersByTime(2_000);
+        const before = t.meter.values("lag_drift_histogram").length;
+
+        move(false);
+        vi.advanceTimersByTime(10_000);
+        const offscreen = t.meter.values("lag_drift_histogram").length;
+        move(true);
+        vi.advanceTimersByTime(2_000);
+        t.handle.stop();
+
+        const values = t.meter.values("lag_drift_histogram");
+        expect(before).toBeGreaterThan(0);
+        expect(offscreen).toBe(before);
+        expect(values.length).toBeGreaterThan(offscreen);
+        expect(Math.max(...values)).toBeLessThan(10);
+        expect(listeners.size).toBe(0);
     });
 });
 

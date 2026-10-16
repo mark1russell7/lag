@@ -98,8 +98,8 @@ export type FrameDeps = {
 
 /**
  * The position of the frame of a document in a frame (an iframe). The frame
- * timing monitor pauses while the frame is off-screen. The document of a
- * top-level page does not need it.
+ * timing monitor and DriftLag pause while the frame is off-screen. The
+ * document of a top-level page does not need it.
  */
 export type ViewportDeps = {
     frameViewport : FrameViewport;
