@@ -524,6 +524,31 @@ describe("createInstrumentedWorkerLag with the messages of a worker", () => {
         expect(storage.keys()).toEqual(["lag-hang-reported:live-page", "lag-hang-reported:recent-mark"]);
     });
 
+    it("reports the other abandoned hangs and removes the old marks when it cannot take one record", async () => {
+        const journal = createMemoryHangJournal();
+        await journal.put(record("broken-page", NOW - 60_000));
+        await journal.put(record("closed-page", NOW - 60_000));
+        const storage = new MemoryStorage();
+        const marks = createStorageHangReportMarks(storage);
+        marks.add("old-mark", NOW - HANG_JOURNAL_STALE_MS - 1);
+        const failing : HangJournal = {
+            ...journal,
+            take : (pageId, latestSeenAt) => pageId === "broken-page" ? Promise.reject(new Error("blocked")) : journal.take(pageId, latestSeenAt),
+        };
+        const t = withWorker({ journal : failing, marks });
+        await vi.advanceTimersByTimeAsync(0);
+        t.handle.stop();
+
+        expect(t.events.emit).toHaveBeenCalledTimes(1);
+        expect(t.events.emit).toHaveBeenCalledWith("lag.main_thread.hang", expect.objectContaining({ "lag.hang.page_id" : "closed-page" }), { time : expect.any(Number) });
+        expect(t.meter.sum("lag_main_thread_hangs")).toBe(1);
+        expect(storage.keys()).toEqual([]);
+        expect(t.logger.log).toHaveBeenCalledTimes(1);
+        expect(t.logger.log).toHaveBeenCalledWith("warn", "Could not take a record of the hang journal.", { error : expect.any(Error), pageId : "broken-page", type : "WorkerLagMonitor" });
+        // The other pages of the origin can try again
+        expect((await journal.list()).map(r => r.pageId)).toEqual(["broken-page"]);
+    });
+
     it("logs a warning when it cannot read the hang journal", async () => {
         const journal = createMemoryHangJournal();
         const t = withWorker({ journal : { ...journal, list : () => Promise.reject(new Error("blocked")) } });

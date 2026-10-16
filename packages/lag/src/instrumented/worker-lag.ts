@@ -98,32 +98,37 @@ export function createInstrumentedWorkerLag(
                 const wallNow = deps.wallClock?.now() ?? Date.now();
                 for (const candidate of findAbandonedHangs(records, wallNow, pageId)) {
                     if (stopped) return;
-                    const record = await journal.take(candidate.pageId, wallNow - HANG_JOURNAL_STALE_MS);
-                    if (!record) continue;
-                    if (stopped) {
-                        // Keep the record for the next page
-                        await journal.put(record);
-                        return;
+                    // An error for one record does not stop the other records or the removal of the old marks
+                    try {
+                        const record = await journal.take(candidate.pageId, wallNow - HANG_JOURNAL_STALE_MS);
+                        if (!record) continue;
+                        if (stopped) {
+                            // Keep the record for the next page
+                            await journal.put(record);
+                            return;
+                        }
+                        // The peer hang watch reported this hang already. The record is gone now.
+                        if (marks?.take(record.pageId)) continue;
+                        const durationMs = record.lastSeenAt - record.startedAt;
+                        hangs.add(1, { outcome : "abandoned" });
+                        hangDurationHist.record(durationMs, { outcome : "abandoned" });
+                        deps.events?.emit(EVENTS.hang.name, {
+                            ...record.attributes,
+                            phase : "abandoned",
+                            duration_ms : durationMs,
+                            "lag.hang.page_id" : record.pageId,
+                            "lag.hang.source" : "journal",
+                        }, { time : record.startedAt });
+                        // In the trace of the page that hung, when its record has the identity of its page view
+                        recordHangSpan(deps, {
+                            startedAt : record.startedAt,
+                            durationMs,
+                            attributes : { phase : "abandoned", duration_ms : durationMs, "lag.hang.page_id" : record.pageId, "lag.hang.source" : "journal" },
+                            hungPage : record.attributes,
+                        });
+                    } catch (error) {
+                        deps.logger.log("warn", "Could not take a record of the hang journal.", { error, pageId : candidate.pageId, type : "WorkerLagMonitor" });
                     }
-                    // The peer hang watch reported this hang already. The record is gone now.
-                    if (marks?.take(record.pageId)) continue;
-                    const durationMs = record.lastSeenAt - record.startedAt;
-                    hangs.add(1, { outcome : "abandoned" });
-                    hangDurationHist.record(durationMs, { outcome : "abandoned" });
-                    deps.events?.emit(EVENTS.hang.name, {
-                        ...record.attributes,
-                        phase : "abandoned",
-                        duration_ms : durationMs,
-                        "lag.hang.page_id" : record.pageId,
-                        "lag.hang.source" : "journal",
-                    }, { time : record.startedAt });
-                    // In the trace of the page that hung, when its record has the identity of its page view
-                    recordHangSpan(deps, {
-                        startedAt : record.startedAt,
-                        durationMs,
-                        attributes : { phase : "abandoned", duration_ms : durationMs, "lag.hang.page_id" : record.pageId, "lag.hang.source" : "journal" },
-                        hungPage : record.attributes,
-                    });
                 }
                 // A mark is necessary only while the journal can have a record of its page
                 marks?.prune(wallNow - HANG_JOURNAL_STALE_MS, new Set(records.map(record => record.pageId)));
