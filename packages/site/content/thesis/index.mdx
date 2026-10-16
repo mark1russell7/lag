@@ -240,12 +240,12 @@ A soak test of 10 minutes kept the heap after garbage collection at 9.50 MB to 9
 
 ### The quality of the tests
 
-| Measurement | First measurement | After the new tests (8 October 2026) | 9 October 2026 | 12 October 2026 | 16 October 2026 (0.2.1) |
-|---|---|---|---|---|---|
-| Unit tests of `@mark1russell7/lag` | 458 | 895 | 999 | 1168 | 1203 |
-| Statement coverage of `@mark1russell7/lag` | 96.1% | 99.3% | 99.3% | 99.8% | 99.8% |
-| Branch coverage of `@mark1russell7/lag` | 89.0% | 98.2% | 98.2% | 99.2% | 99.2% |
-| Mutation score of `@mark1russell7/lag` | 77.8% of 4095 mutants | 96.9% of 4690 mutants | 95.9% of 5166 mutants | 98.1% of 5383 mutants | 98.1% of 5539 mutants |
+| Measurement | First measurement | After the new tests (8 October 2026) | 9 October 2026 | 12 October 2026 | 16 October 2026 (0.2.1) | 16 October 2026 (0.2.4) |
+|---|---|---|---|---|---|---|
+| Unit tests of `@mark1russell7/lag` | 458 | 895 | 999 | 1168 | 1203 | 1232 |
+| Statement coverage of `@mark1russell7/lag` | 96.1% | 99.3% | 99.3% | 99.8% | 99.8% | 99.8% |
+| Branch coverage of `@mark1russell7/lag` | 89.0% | 98.2% | 98.2% | 99.2% | 99.2% | 99.2% |
+| Mutation score of `@mark1russell7/lag` | 77.8% of 4095 mutants | 96.9% of 4690 mutants | 95.9% of 5166 mutants | 98.1% of 5383 mutants | 98.1% of 5539 mutants | 98.1% of 5691 mutants |
 
 The column of 9 October is from commit `31e4ef4`. The unit tests and the coverage are from the CI workflow, and the mutation score is from the mutation workflow. Between 8 and 9 October, the package got spans, the lifecycle tracker of `page-lifecycle-tracker` and the worker as a subpath. The new code added 476 mutants. 205 mutants survive, and 5 have no test. The mutation score is thus 1 point lower than on 8 October.
 
@@ -253,7 +253,7 @@ The column of 12 October is from a forced mutation run, which tests all mutants 
 
 New tests found most of the mutants that survived on 9 October, and two of these mutants showed defects. After a stop and a start in its callback, the GC signal detector counted each garbage collection two times. A stopped instance of the page-view vitals stayed subscribed to the lifecycle, because no test examined the end of the subscription. The add-on for long callbacks and `AllMonitorHandles.add()` added 212 mutants. On 12 October, 102 mutants survived. A review found no effect that a test can see for each of them, for example a comparison where equal values give the same result.
 
-The column of 16 October is from version 0.2.1, with the tests of the same day. The mutation score is from a forced run (workflow run 38886548179). Version 0.2.1 has the fixes of a bug hunt and of five suspected defects. With them, the number of mutants increased by 156.
+The first column of 16 October is from version 0.2.1, with the tests of the same day. The mutation score is from a forced run (workflow run 38886548179). Version 0.2.1 has the fixes of a bug hunt and of five suspected defects. With them, the number of mutants increased by 156.
 
 A first forced run of 0.2.1 found 12 new surviving mutants in that code. New tests find 10 of them. These tests found no defect. The 2 other mutants have no effect. In the first, a run number goes down, and that is also a new number. The second removes an early return, and then the code only follows nothing.
 
@@ -265,7 +265,13 @@ A surviving mutant is a change of the code that no test finds. The first mutatio
 
 A later run found five surviving mutants in the listener that makes the LCP final at a key press or a click. They were gaps in the tests, and new tests find them.
 
-Each of the 105 mutants that survive has no effect that a test can see (the reviews of 12 and 16 October 2026). Examples are a second guard that repeats a first one, and code that a browser cannot reach. The [test strategy](/docs/testing/strategy) describes each kind of test, and the [results](/results) give the newest run.
+The last column is from version 0.2.4, with a forced run (workflow run 38948104076). Versions 0.2.2 to 0.2.4 added the pause of DriftLag in a frame off the screen, and the check for throttled timers on a visible page. Frame timing also pauses with that check. With these changes, the number of mutants increased by 152.
+
+Local Stryker tests of the changed lines found surviving mutants. New tests find most of them. Two of them showed gaps in the tests: the check without a callback, and a block in the warm-up after a restart. Some code had no effect, and it was removed.
+
+6 new mutants survive, and each has no effect. Three of them change a comparison at 500 ms to its equal form. Two change the end of the throttling after a busy check: the time of that step is lag in both forms. One removes the early return of `pauseWhileHidden`, as in version 0.2.1.
+
+Each of the 106 mutants that survive in version 0.2.4 has no effect that a test can see (the reviews of 12 and 16 October 2026). Examples are a second guard that repeats a first one, and code that a browser cannot reach. The [test strategy](/docs/testing/strategy) describes each kind of test, and the [results](/results) give the newest run.
 
 ## Limits
 
