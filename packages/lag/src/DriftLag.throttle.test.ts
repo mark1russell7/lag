@@ -7,8 +7,8 @@ type Window = { endAt : number; lag : number };
 
 /**
  * DriftLag on a simulated thread with the timer alignment of WebKit: 4 ms
- * normally. A page that Safari does not show ("visually idle", for example
- * when the display sleeps) gets an alignment of 1 s for its nested timers,
+ * normally. A page that Safari does not show ("visually idle") gets an
+ * alignment of 1 s for its nested timers,
  * also with `visibilityState` "visible" (WebKit `Page::updateTimerThrottlingState`).
  * A frame off the screen gets the same alignment (`LocalFrameView.cpp`).
  */
@@ -189,16 +189,17 @@ describe("DriftLag with throttled timers", () => {
         expect(t.thread.postedMessages - before).toBe(1);
     });
 
-    it("records a block after a restart without a probe", () => {
+    it("records a block in the warm-up after a restart without a probe", () => {
         const t = createDriftLag();
         t.thread.advance(3_000);
         // A long step before the stop: the state of the check starts again
         t.thread.post(() => t.thread.busy(100));
         t.thread.advance(10);
         t.monitor.stop();
-        t.monitor.start();
-        t.thread.advance(2_000);
+        t.thread.advance(500);
         const before = t.thread.postedMessages;
+        t.monitor.start();
+        t.thread.advance(20);
         t.thread.post(() => t.thread.busy(800));
         t.thread.advance(2_000);
         t.monitor.stop();

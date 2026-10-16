@@ -13,9 +13,9 @@ export type DriftLagOptions = {
     /**
      * A function that starts a callback in a new task, for example
      * `createMessageTaskQueue(...).post`. With it, the monitor accepts a
-     * longer baseline only after a probe shows an idle thread (refer to the
-     * class description). Without it, a sustained load can increase the
-     * baseline.
+     * longer baseline only after a probe shows an idle thread, and it finds
+     * throttled timers (refer to the class description). Without it, a
+     * sustained load can increase the baseline.
      */
     postTask? : PostTaskFn;
 };
@@ -57,8 +57,8 @@ const WARM_UP_STEPS = 11;
 const PROBE_MS = 50;
 
 /**
- * A step of this duration or more is a throttled step if the thread was idle
- * during more than half of the probe at its start. Browsers throttle nested
+ * A probed step of this duration or more is a throttled step if the thread
+ * was idle during more than half of the probe. Browsers throttle nested
  * timers to a grid of 1 s.
  */
 const THROTTLED_STEP_MS = 500;
@@ -162,6 +162,38 @@ type Probing = {
  * without `postTask`, the monitor accepts a longer baseline without a probe.
  * Then a sustained load increases the baseline, and the monitor reports less
  * lag. The worker monitor measures that case correctly.
+ *
+ * Throttled timers: a browser can make the nested timers of a page wait for
+ * a grid of 1 s, also while `visibilityState` is "visible". Safari does this
+ * for a page that it does not show ("visually idle": WebKit
+ * `Page::updateTimerThrottlingState`), and for a frame off the screen. Then
+ * each step takes approximately 1 s on an idle thread. That is not lag, and
+ * steps of 1 s cannot measure lag. With `postTask`, the monitor finds this
+ * case:
+ *
+ * - All probes operate only for the first 50 ms of a step. A probe of a step
+ *   of 40 ms or less examines all of the step.
+ * - A window does not end at the first long step (more than 40 ms) of a row
+ *   of long steps. A second long step of 500 ms or more starts a probe of
+ *   the next step.
+ * - A probed step of 500 ms or more, with a thread that was idle during more
+ *   than half of the probe, is throttled. On that idle thread, a timer
+ *   without throttling ends the step in the time of the probe. A busy thread
+ *   cannot give such a step.
+ * - Then the window ends without a report, and the monitor logs "DriftLag:
+ *   the browser throttles the timers. The windows pause." The steps of 500
+ *   ms or more are throttled steps. They are not steps of a window, and they
+ *   do not change the baseline. A probe checks one step of each 30.
+ * - A shorter step, or a check that finds a busy thread, ends the
+ *   throttling. The monitor logs "DriftLag: the timers are not throttled.
+ *   The windows continue." A new window starts after a short step, because
+ *   the grid of 1 s gave the duration of that step. It starts with the step
+ *   of a busy check, because that step is a block.
+ *
+ * Thus a block during the throttling is not lag. The worker monitor measures
+ * it, because messages are not throttled. A task of more than 25 ms at the
+ * start of each step prevents the check. Without `postTask`, the monitor
+ * records the throttled steps as lag.
  */
 export class DriftLag extends LagMonitor {
     private handle : number | undefined;
@@ -460,7 +492,8 @@ export class DriftLag extends LagMonitor {
             const warmUp = this.warmUpLeft > 0;
             if (warmUp) this.warmUpLeft--;
             const probing = this.probing;
-            // The probe of this step: a check for throttled timers, or a probe of the baseline
+            // The probe of this step, if one operated: a check for throttled timers, or a probe of the
+            // baseline. The next step has a check only if this step asks for one.
             this.throttleProbe = false;
             const busyMs = probing?.probe.isRunning() ? probing.probe.stop() : undefined;
             if (this.followThrottling(durationMs, busyMs, now)) {
