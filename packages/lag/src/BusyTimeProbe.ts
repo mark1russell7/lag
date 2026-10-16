@@ -18,7 +18,8 @@ const BUSY_WAIT_MS = 2;
  *
  * A message does not wait for a timer, thus the timer granularity does not
  * change the result. The chain keeps the thread awake, thus a probe must
- * operate only for a short interval, for example for one timer step. Also,
+ * operate only for a short interval, for example for one timer step. A
+ * limit (`start(limitMs)`) stops the chain after that time. Also,
  * a timer can start earlier while the thread is awake. In Chromium, a timer
  * step of 5 ms took 0.7 ms less during a probe, and 2.5 ms less one time.
  * Thus the duration of a probed step is not an idle duration.
@@ -29,6 +30,10 @@ export class BusyTimeProbe {
     private sequence = 0;
     private postedAt = 0;
     private busyMs = 0;
+    private startedAt = 0;
+    private limitMs = Infinity;
+    /** True while a message of the measurement waits or operates. */
+    private inFlight = false;
 
     constructor(
         private readonly postTask : PostTaskFn,
@@ -40,10 +45,17 @@ export class BusyTimeProbe {
         return this.running;
     }
 
-    /** This method starts a new measurement. It ends a measurement that operates. */
-    start() : void {
+    /**
+     * This method starts a new measurement. It ends a measurement that
+     * operates. With `limitMs`, a message that starts after this time posts
+     * no next message. Thus the chain operates only at the start of the
+     * interval. A message that waits at the limit still counts its full wait.
+     */
+    start(limitMs = Infinity) : void {
         this.running = true;
         this.busyMs = 0;
+        this.startedAt = this.clock.now();
+        this.limitMs = limitMs;
         this.post();
     }
 
@@ -56,17 +68,20 @@ export class BusyTimeProbe {
         if (!this.running) return 0;
         this.running = false;
         this.sequence++;
-        this.addWait(this.clock.now() - this.postedAt);
+        if (this.inFlight) this.addWait(this.clock.now() - this.postedAt);
         return this.busyMs;
     }
 
     private post() : void {
         const id = ++this.sequence;
         this.postedAt = this.clock.now();
+        this.inFlight = true;
         this.postTask(() => {
             if (id !== this.sequence) return;
-            this.addWait(this.clock.now() - this.postedAt);
-            this.post();
+            this.inFlight = false;
+            const now = this.clock.now();
+            this.addWait(now - this.postedAt);
+            if (now - this.startedAt < this.limitMs) this.post();
         });
     }
 
