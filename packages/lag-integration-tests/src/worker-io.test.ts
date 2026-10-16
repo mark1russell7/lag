@@ -1,6 +1,17 @@
 import { expect } from "vitest";
 import { recordMeasurement } from "./commands.js";
-import { probeServiceWorker, probeSharedWorker, probeWorkerFetch, probeWorkerIndexedDb, probeWorkerOutput, probeWorkerWebSocket, waitedForBlock, type WorkerOutput } from "./worker-io.js";
+import {
+    WorkerStall,
+    probeServiceWorker,
+    probeSharedWorker,
+    probeWorkerFetch,
+    probeWorkerIndexedDb,
+    probeWorkerOutput,
+    probeWorkerWebSocket,
+    waitedForBlock,
+    type WorkerIoTimes,
+    type WorkerOutput,
+} from "./worker-io.js";
 
 /**
  * A worker must write and send during a hang of the main thread: the hang
@@ -36,6 +47,21 @@ const WAITS_FOR_MAIN_THREAD : Record<WorkerOutput | "websocket", readonly Engine
 const OUTPUTS : readonly WorkerOutput[] = ["opfs-sync-access", "opfs-writable", "opfs-lookup", "cache-put", "xhr", "sync-xhr"];
 
 const measurementName = (operation : string) : string => `worker-io/${operation.replaceAll("-", "_")}_done_after_block_start`;
+
+/**
+ * This function probes `kind`, and probes it one more time after a stall of
+ * the worker (`WorkerStall`). One stall is a stall of the engine on the
+ * runner. A second stall fails the test with the phase that did not reply.
+ */
+async function probeOutput(kind : WorkerOutput) : Promise<WorkerIoTimes | undefined> {
+    try {
+        return await probeWorkerOutput(kind, BLOCK_MS);
+    } catch (error) {
+        if (!(error instanceof WorkerStall)) throw error;
+        console.log(`E6 ${kind} (${engine}): ${error.message} A second probe follows.`);
+        return probeWorkerOutput(kind, BLOCK_MS);
+    }
+}
 
 describe("the input and output of a worker during a main-thread block", () => {
     it("an IndexedDB write of a worker completes during the block, except in WebKit", async () => {
@@ -78,7 +104,7 @@ describe("the output of a dedicated worker during a main-thread block (experimen
     for (const kind of OUTPUTS) {
         const waits = WAITS_FOR_MAIN_THREAD[kind].includes(engine);
         it(`${kind}: the operation ${waits ? "waits for the end of" : "completes during"} the block`, async (ctx) => {
-            const times = await probeWorkerOutput(kind, BLOCK_MS);
+            const times = await probeOutput(kind);
             ctx.skip(times === undefined, `The worker of this browser has no API for ${kind}.`);
             console.log(`E6 ${kind} (${engine}): ${JSON.stringify(times)}`);
             await recordMeasurement(measurementName(kind), "ms", [times!.doneMs], { engine });

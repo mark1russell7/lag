@@ -218,13 +218,35 @@ self.onmessage = (event) => {
 
 type ProbeReply = { unavailable? : string; error? : string; ready? : boolean; start? : number; done? : number };
 
-/** This function sends `message` to `worker` and gives the next reply. */
-function ask(worker : Worker, message : unknown) : Promise<ProbeReply> {
-    const reply = new Promise<ProbeReply>((resolve) => {
-        worker.onmessage = (event) => resolve(event.data as ProbeReply);
+/**
+ * A probe worker that gives no reply in this time has a stall of the engine.
+ * It does not wait for the block of 2 s. In one CI run (16 October 2026),
+ * the OPFS lookup of a Firefox worker gave no reply in 20 s. The two other
+ * OPFS probes of the same run completed in 37 ms and 64 ms.
+ */
+export const REPLY_TIMEOUT_MS = 8_000;
+
+/** The probe worker gave no reply in `REPLY_TIMEOUT_MS`. */
+export class WorkerStall extends Error {
+    constructor(readonly operation : string, readonly phase : "prepare" | "operate") {
+        super(`${operation}: the worker gave no reply to "${phase}" in ${REPLY_TIMEOUT_MS} ms.`);
+        this.name = "WorkerStall";
+    }
+}
+
+/**
+ * This function sends `message` to `worker` and gives the next reply. Without
+ * a reply in `REPLY_TIMEOUT_MS`, the promise rejects with a `WorkerStall`.
+ */
+function ask(worker : Worker, message : unknown, operation : string, phase : WorkerStall["phase"]) : Promise<ProbeReply> {
+    return new Promise<ProbeReply>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new WorkerStall(operation, phase)), REPLY_TIMEOUT_MS);
+        worker.onmessage = (event) => {
+            clearTimeout(timer);
+            resolve(event.data as ProbeReply);
+        };
+        worker.postMessage(message);
     });
-    worker.postMessage(message);
-    return reply;
 }
 
 /**
@@ -237,11 +259,11 @@ export async function probeWorkerOutput(kind : WorkerOutput, blockMs : number) :
     const worker = new Worker(scriptUrl(OUTPUT_PROBE));
     try {
         const url = probeUrl();
-        const prepared = await ask(worker, { kind, url, go : false });
+        const prepared = await ask(worker, { kind, url, go : false }, kind, "prepare");
         if (prepared.error !== undefined) throw new Error(`${kind}: ${prepared.error}`);
         if (prepared.unavailable !== undefined) return undefined;
         await wait(200);
-        const result = ask(worker, { kind, url, go : true });
+        const result = ask(worker, { kind, url, go : true }, kind, "operate");
         const blockStart = absoluteNow();
         blockMainThread(blockMs);
         const blockEnd = absoluteNow();
@@ -265,10 +287,10 @@ export async function probeWorkerWebSocket(blockMs : number) : Promise<WorkerIoT
     const port = await startProbeSocketServer();
     const worker = new Worker(scriptUrl(WEBSOCKET_PROBE));
     try {
-        const opened = await ask(worker, { url : `ws://127.0.0.1:${port}/`, go : false });
+        const opened = await ask(worker, { url : `ws://127.0.0.1:${port}/`, go : false }, "websocket", "prepare");
         if (opened.error !== undefined) throw new Error(opened.error);
         await wait(200);
-        const sent = ask(worker, { go : true });
+        const sent = ask(worker, { go : true }, "websocket", "operate");
         const blockStart = absoluteNow();
         blockMainThread(blockMs);
         const blockEnd = absoluteNow();
