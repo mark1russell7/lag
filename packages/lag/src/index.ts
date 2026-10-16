@@ -105,9 +105,16 @@ export {
     type MeasurementConditionsOptions,
     type SampleValidator,
     type Pausable,
+    type PauseOptions,
     type StallKind,
     type DiscardReason,
 } from "./measurement-conditions.js";
+export {
+    createFrameViewport,
+    type FrameViewport,
+    type IntersectionEntryLike,
+    type IntersectionObserverInit,
+} from "./frame-viewport.js";
 
 // --- Architecture: handles, registry, dep groups ---
 export type { MonitorHandle } from "./monitor-handle.js";
@@ -118,6 +125,7 @@ export type {
     LifecycleDeps,
     ObserverDeps,
     FrameDeps,
+    ViewportDeps,
     IdleDeps,
     SchedulingDeps,
     MemoryDeps,

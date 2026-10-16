@@ -316,6 +316,66 @@ describe("createBrowserDeps", () => {
         expect(deps.FinalizationRegistry).toBe(FakeRegistry);
         expect(deps.ReportingObserver).toBe(FakeReportingObserver);
     });
+
+    describe("the frame viewport", () => {
+        /** A fake `IntersectionObserver` that keeps its instances. */
+        function createObserverFake() {
+            const instances : Array<{ callback : (entries : Array<{ isIntersecting : boolean }>) => void; targets : unknown[] }> = [];
+            class FakeIntersectionObserver {
+                readonly targets : unknown[] = [];
+                constructor(readonly callback : (entries : Array<{ isIntersecting : boolean }>) => void) { instances.push(this); }
+                observe(target : unknown) { this.targets.push(target); }
+                disconnect() {}
+            }
+            return { IntersectionObserver : FakeIntersectionObserver, instances };
+        }
+
+        it("gives the frame viewport of the documentElement to a document in a frame", () => {
+            const fake = createObserverFake();
+            const globals = createGlobals({ IntersectionObserver : fake.IntersectionObserver, top : {} });
+            const documentElement = {};
+            Object.assign(globals.document, { documentElement });
+            const deps = createBrowserDeps(globals, options());
+
+            expect(deps.frameViewport).toBeDefined();
+            const listener = vi.fn();
+            deps.frameViewport!.subscribe(listener);
+            expect(fake.instances[0]!.targets).toEqual([documentElement]);
+            fake.instances[0]!.callback([{ isIntersecting : false }]);
+            expect(listener).toHaveBeenCalledWith(false);
+        });
+
+        it("gives no frame viewport to a top-level page, without IntersectionObserver, or when the read of top throws", () => {
+            const fake = createObserverFake();
+            const topLevel = createGlobals({ IntersectionObserver : fake.IntersectionObserver });
+            Object.assign(topLevel, { top : topLevel, documentElement : {} });
+            Object.assign(topLevel.document, { documentElement : {} });
+            expect(createBrowserDeps(topLevel, options()).frameViewport).toBeUndefined();
+
+            const withoutObserver = createGlobals({ top : {} });
+            Object.assign(withoutObserver.document, { documentElement : {} });
+            expect(createBrowserDeps(withoutObserver, options()).frameViewport).toBeUndefined();
+
+            const throwing = createGlobals({ IntersectionObserver : fake.IntersectionObserver });
+            Object.defineProperty(throwing, "top", { get : () => { throw new Error("blocked"); } });
+            Object.assign(throwing.document, { documentElement : {} });
+            expect(createBrowserDeps(throwing, options()).frameViewport).toBeUndefined();
+        });
+
+        it("pauses the frame-timing monitor of setupAllMonitors while the frame is off-screen", () => {
+            const fake = createObserverFake();
+            const cancelAnimationFrame = vi.fn();
+            const globals = createGlobals({ IntersectionObserver : fake.IntersectionObserver, top : {}, cancelAnimationFrame });
+            Object.assign(globals.document, { documentElement : {} });
+            const monitors = setupAllMonitors(createBrowserDeps(globals, options()));
+
+            expect(monitors.frameMonitor).toBeDefined();
+            const observer = fake.instances.find(instance => instance.targets.length > 0)!;
+            observer.callback([{ isIntersecting : false }]);
+            expect(cancelAnimationFrame).toHaveBeenCalledTimes(1);
+            monitors.stop();
+        });
+    });
 });
 
 describe("createBrowserDeps and the shared lifecycle tracker", () => {

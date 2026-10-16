@@ -162,7 +162,7 @@ console.log(monitors.idleMonitor === undefined);
 
 The timer-driven monitors share one `MeasurementConditions`. It has two functions:
 
-- `pauseWhileHidden(monitor)` stops a monitor while the page is hidden or frozen, and starts it again when the page is visible.
+- `pauseWhileHidden(monitor)` stops a monitor while the page is hidden or frozen, and starts it again when the page is visible. With `{ offscreen: true }`, it also stops the monitor while its frame is off the screen. Only frame timing uses this option.
 - The `SampleValidator` discards each sample whose window overlaps a hidden, frozen or suspend interval. It holds a sample of 5000 ms or more for 2000 ms, until it knows if the sample was a hang or a suspend.
 
 | Monitor | Pauses while hidden | Sample validator |

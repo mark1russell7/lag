@@ -1,5 +1,5 @@
 import { describe, expectTypeOf, it } from "vitest";
-import type { AllMonitorDeps, PeerDeps, SpanDeps, SpanSink, createInstrumentedPeerHangWatch, createOtelSpanSink } from "./index.js";
+import type { AllMonitorDeps, PeerDeps, SpanDeps, SpanSink, ViewportDeps, createInstrumentedPeerHangWatch, createOtelSpanSink } from "./index.js";
 
 // The type checker (pnpm typecheck) does these checks: at run time, expectTypeOf does nothing
 describe("the public API", () => {
@@ -7,6 +7,7 @@ describe("the public API", () => {
         expectTypeOf<Parameters<typeof createInstrumentedPeerHangWatch>[0]>().toExtend<PeerDeps>();
         expectTypeOf<AllMonitorDeps>().toExtend<Partial<PeerDeps>>();
         expectTypeOf<AllMonitorDeps>().toExtend<Partial<Pick<SpanDeps, "spans">>>();
+        expectTypeOf<AllMonitorDeps>().toExtend<Partial<ViewportDeps>>();
         expectTypeOf<ReturnType<typeof createOtelSpanSink>>().toEqualTypeOf<SpanSink>();
     });
 });

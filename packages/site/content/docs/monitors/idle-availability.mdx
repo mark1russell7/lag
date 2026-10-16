@@ -49,6 +49,8 @@ In hidden pages, the browser gives few or no idle periods. In Chromium, a hidden
 
 With measurement conditions, the monitor pauses while the page is hidden or frozen. Each callback goes to a `SampleValidator` with a window of the length of the gap. The validator discards a callback whose gap overlaps a hidden, frozen or suspend interval. A gap of 5000 ms or more waits 2000 ms for late evidence of a suspend.
 
+The monitor does not pause while its frame is off the screen, as frame timing does. In experiment E9, the idle callbacks of a cross-origin frame off the screen continued in Chromium 145 and Firefox 146 ([local experiments](/research/local-experiments)).
+
 ## Metrics
 
 <MetricTable metrics={idleMetrics} />

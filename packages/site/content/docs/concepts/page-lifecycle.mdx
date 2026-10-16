@@ -160,7 +160,7 @@ Do not use the `unload` event to send data. From Chrome 154, Chrome does not sta
 ## How the monitors use the state
 
 - The measurement conditions open an interval with the cause `hidden` or `frozen` for each period in a state that is not visible. They discard each sample that overlaps such an interval.
-- `pauseWhileHidden()` stops a monitor when the state changes from visible to not visible, and starts it again on the change back. DriftLag, MacrotaskLag, frame timing, idle availability, scheduling fairness, worker lag and shared-memory liveness pause in this way.
+- `pauseWhileHidden()` stops a monitor when the state changes from visible to not visible, and starts it again on the change back. DriftLag, MacrotaskLag, frame timing, idle availability, scheduling fairness, worker lag and shared-memory liveness pause in this way. Frame timing also pauses while its frame is off the screen ([measurement validity](/docs/concepts/measurement-validity)).
 - The [timer-throttle detector](/docs/monitors/timer-throttle) does not pause, because it must find the throttling of a hidden page. The [clock-drift monitor](/docs/concepts/clocks-and-time) does not pause, because the device can sleep while the page is hidden.
 - The page-view vitals make a checkpoint at each change to `hidden`, `frozen` or `terminated`. The checkpoint at `terminated` is final. A `pageshow` with `persisted` set to `true` starts a new page view.
 

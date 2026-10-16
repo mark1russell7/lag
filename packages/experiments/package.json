@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
     "e8": "tsx src/e8-async-context/runner/run.ts",
     "e8:tables": "tsx src/e8-async-context/runner/tables.ts",
-    "e8:await-probe": "tsx src/e8-async-context/runner/await-probe.ts"
+    "e8:await-probe": "tsx src/e8-async-context/runner/await-probe.ts",
+    "e9": "tsx src/e9-offscreen-frame/runner/run.ts"
   },
   "dependencies": {
     "@lag/load": "workspace:*",

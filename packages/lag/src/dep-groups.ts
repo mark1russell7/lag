@@ -29,6 +29,7 @@ import type {
     RequestAnimationFrameFn,
     CancelAnimationFrameFn,
 } from "./FrameTimingMonitor.js";
+import type { FrameViewport } from "./frame-viewport.js";
 import type {
     RequestIdleCallbackFn,
     CancelIdleCallbackFn,
@@ -93,6 +94,15 @@ export type ObserverDeps = {
 export type FrameDeps = {
     requestAnimationFrame : RequestAnimationFrameFn;
     cancelAnimationFrame : CancelAnimationFrameFn;
+};
+
+/**
+ * The position of the frame of a document in a frame (an iframe). The frame
+ * timing monitor pauses while the frame is off-screen. The document of a
+ * top-level page does not need it.
+ */
+export type ViewportDeps = {
+    frameViewport : FrameViewport;
 };
 
 /** The idle callback functions, for the idle availability monitor. */
