@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { createNoopMeter, setupAllMonitors, type AllMonitorHandles, type BrowserGlobals } from "@mark1russell7/lag";
-import { createBrowserDeps, createConsoleLogger, createTeeMeter, wait, waitUntil } from "./harness.js";
+import { createBrowserDeps, createTeeMeter, wait, waitUntil } from "./harness.js";
 import { environment } from "./commands.js";
 
 /** The time that the frame stays off the screen. It is longer than one cycle of MacrotaskLag (5 s). */
@@ -58,12 +58,22 @@ function watchFrameTimers(child : Window & typeof globalThis) {
     };
 }
 
+/** The monitors on the globals of a frame, with or without the frame viewport. */
+type FrameRun = {
+    longestOffscreen : number;
+    /** The values of each timer metric off the screen, after the browser could tell the frame. */
+    during : Record<string, number[]>;
+    resumed : boolean;
+    logs : string[];
+};
+
 /**
  * The monitors in a frame that is off the screen. The `visibilityState` of
  * such a frame stays `visible`, but WebKit makes its nested timers wait
  * approximately 1 s. Without a pause, DriftLag records that wait as lag: 2473
  * ms in one window of the WebKit build, before the change. Thus DriftLag
  * pauses while the frame is off the screen, as the frame-timing monitor does.
+ * Without the frame viewport, DriftLag finds the throttled timers itself.
  */
 describe("A frame off the screen", () => {
     let handles : AllMonitorHandles | undefined;
@@ -75,7 +85,7 @@ describe("A frame off the screen", () => {
         cleanup();
     });
 
-    it("pauses DriftLag while the frame is off the screen, and starts it again after", async () => {
+    async function runOffscreen(withViewport : boolean) : Promise<FrameRun> {
         const { frame, child, spacer } = await createFrame();
         const timers = watchFrameTimers(child);
         cleanup = () => {
@@ -85,15 +95,19 @@ describe("A frame off the screen", () => {
             spacer.remove();
         };
         const tee = createTeeMeter(createNoopMeter());
-        const deps = createBrowserDeps({
-            logger : createConsoleLogger(["error"]),
+        const logs : string[] = [];
+        const { frameViewport, ...deps } = createBrowserDeps({
+            logger : { log : (level, message, args) => {
+                logs.push(message);
+                if (level === "error") console.log(`[error] ${message}`, args);
+            } },
             meter : tee.meter,
             peerHangWatch : false,
             hangJournal : false,
             crashReportContext : false,
         }, child as unknown as BrowserGlobals);
-        expect(deps.frameViewport).toBeDefined();
-        handles = setupAllMonitors(deps);
+        expect(frameViewport).toBeDefined();
+        handles = setupAllMonitors(withViewport ? { ...deps, frameViewport : frameViewport! } : deps);
 
         // On the screen, the monitors operate. The chain of timeouts reaches its maximum nesting level after 10 steps.
         expect(await waitUntil(() => tee.values("lag_drift_histogram").length >= 5, 5_000)).toBe(true);
@@ -112,12 +126,34 @@ describe("A frame off the screen", () => {
             name,
             tee.records(name).filter(record => record.time > offAt + NOTICE_MS && record.time < onAt).map(record => Math.round(record.value)),
         ]));
-        console.log(`${environment()}: longest step of a 100 ms timeout chain in the frame off the screen ${Math.round(longestOffscreen)} ms; ` +
-            `records off the screen ${JSON.stringify(during)}`);
+        console.log(`${environment()}${withViewport ? "" : ", without the frame viewport"}: longest step of a 100 ms timeout chain ` +
+            `in the frame off the screen ${Math.round(longestOffscreen)} ms; records off the screen ${JSON.stringify(during)}`);
+        return { longestOffscreen, during, resumed, logs };
+    }
+
+    it("pauses DriftLag while the frame is off the screen, and starts it again after", async () => {
+        const run = await runOffscreen(true);
 
         // The case is real: WebKit makes the timers of the frame wait approximately 1 s
-        if (WEBKIT.has(environment())) expect(longestOffscreen).toBeGreaterThan(800);
-        expect(during["lag_drift_histogram"]).toEqual([]);
-        expect(resumed).toBe(true);
+        if (WEBKIT.has(environment())) expect(run.longestOffscreen).toBeGreaterThan(800);
+        expect(run.during["lag_drift_histogram"]).toEqual([]);
+        expect(run.resumed).toBe(true);
+    }, 30_000);
+
+    it("without the frame viewport, DriftLag finds the throttled timers of WebKit and records no window of them", async () => {
+        const run = await runOffscreen(false);
+
+        if (WEBKIT.has(environment())) {
+            expect(run.longestOffscreen).toBeGreaterThan(800);
+            expect(run.logs).toContain("DriftLag: the browser throttles the timers. The windows pause.");
+            expect(run.logs).toContain("DriftLag: the timers are not throttled. The windows continue.");
+            expect(run.during["lag_drift_histogram"]).toEqual([]);
+        } else {
+            // Chromium and Firefox do not throttle these timers: DriftLag measures, and finds no lag
+            expect(run.logs).not.toContain("DriftLag: the browser throttles the timers. The windows pause.");
+            expect(run.during["lag_drift_histogram"]!.length).toBeGreaterThan(10);
+            expect(Math.max(...run.during["lag_drift_histogram"]!)).toBeLessThan(100);
+        }
+        expect(run.resumed).toBe(true);
     }, 30_000);
 });

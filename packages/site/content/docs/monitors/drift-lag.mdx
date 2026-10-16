@@ -105,6 +105,20 @@ The browser test `drift-load.test.ts` measured the result with a load of 100% fo
 
 Before the change, the lag of each case decreased to less than 15% within 4 s. In WebKit on Linux and in Safari on macOS, the probe found an idle page (0 ms of busy time). Only the WebKit build for Windows makes a message wait. In Firefox on Windows, an idle step already takes 15.6 ms. A step that waits for a task of 20 ms takes 20 ms, thus it gives only 4.4 ms of lag. This is the resolution of one step (refer to the limits).
 
+### Throttled timers
+
+A browser can make the nested timers of a page wait for a grid of 1 s, also while `visibilityState` is `visible`. Safari on macOS does this for a page that it does not show ("visually idle"), for example on a GitHub macOS runner ([clocks and timers](/research/clocks-and-timers)). It also does this for a frame off the screen. Then each step takes approximately 1 s on an idle thread. That is not lag, and steps of 1 s cannot measure lag.
+
+With `MessageChannel`, the monitor finds this case:
+
+- Each probe operates only for the first 50 ms of a step. A probe of a step of 40 ms or less examines all of the step.
+- A step of more than 40 ms is a long step. A window does not end at the first long step of a row of long steps. A second long step of 500 ms or more starts a probe of the next step.
+- That step is throttled if it takes 500 ms or more and the thread was idle during more than half of the probe. On an idle thread, a timer without throttling ends its step in the time of the probe. A busy thread cannot give such a step.
+- Then the window ends without a record, and the monitor logs "DriftLag: the browser throttles the timers. The windows pause." Each step of 500 ms or more is a throttled step. It is not in a window, and it does not change the baseline.
+- A probe examines one throttled step of each 30. A shorter step, or a probe that finds a busy thread, ends the throttling. The monitor logs "DriftLag: the timers are not throttled. The windows continue."
+
+The cost is one probe of 50 ms to find the throttling, and one probe for each 30 throttled steps. A single block starts no probe, because the next step is short. In the simulated tests, a throttling that started or ended at any time in the grid gave less than 40 ms of lag.
+
 ### Windows and records
 
 A window has a whole number of steps. Thus its length is 100 ms only when the baseline divides 100 ms. In Firefox and WebKit on Windows, a window has 6 steps of 15.6 ms, thus approximately 93 ms. The first window has 20 steps, thus approximately 310 ms there. `getLastWindowMs()` gives the measured length of the last window, with its lag.
@@ -228,13 +242,16 @@ The callbacks of the monitor are also tasks on the main thread. Thus the monitor
 - **A load at the start.** The first confirmed value is the recent baseline. After a load at the start of the page, it can be too long. It decreases with the recent baseline in 100 steps or less.
 - **A small increase of the granularity.** An increase of less than max(4 ms, half of the baseline) starts no row. The recent baseline follows it after approximately 50 steps, and then a check confirms it. Until then, each window has a small lag.
 - **A light load.** A probed step is idle if the thread was busy for less than max(2 ms, half of the extra duration of the step). Thus the steps of a light load can be in a confirmed baseline.
-- **A probe delays other work.** During one step, a message task starts each few microseconds. An idle callback cannot start in that step.
+- **A probe delays other work.** During the first 50 ms of one step, a message task starts each few microseconds. An idle callback cannot start in that time.
 - **Firefox after a load.** In Firefox on Windows, the steps changed between 8 ms and 16 ms for some seconds after a load (experiment E5). The lag of each window was between −9 ms and 8 ms in that time.
 - **The resolution is one step.** A block can start immediately after a step. Thus the lag of a block can be less than its duration by up to one step: 16 ms in Firefox on Windows (experiment E3). In Safari without focus, some steps are late, thus the baseline is longer than the usual step. Then the other steps of a window decrease its lag a little. One time on a CI runner, the decrease was 12.4 ms in a window with a block of 300 ms.
 - **One sample for each block.** The chain is closed-loop: a long block gives one long window, not many samples. In a histogram of windows, a 30 s block is one value among hundreds of normal windows ([clocks and timers](/research/clocks-and-timers), coordinated omission). The sum of the histogram contains the full length of the block. Thus use the sum for the blocked time, and the quantiles only for the typical window.
 - **Idle noise.** The factory records a negative lag as 0. Thus an idle page gives small positive values, for example a p90 of 3.1 ms in Chromium (experiment E3).
 - **A change of the timer granularity.** A row of 10 steps that agree with each other starts a new baseline. Thus the baseline follows a change, for example to battery power, after 10 steps of the new granularity: approximately 160 ms with steps of 16 ms. The step in which the granularity changes can be in the jitter limit of the old baseline. Then it gives up to max(4 ms, half of the old baseline) of lag. A block immediately before the row can lose up to the difference of the two baselines.
 - **The first start in Safari.** At the first start, the baseline is the requested delay. Thus the 10 steps that Safari does not align are recent steps. On the simulated grid of 4 ms, the first windows had up to 18 ms of lag for approximately 0.8 s.
+- **No samples while the timers are throttled.** Then a block is not lag for DriftLag. The [worker monitor](/docs/monitors/worker-lag) measures it, because the browser does not throttle messages.
+- **A task at the start of each throttled step.** The probe needs a thread that is idle during more than half of its 50 ms. A task of more than 25 ms after each step prevents that. Then the monitor records the throttled steps as lag. Without `MessageChannel`, the monitor also records them as lag.
+- **A short throttled step.** WebKit aligns the waiting timer again when the grid changes. Thus the first throttled step can take 40 ms or less. Such a step is a step of the window, as a block of that length is.
 - **No samples from hidden pages.** The monitor pauses there, and so does the worker monitor. The [timer throttling](/docs/monitors/timer-throttle) detector and the [clock drift](/docs/monitors/clock-drift) monitor continue in hidden pages.
 
 ## Tests
@@ -247,7 +264,10 @@ Unit tests (Vitest, fake timers):
 - `DriftLag.granularity.test.ts`, the baseline: the mean of the steps that are not longer than the median plus max(4 ms, half of the median). A block does not count, also when it comes before shorter steps.
 - `drift-baseline.test.ts`: the rules of the baseline at their limits. An increase of max(1 ms, 10%) needs no check. A probed step is idle below max(2 ms, half of its extra duration). The findings of a check, and the steps that it removes. The value of a step before an accepted row that is outside the old baseline stays between the two baselines.
 - `BaselineConfirmation.test.ts`: a check of an idle probe, 3 steps and a second idle probe. The first value, the decrease to the highest recent baseline of 3 windows, a busy closing probe and a probe of a row.
-- `BusyTimeProbe.test.ts`: no busy time on an idle thread. Each task delays one message. A wait of 2 ms or less does not count, and a message of an earlier measurement does nothing.
+- `BusyTimeProbe.test.ts`: no busy time on an idle thread. Each task delays one message. A wait of 2 ms or less does not count, and a message of an earlier measurement does nothing. With a limit, the chain operates only at the start, and a message that waits at the limit counts its full wait.
+- `DriftLag.throttle.test.ts`, throttled timers on the simulated thread. The grid of WebKit changes from 4 ms to 1 s, and the waiting timer aligns again. No window is recorded during the throttling, and the windows continue after it. A throttling that starts or ends at each of 143 times in the grid gives less than 40 ms of lag.
+
+  One probe of 50 ms finds the throttling, and one probe follows each 30 throttled steps. A load of tasks of 600 ms or 100 ms stays lag, also a load that starts when the throttling ends. A block starts no probe, also in the warm-up after a restart. A task of 30 ms after each step prevents the check. Without `postTask`, the monitor finds no throttling.
 - `DriftLag.load.test.ts` uses a simulated thread with a timer queue and a message queue. Equal message tasks of 20 ms and timer tasks of 30 ms stay lag for 5 s, also with steps of 15.6 ms. Without a probe, the same load gives less than 5% lag. After the load, there is no lag.
 - `DriftLag.load.test.ts` also simulates three behaviors of browsers. In Chromium, a probed step is shorter and the next step is longer. In WebKit for Windows, a message waits also on an idle thread.
 - `DriftLag.load.test.ts`, the timer tick of Windows (steps of 15.6 ms): a block of 300 ms in the first window gives its duration minus up to one step. The first window has 20 steps. A restart can change the steps from 5.7 ms to 15.6 ms. Then a block of 150 ms after the restart gives its duration minus up to one step.
@@ -266,6 +286,8 @@ Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in
 - `lag-monitors.test.ts`: a 300 ms block gives a lag of more than 200 ms. The test waits up to 2 s for the window of the block, because the first window of a page can be long.
 - `stress.test.ts`: with the light profile of `@lag/load`, the largest lag is less than 150 ms. With the heavy profile, it is more than 100 ms.
 - `offscreen-frame.test.ts`: the monitors operate on the globals of a frame of the same origin. While the frame is off the screen for 6 s, DriftLag records no window. It records windows again when the frame is on the screen. In the WebKit engines, a chain of 100 ms timeouts in the frame waits more than 800 ms off the screen.
+
+  A second test does the same without the frame viewport. In the WebKit engines, DriftLag then finds the throttled timers itself, and it logs the start and the end. In Chromium and Firefox, it finds no throttling, and it records more than 10 windows of less than 100 ms off the screen.
 - `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no window while the page is hidden or frozen. It records more than 5 windows after the page is visible again. After a freeze of 2 s, each lag after the resume is less than half of the freeze, and no stall occurs.
 - `cdp/cpu-throttling.test.ts` (Chromium in the new headless mode): with 4× CPU throttling, the same work gives a median lag of more than 2.5 times the lag without throttling.
 - `overhead/overhead.test.ts` (Chromium in the new headless mode): all monitors together make more than 40 and not more than 210 timer callbacks each second on an idle page. The lower limit is also true with the 15.6 ms timer tick of Windows. The comment of the test gives approximately 175 callbacks each second for DriftLag with a 1 ms tick.

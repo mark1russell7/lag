@@ -13,7 +13,7 @@ import { throttleMetrics } from "./metrics.data";
 
 The signal is the number of calibration rounds, with the attribute `throttled` (`true` or `false`). `isThrottled()` gives the result of the latest round.
 
-The detector answers this question: does the browser delay the timers of the page at this time? Throttled timers make all timer-based measurements incorrect. The other timer monitors pause while the page is hidden, but this detector shows how long and how frequently the browser throttles.
+The detector answers this question: does the browser delay the timers of the page at this time? Throttled timers make all timer-based measurements incorrect. The other timer monitors pause while the page is hidden, but this detector shows how long and how frequently the browser throttles. [DriftLag](/docs/monitors/drift-lag#throttled-timers) also finds the throttling of its own timers on a visible page, and then it records no windows.
 
 ## How it works
 
