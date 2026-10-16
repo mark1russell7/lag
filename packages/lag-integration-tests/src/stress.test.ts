@@ -126,11 +126,21 @@ async function logResult(profile : string, result : ProfileResult, tee : TeeMete
  *   delay above uses DriftLag, which pauses while the page is hidden and
  *   does not record a window that overlaps an unreliable interval. The
  *   chain of this test has no such rules.
+ * - The chain of 5 ms timers made fewer than 25 callbacks each second. A
+ *   page that Safari does not show ("visually idle") gets nested timers on a
+ *   grid of 1 s, also with `visibilityState` "visible" (WebKit
+ *   `Page::updateTimerThrottlingState`). Then no gap is longer than 1 s, and
+ *   DriftLag can end no window before the end of the profile. In CI, the
+ *   profiles made 62 or more callbacks each second, also the heavy profile
+ *   with its blocks. Safari on a CI runner made 1.5 to 12 each second.
  *
  * A block of a profile (1.5 s or less) does not cause a skip, because the
  * worker sees the block.
  */
 const THROTTLED_DELAY_MS = 2_000;
+
+/** The smallest number of callbacks each second of the 5 ms timer chain without throttling (refer to `skipIfThrottled`). */
+const MIN_TIMER_CALLBACKS_PER_S = 25;
 
 function skipIfThrottled(test : TestContext, result : ProfileResult, tee : TeeMeter) : void {
     const timerDelay = tee.max("lag_drift_histogram");
@@ -147,6 +157,10 @@ function skipIfThrottled(test : TestContext, result : ProfileResult, tee : TeeMe
     }
     if (result.timers.maxGapMs > blocked + THROTTLED_DELAY_MS) {
         reasons.push(`no timer callback for ${Math.round(result.timers.maxGapMs)} ms (${result.timers.count} callbacks), with a longest block of ${Math.round(blocked)} ms`);
+    }
+    const callbacksPerS = result.timers.count / (result.durationMs / 1_000);
+    if (callbacksPerS < MIN_TIMER_CALLBACKS_PER_S) {
+        reasons.push(`the 5 ms timer chain made ${callbacksPerS.toFixed(1)} callbacks each second, with a longest gap of ${Math.round(result.timers.maxGapMs)} ms`);
     }
     if (reasons.length === 0) return;
     console.log(`The browser slowed the page: ${reasons.join("; ")} (${pageState()})`);
