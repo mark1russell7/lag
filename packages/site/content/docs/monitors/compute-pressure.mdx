@@ -30,7 +30,7 @@ The monitor answers this question: was the device itself busy while the page was
 2. It uses `observe(source, { sampleInterval: 1000 })` for each source of its list. The default list is `["cpu"]`.
 3. For each record, it keeps the latest state of the source, and the factory records the ordinal in `lag_pressure_state_histogram` with the attribute `source`.
 
-When `observe()` rejects a source, the monitor logs a warning for that source. When the constructor fails, it logs a warning and gets no records. `getCurrentState(source)` gives the latest state of a source. `getWorstStateOrdinal()` gives the highest ordinal of all sources, or −1 before the first record.
+When `observe()` rejects a source, or throws an error for it at once, the monitor logs a warning for that source. It observes the other sources. When the constructor fails, it logs a warning and gets no records. `getCurrentState(source)` gives the latest state of a source. `getWorstStateOrdinal()` gives the highest ordinal of all sources, or −1 before the first record.
 
 ## Browser support
 
@@ -109,6 +109,7 @@ if (deps.PressureObserver) {
 Unit tests:
 
 - `ComputePressureMonitor.test.ts`: the monitor makes one observer and asks for the configured sources, with a `sampleInterval` of 1000 ms. It reports each record with its ordinal, and keeps the latest state of each source. `getWorstStateOrdinal()` gives the highest state, or −1 before the first record. A rejected source and a failed constructor give a warning. A `stop()` while `observe()` waits gives no warning: the specification rejects the waiting `observe()` with an `AbortError`. `stop()` disconnects the observer and clears the state.
+- `ComputePressureMonitor.test.ts`, the errors of one source: a source whose `observe()` throws at once gives a warning, and the monitor observes the next source.
 - `instrumented/compute-pressure.test.ts`: each record goes into the histogram. Each change of the state of a source gives a `lag.pressure.change` event at the time of the record. After the first record, the event has the previous state. A record with the same state gives no event.
 - `browser/browser-deps.test.ts`: the adapter uses the `cpu` source by default.
 

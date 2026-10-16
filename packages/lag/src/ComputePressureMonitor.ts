@@ -83,15 +83,23 @@ export class ComputePressureMonitor {
             this.observer = observer;
 
             for (const source of this.sources) {
-                observer.observe(source, { sampleInterval : this.sampleIntervalMs })
-                    .catch((error) => {
-                        // disconnect() at stop() rejects each pending observe() with an AbortError
-                        if (this.observer !== observer) return;
-                        this.logger.log("warn", `PressureObserver source "${source}" not supported.`, {
-                            error,
-                            type : "ComputePressureMonitor",
-                        });
+                const unsupported = (error : unknown) : void => {
+                    this.logger.log("warn", `PressureObserver source "${source}" not supported.`, {
+                        error,
+                        type : "ComputePressureMonitor",
                     });
+                };
+                // An error for one source does not stop the other sources. It can be a rejection or an immediate exception.
+                try {
+                    observer.observe(source, { sampleInterval : this.sampleIntervalMs })
+                        .catch((error) => {
+                            // disconnect() at stop() rejects each pending observe() with an AbortError
+                            if (this.observer !== observer) return;
+                            unsupported(error);
+                        });
+                } catch (error) {
+                    unsupported(error);
+                }
             }
         } catch (error) {
             this.logger.log("warn", "PressureObserver not available in this browser.", {
