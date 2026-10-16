@@ -102,7 +102,7 @@ The building blocks of a factory are `createHandle` (an error boundary) and `val
 
 | Export | What it does |
 |---|---|
-| `createMeasurementConditions(options)` | Makes the shared conditions: a `ReliabilityTracker`, `createValidator()`, `pauseWhileHidden(monitor, options?)` and `dispose()`. The conditions report the stall samples whose windows overlap as one stall episode. With the option `viewport`, `pauseWhileHidden(monitor, { offscreen: true })` also pauses a monitor while its frame is off the screen. |
+| `createMeasurementConditions(options)` | Makes the shared conditions: a `ReliabilityTracker`, `createValidator()`, `pauseWhileHidden(monitor, options?)` and `dispose()`. The conditions report the stall samples whose windows overlap as one stall episode. With the option `viewport`, `pauseWhileHidden(monitor, { offscreen: true })` also pauses a monitor while its frame is off the screen. `setTimersThrottled(throttled)` sets the state of throttled timers, and `pauseWhileHidden(monitor, { throttled: true })` follows it. |
 | `createFrameViewport(IntersectionObserver, target)` | Makes a `FrameViewport`: the position of a frame in the viewport of the top-level page, from an `IntersectionObserver` on `target`. `createBrowserDeps()` gives it as `frameViewport` to a document in a frame. |
 | `ReliabilityTracker` | Keeps the intervals in which samples are not valid (`hidden`, `frozen`, `suspend`). `findOverlap(start, end, reason?)` gives an interval that overlaps a window, optionally only of one cause. |
 | `SampleValidator` | Discards a sample that overlaps such an interval, and holds a very long sample until it knows if it was a hang or a suspend. |

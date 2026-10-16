@@ -144,4 +144,38 @@ describe("createInstrumentedDriftLag with MessageChannel", () => {
         handle.stop();
         expect(channel.closed).toHaveBeenCalledTimes(2);
     });
+
+    it("gives the throttled timers of a visible page to the conditions: a monitor of the rendering pauses", () => {
+        const thread = new SimulatedThread(1 / 64);
+        thread.nestedTimerAlignmentMs = 4;
+        const channel = simulatedChannel(thread);
+        const conditions = createMeasurementConditions({
+            clock : thread.clock,
+            setTimeoutFn : thread.setTimeout,
+            clearTimeoutFn : thread.clearTimeout,
+        });
+        const rendering = { start : vi.fn(), stop : vi.fn() };
+        conditions.pauseWhileHidden(rendering, { throttled : true });
+        const handle = createInstrumentedDriftLag({
+            logger : { log : vi.fn() },
+            clock : thread.clock,
+            meter : createRecordingMeter().meter,
+            setTimeoutFn : thread.setTimeout,
+            clearTimeoutFn : thread.clearTimeout,
+            setIntervalFn : thread.setInterval,
+            clearIntervalFn : thread.clearInterval,
+            MessageChannel : channel.Channel,
+        }, conditions);
+        thread.advance(3_000);
+        // A page that Safari does not show: the grid of the nested timers is 1 s
+        thread.setNestedTimerAlignment(1_000);
+        thread.advance(5_000);
+        expect(rendering.stop).toHaveBeenCalledTimes(1);
+        thread.setNestedTimerAlignment(4);
+        thread.advance(2_000);
+        expect(rendering.start).toHaveBeenCalledTimes(1);
+
+        handle.stop();
+        conditions.dispose();
+    });
 });

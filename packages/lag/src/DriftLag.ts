@@ -18,6 +18,12 @@ export type DriftLagOptions = {
      * sustained load can increase the baseline.
      */
     postTask? : PostTaskFn;
+    /**
+     * A function that gets `true` when the monitor finds throttled timers,
+     * and `false` when the throttling ends, or when the monitor stops during
+     * it (refer to the class description). It needs `postTask`.
+     */
+    onThrottle? : (throttled : boolean) => void;
 };
 
 const DEFAULT_BASELINE_STEPS = 100;
@@ -238,6 +244,7 @@ export class DriftLag extends LagMonitor {
     /** While the timers are throttled: the throttled steps since the last check. Otherwise `undefined`. */
     private throttledSteps : number | undefined;
     private readonly probing : Probing | undefined;
+    private readonly onThrottle : ((throttled : boolean) => void) | undefined;
     private readonly stepMs : number;
     private readonly maxSteps : number;
     private readonly baselineSize : number;
@@ -255,6 +262,7 @@ export class DriftLag extends LagMonitor {
         this.probing = options?.postTask
             ? { probe : new BusyTimeProbe(options.postTask, clock), confirmation : new BaselineConfirmation(), wanted : false, afterProbe : false }
             : undefined;
+        this.onThrottle = options?.onThrottle;
         this.start();
     }
 
@@ -276,6 +284,11 @@ export class DriftLag extends LagMonitor {
         this.clearTimeoutFn(this.handle);
         this.handle = undefined;
         this.probing?.probe.stop();
+        // The monitor does not know the state of the timers until it finds throttled timers again
+        if (this.throttledSteps !== undefined) {
+            this.throttledSteps = undefined;
+            this.notifyThrottle(false);
+        }
     }
 
     /**
@@ -458,6 +471,7 @@ export class DriftLag extends LagMonitor {
                 subtype : "DriftLag",
                 stepMs : durationMs,
             });
+            this.notifyThrottle(true);
         }
         if ((idle || busyMs === undefined) && durationMs >= THROTTLED_STEP_MS) {
             this.throttledSteps++;
@@ -474,6 +488,7 @@ export class DriftLag extends LagMonitor {
             subtype : "DriftLag",
             stepMs : durationMs,
         });
+        this.notifyThrottle(false);
         if (durationMs < THROTTLED_STEP_MS) {
             // The step in which the throttling ended has a duration from the grid of the throttling
             this.startWindow(now);
@@ -483,6 +498,19 @@ export class DriftLag extends LagMonitor {
         // A check found a busy thread: the step is the first step of a new window
         this.startWindow(this.lastStepAt);
         return false;
+    }
+
+    /** An error of `onThrottle` does not stop the chain of steps. */
+    private notifyThrottle(throttled : boolean) : void {
+        try {
+            this.onThrottle?.(throttled);
+        } catch (error) {
+            this.logger.log("error", "Error in the throttle callback of DriftLag.", {
+                error,
+                type : "LagMonitor",
+                subtype : "DriftLag",
+            });
+        }
     }
 
     private step() : void {

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **FrameTimingMonitor with throttled timers on a visible page.** Safari halves the frame rate of a page that it does not show ("visually idle", WebKit `AnimationFrameRate.cpp`). Each frame then counted as one dropped frame until the automatic interval followed, after up to 600 frames (20 s). Now DriftLag gives the state of its throttled timers to the measurement conditions, and the frame-timing monitor of `setupAllMonitors()` pauses while the timers are throttled. The new parts of the API are the option `onThrottle` of `DriftLag`, `setTimersThrottled()` of the measurement conditions, and `pauseWhileHidden(monitor, { throttled: true })`.
+
 ## 0.2.3
 
 ### Fixed

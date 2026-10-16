@@ -35,6 +35,7 @@ function setup(withConditions : boolean, viewport? : FrameViewport) {
         fake,
         meter,
         handle,
+        conditions,
         frame(time : number) {
             fake.setNow(time);
             const callbacks = [...waiting.values()];
@@ -118,6 +119,22 @@ describe("createInstrumentedFrameTiming", () => {
 
         expect(t.meter.values("lag_frame_delta_histogram")).toEqual([16, 16]);
         expect(listeners.size).toBe(0);
+    });
+
+    it("with measurement conditions, stops while the timers of the visible page are throttled, and does not record that time as a frame gap", () => {
+        const t = setup(true);
+        t.frame(1_000);
+        t.frame(1_016);
+
+        // DriftLag finds throttled timers: Safari halves the frame rate of a page that it does not show
+        t.conditions!.setTimersThrottled(true);
+        expect(t.waitingFrames()).toBe(0);
+        t.conditions!.setTimersThrottled(false);
+        t.frame(9_000);
+        t.frame(9_016);
+        t.handle.stop();
+
+        expect(t.meter.values("lag_frame_delta_histogram")).toEqual([16, 16]);
     });
 
     it("stop() cancels the frame gaps that wait for evidence, and the page lifecycle does not start the monitor again", () => {

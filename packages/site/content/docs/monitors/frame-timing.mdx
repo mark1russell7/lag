@@ -47,17 +47,20 @@ The monitor uses `requestAnimationFrame` and `cancelAnimationFrame`. The researc
 
 - Most browsers pause animation frames in background tabs and in hidden iframes.
 - Safari on iOS limits animation frames to 30 fps in Low Power Mode. On ProMotion displays, Safari limits them to approximately 60 fps by default.
+- Safari halves the frame rate in Low Power Mode and with strong thermal mitigation (`halfSpeedThrottlingReasons` in [`AnimationFrameRate.cpp`](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/platform/graphics/AnimationFrameRate.cpp)). It also halves it for a page that it does not show ("visually idle"), and for a cross-origin frame without user interaction.
 - The Energy Saver mode of Chrome also limits the frame rate.
 - Safari throttles animation frames in cross-origin iframes that the user did not interact with ([browser support](/research/browser-support)).
 - In experiment E9, a cross-origin iframe off the screen got no animation frames in Chromium 145 and in the WebKit build of Playwright. In Firefox 146, it got approximately one each second ([local experiments](/research/local-experiments)).
 
-The automatic interval agrees with these limits, thus a 30 fps limit does not count as dropped frames.
+The automatic interval agrees with these limits, thus a lasting 30 fps limit does not count as dropped frames. A longer interval takes effect when fewer than 5 shorter deltas stay in the window. That takes up to 600 frames, or 20 s at 30 fps. Until then, each frame of the limit counts as one dropped frame.
 
 ## Measurement validity
 
 With measurement conditions, the monitor pauses while the page is hidden or frozen, because the browser does not deliver animation frames there. At the restart, the first callback has no previous frame, thus no gap spans the pause.
 
 The monitor also pauses while its document is in a frame (an iframe) that is off the screen. The `visibilityState` of such a document stays `visible`, but the browser stops or slows its animation frames (E9). An `IntersectionObserver` on the `documentElement` of the frame gives the position (`frameViewport`). In E9, its notifications came in each engine, at most 20 ms after the last frame. `createBrowserDeps()` gives `frameViewport` only to a document in a frame. A top-level page does not pause in this way.
+
+The monitor also pauses while the timers of the visible page are throttled. [DriftLag](/docs/monitors/drift-lag#throttled-timers) finds that state, and it gives the state to the measurement conditions (`setTimersThrottled`). Safari throttles the timers of a page that it does not show, and it also halves the frame rate of that page. Without the pause, each frame of that page counted as one dropped frame, for up to 600 frames. DriftLag finds the throttling after 2 to 3 throttled steps, thus the frames of approximately 2 s to 3 s still count.
 
 Each frame goes to a `SampleValidator` with a window of the length of the delta. The validator discards a frame whose gap overlaps a hidden, frozen or suspend interval. A delta of 5000 ms or more waits 2000 ms for late evidence of a suspend.
 
@@ -76,7 +79,7 @@ function createInstrumentedFrameTiming(
 ) : MonitorHandle<FrameTimingMonitor>;
 ```
 
-The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `FrameDeps` (`requestAnimationFrame`, `cancelAnimationFrame`). Give `conditions` to pause the monitor while the page is hidden. Conditions with the option `viewport` also pause it while its frame is off the screen: `setupAllMonitors()` gives them `frameViewport` (`ViewportDeps`). The factory uses the automatic interval. The class also takes a fixed `targetFps`, which sets the interval to `1000 / targetFps`.
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`) and `FrameDeps` (`requestAnimationFrame`, `cancelAnimationFrame`). Give `conditions` to pause the monitor while the page is hidden. The conditions also pause it while the timers of the visible page are throttled (the signal of DriftLag). Conditions with the option `viewport` also pause it while its frame is off the screen: `setupAllMonitors()` gives them `frameViewport` (`ViewportDeps`). The factory uses the automatic interval. The class also takes a fixed `targetFps`, which sets the interval to `1000 / targetFps`.
 
 ```ts
 import { metrics } from "@opentelemetry/api";
@@ -108,6 +111,7 @@ if (deps.requestAnimationFrame && deps.cancelAnimationFrame) {
 - **The first frame gives no value.** The first frame has no previous frame.
 - **The monitor changes the page.** The loop of animation frames keeps the render steps active and makes the idle periods shorter. The [idle availability](/docs/monitors/idle-availability) monitor shows this effect.
 - **A late notification of the position.** If a browser gives the "off the screen" notification after a long gap of frames, the monitor records that gap. E9 found no such browser.
+- **Other limits of 30 fps.** Low Power Mode, thermal mitigation and a cross-origin frame without interaction do not throttle the timers to 1 s. Thus the monitor does not pause for them. Each frame of the limit counts as one dropped frame until the automatic interval follows, after up to 600 frames.
 
 ## Tests
 
@@ -117,7 +121,8 @@ Unit tests:
 - `FrameTimingMonitor.test.ts`, the automatic interval: it agrees with a 120 Hz display. It does not count a 30 fps limit as dropped frames. It keeps its value through a burst of jank, and it ignores deltas of less than 4 ms. One short delta, from a late frame and an on-time frame, gives no dropped frames. The delta comes from the frame timestamps, also when some callbacks start 6 ms late. Without a timestamp, the monitor reads the clock.
 - `FrameTimingMonitor.test.ts`, the rules of the interval: 16.67 ms until the window has 5 deltas, and then the fifth-shortest delta. The interval follows a change from 60 Hz to 120 Hz at the fifth short delta, and from 120 Hz to 60 Hz after 600 frames.
 - `setup-all-monitors.test.ts`: the monitor pauses while the page is hidden.
-- `instrumented/frame-timing.test.ts`: with conditions and a frame viewport, the monitor stops while its frame is off the screen, and records no gap for that time.
+- `instrumented/frame-timing.test.ts`: with conditions and a frame viewport, the monitor stops while its frame is off the screen, and records no gap for that time. It also stops while the conditions have throttled timers, and records no gap for that time.
+- `offscreen-frame.test.ts` (browser test): a frame of the same origin off the screen for 6 s. With the frame viewport, no engine records a frame gap of 1 s or more. Without it, the signal of DriftLag pauses the monitor in the WebKit engines. Without that signal, WebKit gave a gap of 6044 ms.
 - `frame-viewport.test.ts`: the observer operates only while the frame viewport has listeners, and the listeners get each change. `browser-deps.test.ts`: only a document in a frame gets the frame viewport, and `setupAllMonitors()` then pauses the monitor off the screen.
 
 Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome, unless an item names other browsers):
