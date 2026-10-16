@@ -45,6 +45,7 @@ function useFirstInput(enabled : boolean, onInput : () => void) : void {
  * The instrument of the home page. It shows main-thread lag in this tab.
  * A large number gives the p95 of the DriftLag windows of the last 10 s.
  * The main thread moves one dot, and the compositor moves a second dot.
+ *
  * Three buttons block the main thread. A live strip has one lane for each
  * monitor. A table gives the values that five monitors measured for the
  * last block.

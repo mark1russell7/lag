@@ -558,7 +558,9 @@ A top-level page on `127.0.0.1` has a frame of 300 × 300 px from `localhost`, w
 | Idle callbacks off the screen | No gap of more than 200 ms | No gap of more than 200 ms | No `requestIdleCallback` |
 | Timer of 100 ms off the screen | No gap of more than 250 ms | No gap of more than 250 ms | Gaps of 956 ms to 1074 ms |
 
-**Meaning.** A frame-timing monitor in such a frame records one long gap in Chromium and WebKit, and many gaps of 1 s in Firefox. The gaps are not lag. The `IntersectionObserver` gives the change in each engine, early enough to pause the monitor before the gap. The idle callbacks continue, thus the idle monitor needs no pause. In the WebKit build, the timers of the frame also slow down to approximately 1 s.
+**Meaning.** A frame-timing monitor in such a frame records one long gap in Chromium and WebKit, and many gaps of 1 s in Firefox. The gaps are not lag. The `IntersectionObserver` gives the change in each engine, early enough to pause the monitor before the gap. The idle callbacks continue, thus the idle monitor needs no pause.
+
+In the WebKit build, the timers of the frame also slow down to approximately 1 s. This is a rule of the WebKit source for each frame off the screen, thus Safari also has it ([clocks and timers](/research/clocks-and-timers)).
 
 **Change in the library.** The [frame-timing monitor](/docs/monitors/frame-timing) pauses while its frame is off the screen, through `pauseWhileHidden(monitor, { offscreen: true })` and the `frameViewport` of `createBrowserDeps()`. The [timer-throttle detector](/docs/monitors/timer-throttle) counts the slow timers of the WebKit build as throttling. The other timer monitors do not pause for it.
 

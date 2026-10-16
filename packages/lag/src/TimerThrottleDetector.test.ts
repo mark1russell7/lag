@@ -350,6 +350,14 @@ describe("TimerThrottleDetector", () => {
             expect(c.report).toHaveBeenCalledWith({ throttled : true, throttledSamples : 1, blockedSamples : 0, totalSamples : 1 });
         });
 
+        it("does not count a sample as throttled when the timer waits exactly the threshold longer than the message task", () => {
+            const c = createControlled([300], [200], 1);
+            vi.advanceTimersByTime(300);
+            c.detector.stop();
+
+            expect(c.report).toHaveBeenCalledWith({ throttled : false, throttledSamples : 0, blockedSamples : 1, totalSamples : 1 });
+        });
+
         it("waits for the message task when the timer starts first", () => {
             // After a block, the scheduler can start the timer before the message task
             const c = createControlled([200], [210], 1);

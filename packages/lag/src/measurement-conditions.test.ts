@@ -619,9 +619,14 @@ describe("createMeasurementConditions", () => {
                 viewport : frame.viewport,
             });
             const first = { start : vi.fn(), stop : vi.fn() };
-            withoutLifecycle.pauseWhileHidden(first, { offscreen : true });
+            const unpause = withoutLifecycle.pauseWhileHidden(first, { offscreen : true });
+            expect(first.stop).not.toHaveBeenCalled();
             frame.set(false);
             expect(first.stop).toHaveBeenCalledTimes(1);
+            frame.set(true);
+            expect(first.start).toHaveBeenCalledTimes(1);
+            expect(() => unpause()).not.toThrow();
+            expect(frame.listeners.size).toBe(0);
 
             const { conditions, page } = createConditions();
             const second = { start : vi.fn(), stop : vi.fn() };
