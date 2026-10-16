@@ -7,7 +7,7 @@ status: final
 
 import { throttleMetrics } from "./metrics.data";
 
-`TimerThrottleDetector` finds when the browser throttles the timers of the page. It does calibration rounds of five short timeouts, with a wait of 10 s after each round. When most of the timeouts take more than 100 ms, the detector marks the round as throttled. The detector does not pause while the page is hidden, because it must measure the throttling of hidden pages.
+`TimerThrottleDetector` finds when the browser throttles the timers of the page. It does calibration rounds of five short timeouts, with a wait of 10 s after each round. When most of the timeouts take more than 100 ms, the detector marks the round as throttled. A message task of the same time must not explain the delay. The detector does not pause while the page is hidden, because it must measure the throttling of hidden pages.
 
 ## What it measures
 
@@ -17,11 +17,16 @@ The detector answers this question: does the browser delay the timers of the pag
 
 ## How it works
 
-1. A round has five samples. Each sample sets a timeout of 5 ms and measures how long the timeout took.
-2. The detector counts a sample of more than 100 ms as throttled.
-3. When more than half of the samples (3 of 5) count as throttled, the detector marks the round as throttled.
-4. The detector records the round, and logs `warn` "Timer throttling detected." when throttling starts and `info` "Timer throttling ended." when it ends.
-5. After 10 000 ms, the next round starts.
+1. A round has five samples. Each sample sets a timeout of 5 ms and measures how long the timeout took. At the same time, it posts a message task through a `MessageChannel` (the control), and measures how long the message task waited.
+2. A sample ends when the timeout and the message task both started. A block of the main thread delays the two tasks by the same time. Throttling delays only the timeout.
+3. The detector counts a sample as throttled when the timeout took more than 100 ms, and more than 100 ms longer than the message task. A timeout of more than 100 ms that took less than 100 ms longer than the message task is a blocked sample. The main thread was busy. A blocked sample does not count as throttled.
+4. When more than half of the samples (3 of 5) count as throttled, the detector marks the round as throttled.
+5. The detector records the round, and logs `warn` "Timer throttling detected." when throttling starts and `info` "Timer throttling ended." when it ends.
+6. After 10 000 ms, the next round starts.
+
+The control relies on the scheduler of Chromium. A hidden Chromium page throttles its timers, but it does not throttle its posted messages (`kPostedMessage`, [clocks and timers](/research/clocks-and-timers)). The research found no source for the posted messages of a hidden page in Firefox and Safari. If a browser throttles the message tasks as much as the timers, the samples are blocked, and the detector does not find the throttling. Without `MessageChannel`, the detector has no control, and it counts each sample of more than 100 ms as throttled.
+
+Experiment E9 found one more case of throttling, in the WebKit build of Playwright ([local experiments](/research/local-experiments)). There, the timers of a cross-origin frame off the screen wait approximately 1 s. The detector counts such samples as throttled.
 
 The defaults have these causes:
 
@@ -50,17 +55,17 @@ The detector does not pause while the page is hidden, and it uses no `SampleVali
 
 <MetricTable metrics={throttleMetrics} />
 
-The part of the throttled rounds is the rate of `lag_timer_calibrations{throttled="true"}` divided by the rate of all `lag_timer_calibrations`. The detector sends no events. It writes the start and the end of each throttled period to the logger.
+The part of the throttled rounds is the rate of `lag_timer_calibrations{throttled="true"}` divided by the rate of all `lag_timer_calibrations`. A round with blocked samples, but without a majority of throttled samples, counts as `throttled="false"`. The detector sends no events. It writes the start and the end of each throttled period to the logger. The report of each round (`ThrottleCalibration`) gives `throttledSamples`, `blockedSamples` and `totalSamples`.
 
 ## Configuration
 
 ```ts
 function createInstrumentedThrottleDetector(
-    deps : CoreDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & { throttleConfig? : TimerThrottleConfig },
+    deps : CoreDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<Pick<SchedulingDeps, "MessageChannel">> & { throttleConfig? : TimerThrottleConfig },
 ) : MonitorHandle<TimerThrottleDetector>;
 ```
 
-The factory uses `CoreDeps` (`logger`, `clock`, `meter`), `setTimeoutFn` and `clearTimeoutFn`. `setupAllMonitors()` always starts it. The options of `throttleConfig`:
+The factory uses `CoreDeps` (`logger`, `clock`, `meter`), `setTimeoutFn` and `clearTimeoutFn`. With `MessageChannel`, it makes the message tasks of the control, and it closes the channel at `stop()`. `setupAllMonitors()` always starts it, with the `MessageChannel` of the browser. The options of `throttleConfig`:
 
 | Option | Default | What it does |
 |---|---|---|
@@ -84,13 +89,15 @@ console.log(throttle.monitor?.isThrottled());
 ## Cost
 
 - **Timers:** six timeouts for each round: five samples and the wait. On a visible page, a round takes approximately 10 s, thus less than one timer callback each second.
+- **Messages:** one message task for each sample, thus five for each round, through one `MessageChannel`.
 - **Records:** one counter value for each round.
 
 ## Limits
 
 - **Slow detection.** A change shows in the next round, thus up to approximately 10 s later on a visible page. In a hidden page, each sample can take 1 s or more, thus a round takes longer.
 - **Only delays above 100 ms.** The 30 ms alignment of Safari in Low Power Mode, or the 8 ms timer tick of Windows on battery power, does not count as throttling. [DriftLag](/docs/monitors/drift-lag) calibrates for those delays.
-- **A main-thread block and throttling give the same signal.** A block of more than 100 ms during three samples makes a round throttled.
+- **A control for one engine.** The control relies on the scheduler of Chromium, which does not throttle the message tasks of a hidden page. In a browser that throttles the message tasks and the timers by the same time, the detector counts the samples as blocked, not throttled. Without `MessageChannel`, a block of more than 100 ms during three samples makes a round throttled.
+- **Throttling during a block.** A sample is throttled only when its timeout waits more than 100 ms longer than its message task. Thus throttling of less than 100 ms more than a block does not count.
 - **The detector is a timer chain itself.** Each timeout starts from the callback of the previous timeout. In a hidden Chromium page, the rule for chained timers can thus apply to the detector, and a round can take minutes.
 
 ## Tests
@@ -98,6 +105,8 @@ console.log(throttle.monitor?.isThrottled());
 Unit tests:
 
 - `TimerThrottleDetector.test.ts`: a round is not throttled when the timers are on time, and throttled when they are late. The state changes from throttled to not throttled. `stop()` stops the rounds, a second `start()` adds no second chain, and a `stop()` from the logger at a change stays stopped. The detector reports each round.
+- `TimerThrottleDetector.test.ts`, the control: a block that delays the timer and the message task gives blocked samples, not throttled ones. A late timer with a message task on time is throttled, also during a block. A sample waits for its message task when the timer starts first. A `stop()` during that wait reports nothing, and the message task of an earlier start does not count.
+- `instrumented/throttle-detector.test.ts`: the counter gets one value for each round. With `MessageChannel`, a busy main thread gives `throttled="false"`, and `stop()` closes the channel.
 
 Browser test ([Vitest browser mode with Playwright](/docs/testing/strategy), in Chromium, Firefox, WebKit and Chrome):
 
