@@ -568,6 +568,14 @@ Since version 0.2.2, [DriftLag](/docs/monitors/drift-lag) also pauses. Before th
 
 **Check in the repository.** The unit tests of `measurement-conditions.ts`, `frame-viewport.ts`, `instrumented/frame-timing.ts`, `instrumented/drift-lag.ts` and `browser/browser-deps.ts` check the pause with a fake observer. The browser test `offscreen-frame.test.ts` scrolls a frame of the same origin off the screen for 6 s, with the monitors on the globals of the frame. DriftLag records no window during that time, and it records windows again after. In WebKit, the test also makes sure that a chain of 100 ms timeouts in the frame waits more than 800 ms.
 
+In CI (pull request 52), the longest step of that chain in the frame off the screen was:
+
+| Safari 26.6.2, macOS | Safari 26.5, iOS Simulator | WebKit, Linux | Chromium | Firefox |
+|---|---|---|---|---|
+| 1002 ms | 1001 ms | 1001 ms | 100 ms | 101 ms |
+
+Thus Safari has the rule of the WebKit source, also for a frame of the same origin. In each engine, DriftLag recorded no window off the screen, and MacrotaskLag recorded 0 ms.
+
 ## Limits of the experiments
 
 - The local experiments used one machine with Windows 11. The Safari columns of E4, E6 and E7 come from GitHub macOS runners. The iOS column of E7 comes from the iOS Simulator of such a runner. A simulator operates on the CPU of the Mac, thus its timers and its power behavior are not those of a phone.
