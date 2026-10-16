@@ -142,6 +142,8 @@ A GitHub macOS runner cannot turn on Low Power Mode: `sudo pmset -a lowpowermode
 
 With measurement conditions, DriftLag pauses while the page is hidden or frozen. Browsers throttle the timers of hidden pages, thus a window there measures the throttling. When the page is visible again, the first window starts at the restart, and the monitor keeps it. The first 11 steps after the restart are a [warm-up](#the-warm-up-after-a-start).
 
+In a document in a frame (an iframe), DriftLag also pauses while the frame is fully off the screen. There, WebKit makes the nested timers wait approximately 1 s, but the `visibilityState` of the frame stays `visible` ([measurement validity](/docs/concepts/measurement-validity#pause-while-the-frame-is-off-the-screen)). In a browser test of the WebKit build, DriftLag recorded 2473 ms of lag in one window before this pause. Chromium and Firefox do not slow these timers, but DriftLag also pauses there.
+
 Each window goes to a `SampleValidator` with its measured length (`getLastWindowMs()`). The validator discards a window that overlaps a hidden, frozen or suspend interval. A discarded window with a lag of 5000 ms or more that overlaps a suspend interval is a stall of the type `suspend`. A lag of 5000 ms or more waits 2000 ms for late evidence:
 
 - If the worker or the clock-drift monitor reports a suspend in that time, the validator discards the window. It is a stall of the type `suspend`.
@@ -263,6 +265,7 @@ Browser tests ([Vitest browser mode with Playwright](/docs/testing/strategy), in
   A chain of 5 ms timers operates during the test. The check after the load does not use the windows that overlap a gap of more than 50 ms in the chain. In the iOS Simulator, the test also skips itself if the steps of the chain were longer after the load (refer to [the limits](/docs/testing/strategy#limits)).
 - `lag-monitors.test.ts`: a 300 ms block gives a lag of more than 200 ms. The test waits up to 2 s for the window of the block, because the first window of a page can be long.
 - `stress.test.ts`: with the light profile of `@lag/load`, the largest lag is less than 150 ms. With the heavy profile, it is more than 100 ms.
+- `offscreen-frame.test.ts`: the monitors operate on the globals of a frame of the same origin. While the frame is off the screen for 6 s, DriftLag records no window. It records windows again when the frame is on the screen. In the WebKit engines, a chain of 100 ms timeouts in the frame waits more than 800 ms off the screen.
 - `cdp/visibility.test.ts` and `cdp/freeze.test.ts` (Chromium in the new headless mode): the monitor records no window while the page is hidden or frozen. It records more than 5 windows after the page is visible again. After a freeze of 2 s, each lag after the resume is less than half of the freeze, and no stall occurs.
 - `cdp/cpu-throttling.test.ts` (Chromium in the new headless mode): with 4× CPU throttling, the same work gives a median lag of more than 2.5 times the lag without throttling.
 - `overhead/overhead.test.ts` (Chromium in the new headless mode): all monitors together make more than 40 and not more than 210 timer callbacks each second on an idle page. The lower limit is also true with the 15.6 ms timer tick of Windows. The comment of the test gives approximately 175 callbacks each second for DriftLag with a 1 ms tick.
