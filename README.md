@@ -198,7 +198,7 @@ To show the test results on the site, do these steps:
 
 To include the soak test, the E2E tests, Safari or Safari on iOS (on macOS), add `--soak`, `--e2e`, `--safari` or `--ios` to `pnpm results`. The browser tests operate one project at a time, as in CI. To operate only some projects, add `--projects=<names>`, for example `--projects="browser (firefox),coi (firefox)"`.
 
-GitHub Actions starts the build, the unit tests, the coverage, the browser tests and the site checks for each push and pull request (`ci.yml`). `e2e.yml` and `mutation.yml` start each week. You can also start them manually. `release.yml` publishes `@mark1russell7/lag` to npm when you push a tag `v<version>` (for example `v0.2.0`). The tag must agree with the version in `packages/lag/package.json`.
+GitHub Actions starts the build, the unit tests, the coverage, the browser tests and the site checks for each push and pull request (`ci.yml`). `e2e.yml` and `mutation.yml` start each week. You can also start them manually. `release.yml` publishes `@mark1russell7/lag` to npm when a new version in `packages/lag/package.json` is merged to `main`. `RELEASING.md` tells the procedure.
 
 ## AI-assisted text
 

@@ -2,6 +2,7 @@
   "name": "lag",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.34.7",
   "scripts": {
     "new": "tsx packages/scripts/src/new-package.ts",
     "build": "tsc -b",

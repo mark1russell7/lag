@@ -91,7 +91,7 @@ The social preview of the repository is `.github/social-preview.png` (1280 × 64
 
 The workflow `release.yml` publishes `@mark1russell7/lag` to npm. To release a version, do these steps:
 
-1. Set the new `version` in `packages/lag/package.json`, and merge the change to `main`.
-2. Push a tag with the same version and the prefix `v`, for example `v0.2.0`.
+1. Set the new `version` in `packages/lag/package.json`.
+2. Merge the change to `main`.
 
-The workflow stops when the tag and the version are different. It tests and builds the package, packs it with `pnpm pack`, and publishes the tarball with a provenance statement. The workflow uses npm trusted publishing, thus the repository has no npm token. The owner of the package sets the trusted publisher on npm one time.
+The push to `main` starts the workflow. It starts the gates of `ci.yml`, builds the package, packs it with `pnpm pack`, and publishes the tarball with a provenance statement. It skips a version that is already on npm. The workflow uses npm trusted publishing, thus the repository has no npm token. The owner of the package sets the trusted publisher on npm one time.
