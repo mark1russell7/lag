@@ -2,6 +2,7 @@
   "$schema": "./node_modules/@mark1russell7/ste-lint/ste.config.schema.json",
   "include": [
     "README.md",
+    "RELEASING.md",
     "docs/**/*.{md,mdx}",
     "packages/*/README.md",
     "packages/site/**/*.{md,mdx}",
@@ -164,7 +165,11 @@
     "Web Vitals",
     "Web Worker",
     "WebKit",
-    "Windows"
+    "Windows",
+    "npm",
+    "OIDC",
+    "SemVer",
+    "Mark"
   ],
   "allowedWords": [],
   "rules": {},
