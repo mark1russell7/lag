@@ -139,8 +139,20 @@ jobs:
     needs: [browser, safari, ios]
     if: always()
     runs-on: ubuntu-latest
+    # The build installs and runs the code of the repository, so it gets only read permissions.
+    permissions:
+      contents: read
+      # The mutation report step reads the Actions runs. site-pages reads the pull requests, the issues and their checks.
+      actions: read
+      issues: read
+      pull-requests: read
+      checks: read
+      statuses: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The whole history: site-pages reads the dates of the tags and of the changelog headings
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
 
@@ -217,6 +229,13 @@ jobs:
           SITE_BASE: ${{ github.event.repository.name }}
           # The absolute URL of the site, for the canonical links, Open Graph and the sitemap
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+
+      # The Releases page and the Status page (releases/, status/ and their data/*.json), at deploy time
+      - uses: mark1russell7/template/.github/actions/site-pages@e95097e2153264ebb994e2979281844a546e296c # main
+        with:
+          out: packages/site/dist
+          packages: "@mark1russell7/lag"
+          site-name: lag
 
       - uses: actions/upload-pages-artifact@v3
         with:
