@@ -32,8 +32,19 @@ export async function serveDirectory(root : string) : Promise<StaticServer> {
             response.writeHead(204).end();
             return;
         }
-        const file = path.join(root, decodeURIComponent(url.pathname));
-        if (!file.startsWith(root) || !existsSync(file) || !statSync(file).isFile()) {
+        let pathname : string;
+        try {
+            pathname = decodeURIComponent(url.pathname);
+        } catch {
+            // A malformed escape, for example "%E0", gets 400. It does not stop the server.
+            response.writeHead(400).end();
+            return;
+        }
+        const file = path.join(root, pathname);
+        // The file must be in the root. A sibling folder whose name starts with the name of the root is not in the root.
+        const relative = path.relative(root, file);
+        const outside = relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+        if (outside || !existsSync(file) || !statSync(file).isFile()) {
             response.writeHead(404).end();
             return;
         }
