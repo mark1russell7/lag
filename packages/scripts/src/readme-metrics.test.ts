@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { METRIC_CATALOG } from "@mark1russell7/lag";
-import { END_MARKER, START_MARKER, renderMetricTable, replaceBetweenMarkers } from "./readme-metrics.js";
+import { END_MARKER, START_MARKER, cell, renderMetricTable, replaceBetweenMarkers } from "./readme-metrics.js";
 
 describe("readme-metrics", () => {
     it("makes one row for each metric of the catalog", () => {
@@ -14,6 +14,12 @@ describe("readme-metrics", () => {
     it("escapes the pipe character in a description", () => {
         const table = renderMetricTable([{ name : "m", kind : "counter", unit : "1", monitor : "M", description : "a | b", attributes : {} }]);
         expect(table).toContain("a \\| b");
+    });
+
+    it("escapes a backslash before a pipe character, so the pipe does not start a new cell", () => {
+        expect(cell(String.raw`a\|b`)).toBe(String.raw`a\\\|b`);
+        expect(cell(String.raw`C:\temp`)).toBe(String.raw`C:\\temp`);
+        expect(cell("one\n  two")).toBe("one two");
     });
 
     it("replaces only the text between the markers", () => {
