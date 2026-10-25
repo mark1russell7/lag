@@ -15,11 +15,13 @@ export const START_MARKER = "<!-- metrics:start -->";
 export const END_MARKER = "<!-- metrics:end -->";
 
 /**
- * This function makes a table cell. It escapes the pipe character and
- * removes the line breaks, because they break the Markdown table.
+ * This function makes a table cell. It escapes the backslash and the pipe
+ * character, and it removes the line breaks, because they break the Markdown
+ * table. If the backslash has no escape, the text `a\|b` becomes `a\\|b`, and
+ * the pipe character starts a new cell.
  */
-function cell(text : string) : string {
-    return text.replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ");
+export function cell(text : string) : string {
+    return text.replace(/[\\|]/g, "\\$&").replace(/\s*\n\s*/g, " ");
 }
 
 function attributesOf(definition : MetricDefinition) : string {
