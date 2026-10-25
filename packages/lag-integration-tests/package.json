@@ -23,7 +23,7 @@
   "dependencies": {
     "@lag/load": "workspace:*",
     "@mark1russell7/lag": "workspace:*",
-    "@mark1russell7/otel-ts": "^0.1.2"
+    "@mark1russell7/otel-ts": "^0.2.0"
   },
   "devDependencies": {
     "@mark1russell7/grafana-infra": "github:mark1russell7/grafana-infra",
