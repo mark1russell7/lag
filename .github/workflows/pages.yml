@@ -237,7 +237,7 @@ jobs:
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
       # The Releases page and the Status page (releases/, status/ and their data/*.json), at deploy time
-      - uses: mark1russell7/template/.github/actions/site-pages@dc3de2a28987ed799a7dcdc6b39b81ec3b2f75a6 # main
+      - uses: mark1russell7/template/.github/actions/site-pages@7af3bb92e5d5d290cdfe066f2db9d4e3dcf50cdd # main
         with:
           out: packages/site/dist
           packages: "@mark1russell7/lag"
