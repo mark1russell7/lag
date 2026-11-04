@@ -243,6 +243,13 @@ jobs:
           packages: "@mark1russell7/lag"
           site-name: lag
 
+      # The same check as site-check.yml, on the site with the test results. A failed check stops the deploy.
+      - uses: mark1russell7/template/.github/actions/site-check@10b3cb8311b894311f86a0ac975f0a047e969f82 # main
+        with:
+          out: packages/site/dist
+          site-check-pages: /playground/,/,/releases/,/status/
+          site-check-probe: packages/site/src/check-probe.ts
+
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: packages/site/dist
