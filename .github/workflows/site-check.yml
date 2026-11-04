@@ -34,5 +34,6 @@ jobs:
       site-name: lag
       deploy: false
       site-check: true
-      site-check-pages: /playground/,/,/releases/,/status/
+      # The home page reads the test results, so pages.yml checks it on the build with the results.
+      site-check-pages: /playground/,/releases/,/status/
       site-check-probe: packages/site/src/check-probe.ts

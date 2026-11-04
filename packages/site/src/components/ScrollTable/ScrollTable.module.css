@@ -4,7 +4,10 @@
     overflow-x: auto;
     border: 1px solid var(--color-rule);
     border-radius: var(--radius);
-    background: var(--color-surface);
+}
+
+.scroll:global(.scroll-cue) {
+    --scroll-cue-bg: var(--color-surface);
 }
 
 .scroll > table {
