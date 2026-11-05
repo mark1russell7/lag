@@ -76,7 +76,7 @@ function crossOriginIsolation() : Plugin {
     }
 
     /** The reads that a Safari job starts alone, each in a new session, by the value of `LAG_SAFARI_READ`. */
-    const SAFARI_READS : Readonly<Record<string, string[]>> = { "1" : ["src/grid-time-read.ts"], focus : ["src/grid-focus-read.ts"], input : ["src/grid-input-read.ts"] };
+    const SAFARI_READS : Readonly<Record<string, string[]>> = { "1" : ["src/grid-time-read.ts"], focus : ["src/grid-focus-read.ts"], input : ["src/grid-input-read.ts"], repaint : ["src/grid-repaint-read.ts"] };
 
     /**
      * Safari on macOS, through safaridriver (WebDriver). The project exists only
