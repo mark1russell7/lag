@@ -72,8 +72,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install the Playwright browser and its system dependencies
-        working-directory: packages/lag-integration-tests
-        run: pnpm exec playwright install --with-deps ${{ matrix.playwright }}
+        uses: mark1russell7/template/.github/actions/setup-playwright@f48f29fe5b00772951e0910a90fbbe312343338c # main
+        with:
+          browsers: ${{ matrix.playwright }}
+          command: pnpm exec playwright
+          working-directory: packages/lag-integration-tests
       # One project at a time: the timing tests measure milliseconds, and the runner has few CPUs
       - name: Browser tests
         working-directory: packages/lag-integration-tests
@@ -216,10 +219,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      # The browser tests of the site and the prerender of the site build use Chromium
+      # The browser tests of the site and the prerender of the site build use Chromium. The shared action
+      # installs it from a cache, with a time limit and a second try.
       - name: Install Chromium for the site
-        working-directory: packages/site
-        run: pnpm exec playwright install --with-deps chromium
+        uses: mark1russell7/template/.github/actions/setup-playwright@f48f29fe5b00772951e0910a90fbbe312343338c # main
+        with:
+          browsers: chromium
+          command: pnpm exec playwright
+          working-directory: packages/site
       - run: pnpm --filter @lag/site typecheck
       - run: pnpm --filter @lag/site test
       - name: Build the site, as the Pages workflow does
