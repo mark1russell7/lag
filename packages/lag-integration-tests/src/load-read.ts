@@ -22,7 +22,7 @@ const MAX_GAPS_OFF_GRID = 2;
 const SAFARI_VERSIONS_ON_GRID : readonly string[] = ["27.2"];
 
 /** The first time, in UTC, at which a no read fails the job. The last day of the no read is 12 November 2026. */
-export const NO_READ_ENDS_AT = Date.UTC(2026, 10, 13);
+export const NO_READ_ENDS_AT : number = Date.UTC(2026, 10, 13);
 
 /** The result of the load cases on one page. */
 export type LoadRead = "read" | "no-read" | "no-read-ended";
