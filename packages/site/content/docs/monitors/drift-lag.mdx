@@ -114,11 +114,20 @@ With `MessageChannel`, the monitor finds this case:
 - Each probe operates only for the first 50 ms of a step. A probe of a step of 40 ms or less examines all of the step.
 - A step of more than 40 ms is a long step. A window does not end at the first long step of a row of long steps. A second long step of 500 ms or more starts a probe of the next step.
 - That step is throttled if it takes 500 ms or more and the thread was idle during more than half of the probe. On an idle thread, a timer without throttling ends its step in the time of the probe. A busy thread cannot give such a step.
+- A task at the start of the step does not end the check. A check that finds a busy thread goes on for not more than 500 ms, until 10 ms of messages start at once. After a check that finds no such stretch, the next long check waits for 30 s.
 - Then the window ends without a record, and the monitor logs "DriftLag: the browser throttles the timers. The windows pause." Each step of 500 ms or more is a throttled step. It is not in a window, and it does not change the baseline.
 - A probe examines one throttled step of each 30. A shorter step, or a probe that finds a busy thread, ends the throttling. The monitor logs "DriftLag: the timers are not throttled. The windows continue."
 - The option `onThrottle` gets `true` and `false` at these changes, and `false` at a stop during the throttling. The factory gives the state to the measurement conditions, and the [frame-timing monitor](/docs/monitors/frame-timing) pauses with it.
 
-The cost is one probe of 50 ms to find the throttling, and one probe for each 30 throttled steps. A single block starts no probe, because the next step is short. In the simulated tests, a throttling that started or ended at any time in the grid gave less than 40 ms of lag.
+During the throttling, a block gives no value by default. **Thus no value in that time does not tell that no block occurred.** The option `recordThrottledSteps` changes this:
+
+- Two throttled steps in a row that agree within 10% give the grid.
+- A step of more than 2.2 grids gives a value of its duration minus one grid. The next step must be shorter than a grid, and the two steps must give whole grids within 5%.
+- Each such value has the attribute `source` with the value `throttled-step`. **A value with this attribute can be false.** No code of the monitor operates during a long step, so one timer that wakes off the grid gives the same steps as a block.
+
+The evidence for this option is a replay on a simulated clock (`DriftLag.replay.test.ts`). No value of this option comes from a real device.
+
+The cost is one probe of 50 ms to find the throttling, and one probe for each 30 throttled steps. On a page whose own tasks keep the thread busy, a check can go on for 500 ms. In the replay, the messages of the checks span at most 1.9 s each minute on such a page. This is a span on a simulated thread, not a measure of a device. A single block starts no probe, because the next step is short. In the simulated tests, a throttling that started or ended at any time in the grid gave less than 40 ms of lag.
 
 A browser test puts a frame off the screen for 6 s, without the pause of the frame viewport (`offscreen-frame.test.ts`). In CI (pull request 54), its timers waited 1000 ms to 1001 ms in Safari 26.6.2 on macOS and in WebKit on Linux. Safari 26.5 in the iOS Simulator gave the same result. There, DriftLag found the throttling and recorded no window. In Chromium and Firefox, the timers were not throttled, and DriftLag recorded windows of 0 ms to 2 ms of lag.
 
@@ -198,6 +207,7 @@ Give `conditions` to pause the monitor while the page is hidden and to validate 
 | `stepMs` | 5 | The requested delay of each timer step. |
 | `baselineSteps` | 100 | The number of recent steps that give the baseline. |
 | `postTask` | None | A function that starts a callback in a new task, for example `createMessageTaskQueue(...).post`. With it, a probe must show an idle thread before the baseline increases. |
+| `recordThrottledSteps` | `false` | With `true`, a long throttled step can give a value with a mark (refer to [throttled timers](#throttled-timers)). This option needs `postTask`. |
 
 ```ts
 import { metrics } from "@opentelemetry/api";
@@ -254,8 +264,9 @@ The callbacks of the monitor are also tasks on the main thread. Thus the monitor
 - **Idle noise.** The factory records a negative lag as 0. Thus an idle page gives small positive values, for example a p90 of 3.1 ms in Chromium (experiment E3).
 - **A change of the timer granularity.** A row of 10 steps that agree with each other starts a new baseline. Thus the baseline follows a change, for example to battery power, after 10 steps of the new granularity: approximately 160 ms with steps of 16 ms. The step in which the granularity changes can be in the jitter limit of the old baseline. Then it gives up to max(4 ms, half of the old baseline) of lag. A block immediately before the row can lose up to the difference of the two baselines.
 - **The first start in Safari.** At the first start, the baseline is the requested delay. Thus the 10 steps that Safari does not align are recent steps. On the simulated grid of 4 ms, the first windows had up to 18 ms of lag for approximately 0.8 s.
-- **No samples while the timers are throttled.** Then a block is not lag for DriftLag. The [worker monitor](/docs/monitors/worker-lag) measures it, because the browser does not throttle messages.
-- **A task at the start of each throttled step.** The probe needs a thread that is idle during more than half of its 50 ms. A task of more than 25 ms after each step prevents that. Then the monitor records the throttled steps as lag. Without `MessageChannel`, the monitor also records them as lag.
+- **No samples while the timers are throttled, by default.** Then a block is not lag for DriftLag. The [worker monitor](/docs/monitors/worker-lag) measures it, because the browser does not throttle messages.
+- **A thread with no free stretch during a check.** When tasks fill the 500 ms of a check, the monitor reads a busy thread. Then it records the throttled steps as lag. Without `MessageChannel`, the monitor also records them as lag.
+- **The limits of `recordThrottledSteps`.** One timer that wakes off the grid records a false value of not more than its own delay. A block in the first steps of the throttling gives no value. A block that is not longer than 2.2 grids gives no value, thus a grid of 60 s hides most blocks.
 - **A short throttled step.** WebKit aligns the waiting timer again when the grid changes. Thus the first throttled step can take 40 ms or less. Such a step is a step of the window, as a block of that length is.
 - **No samples from hidden pages.** The monitor pauses there, and so does the worker monitor. The [timer throttling](/docs/monitors/timer-throttle) detector and the [clock drift](/docs/monitors/clock-drift) monitor continue in hidden pages.
 
@@ -271,6 +282,7 @@ Unit tests (Vitest, fake timers):
 - `BaselineConfirmation.test.ts`: a check of an idle probe, 3 steps and a second idle probe. The first value, the decrease to the highest recent baseline of 3 windows, a busy closing probe and a probe of a row.
 - `BusyTimeProbe.test.ts`: no busy time on an idle thread. Each task delays one message. A wait of 2 ms or less does not count, and a message of an earlier measurement does nothing. With a limit, the chain operates only at the start, and a message that waits at the limit counts its full wait.
 - `DriftLag.throttle.test.ts`, throttled timers on the simulated thread. The grid of WebKit changes from 4 ms to 1 s, and the waiting timer aligns again. No window is recorded during the throttling, and the windows continue after it. A throttling that starts or ends at each of 143 times in the grid gives less than 40 ms of lag.
+- `DriftLag.replay.test.ts`, a replay on the simulated thread with two controls: one that does not find throttling and one that always does. It holds the free-stretch check, the grid rule, the mark and the cost of the check.
 
   One probe of 50 ms finds the throttling, and one probe follows each 30 throttled steps. A load of tasks of 600 ms or 100 ms stays lag, also a load that starts when the throttling ends. A block starts no probe, also in the warm-up after a restart. A task of 30 ms after each step prevents the check. Without `postTask`, the monitor finds no throttling.
 - `DriftLag.load.test.ts` uses a simulated thread with a timer queue and a message queue. Equal message tasks of 20 ms and timer tasks of 30 ms stay lag for 5 s, also with steps of 15.6 ms. Without a probe, the same load gives less than 5% lag. After the load, there is no lag.
