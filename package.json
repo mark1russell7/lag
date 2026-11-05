@@ -20,10 +20,12 @@
     "results:stamp": "tsx packages/scripts/src/results/write-stamps.ts",
     "experiment:e8": "tsc -b && pnpm --filter @lag/experiments e8",
     "lint:ste": "ste-lint",
+    "check:api": "api-report check",
     "readme:metrics": "tsx packages/scripts/src/readme-metrics.ts",
     "readme:metrics:check": "tsx packages/scripts/src/readme-metrics.ts --check"
   },
   "devDependencies": {
+    "@mark1russell7/api-report": "^0.4.0",
     "@mark1russell7/ste-lint": "github:mark1russell7/ste-lint",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
