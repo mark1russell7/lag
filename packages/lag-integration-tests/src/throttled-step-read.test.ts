@@ -42,7 +42,7 @@ type Read = {
     readonly offGrid : number;
     readonly marked : readonly number[];
     readonly unmarkedLong : readonly number[];
-    readonly noValue : number;
+    readonly unread : Readonly<Record<string, number>>;
     readonly blocks : ReadonlyArray<{ readonly ms : number; readonly value : number | null }>;
 };
 
@@ -145,6 +145,11 @@ describe("A read of long throttled steps", () => {
         const records = tee.records("lag_drift_histogram").filter(record => record.time > offAt);
         const isMarked = (attributes : unknown) : boolean => (attributes as { source? : string } | undefined)?.source === "throttled-step";
         const marked = records.filter(record => isMarked(record.attributes));
+        const unread : Record<string, number> = {};
+        for (const record of tee.records("lag_drift_unread_steps").filter(row => row.time > offAt)) {
+            const mode = String((record.attributes as { mode? : string } | undefined)?.mode);
+            unread[mode] = (unread[mode] ?? 0) + 1;
+        }
         const result : Read = {
             name,
             userAgent : navigator.userAgent,
@@ -156,7 +161,7 @@ describe("A read of long throttled steps", () => {
             offGrid : countOffGrid(wakes),
             marked : marked.map(record => Math.round(record.value)),
             unmarkedLong : records.filter(record => !isMarked(record.attributes) && record.value >= LONG_VALUE_MS).map(record => Math.round(record.value)),
-            noValue : logs.filter(message => message === "DriftLag: a long throttled step gave no value.").length,
+            unread,
             blocks : blocks.map(({ ms, endAt }) => {
                 const value = marked.find(record => record.time >= endAt && record.time <= endAt + VALUE_AFTER_BLOCK_MS + 2_000);
                 return { ms, value : value === undefined ? null : Math.round(value.value) };

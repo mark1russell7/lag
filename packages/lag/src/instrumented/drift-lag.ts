@@ -1,12 +1,12 @@
 import type { CoreDeps, SchedulingDeps, TimerDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
-import { DriftLag } from "../DriftLag.js";
+import { DriftLag, type UnreadStepMode } from "../DriftLag.js";
 import type { LagValueSource } from "../LagMonitor.js";
 import { createMessageTaskQueue } from "../message-task.js";
 import { LagLogger } from "../LagLogger.js";
 import type { MeasurementConditions } from "../measurement-conditions.js";
 import { highFrequencyLagIntervalMs } from "../constants.js";
-import { METRICS, createHistogram } from "../metric-catalog.js";
+import { METRICS, createCounter, createHistogram } from "../metric-catalog.js";
 import { createHandle, validatedRecorder } from "./shared.js";
 
 /**
@@ -39,6 +39,7 @@ export function createInstrumentedDriftLag(
     return createHandle("drift-lag", deps.logger, () => {
         const histogram = createHistogram(deps.meter, METRICS.drift);
         const baselineHistogram = createHistogram(deps.meter, METRICS.driftBaseline);
+        const unreadSteps = createCounter<{ mode : UnreadStepMode }>(deps.meter, METRICS.driftUnreadSteps);
         const lagLogger = new LagLogger(highFrequencyLagIntervalMs, deps.logger);
         const tasks = deps.MessageChannel ? createMessageTaskQueue(deps.MessageChannel) : undefined;
         const record = (source : LagValueSource | undefined) => (lag : number, windowMs : number) : void => {
@@ -68,6 +69,7 @@ export function createInstrumentedDriftLag(
                 // The monitors of the rendering pause while the timers of the visible page are throttled
                 ...(conditions ? { onThrottle : (throttled : boolean) => conditions.setTimersThrottled(throttled) } : {}),
                 ...(options?.recordThrottledSteps ? { recordThrottledSteps : true } : {}),
+                onUnreadStep : (mode : UnreadStepMode) => unreadSteps.add(1, { mode }),
             } : {},
         );
         // In a frame off the screen, WebKit makes the nested timers of the chain wait approximately 1 s (experiment E9)

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1
+
+### Added
+
+- **The counter `lag_drift_unread_steps`, with the attribute `mode`.** During the throttling, no value does not tell that no block occurred. This counter tells that a throttled step was too long for the grid and gave no value. An idle page does not raise it in the replay.
+- **The option `onUnreadStep` of `DriftLag`, and the type `UnreadStepMode`.**
+
+The counter does not see a block that ends before the next step of the grid, because that block changes no step.
+
 ## 0.4.0
 
 ### Changed

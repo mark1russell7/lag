@@ -14,7 +14,7 @@ const NEVER_LONG_STEP_MS = 495;
 
 type Replay = { readonly thread : SimulatedThread; taskMs : number; afterStep : (() => void) | undefined; readonly position : number };
 type Script = (replay : Replay) => void;
-type Read = { readonly largest : number; readonly paused : boolean; readonly messageAt : readonly number[]; readonly marked : readonly number[] };
+type Read = { readonly largest : number; readonly paused : boolean; readonly messageAt : readonly number[]; readonly marked : readonly number[]; readonly unread : readonly string[] };
 
 const PAUSE_LOG = "DriftLag: the browser throttles the timers. The windows pause.";
 
@@ -25,6 +25,7 @@ function replay(script : Script, position : number, withPostTask = true, recordT
     const values : number[] = [];
     const messageAt : number[] = [];
     const marked : number[] = [];
+    const unread : string[] = [];
     let recording = false;
     let paused = false;
     const monitor = new DriftLag(
@@ -54,13 +55,16 @@ function replay(script : Script, position : number, withPostTask = true, recordT
                 return thread.post(callback);
             },
             recordThrottledSteps,
+            onUnreadStep : mode => {
+                if (recording) unread.push(mode);
+            },
         } : {},
     );
     thread.advance(3_000 + position * 4);
     recording = true;
     script(state);
     monitor.stop();
-    return { values, largest : Math.max(0, ...values), paused, messageAt, marked };
+    return { values, largest : Math.max(0, ...values), paused, messageAt, marked, unread };
 }
 
 const positions = (script : Script, withPostTask = true, recordThrottledSteps = true) : Array<ReturnType<typeof replay>> =>
@@ -145,6 +149,9 @@ const wakeOffGrid = (stepMs : number) : Script => state => {
     thread.advance(6_000);
     endThrottling(thread);
 };
+
+/** A value at or above this comes from a long step, not from a normal window. */
+const LONG_VALUE_MS = 495;
 
 /** The same start as `wakeOffGrid`, with a real block in place of the wake. */
 const blockAfterStep = (stepMs : number) : Script => state => {
@@ -257,7 +264,7 @@ describe("DriftLag in a replay of throttled timers", () => {
     });
 
     describe("the mark of a value", () => {
-        const LONG_MS = 495;
+        const LONG_MS = LONG_VALUE_MS;
 
         for (const [name, script] of [
             ["a wake off the grid after 3 s", wakeOffGrid(3_000)],
@@ -299,6 +306,60 @@ describe("DriftLag in a replay of throttled timers", () => {
             for (const script of [wakeOffGrid(3_000), wakeOffGrid(7_000), blockAt(1_000, 6_000, 2_500), blockAt(1_000, 6_000, 6_000), withTask(30), withTask(200), blockAt(1_000, 6_000, 2_500, 30)]) {
                 expect(Math.max(...byDefault(script))).toBeLessThan(LONG_MS);
             }
+        });
+    });
+
+    describe("the count of unread steps", () => {
+        const idleScripts : ReadonlyArray<readonly [string, Script]> = [
+            ["a grid of 1 s", idle(1_000, 10_000)],
+            ["a grid of 60 s", idle(60_000, 420_000)],
+            ["a grid that moves from 1 s to 60 s", changeGrid(1_000, 60_000)],
+            ["a grid that moves from 60 s to 1 s", changeGrid(60_000, 1_000)],
+            ["a task of 30 ms at each step", withTask(30)],
+            ["a task of 200 ms at each step", withTask(200)],
+        ];
+
+        for (const [name, script] of idleScripts) {
+            it(`does not rise with ${name}, with no block`, () => {
+                for (const withOption of [false, true]) {
+                    for (const read of positions(script, true, withOption)) expect(read.unread).toEqual([]);
+                }
+            });
+        }
+
+        for (const [name, script] of [
+            ["a block of 2.5 s", blockAt(1_000, 6_000, 2_500)],
+            ["a block of 6 s", blockAt(1_000, 6_000, 6_000)],
+            ["a block of 2.5 s with a task at each step", blockAt(1_000, 6_000, 2_500, 30)],
+            ["a block of 90 s on a grid of 60 s", blockAt(60_000, 300_000, 90_000)],
+        ] as const) {
+            it(`rises by default with ${name}, so its 0 is not "no block"`, () => {
+                for (const read of positions(script, true, false)) {
+                    expect(read.largest).toBeLessThan(LONG_VALUE_MS);
+                    expect(read.unread.length).toBeGreaterThan(0);
+                    expect(new Set(read.unread)).toEqual(new Set(["option-off"]));
+                }
+            });
+
+            it(`gives a value or a count for ${name}, with the option, at each position`, () => {
+                for (const read of positions(script)) expect(read.marked.length + read.unread.length).toBeGreaterThan(0);
+            });
+        }
+
+        it("counts a block before the monitor has a grid, at each position", () => {
+            for (const withOption of [false, true]) {
+                for (const read of positions(blockAt(1_000, 1_500, 2_500), true, withOption)) expect(read.unread.length).toBeGreaterThan(0);
+            }
+        });
+
+        it("counts one step for a wake off the grid, and for a missed beat on the grid: it does not say which", () => {
+            for (const script of [wakeOffGrid(3_000), missedBeat]) {
+                for (const read of positions(script, true, false)) expect(read.unread).toEqual(["option-off"]);
+            }
+        });
+
+        it("does not see a block that ends before the next step of the grid: this is a limit of the count", () => {
+            for (const read of positions(blockAt(60_000, 300_000, 2_500), true, false)) expect(read.unread).toEqual([]);
         });
     });
 
