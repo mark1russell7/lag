@@ -28,8 +28,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Chromium and its system dependencies
-        working-directory: packages/lag-integration-tests
-        run: pnpm exec playwright install --with-deps chromium
+        uses: mark1russell7/template/.github/actions/setup-playwright@f48f29fe5b00772951e0910a90fbbe312343338c # main
+        with:
+          browsers: chromium
+          command: pnpm exec playwright
+          working-directory: packages/lag-integration-tests
       - name: Start the Grafana stack
         working-directory: ${{ env.STACK_DIR }}
         run: docker compose up -d

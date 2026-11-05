@@ -65,7 +65,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install the Playwright browser and its system dependencies
-        run: pnpm --filter @lag/integration-tests exec playwright install --with-deps ${{ matrix.playwright }}
+        uses: mark1russell7/template/.github/actions/setup-playwright@f48f29fe5b00772951e0910a90fbbe312343338c # main
+        with:
+          browsers: ${{ matrix.playwright }}
+          command: pnpm --filter @lag/integration-tests exec playwright
       - name: Browser tests
         continue-on-error: true
         env:
@@ -184,7 +187,10 @@ jobs:
 
       # The browser jobs above test the engines. This job operates the overhead benchmark, which uses Chromium
       - name: Install Chromium for the overhead benchmark
-        run: pnpm --filter @lag/integration-tests exec playwright install --with-deps chromium
+        uses: mark1russell7/template/.github/actions/setup-playwright@f48f29fe5b00772951e0910a90fbbe312343338c # main
+        with:
+          browsers: chromium
+          command: pnpm --filter @lag/integration-tests exec playwright
 
       # The weekly mutation workflow uploads its report, also when the score is below the
       # break threshold (if: always()). Thus this step takes the newest completed run of main,
@@ -238,7 +244,10 @@ jobs:
       # installed the browsers of the integration tests; this step installs the Chromium of the
       # Playwright version of the site, if the versions are not the same.
       - name: Install Chromium for the site build
-        run: pnpm --filter @lag/site exec playwright install chromium
+        uses: mark1russell7/template/.github/actions/setup-playwright@f48f29fe5b00772951e0910a90fbbe312343338c # main
+        with:
+          browsers: chromium
+          command: pnpm --filter @lag/site exec playwright
 
       - name: Build the site
         run: pnpm --filter @lag/site build
