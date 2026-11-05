@@ -1,0 +1,49 @@
+name: iOS count
+
+# The iOS simulator job of CI does not block by its own workflow, so its failures need one place that a person reads.
+# Each week this workflow counts them by test name, with each lag value of a frame off the screen, and opens an issue.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every Monday at 06:23 UTC
+    - cron: "23 6 * * 1"
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+
+jobs:
+  count:
+    name: Count the iOS failures
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --filter @lag/scripts
+      - name: Count, and open an issue when a person has to read it
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pnpm --filter @lag/scripts exec tsx src/results/write-ios-count.ts
+
+  report:
+    name: Report a failed run
+    needs: [count]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Open an issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create -R "$REPO" --title "The iOS count did not run" \
+            --body "The run $RUN_URL failed, so this week has no count of the iOS simulator job."

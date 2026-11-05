@@ -344,6 +344,44 @@ describe("DriftLag with throttled timers", () => {
         expect(logger.log).not.toHaveBeenCalledWith("info", "DriftLag: the browser throttles the timers. The windows pause.", expect.anything());
     });
 
+    it("records a false lag of 2 s or more when a task of more than half of the probe follows each step (a known fault)", () => {
+        // This test holds a fault, so that a fix must change it. The check cannot tell the throttling from a load
+        // here, so the steps of the throttled timers become lag. Each start has another position in the timer steps.
+        const largest = Array.from({ length : 26 }, (_, start) => {
+            const thread = new SimulatedThread(1 / 64);
+            thread.nestedTimerAlignmentMs = 4;
+            let taskMs = 0;
+            const lags : number[] = [];
+            const logger = { log : vi.fn() };
+            const monitor = new DriftLag(
+                highFrequencyLagIntervalMs,
+                lag => lags.push(lag),
+                logger,
+                thread.setInterval,
+                thread.clearInterval,
+                (callback, ms) => thread.setTimeout(() => {
+                    callback();
+                    if (taskMs > 0) thread.post(() => thread.busy(taskMs));
+                }, ms),
+                thread.clearTimeout,
+                thread.clock,
+                { postTask : thread.post },
+            );
+            thread.advance(3_000 + start * 4);
+            thread.setNestedTimerAlignment(1_000);
+            taskMs = 30;
+            thread.advance(6_000);
+            taskMs = 0;
+            thread.setNestedTimerAlignment(4);
+            thread.advance(3_000);
+            monitor.stop();
+            expect(logger.log).not.toHaveBeenCalledWith("info", "DriftLag: the browser throttles the timers. The windows pause.");
+            return Math.max(0, ...lags);
+        });
+
+        expect(Math.max(...largest)).toBeGreaterThanOrEqual(2_000);
+    });
+
     it("does not look for throttling without postTask", () => {
         const t = createDriftLag(false);
         t.thread.advance(3_000);
