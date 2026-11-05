@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInstrumentedDriftLag } from "./drift-lag.js";
 import { createMeasurementConditions, type MeasurementConditions } from "../measurement-conditions.js";
 import type { FrameViewport } from "../frame-viewport.js";
-import { createRecordingMeter } from "../test-utils.js";
+import { createRecordingMeter, expectCatalogInstruments } from "../test-utils.js";
 import { SimulatedThread } from "../test-thread.js";
 import type { MessageChannelConstructor, MessagePortLike } from "../SchedulingFairnessMonitor.js";
 
@@ -175,7 +175,8 @@ describe("createInstrumentedDriftLag with MessageChannel", () => {
         thread.advance(5_000);
         handle.stop();
         const recorded = meter.instruments().find(instrument => instrument.name === "lag_drift_histogram")?.values ?? [];
-        return { marked : recorded.filter(({ attributes }) => attributes?.["source"] === "throttled-step"), recorded };
+        const unread = meter.instruments().find(instrument => instrument.name === "lag_drift_unread_steps")?.values ?? [];
+        return { marked : recorded.filter(({ attributes }) => attributes?.["source"] === "throttled-step"), recorded, unread, meter };
     }
 
     it("marks the value of a long throttled step, with the option", () => {
@@ -186,9 +187,12 @@ describe("createInstrumentedDriftLag with MessageChannel", () => {
         expect(recorded.filter(({ value, attributes }) => value > 500 && attributes === undefined)).toEqual([]);
     });
 
-    it("gives no value of a long throttled step by default", () => {
+    it("gives no value of a long throttled step by default, and it counts the step as unread", () => {
         for (const option of [undefined, false]) {
-            expect(throttledBlock(option).recorded.filter(({ value }) => value > 500)).toEqual([]);
+            const { recorded, unread, meter } = throttledBlock(option);
+            expect(recorded.filter(({ value }) => value > 500)).toEqual([]);
+            expect(unread).toEqual([{ value : 1, attributes : { mode : "option-off" } }]);
+            expectCatalogInstruments(meter);
         }
     });
 

@@ -30,7 +30,21 @@ export type DriftLagOptions = {
      * It needs `postTask`.
      */
     recordThrottledSteps? : boolean;
+    /**
+     * This function gets each throttled step that was too long for the grid and gave no value, and the reason. Without
+     * this count, a reader cannot tell "no block" from "not read". A block that ends before the next step of the grid
+     * changes no step, so the count does not see it.
+     */
+    onUnreadStep? : (mode : UnreadStepMode, stepMs : number) => void;
 };
+
+/**
+ * The reason that a long throttled step gave no value. The value `option-off` means that `recordThrottledSteps` is off.
+ * The value `too-short` means that the step is not longer than 2.2 grids. The value `refused` means that the next step
+ * did not show a step that ended off the grid. The value `no-grid` means that the step came before the monitor had a
+ * grid. That mode counts one step for each grid that the monitor finds, and only a step of more than 2.2 grids.
+ */
+export type UnreadStepMode = "option-off" | "too-short" | "refused" | "no-grid";
 
 const DEFAULT_BASELINE_STEPS = 100;
 
@@ -300,6 +314,11 @@ export class DriftLag extends LagMonitor {
     private longCheck = false;
     private lastFailedCheckAt = -Infinity;
     private readonly recordThrottledSteps : boolean;
+    private readonly onUnreadStep : ((mode : UnreadStepMode, stepMs : number) => void) | undefined;
+    /** The longest step of the window, while the monitor has not found throttled timers. */
+    private longestWindowStepMs = 0;
+    /** The longest step that a window lost to the throttling, or that came before the grid. The grid decides it. */
+    private longestBeforeGridMs = 0;
     private readonly probing : Probing | undefined;
     private readonly onThrottle : ((throttled : boolean) => void) | undefined;
     private readonly stepMs : number;
@@ -321,6 +340,7 @@ export class DriftLag extends LagMonitor {
             : undefined;
         this.onThrottle = options?.onThrottle;
         this.recordThrottledSteps = options?.recordThrottledSteps ?? false;
+        this.onUnreadStep = options?.onUnreadStep;
         this.start();
     }
 
@@ -344,7 +364,9 @@ export class DriftLag extends LagMonitor {
         this.probing?.probe.stop();
         // The monitor does not know the state of the timers until it finds throttled timers again
         if (this.throttledSteps !== undefined) {
+            const long = this.longThrottledStepMs;
             this.longThrottledStepMs = undefined;
+            if (long !== undefined && this.gridMs !== undefined) this.noteUnreadStep(this.unreadMode(long, this.gridMs), long);
             this.throttledSteps = undefined;
             this.notifyThrottle(false);
         }
@@ -394,6 +416,7 @@ export class DriftLag extends LagMonitor {
     }
 
     private startWindow(now : number) : void {
+        this.longestWindowStepMs = 0;
         this.windowStart = now;
         this.stepsInWindow = 0;
         this.earlySteps = 0;
@@ -529,13 +552,17 @@ export class DriftLag extends LagMonitor {
             });
         }
         if (this.throttledSteps === undefined) {
-            if (!idle || durationMs < THROTTLED_STEP_MS) return false;
+            if (!idle || durationMs < THROTTLED_STEP_MS) {
+                this.longestWindowStepMs = Math.max(this.longestWindowStepMs, durationMs);
+                return false;
+            }
             // The window has the long step before this step, and possibly earlier throttled steps. It ends
             // without a report: the throttling ends with a new window.
             this.throttledSteps = 0;
             this.gridMs = undefined;
             this.lastThrottledStepMs = undefined;
             this.longThrottledStepMs = undefined;
+            this.longestBeforeGridMs = Math.max(this.longestBeforeGridMs, this.longestWindowStepMs);
             this.logger.log("info", "DriftLag: the browser throttles the timers. The windows pause.", {
                 type : "LagMonitor",
                 subtype : "DriftLag",
@@ -583,10 +610,13 @@ export class DriftLag extends LagMonitor {
         if (lastMs !== undefined && Math.abs(durationMs - lastMs) <= lastMs * STEPS_AGREE_PART) {
             this.gridMs = Math.min(durationMs, lastMs);
             this.longThrottledStepMs = undefined;
+            if (this.longestBeforeGridMs > BLOCK_GRID_STEPS * this.gridMs) this.noteUnreadStep("no-grid", this.longestBeforeGridMs);
+            this.longestBeforeGridMs = 0;
             return;
         }
+        if (this.gridMs === undefined) this.longestBeforeGridMs = Math.max(this.longestBeforeGridMs, durationMs);
         this.settleLongThrottledStep(durationMs);
-        if (this.gridMs !== undefined && durationMs > BLOCK_GRID_STEPS * this.gridMs) this.longThrottledStepMs = durationMs;
+        if (this.gridMs !== undefined && durationMs > (1 + STEPS_AGREE_PART) * this.gridMs) this.longThrottledStepMs = durationMs;
     }
 
     /**
@@ -599,8 +629,11 @@ export class DriftLag extends LagMonitor {
         const gridMs = this.gridMs;
         this.longThrottledStepMs = undefined;
         if (long === undefined || gridMs === undefined) return;
+        // A next step that is long too tells of a longer grid, and it can be a block. It waits for its own next step.
+        if (nextMs > gridMs * (1 + STEPS_AGREE_PART)) return;
         const grids = (long + nextMs) / gridMs;
-        if (this.recordThrottledSteps && nextMs < gridMs * (1 - ON_GRID_PART) && Math.abs(grids - Math.round(grids)) <= ON_GRID_PART) {
+        const mode = this.unreadMode(long, gridMs);
+        if (mode === "refused" && nextMs < gridMs * (1 - ON_GRID_PART) && Math.abs(grids - Math.round(grids)) <= ON_GRID_PART) {
             // The window of this value holds the two steps, so a suspend or a hidden time in them discards the value
             this.lastWindowMs = long + nextMs;
             try {
@@ -614,13 +647,32 @@ export class DriftLag extends LagMonitor {
             }
             return;
         }
+        this.noteUnreadStep(mode, long);
+    }
+
+    /** This method gives the mode of a long step that the rule does not read. A step can also pass the rule, in `refused`. */
+    private unreadMode(long : number, gridMs : number) : UnreadStepMode {
+        if (!this.recordThrottledSteps) return "option-off";
+        return long > BLOCK_GRID_STEPS * gridMs ? "refused" : "too-short";
+    }
+
+    /** An error of `onUnreadStep` does not stop the chain of steps. */
+    private noteUnreadStep(mode : UnreadStepMode, stepMs : number) : void {
         this.logger.log("debug", "DriftLag: a long throttled step gave no value.", {
             type : "LagMonitor",
             subtype : "DriftLag",
-            stepMs : long,
-            nextMs,
-            gridMs,
+            stepMs,
+            mode,
         });
+        try {
+            this.onUnreadStep?.(mode, stepMs);
+        } catch (error) {
+            this.logger.log("error", "Error in the unread step callback of DriftLag.", {
+                error,
+                type : "LagMonitor",
+                subtype : "DriftLag",
+            });
+        }
     }
 
     /** An error of `onThrottle` does not stop the chain of steps. */
