@@ -85,7 +85,7 @@ function crossOriginIsolation() : Plugin {
             extends : true,
             test : {
                 name : "safari",
-                include : ["src/*.test.ts"],
+                include : process.env["LAG_SAFARI_READ"] === "1" ? ["src/grid-time-read.ts"] : ["src/*.test.ts"],
                 fileParallelism : false,
                 browser : {
                     enabled : true,

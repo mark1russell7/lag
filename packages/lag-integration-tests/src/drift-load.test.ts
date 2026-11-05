@@ -1,4 +1,5 @@
 import { expect, type TestContext } from "vitest";
+import { userEvent } from "vitest/browser";
 import { DriftLag, createMessageTaskQueue } from "@mark1russell7/lag";
 import { blockMainThread, median, wait } from "./harness.js";
 import { environment, recordMeasurement } from "./commands.js";
@@ -6,6 +7,7 @@ import { pageState } from "./animation-frames.js";
 import { gapsBetween, watchTimers } from "./timer-watch.js";
 import { MIN_IDLE_MESSAGES, idleProbe } from "./idle-probe.js";
 import { loadRead } from "./load-read.js";
+import { addAnimation, readPeriod, type Period } from "./grid-read.js";
 
 /**
  * DriftLag during a sustained load of equal tasks (experiment E5). Before
@@ -18,6 +20,9 @@ import { loadRead } from "./load-read.js";
  */
 
 const LOAD_MS = 3_000;
+
+/** The time of each period of the read of the timer chain. */
+const GRID_READ_MS = 5_000;
 
 /** The lag of the windows after the load, above the idle windows before it, as a part of a window. */
 const AFTER_LOAD_MARGIN = 0.1;
@@ -191,4 +196,23 @@ describe("DriftLag during a sustained load", () => {
     it("reports equal timer tasks of 30 ms as lag, and no lag after the load", async (test) => {
         await measureLoad(test, "timer", 30);
     }, 40_000);
+
+    // This read has no check. It comes after the load cases, so it does not change their page.
+    it("reads the timer chain in the page state of the load cases", async (test) => {
+        test.skip(environment() !== "safari", "This read is for the real Safari.");
+        const periods : Period[] = [];
+        periods.push(await readPeriod("no animation, first", GRID_READ_MS, false));
+        periods.push(await readPeriod("a loop of animation frames", GRID_READ_MS, true));
+        const remove = addAnimation();
+        periods.push(await readPeriod("a running animation", GRID_READ_MS, false));
+        remove();
+        const button = document.createElement("button");
+        button.textContent = "read";
+        document.body.append(button);
+        await userEvent.click(button);
+        button.remove();
+        periods.push(await readPeriod("after a real click", GRID_READ_MS, false));
+        periods.push(await readPeriod("no animation, last", GRID_READ_MS, false));
+        console.log(`grid-load read ${JSON.stringify({ userAgent : navigator.userAgent, periods })}`);
+    }, 60_000);
 });
