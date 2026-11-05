@@ -74,7 +74,7 @@ All durations are in milliseconds. All metrics are counters or histograms. The a
 <!-- metrics:start -->
 | Monitor | Metric | Type | Unit | Attributes | Description |
 | --- | --- | --- | --- | --- | --- |
-| DriftLag | `lag_drift_histogram` | histogram | `ms` |  | The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag. |
+| DriftLag | `lag_drift_histogram` | histogram | `ms` | `source` | The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag. The attribute `source` marks a value of one long step of throttled timers: that value can be false, because one timer that wakes off the grid gives the same steps as a block. |
 | DriftLag | `lag_drift_baseline_histogram` | histogram | `ms` |  | The idle duration of one timer step: the mean of the recent steps that are not blocks. An increase needs a probe that shows an idle thread. It is the timer granularity of the browser and the operating system. DriftLag subtracts it. |
 | MacrotaskLag | `lag_macrotask_histogram` | histogram | `ms` |  | The time that a zero-delay timeout waits in the task queue. The monitor measures one sample every 5 seconds. |
 | MeasurementConditions | `lag_samples_discarded` | counter | `{sample}` | `reason` | The number of samples that a monitor did not record because the measurement window was not valid. |

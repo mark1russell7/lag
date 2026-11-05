@@ -1,10 +1,40 @@
 # Changelog
 
+## 0.4.0
+
+### Changed
+
+**DriftLag reads throttled timers in a different way, so records change.** This applies to each release from 0.2.3 on. Older forms of the code are not replayed.
+
+- **False lag falls, by default.** A task of more than 25 ms at the start of each throttled step made the check read a busy thread. The monitor then recorded the throttled steps as lag. In this release, the check goes on for not more than 500 ms, until it finds a free stretch of the thread.
+- **Real blocks during the throttling read 0, by default.** On an idle page, they read 0 in earlier releases too. On a page with such a task, they read above their true size in earlier releases, for example 11281 ms for a block of 2.5 s. They read 0 in this release.
+
+The evidence is a replay on a simulated clock, 4 simulator failures, no real iPhone. This entry does not say that any earlier value was wrong on a real device.
+
+The check can keep the thread awake for longer. In the replay, its messages span at most 1.9 s per minute in place of 1.0 s, on a page whose own tasks keep the thread busy. An idle page does not change. This is a span of messages on a simulated thread. It is not a measure of a device or of its battery.
+
+### Added
+
+- **The option `recordThrottledSteps`, off by default.** With it, real blocks that read 0 start to read. The monitor records a long throttled step minus one step of the grid, when the next step shows that the step ended off the grid. This value is not above the block.
+- **The mark `source: "throttled-step"`.** Each value of that rule has the mark in `lag_drift_histogram`, in the log and in the second parameter of `report`. A value with the mark can be false. One timer that wakes off the grid gives the same steps as a block, and the monitor cannot tell the two. That wake records a value of not more than its own delay, where earlier releases read 0.
+- **`BusyTimeProbe.start(limitMs, freeLimitMs)` and `BusyTimeProbe.foundFreeStretch()`.** The new optional limit lets a chain go on until it finds a free stretch of the thread.
+
+With the option, these limits stay:
+
+- A block in the first steps of the throttling gives no value, because the monitor does not have the grid.
+- A block that is not longer than 2.2 steps of the grid gives no value. With a grid of 60 s, most blocks give no value.
+
 ## 0.3.1
 
 ### Changed
 
 - **DriftLag logs the busy time of a check.** A check of a long step that finds a busy thread gives a debug log with `stepMs` and `busyMs`. No record changes.
+
+## 0.3.0
+
+### Changed
+
+- **The peer dependency `async-browser-context` goes from `^0.2.2` to `^0.3.0`.** The release train made this update, and the source of the package did not change. This entry was written after the release.
 
 ## 0.2.4
 

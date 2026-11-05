@@ -3,7 +3,7 @@ export { DriftLag, type DriftLagOptions } from "./DriftLag.js";
 export { MacrotaskLag } from "./MacrotaskLag.js";
 export { createMessageTaskQueue, type MessageTaskQueue, type PostTaskFn } from "./message-task.js";
 export { BusyTimeProbe } from "./BusyTimeProbe.js";
-export { LagMonitor, type LagMonitorConstructor } from "./LagMonitor.js";
+export { LagMonitor, type LagMonitorConstructor, type LagValueSource } from "./LagMonitor.js";
 export { LagLogger } from "./LagLogger.js";
 export type {
     Logger,

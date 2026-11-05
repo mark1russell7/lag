@@ -145,6 +145,60 @@ describe("createInstrumentedDriftLag with MessageChannel", () => {
         expect(channel.closed).toHaveBeenCalledTimes(2);
     });
 
+    /** A monitor at a grid of 1 s. The block starts off the grid. `during` starts after the block, before the next step. */
+    function throttledBlock(recordThrottledSteps : boolean | undefined, during? : (conditions : MeasurementConditions, now : number) => void) {
+        const thread = new SimulatedThread(1 / 64);
+        thread.nestedTimerAlignmentMs = 4;
+        const conditions = createMeasurementConditions({
+            clock : thread.clock,
+            setTimeoutFn : thread.setTimeout,
+            clearTimeoutFn : thread.clearTimeout,
+        });
+        const meter = createRecordingMeter();
+        const logger = { log : vi.fn() };
+        const handle = createInstrumentedDriftLag({
+            logger,
+            clock : thread.clock,
+            meter : meter.meter,
+            setTimeoutFn : thread.setTimeout,
+            clearTimeoutFn : thread.clearTimeout,
+            setIntervalFn : thread.setInterval,
+            clearIntervalFn : thread.clearInterval,
+            MessageChannel : simulatedChannel(thread).Channel,
+        }, conditions, recordThrottledSteps === undefined ? undefined : { recordThrottledSteps });
+        thread.advance(3_000);
+        thread.setNestedTimerAlignment(1_000);
+        thread.advance(6_370);
+        thread.post(() => thread.busy(2_500));
+        thread.advance(2_500);
+        during?.(conditions, thread.now);
+        thread.advance(5_000);
+        handle.stop();
+        const recorded = meter.instruments().find(instrument => instrument.name === "lag_drift_histogram")?.values ?? [];
+        return { marked : recorded.filter(({ attributes }) => attributes?.["source"] === "throttled-step"), recorded };
+    }
+
+    it("marks the value of a long throttled step, with the option", () => {
+        const { marked, recorded } = throttledBlock(true);
+        expect(marked).toHaveLength(1);
+        expect(marked[0]?.value).toBeGreaterThan(1_400);
+        expect(marked[0]?.value).toBeLessThanOrEqual(2_500);
+        expect(recorded.filter(({ value, attributes }) => value > 500 && attributes === undefined)).toEqual([]);
+    });
+
+    it("gives no value of a long throttled step by default", () => {
+        for (const option of [undefined, false]) {
+            expect(throttledBlock(option).recorded.filter(({ value }) => value > 500)).toEqual([]);
+        }
+    });
+
+    it("discards the value when an unreliable interval overlaps the long step, and keeps it when the interval ends before the step", () => {
+        const { marked } = throttledBlock(true, (conditions, now) => conditions.tracker.add(now - 2_000, now - 1_500, "suspend"));
+        expect(marked).toEqual([]);
+        const before = throttledBlock(true, (conditions, now) => conditions.tracker.add(now - 7_000, now - 6_500, "suspend"));
+        expect(before.marked).toHaveLength(1);
+    });
+
     it("gives the throttled timers of a visible page to the conditions: a monitor of the rendering pauses", () => {
         const thread = new SimulatedThread(1 / 64);
         thread.nestedTimerAlignmentMs = 4;

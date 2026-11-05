@@ -314,9 +314,8 @@ describe("DriftLag with throttled timers", () => {
         expect(Math.max(...lags)).toBeLessThan(9_000);
     });
 
-    it("finds no throttling when a task of more than half of the probe starts with each step", () => {
-        // The check needs a thread that was idle during more than half of the probe (25 ms). Here, a task
-        // of 30 ms follows each step, thus the check cannot tell the throttling from a load.
+    it("finds the throttling when a task of more than half of the probe starts with each step", () => {
+        // The check goes on past the task of 30 ms, and it finds a free stretch: a timer that was due did not start.
         const thread = new SimulatedThread(1 / 64);
         thread.nestedTimerAlignmentMs = 4;
         let taskMs = 0;
@@ -341,7 +340,33 @@ describe("DriftLag with throttled timers", () => {
         thread.advance(10_000);
         monitor.stop();
 
-        expect(logger.log).not.toHaveBeenCalledWith("info", "DriftLag: the browser throttles the timers. The windows pause.", expect.anything());
+        expect(logger.log).toHaveBeenCalledWith("info", "DriftLag: the browser throttles the timers. The windows pause.", expect.anything());
+    });
+
+    it("logs the busy time of each check that found no free stretch, so that a failure shows the cause", () => {
+        const thread = new SimulatedThread(1 / 64);
+        thread.nestedTimerAlignmentMs = 4;
+        const logger = { log : vi.fn() };
+        const monitor = new DriftLag(
+            highFrequencyLagIntervalMs,
+            () => {},
+            logger,
+            thread.setInterval,
+            thread.clearInterval,
+            thread.setTimeout,
+            thread.clearTimeout,
+            thread.clock,
+            { postTask : thread.post },
+        );
+        thread.advance(3_000);
+        thread.setNestedTimerAlignment(1_000);
+        thread.load(30, thread.now + 10_000);
+        thread.advance(10_000);
+        monitor.stop();
+
+        const busyChecks = logger.log.mock.calls.filter(call => call[1] === BUSY_CHECK_LOG).map(call => (call[2] as { busyMs : number }).busyMs);
+        expect(busyChecks.length).toBeGreaterThan(0);
+        expect(Math.min(...busyChecks)).toBeGreaterThanOrEqual(25);
     });
 
     describe("a task of more than half of the probe after each step of throttled timers", () => {
@@ -352,10 +377,9 @@ describe("DriftLag with throttled timers", () => {
          * positions in the timer steps. It also gives the number of positions with the pause log. A task of 30 ms
          * follows each step for the first `busyMs` of the throttling. No task blocks the thread for longer.
          */
-        const replay = (busyMs : number) : { readonly largest : number; readonly paused : number; readonly busyChecks : readonly number[] } => {
+        const replay = (busyMs : number) : { readonly largest : number; readonly paused : number } => {
             let largest = 0;
             let paused = 0;
-            const busyChecks : number[] = [];
             for (let start = 0; start < 26; start++) {
                 const thread = new SimulatedThread(1 / 64);
                 thread.nestedTimerAlignmentMs = 4;
@@ -389,31 +413,19 @@ describe("DriftLag with throttled timers", () => {
                 thread.advance(3_000);
                 monitor.stop();
                 if (logger.log.mock.calls.some(call => call[1] === PAUSE_LOG)) paused++;
-                for (const call of logger.log.mock.calls) {
-                    if (call[1] === BUSY_CHECK_LOG) busyChecks.push((call[2] as { busyMs : number }).busyMs);
-                }
             }
-            return { largest, paused, busyChecks };
+            return { largest, paused };
         };
 
         it("control: with no task, the check finds the throttling at each position and no lag shows", () => {
-            expect(replay(0)).toEqual({ largest : 0, paused : 26, busyChecks : [] });
+            expect(replay(0)).toEqual({ largest : 0, paused : 26 });
         });
 
-        it("logs the busy time of each check that found a busy thread, so that a failure shows the cause", () => {
-            const { busyChecks } = replay(6_000);
-            expect(busyChecks.length).toBeGreaterThan(0);
-            expect(Math.min(...busyChecks)).toBeGreaterThanOrEqual(25);
-            expect(Math.max(...busyChecks)).toBeLessThan(60);
-        });
-
-        // These tests state the correct result, and they show a known fault: `it.fails` passes while the code gives a
-        // false lag. A fix turns them red, and then the fix removes `.fails`. The replay uses a simulated clock.
-        it.fails("records no false lag of 1 s or more when the task follows each step for all 6 s", () => {
+        it("records no false lag of 1 s or more when the task follows each step for all 6 s", () => {
             expect(replay(6_000).largest).toBeLessThan(1_000);
         });
 
-        it.fails("records no false lag of 1 s or more when the task follows each step for the first 2.5 s", () => {
+        it("records no false lag of 1 s or more when the task follows each step for the first 2.5 s", () => {
             expect(replay(2_500).largest).toBeLessThan(1_000);
         });
     });

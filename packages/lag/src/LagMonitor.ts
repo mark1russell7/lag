@@ -1,5 +1,11 @@
 import type { ClearIntervalFn, ClearTimeoutFn, Clock, Logger, SetIntervalFn, SetTimeoutFn } from "./types.js";
 
+/**
+ * The mark of a value that does not come from a normal measurement. The value `throttled-step` comes from one long step
+ * of throttled timers. A block and one timer that wakes off the grid give the same steps, so this value can be false.
+ */
+export type LagValueSource = "throttled-step";
+
 export type LagMonitorConstructor<T extends LagMonitor = LagMonitor> = new (
     ...args : ConstructorParameters<typeof LagMonitor>
 ) => T;
@@ -18,7 +24,7 @@ export abstract class LagMonitor {
     abstract stop() : void;
     constructor(
         public readonly expectedElapsedTimeMs : number,
-        public readonly report : (value : number) => void,
+        public readonly report : (value : number, source? : LagValueSource) => void,
 
         protected readonly logger : Logger,
         protected readonly setIntervalFn : SetIntervalFn,

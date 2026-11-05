@@ -117,6 +117,10 @@ export type AllMonitorDeps =
     & Partial<WorkerMonitorDeps>
     & Partial<PerformanceDeps>
     & Partial<WallClockDeps>
+    & {
+        /** With `true`, a long step of throttled timers can give a DriftLag value, with a mark. The default is `false`. */
+        readonly recordThrottledSteps? : boolean;
+    }
     & Partial<EventDeps>
     & Partial<ReportingDeps>
     & Partial<SharedMemoryDeps>
@@ -291,7 +295,7 @@ export function setupAllMonitors(rootDeps : AllMonitorDeps) : AllMonitorHandles 
     const driftDeps = livenessBuffer
         ? { ...deps, setTimeoutFn : beatingSetTimeout(deps.setTimeoutFn, createLivenessBeacon(livenessBuffer)) }
         : deps;
-    registry.add(createInstrumentedDriftLag(driftDeps, conditions));
+    registry.add(createInstrumentedDriftLag(driftDeps, conditions, deps.recordThrottledSteps ? { recordThrottledSteps : true } : undefined));
     registry.add(createInstrumentedMacrotaskLag(deps, conditions));
 
     // 5. Throttle detector — always available (pure timer math)
