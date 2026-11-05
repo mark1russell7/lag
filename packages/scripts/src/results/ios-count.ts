@@ -17,6 +17,8 @@ export type OffScreenRead = {
     /** The values of DriftLag that the test keeps: only the values from before the frame came back. */
     readonly driftMs : readonly number[];
     readonly frameGapMs : number;
+    /** The busy time of each check of a long step that found a busy thread. An old log does not hold these values. */
+    readonly busyChecksMs : readonly number[];
 };
 
 /** The facts of the log of one try of the job. */
@@ -48,7 +50,7 @@ export type IosCount = {
 
 const ESCAPE_CODE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 const FAILED_TEST = /^(?:\d{4}-\d\d-\d\dT[\d:.]+Z)?\s*FAIL\s+(?:browser \([^)]*\)\s+)?(.+\S)\s*$/;
-const OFF_SCREEN = /(, without the frame viewport)?: longest step of a 100 ms timeout chain .* records off the screen (\{.*\}); longest frame gap after (\d+) ms/;
+const OFF_SCREEN = /(, without the frame viewport)?: longest step of a 100 ms timeout chain .* records off the screen (\{.*\}); longest frame gap after (\d+) ms(?:; busy checks (\[[^\]]*\]))?/;
 
 /** This function reads the log of one try of the job. */
 export function readIosLog(log : string) : IosLogRead {
@@ -61,7 +63,7 @@ export function readIosLog(log : string) : IosLogRead {
         const read = OFF_SCREEN.exec(line);
         if (read?.[2] !== undefined && read[3] !== undefined) {
             const records = JSON.parse(read[2]) as { lag_drift_histogram? : number[] };
-            offScreen.push({ viewport : read[1] === undefined, driftMs : records.lag_drift_histogram ?? [], frameGapMs : Number(read[3]) });
+            offScreen.push({ viewport : read[1] === undefined, driftMs : records.lag_drift_histogram ?? [], frameGapMs : Number(read[3]), busyChecksMs : read[4] === undefined ? [] : (JSON.parse(read[4]) as number[]) });
         }
     }
     return { failed : [...failed], offScreen };
@@ -109,10 +111,10 @@ export function renderIosCount(count : IosCount, days : number) : string {
             "",
             "Each row is a lag value of a frame off the screen. The monitors must pause there, so the value did not happen. The test keeps only the values from before the frame came back, so this list can be short of the real count.",
             "",
-            "| Attempt | Frame viewport | DriftLag values (ms) | Longest frame gap (ms) |",
-            "| --- | --- | ---: | ---: |",
+            "| Attempt | Frame viewport | DriftLag values (ms) | Longest frame gap (ms) | Busy checks (ms) |",
+            "| --- | --- | ---: | ---: | ---: |",
         );
-        for (const row of count.wrong) lines.push(`| [log](${row.url}) | ${row.viewport ? "yes" : "no"} | ${row.driftMs.join(", ") || "none"} | ${row.frameGapMs} |`);
+        for (const row of count.wrong) lines.push(`| [log](${row.url}) | ${row.viewport ? "yes" : "no"} | ${row.driftMs.join(", ") || "none"} | ${row.frameGapMs} | ${row.busyChecksMs.join(", ") || "none"} |`);
         lines.push("");
     }
     if (!needsIssue(count)) lines.push("No test failed, and no wrong record shows.", "");

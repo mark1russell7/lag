@@ -19,9 +19,13 @@ describe("readIosLog", () => {
     it("reads each line of the test of a frame off the screen", () => {
         const read = readIosLog(`${line(true, "", 31)}\n${line(false, "2494", 31)}\n`);
         expect(read.offScreen).toEqual([
-            { viewport : true, driftMs : [], frameGapMs : 31 },
-            { viewport : false, driftMs : [2494], frameGapMs : 31 },
+            { viewport : true, driftMs : [], frameGapMs : 31, busyChecksMs : [] },
+            { viewport : false, driftMs : [2494], frameGapMs : 31, busyChecksMs : [] },
         ]);
+    });
+
+    it("reads the busy time of each check from a new line", () => {
+        expect(readIosLog(`${line(false, "2494", 31)}; busy checks [30,47]\n`).offScreen[0]?.busyChecksMs).toEqual([30, 47]);
     });
 
     it("reads nothing from other lines", () => {
@@ -31,9 +35,9 @@ describe("readIosLog", () => {
 
 describe("isWrongRecord", () => {
     it("takes a drift value or a frame gap of 1 s or more, and only those", () => {
-        expect(isWrongRecord({ viewport : false, driftMs : [2494], frameGapMs : 31 })).toBe(true);
-        expect(isWrongRecord({ viewport : false, driftMs : [], frameGapMs : 6_017 })).toBe(true);
-        expect(isWrongRecord({ viewport : false, driftMs : [], frameGapMs : 999 })).toBe(false);
+        expect(isWrongRecord({ viewport : false, driftMs : [2494], frameGapMs : 31, busyChecksMs : [] })).toBe(true);
+        expect(isWrongRecord({ viewport : false, driftMs : [], frameGapMs : 6_017, busyChecksMs : [] })).toBe(true);
+        expect(isWrongRecord({ viewport : false, driftMs : [], frameGapMs : 999, busyChecksMs : [] })).toBe(false);
     });
 });
 
@@ -64,7 +68,7 @@ describe("renderIosCount", () => {
     it("says that the list of wrong records can be short, and names the values", () => {
         const text = renderIosCount(countIosAttempts([attempt(`${failLine}\n${line(false, "2494", 31)}\n`)]), 7);
         expect(text).toContain("1 finished attempts in the last 7 days. 1 failed.");
-        expect(text).toContain("| [log](https://example.test/1) | no | 2494 | 31 |");
+        expect(text).toContain("| [log](https://example.test/1) | no | 2494 | 31 | none |");
         expect(text).toContain("short of the real count");
     });
 
