@@ -6,6 +6,14 @@ name: Pages
 on:
   push:
     branches: [main]
+  # After a release, so that the Releases page has the new version
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+    branches: [main]
+  # Each day, so that the results on the site are at most one day old. The data stamp below holds this.
+  schedule:
+    - cron: "58 5 * * *"
   workflow_dispatch:
 
 # The jobs install and run the code of the repository, so they get only read permissions.
@@ -28,6 +36,7 @@ jobs:
   # the same as in ci.yml (packages/scripts/src/results/browser-projects.test.ts).
   browser:
     name: Results, browser tests (${{ matrix.engine }})
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -73,6 +82,7 @@ jobs:
   # for minutes, and Safari then slowed the timers and the frames of the test page.
   safari:
     name: Results, browser tests (safari)
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -109,6 +119,7 @@ jobs:
   # Safari on iOS in the iOS Simulator of its own macOS runner, as in ci.yml
   ios:
     name: Results, browser tests (Safari on iOS, simulator)
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -140,9 +151,9 @@ jobs:
           if-no-files-found: ignore
 
   build:
-    # The site also builds when a browser job fails
+    # The site also builds when a browser job fails, but not after a failed release
     needs: [browser, safari, ios]
-    if: always()
+    if: ${{ always() && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-latest
     # The build installs and runs the code of the repository, so it gets only read permissions.
     permissions:
@@ -249,6 +260,14 @@ jobs:
           out: packages/site/dist
           site-check-pages: /playground/,/,/releases/,/status/
           site-check-probe: packages/site/src/check-probe.ts
+
+      # The stamp names the run of the results above. Results older than 3 days, or on an old engine, stop the deploy.
+      - name: Write the data stamp of the results page
+        run: pnpm results:stamp
+
+      - uses: mark1russell7/template/.github/actions/data-stamps@81444cf43ac2867103131542992dbb4a2453100a # main
+        with:
+          stamps: packages/site/dist/data-stamps.json
 
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:

@@ -17,6 +17,7 @@
     "coverage": "pnpm --filter @mark1russell7/lag coverage",
     "mutation": "pnpm --filter @mark1russell7/lag mutation",
     "results": "tsc -b && tsx packages/scripts/src/results/collect.ts",
+    "results:stamp": "tsx packages/scripts/src/results/write-stamps.ts",
     "experiment:e8": "tsc -b && pnpm --filter @lag/experiments e8",
     "lint:ste": "ste-lint",
     "readme:metrics": "tsx packages/scripts/src/readme-metrics.ts",
