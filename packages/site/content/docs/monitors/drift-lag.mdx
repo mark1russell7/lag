@@ -125,7 +125,14 @@ During the throttling, a block gives no value by default. **Thus no value in tha
 - A step of more than 2.2 grids gives a value of its duration minus one grid. The next step must be shorter than a grid, and the two steps must give whole grids within 5%.
 - Each such value has the attribute `source` with the value `throttled-step`. **A value with this attribute can be false.** No code of the monitor operates during a long step, so one timer that wakes off the grid gives the same steps as a block.
 
-The evidence for this option is a replay on a simulated clock (`DriftLag.replay.test.ts`). No value of this option comes from a real device.
+The evidence for this option is a replay on a simulated clock (`DriftLag.replay.test.ts`) and a browser test in Safari (`throttled-step-read.test.ts`). The browser test puts a frame off the screen, and Safari throttles the timers of that frame. This is real WebKit on a GitHub macOS runner. It is not a device, and it is not a page that Safari does not show.
+
+| Read in the frame off the screen | Jobs | Result |
+| --- | --- | --- |
+| An idle frame for 65 s | 7 | 65 steps of the grid in each job. No long step, and no value. |
+| 6 known blocks of 2500 ms and 6000 ms in each job | 7 (42 blocks) | 37 blocks gave a value. Each value was 23 ms to 992 ms less than its block. 5 blocks gave no value. The counter `lag_drift_unread_steps` counted 5. |
+
+Six jobs used Safari 26.6.2 and one job used Safari 27.2, in CI on 2026-11-05. These are 7 reads, not a rate. No read had a timer that wakes off the grid with no block. Thus the false value of [the limits](#limits) has no read in a browser.
 
 The cost is one probe of 50 ms to find the throttling, and one probe for each 30 throttled steps. On a page whose own tasks keep the thread busy, a check can go on for 500 ms. In the replay, the messages of the checks span at most 1.9 s each minute on such a page. This is a span on a simulated thread, not a measure of a device. A single block starts no probe, because the next step is short. In the simulated tests, a throttling that started or ended at any time in the grid gave less than 40 ms of lag.
 
