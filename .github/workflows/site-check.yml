@@ -1,0 +1,39 @@
+# Builds the site of a pull request and checks it in a browser, with no deploy. The build has no test results, so this
+# workflow needs no browser job. pages.yml checks the site with the results on main, before the deploy.
+name: Site check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A new push cancels the older run of the same pull request.
+concurrency:
+  group: site-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  site:
+    uses: mark1russell7/template/.github/workflows/reusable-pages.yml@10b3cb8311b894311f86a0ac975f0a047e969f82 # main
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      pull-requests: read
+      checks: read
+      statuses: read
+      pages: write
+      id-token: write
+    with:
+      build: pnpm --filter @lag/site exec playwright install --with-deps chromium && pnpm build && pnpm --filter @lag/site build
+      out: packages/site/dist
+      env: '{"SITE_BASE": "lag", "SITE_URL": "https://mark1russell7.github.io/lag/"}'
+      node-version: "24"
+      packages: "@mark1russell7/lag"
+      site-name: lag
+      deploy: false
+      site-check: true
+      # The home page reads the test results, so pages.yml checks it on the build with the results.
+      site-check-pages: /playground/,/releases/,/status/
+      site-check-probe: packages/site/src/check-probe.ts
