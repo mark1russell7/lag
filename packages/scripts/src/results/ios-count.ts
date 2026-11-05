@@ -21,30 +21,30 @@ export type OffScreenRead = {
     readonly busyChecksMs : readonly number[];
 };
 
-/** The facts of the log of one attempt of the job. */
+/** The facts of the log of one try of the job. */
 export type IosLogRead = {
     /** The name of each failed test, one time. */
     readonly failed : readonly string[];
     readonly offScreen : readonly OffScreenRead[];
 };
 
-/** One attempt of the job. */
+/** One try of the job. */
 export type IosAttempt = IosLogRead & {
     readonly url : string;
     readonly conclusion : string;
 };
 
-/** One wrong record, with the attempt that shows it. */
+/** One wrong record, with the try that shows it. */
 export type WrongRecord = OffScreenRead & { readonly url : string };
 
 /** The count of a period. */
 export type IosCount = {
     readonly attempts : number;
     readonly failedAttempts : number;
-    /** The number of attempts for each test name, largest first. */
+    /** The number of tries for each test name, largest first. */
     readonly byTest : ReadonlyArray<{ readonly name : string; readonly attempts : number }>;
     readonly wrong : readonly WrongRecord[];
-    /** The attempts with no log to read. The count does not hold them. */
+    /** The tries with no log to read. The count does not hold them. */
     readonly unread : number;
 };
 
@@ -52,7 +52,7 @@ const ESCAPE_CODE = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
 const FAILED_TEST = /^(?:\d{4}-\d\d-\d\dT[\d:.]+Z)?\s*FAIL\s+(?:browser \([^)]*\)\s+)?(.+\S)\s*$/;
 const OFF_SCREEN = /(, without the frame viewport)?: longest step of a 100 ms timeout chain .* records off the screen (\{.*\}); longest frame gap after (\d+) ms(?:; busy checks (\[[^\]]*\]))?/;
 
-/** This function reads the log of one attempt of the job. */
+/** This function reads the log of one try of the job. */
 export function readIosLog(log : string) : IosLogRead {
     const failed = new Set<string>();
     const offScreen : OffScreenRead[] = [];
@@ -74,7 +74,7 @@ export function isWrongRecord(read : OffScreenRead) : boolean {
     return read.driftMs.length > 0 || read.frameGapMs >= WRONG_FRAME_GAP_MS;
 }
 
-/** This function counts the attempts of a period. */
+/** This function counts the tries of a period. */
 export function countIosAttempts(attempts : readonly IosAttempt[], unread = 0) : IosCount {
     const byTest = new Map<string, number>();
     for (const attempt of attempts) {
