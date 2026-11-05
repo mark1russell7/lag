@@ -27,6 +27,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      - name: API report
+        run: pnpm check:api
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm coverage

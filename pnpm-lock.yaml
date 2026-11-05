@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@mark1russell7/api-report':
+        specifier: ^0.4.0
+        version: 0.4.0
       '@mark1russell7/ste-lint':
         specifier: github:mark1russell7/ste-lint
         version: https://codeload.github.com/mark1russell7/ste-lint/tar.gz/9a933c4da03a187a865516d3d52a8d1a9528b738
@@ -915,6 +918,11 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@mark1russell7/api-report@0.4.0':
+    resolution: {integrity: sha512-LROZAyoiluIzvojl8mU/abTzKhLAC3Qj/lG5HgvK/2ehkJ8z2T/Zk49+d2d6nVhyMuLr9ETT3T7g7egk4jaiRg==}
+    engines: {node: '>=22'}
+    hasBin: true
 
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/da4b8da812501a361ff67e4bff95ccce5f0e3887':
     resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/da4b8da812501a361ff67e4bff95ccce5f0e3887}
@@ -4322,6 +4330,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@mark1russell7/api-report@0.4.0': {}
 
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/da4b8da812501a361ff67e4bff95ccce5f0e3887': {}
 
