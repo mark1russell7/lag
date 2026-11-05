@@ -15,7 +15,7 @@ const GRID_TOLERANCE_MS = 50;
 /** The chain of a page on the grid has at least this number of gaps on the grid. */
 const MIN_GAPS_ON_GRID = 3;
 
-/** The chain of a page on the grid has at most this number of other gaps: the way in, and the part step at the stop. */
+/** A chain on the grid has at most this number of other gaps: the way in, and the part step at the stop. */
 const MAX_GAPS_OFF_GRID = 2;
 
 /** These versions of Safari showed the grid on a CI runner, on the runner image `20261102.0473`. */
