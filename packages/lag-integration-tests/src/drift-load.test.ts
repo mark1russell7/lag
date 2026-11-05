@@ -5,6 +5,7 @@ import { environment, recordMeasurement } from "./commands.js";
 import { pageState } from "./animation-frames.js";
 import { gapsBetween, watchTimers } from "./timer-watch.js";
 import { MIN_IDLE_MESSAGES, idleProbe } from "./idle-probe.js";
+import { loadRead } from "./load-read.js";
 
 /**
  * DriftLag during a sustained load of equal tasks (experiment E5). Before
@@ -30,13 +31,6 @@ const AFTER_LOAD_MARGIN = 0.1;
  * and it makes no gap. Thus a stall cannot hide that error.
  */
 const STALL_MS = 50;
-
-/**
- * A gap of this value or more in the chain of 5 ms timers is a step of the grid of 1 s of WebKit.
- * The test asks for some of these gaps, so that one long stall of a healthy page does not pass as a grid.
- */
-const GRID_GAP_MS = 900;
-const MIN_GRID_GAPS = 3;
 
 type Window = { at : number; lag : number; windowMs : number };
 
@@ -128,16 +122,17 @@ async function measureLoad(test : TestContext, kind : "message" | "timer", taskM
         console.log(`Timer chain of 5 ms (${timers.count} callbacks): mean step ${idleSteps.meanMs.toFixed(2)} ms before the load and ` +
             `${afterSteps.meanMs.toFixed(2)} ms after it, longest gap ${idleSteps.maxGapMs.toFixed(0)} ms before and ${afterSteps.maxGapMs.toFixed(0)} ms after; ` +
             `${stalled} of ${idleAll.length + afterAll.length} windows overlap a gap of more than ${STALL_MS} ms`);
-        // The browser held the page on a grid of 1 s, and the monitor gave no window in the load. This test cannot
-        // decide on that page. The skip reads the gaps of the timer chain, not the monitor, so a monitor that stops
-        // on a healthy page still fails below. A monitor that stops on a page on the grid is not read here.
-        const gridGaps = timers.stalls.filter(stall => stall.end - stall.start >= GRID_GAP_MS).length;
-        if (late.length === 0 && gridGaps >= MIN_GRID_GAPS) {
-            console.log(`drift-load cannot decide: ${kind} tasks of ${taskMs} ms, ${gridGaps} gaps of ${GRID_GAP_MS} ms or more, ${timers.count} callbacks (${pageState()})`);
+        console.log(`Page state in the load test: ${pageState()}`);
+        // load-read.ts decides this from the gaps of the timer chain, the version of Safari and the date. See its flips.
+        const read = loadRead({ lateWindows : late.length, stalls : timers.stalls, userAgent : navigator.userAgent, now : Date.now() });
+        const gaps = timers.stalls.map(stall => Math.round(stall.end - stall.start)).join(" ");
+        if (late.length === 0) console.log(`Gaps of the chain with no window in the load: ${gaps}`);
+        if (read !== "read") {
+            console.log(`drift-load cannot decide: no read of ${kind} tasks of ${taskMs} ms, ${timers.count} callbacks, ${navigator.userAgent}`);
         }
-        test.skip(late.length === 0 && gridGaps >= MIN_GRID_GAPS,
-            `The browser held the timers of the page on a grid of 1 s: ${gridGaps} gaps of ${GRID_GAP_MS} ms or more in a chain of 5 ms timers, ` +
-            `and no window ended in the load. This test cannot decide on this page (${pageState()}).`);
+        expect(read, "The no read of the load cases passed its end date: find a page that the browser does not throttle.").not.toBe("no-read-ended");
+        test.skip(read === "no-read",
+            `No read: the browser held the timers of the page on a grid of 1 s, and no window ended in the load. Gaps of the chain: ${gaps} (${pageState()}).`);
         await recordMeasurement(`drift-load/${kind}-${taskMs}ms/lag_fraction`, "%", [100 * lagFraction], { scenario : `${kind}-${taskMs}ms` });
 
         expect(late.length).toBeGreaterThan(0);
