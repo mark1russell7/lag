@@ -344,42 +344,67 @@ describe("DriftLag with throttled timers", () => {
         expect(logger.log).not.toHaveBeenCalledWith("info", "DriftLag: the browser throttles the timers. The windows pause.", expect.anything());
     });
 
-    it("records a false lag of 2 s or more when a task of more than half of the probe follows each step (a known fault)", () => {
-        // This test holds a fault, so that a fix must change it. The check cannot tell the throttling from a load
-        // here, so the steps of the throttled timers become lag. Each start has another position in the timer steps.
-        const largest = Array.from({ length : 26 }, (_, start) => {
-            const thread = new SimulatedThread(1 / 64);
-            thread.nestedTimerAlignmentMs = 4;
-            let taskMs = 0;
-            const lags : number[] = [];
-            const logger = { log : vi.fn() };
-            const monitor = new DriftLag(
-                highFrequencyLagIntervalMs,
-                lag => lags.push(lag),
-                logger,
-                thread.setInterval,
-                thread.clearInterval,
-                (callback, ms) => thread.setTimeout(() => {
-                    callback();
-                    if (taskMs > 0) thread.post(() => thread.busy(taskMs));
-                }, ms),
-                thread.clearTimeout,
-                thread.clock,
-                { postTask : thread.post },
-            );
-            thread.advance(3_000 + start * 4);
-            thread.setNestedTimerAlignment(1_000);
-            taskMs = 30;
-            thread.advance(6_000);
-            taskMs = 0;
-            thread.setNestedTimerAlignment(4);
-            thread.advance(3_000);
-            monitor.stop();
-            expect(logger.log).not.toHaveBeenCalledWith("info", "DriftLag: the browser throttles the timers. The windows pause.");
-            return Math.max(0, ...lags);
+    describe("a task of more than half of the probe after each step of throttled timers", () => {
+        const PAUSE_LOG = "DriftLag: the browser throttles the timers. The windows pause.";
+
+        /**
+         * This function gives the largest lag from the start of 6 s of throttled timers to 3 s after them, over 26
+         * positions in the timer steps. It also gives the number of positions with the pause log. A task of 30 ms
+         * follows each step for the first `busyMs` of the throttling. No task blocks the thread for longer.
+         */
+        const replay = (busyMs : number) : { readonly largest : number; readonly paused : number } => {
+            let largest = 0;
+            let paused = 0;
+            for (let start = 0; start < 26; start++) {
+                const thread = new SimulatedThread(1 / 64);
+                thread.nestedTimerAlignmentMs = 4;
+                let taskMs = 0;
+                let throttled = false;
+                const logger = { log : vi.fn() };
+                const monitor = new DriftLag(
+                    highFrequencyLagIntervalMs,
+                    lag => {
+                        if (throttled) largest = Math.max(largest, lag);
+                    },
+                    logger,
+                    thread.setInterval,
+                    thread.clearInterval,
+                    (callback, ms) => thread.setTimeout(() => {
+                        callback();
+                        if (taskMs > 0) thread.post(() => thread.busy(taskMs));
+                    }, ms),
+                    thread.clearTimeout,
+                    thread.clock,
+                    { postTask : thread.post },
+                );
+                thread.advance(3_000 + start * 4);
+                thread.setNestedTimerAlignment(1_000);
+                throttled = true;
+                taskMs = 30;
+                thread.advance(busyMs);
+                taskMs = 0;
+                thread.advance(6_000 - busyMs);
+                thread.setNestedTimerAlignment(4);
+                thread.advance(3_000);
+                monitor.stop();
+                if (logger.log.mock.calls.some(call => call[1] === PAUSE_LOG)) paused++;
+            }
+            return { largest, paused };
+        };
+
+        it("control: with no task, the check finds the throttling at each position and no lag shows", () => {
+            expect(replay(0)).toEqual({ largest : 0, paused : 26 });
         });
 
-        expect(Math.max(...largest)).toBeGreaterThanOrEqual(2_000);
+        // These tests state the correct result, and they show a known fault: `it.fails` passes while the code gives a
+        // false lag. A fix turns them red, and then the fix removes `.fails`. The replay uses a simulated clock.
+        it.fails("records no false lag of 1 s or more when the task follows each step for all 6 s", () => {
+            expect(replay(6_000).largest).toBeLessThan(1_000);
+        });
+
+        it.fails("records no false lag of 1 s or more when the task follows each step for the first 2.5 s", () => {
+            expect(replay(2_500).largest).toBeLessThan(1_000);
+        });
     });
 
     it("does not look for throttling without postTask", () => {
