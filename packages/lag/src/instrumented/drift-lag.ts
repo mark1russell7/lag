@@ -1,6 +1,7 @@
 import type { CoreDeps, SchedulingDeps, TimerDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { DriftLag } from "../DriftLag.js";
+import type { LagValueSource } from "../LagMonitor.js";
 import { createMessageTaskQueue } from "../message-task.js";
 import { LagLogger } from "../LagLogger.js";
 import type { MeasurementConditions } from "../measurement-conditions.js";
@@ -24,27 +25,37 @@ import { createHandle, validatedRecorder } from "./shared.js";
  * does not increase the baseline. The probe also finds throttled timers on a
  * visible page, and the monitor gives that state to `conditions`
  * (`setTimersThrottled`).
+ *
+ * With `options.recordThrottledSteps`, a long step of throttled timers can give
+ * a value. The attribute `source` of `lag_drift_histogram` and the log mark it.
+ * The window of that value holds the long step. Thus the conditions discard it
+ * when the long step overlaps an unreliable interval.
  */
 export function createInstrumentedDriftLag(
     deps : CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">>,
     conditions? : MeasurementConditions,
+    options? : { readonly recordThrottledSteps? : boolean },
 ) : MonitorHandle<DriftLag> {
     return createHandle("drift-lag", deps.logger, () => {
         const histogram = createHistogram(deps.meter, METRICS.drift);
         const baselineHistogram = createHistogram(deps.meter, METRICS.driftBaseline);
         const lagLogger = new LagLogger(highFrequencyLagIntervalMs, deps.logger);
         const tasks = deps.MessageChannel ? createMessageTaskQueue(deps.MessageChannel) : undefined;
-        const recorder = validatedRecorder(conditions, (lag, windowMs) => {
-            histogram.record(lag);
+        const record = (source : LagValueSource | undefined) => (lag : number, windowMs : number) : void => {
+            if (source === undefined) histogram.record(lag);
+            else histogram.record(lag, { source });
             baselineHistogram.record(monitor.getBaselineMs());
-            lagLogger.addMeasurement({ value : lag, attributes : { wasHidden : false }, intervalMs : windowMs - lag });
-        });
+            lagLogger.addMeasurement({ value : lag, attributes : source === undefined ? { wasHidden : false } : { wasHidden : false, source }, intervalMs : windowMs - lag });
+        };
+        // A sample can wait for evidence, so each mark has its own recorder
+        const recorder = validatedRecorder(conditions, record(undefined));
+        const throttledRecorder = validatedRecorder(conditions, record("throttled-step"));
 
         const monitor : DriftLag = new DriftLag(
             highFrequencyLagIntervalMs,
-            (value : number) => {
+            (value : number, source? : LagValueSource) => {
                 // A negative value is jitter around the baseline
-                recorder.submit(Math.max(0, value), monitor.getLastWindowMs());
+                (source === undefined ? recorder : throttledRecorder).submit(Math.max(0, value), monitor.getLastWindowMs());
             },
             deps.logger,
             deps.setIntervalFn,
@@ -56,6 +67,7 @@ export function createInstrumentedDriftLag(
                 postTask : (callback) => tasks.post(callback),
                 // The monitors of the rendering pause while the timers of the visible page are throttled
                 ...(conditions ? { onThrottle : (throttled : boolean) => conditions.setTimersThrottled(throttled) } : {}),
+                ...(options?.recordThrottledSteps ? { recordThrottledSteps : true } : {}),
             } : {},
         );
         // In a frame off the screen, WebKit makes the nested timers of the chain wait approximately 1 s (experiment E9)
@@ -68,6 +80,7 @@ export function createInstrumentedDriftLag(
                 monitor.stop();
                 tasks?.close();
                 recorder.dispose();
+                throttledRecorder.dispose();
             },
         };
     });

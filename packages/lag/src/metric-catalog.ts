@@ -109,7 +109,8 @@ function metric(
 
 export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
     drift : metric("lag_drift_histogram", "histogram", "ms", "DriftLag",
-        "The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag."),
+        "The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag. The attribute `source` marks a value of one long step of throttled timers: that value can be false, because one timer that wakes off the grid gives the same steps as a block.",
+        { source : ["throttled-step"] }),
     driftBaseline : metric("lag_drift_baseline_histogram", "histogram", "ms", "DriftLag",
         "The idle duration of one timer step: the mean of the recent steps that are not blocks. An increase needs a probe that shows an idle thread. It is the timer granularity of the browser and the operating system. DriftLag subtracts it."),
     macrotask : metric("lag_macrotask_histogram", "histogram", "ms", "MacrotaskLag",

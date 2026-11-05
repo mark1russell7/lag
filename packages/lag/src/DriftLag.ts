@@ -24,6 +24,12 @@ export type DriftLagOptions = {
      * it (refer to the class description). It needs `postTask`.
      */
     onThrottle? : (throttled : boolean) => void;
+    /**
+     * With `true`, a long step of throttled timers can give a value, with the mark `throttled-step` (refer to the class
+     * description). The default is `false`, because one timer that wakes off the grid gives the same steps as a block.
+     * It needs `postTask`.
+     */
+    recordThrottledSteps? : boolean;
 };
 
 const DEFAULT_BASELINE_STEPS = 100;
@@ -218,26 +224,30 @@ type Probing = {
  * - The code does not assume a grid. Two throttled steps in a row that agree
  *   give the grid, also after the grid changes. Until then, no step gives a
  *   value.
- * - A throttled step of more than 2.2 steps of the grid can hold a block. The
- *   next step decides. A block ends off the grid, so the next step is shorter
- *   than a grid, and the two steps give whole steps of the grid. Then the
- *   monitor records the step minus one step of the grid. This value is not
- *   above the block, and it is not more than one step of the grid below it.
+ * - With the option `recordThrottledSteps`, a throttled step of more than 2.2
+ *   steps of the grid can hold a block. The next step decides. A block ends
+ *   off the grid, so the next step is shorter than a grid, and the two steps
+ *   give whole steps of the grid. Then the monitor records the step minus one
+ *   step of the grid, with the mark `throttled-step`. This value is not above
+ *   the block, and it is not more than one step of the grid below it.
  * - A shorter step, or a check that finds a busy thread, ends the
  *   throttling. The monitor logs "DriftLag: the timers are not throttled.
  *   The windows continue." A new window starts after a short step, because
  *   the grid of 1 s gave the duration of that step. It starts with the step
  *   of a busy check, because that step is a block.
  *
- * These limits stay. A block during the first steps of the throttling gives
- * no value, because the monitor does not have the grid. A block that is not
- * longer than 2.2 steps of the grid gives no value. Thus a grid of 60 s hides
- * most blocks. The worker monitor measures them, because messages are not
- * throttled.
+ * Without the option, a block during the throttling gives no value. With the
+ * option, these limits stay. A block during the first steps of the throttling
+ * gives no value, because the monitor does not have the grid. A block that is
+ * not longer than 2.2 steps of the grid gives no value. Thus a grid of 60 s
+ * hides most blocks. The worker monitor measures them, because messages are
+ * not throttled.
  *
- * One timer that wakes off the grid gives the same steps as a block. It
- * records a false value of not more than its own delay. Without `postTask`,
- * the monitor records the throttled steps as lag.
+ * One timer that wakes off the grid gives the same steps as a block. No code
+ * of the monitor operates during a long step, so it cannot tell the two. With
+ * the option, the wake records a false value of not more than its own delay.
+ * The mark is on each value of this rule. Without `postTask`, the monitor
+ * records the throttled steps as lag.
  */
 export class DriftLag extends LagMonitor {
     private handle : number | undefined;
@@ -289,6 +299,7 @@ export class DriftLag extends LagMonitor {
     /** True when the probe of this step can go past `PROBE_MS`. */
     private longCheck = false;
     private lastFailedCheckAt = -Infinity;
+    private readonly recordThrottledSteps : boolean;
     private readonly probing : Probing | undefined;
     private readonly onThrottle : ((throttled : boolean) => void) | undefined;
     private readonly stepMs : number;
@@ -309,6 +320,7 @@ export class DriftLag extends LagMonitor {
             ? { probe : new BusyTimeProbe(options.postTask, clock), confirmation : new BaselineConfirmation(), wanted : false, afterProbe : false }
             : undefined;
         this.onThrottle = options?.onThrottle;
+        this.recordThrottledSteps = options?.recordThrottledSteps ?? false;
         this.start();
     }
 
@@ -588,9 +600,11 @@ export class DriftLag extends LagMonitor {
         this.longThrottledStepMs = undefined;
         if (long === undefined || gridMs === undefined) return;
         const grids = (long + nextMs) / gridMs;
-        if (nextMs < gridMs * (1 - ON_GRID_PART) && Math.abs(grids - Math.round(grids)) <= ON_GRID_PART) {
+        if (this.recordThrottledSteps && nextMs < gridMs * (1 - ON_GRID_PART) && Math.abs(grids - Math.round(grids)) <= ON_GRID_PART) {
+            // The window of this value holds the two steps, so a suspend or a hidden time in them discards the value
+            this.lastWindowMs = long + nextMs;
             try {
-                this.report(long - gridMs);
+                this.report(long - gridMs, "throttled-step");
             } catch (error) {
                 this.logger.log("error", "Error measuring/reporting lag.", {
                     error,
