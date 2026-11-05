@@ -5,7 +5,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { actionsRunUrl, resultsStamps, type StampIndex } from "./stamp";
+import { actionsRunUrl, resultsStamps, type StampIndex } from "./stamp.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionsRunUrl, resultsStamps } from "./stamp";
+import { actionsRunUrl, resultsStamps } from "./stamp.js";
 
 const URL_OF_RUN = "https://github.com/acme/lag/actions/runs/7";
 
