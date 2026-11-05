@@ -248,14 +248,14 @@ jobs:
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
       # The Releases page and the Status page (releases/, status/ and their data/*.json), at deploy time
-      - uses: mark1russell7/template/.github/actions/site-pages@f48f29fe5b00772951e0910a90fbbe312343338c # main
+      - uses: mark1russell7/template/.github/actions/site-pages@10f19ba1ae8ac30cf47616bc2812f695ea0076c1 # main
         with:
           out: packages/site/dist
           packages: "@mark1russell7/lag"
           site-name: lag
 
       # The same check as site-check.yml, on the site with the test results. A failed check stops the deploy.
-      - uses: mark1russell7/template/.github/actions/site-check@10b3cb8311b894311f86a0ac975f0a047e969f82 # main
+      - uses: mark1russell7/template/.github/actions/site-check@10f19ba1ae8ac30cf47616bc2812f695ea0076c1 # main
         with:
           out: packages/site/dist
           site-check-pages: /playground/,/,/releases/,/status/
@@ -265,7 +265,7 @@ jobs:
       - name: Write the data stamp of the results page
         run: pnpm results:stamp
 
-      - uses: mark1russell7/template/.github/actions/data-stamps@81444cf43ac2867103131542992dbb4a2453100a # main
+      - uses: mark1russell7/template/.github/actions/data-stamps@10f19ba1ae8ac30cf47616bc2812f695ea0076c1 # main
         with:
           stamps: packages/site/dist/data-stamps.json
 
