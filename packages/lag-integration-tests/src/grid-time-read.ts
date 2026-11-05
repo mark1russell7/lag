@@ -10,7 +10,7 @@ import { readPeriod, type Period } from "./grid-read.js";
 /** The time of each period. */
 const PERIOD_MS = 10_000;
 
-/** The count of periods. The grid started 48 s to 64 s after the first test of a job. */
+/** The count of periods. The grid started 48 s to 77 s after the first test of a job, in two jobs. */
 const PERIODS = 15;
 
 describe("The time of the grid of 1 s of Safari on a CI runner", () => {
