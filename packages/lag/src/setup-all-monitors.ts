@@ -31,6 +31,7 @@ import type {
     ReportingDeps,
     SharedMemoryDeps,
     PageDeps,
+    PageChangeDeps,
     AbsoluteClockDeps,
     CrashReportDeps,
     PeerDeps,
@@ -125,6 +126,7 @@ export type AllMonitorDeps =
     & Partial<ReportingDeps>
     & Partial<SharedMemoryDeps>
     & Partial<PageDeps>
+    & Partial<PageChangeDeps>
     & Partial<AbsoluteClockDeps>
     & Partial<CrashReportDeps>
     & Partial<PeerDeps>

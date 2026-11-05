@@ -16,6 +16,7 @@ import type { ReportingObserverInit } from "../BrowserReportMonitor.js";
 import type { WorkerLike } from "../WorkerLagMonitor.js";
 import type { HangReportTarget } from "../worker-protocol.js";
 import { createPageSource, type PageDocument } from "./page-source.js";
+import { domPageChanges, type ChangeDocument, type MutationObserverConstructor } from "../page-change.js";
 import { createIndexedDbHangJournal, type IdbFactoryLike } from "./indexeddb-journal.js";
 import { createStorageHangReportMarks, type StorageLike } from "../hang-journal.js";
 import type { CrashReportContextLike } from "../dep-groups.js";
@@ -56,6 +57,7 @@ export type BrowserGlobals = LifecycleWindow & {
     readonly AbortController? : unknown;
     readonly navigator? : unknown;
     readonly IntersectionObserver? : unknown;
+    readonly MutationObserver? : unknown;
     /** The window of the top-level page. In a frame, it is not the window of the document. */
     readonly top? : unknown;
 };
@@ -99,6 +101,12 @@ export type BrowserDepsOptions = {
      * survive. It needs a second open page of the origin.
      */
     peerHangWatch? : boolean;
+    /**
+     * When true (the default), a `MutationObserver` of the document gives DriftLag the time since the last change of
+     * the page, at the start of the throttling. It changes nothing on the page. With `false`, the attribute `page` of
+     * the throttle counters is `not-read`.
+     */
+    pageChanges? : boolean;
     /** More attributes for the hang reports of the worker, for example the session ID. Refer to `PageDeps.pageContext`. */
     pageContext? : () => Readonly<Record<string, string>>;
     /**
@@ -203,6 +211,11 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         : undefined;
     // The frame timing monitor and DriftLag pause with it. It makes its IntersectionObserver only at the first subscription.
     const frameViewport = frameViewportOf(globals);
+    const MutationObserver = constructorOf<MutationObserverConstructor>(globals.MutationObserver);
+    const changeDocument = globals.document as unknown as Partial<ChangeDocument>;
+    const pageChanges = options.pageChanges !== false && MutationObserver && typeof changeDocument.documentElement === "object" && changeDocument.documentElement !== null
+        ? domPageChanges(MutationObserver, changeDocument as ChangeDocument)
+        : undefined;
     const crashReport = globals.crashReport as CrashReportContextLike | undefined;
     const crashReportContext = options.crashReportContext !== false && typeof crashReport?.set === "function" ? crashReport : undefined;
 
@@ -227,6 +240,7 @@ export function createBrowserDeps(globals : BrowserGlobals, options : BrowserDep
         ...(frameViewport ? { frameViewport } : {}),
         ...(requestIdleCallback && cancelIdleCallback ? { requestIdleCallback, cancelIdleCallback } : {}),
         ...(MessageChannel && queueMicrotask ? { MessageChannel, queueMicrotask } : {}),
+        ...(pageChanges ? { pageChanges } : {}),
         ...(memorySource ? { memorySource } : {}),
         ...(options.memoryIntervalMs !== undefined ? { memoryIntervalMs : options.memoryIntervalMs } : {}),
         ...(FinalizationRegistry ? { FinalizationRegistry } : {}),

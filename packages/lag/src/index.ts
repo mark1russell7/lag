@@ -1,5 +1,15 @@
 // --- Timer-based lag monitors ---
 export { DriftLag, type DriftLagOptions, type UnreadStepMode } from "./DriftLag.js";
+export {
+    IDLE_GRID_CHANGE_MS,
+    createPageChangeClock,
+    domPageChanges,
+    type ChangeDocument,
+    type MutationObserverConstructor,
+    type MutationObserverLike,
+    type PageChangeClock,
+    type PageChangeSource,
+} from "./page-change.js";
 export { MacrotaskLag } from "./MacrotaskLag.js";
 export { createMessageTaskQueue, type MessageTaskQueue, type PostTaskFn } from "./message-task.js";
 export { BusyTimeProbe } from "./BusyTimeProbe.js";
@@ -139,6 +149,7 @@ export type {
     ReportingDeps,
     SharedMemoryDeps,
     PageDeps,
+    PageChangeDeps,
     PeerDeps,
     AbsoluteClockDeps,
     CrashReportDeps,

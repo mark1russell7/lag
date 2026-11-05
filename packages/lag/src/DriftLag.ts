@@ -21,9 +21,10 @@ export type DriftLagOptions = {
     /**
      * A function that gets `true` when the monitor finds throttled timers,
      * and `false` when the throttling ends, or when the monitor stops during
-     * it (refer to the class description). It needs `postTask`.
+     * it (refer to the class description). It needs `postTask`. With `sinceChangeMs`, the second argument is the time
+     * since the last change of the page, at the start of the throttling.
      */
-    onThrottle? : (throttled : boolean) => void;
+    onThrottle? : (throttled : boolean, sinceChangeMs? : number) => void;
     /**
      * With `true`, a long step of throttled timers can give a value, with the mark `throttled-step` (refer to the class
      * description). The default is `false`, because one timer that wakes off the grid gives the same steps as a block.
@@ -35,7 +36,14 @@ export type DriftLagOptions = {
      * this count, a reader cannot tell "no block" from "not read". A block that ends before the next step of the grid
      * changes no step, so the count does not see it.
      */
-    onUnreadStep? : (mode : UnreadStepMode, stepMs : number) => void;
+    onUnreadStep? : (mode : UnreadStepMode, stepMs : number, sinceChangeMs? : number) => void;
+    /**
+     * This function gives the milliseconds since the last change of the page, for example `sinceChangeMs` of
+     * `createPageChangeClock`. The monitor reads it only at the start of the throttling and at an unread step. Then the
+     * log, `onThrottle` and `onUnreadStep` get it. In Safari on macOS, a page with no repaint for 30 s or more gets the
+     * grid of 1 s. That is the idle grid of Safari, not lag (`IDLE_GRID_CHANGE_MS`).
+     */
+    sinceChangeMs? : () => number | undefined;
 };
 
 /**
@@ -314,13 +322,14 @@ export class DriftLag extends LagMonitor {
     private longCheck = false;
     private lastFailedCheckAt = -Infinity;
     private readonly recordThrottledSteps : boolean;
-    private readonly onUnreadStep : ((mode : UnreadStepMode, stepMs : number) => void) | undefined;
+    private readonly onUnreadStep : ((mode : UnreadStepMode, stepMs : number, sinceChangeMs? : number) => void) | undefined;
+    private readonly sinceChangeMs : (() => number | undefined) | undefined;
     /** The longest step of the window, while the monitor has not found throttled timers. */
     private longestWindowStepMs = 0;
     /** The longest step that a window lost to the throttling, or that came before the grid. The grid decides it. */
     private longestBeforeGridMs = 0;
     private readonly probing : Probing | undefined;
-    private readonly onThrottle : ((throttled : boolean) => void) | undefined;
+    private readonly onThrottle : ((throttled : boolean, sinceChangeMs? : number) => void) | undefined;
     private readonly stepMs : number;
     private readonly maxSteps : number;
     private readonly baselineSize : number;
@@ -341,6 +350,7 @@ export class DriftLag extends LagMonitor {
         this.onThrottle = options?.onThrottle;
         this.recordThrottledSteps = options?.recordThrottledSteps ?? false;
         this.onUnreadStep = options?.onUnreadStep;
+        this.sinceChangeMs = options?.sinceChangeMs;
         this.start();
     }
 
@@ -563,12 +573,14 @@ export class DriftLag extends LagMonitor {
             this.lastThrottledStepMs = undefined;
             this.longThrottledStepMs = undefined;
             this.longestBeforeGridMs = Math.max(this.longestBeforeGridMs, this.longestWindowStepMs);
+            const sinceChangeMs = this.readSinceChange();
             this.logger.log("info", "DriftLag: the browser throttles the timers. The windows pause.", {
                 type : "LagMonitor",
                 subtype : "DriftLag",
                 stepMs : durationMs,
+                ...(sinceChangeMs === undefined ? {} : { sinceChangeMs }),
             });
-            this.notifyThrottle(true);
+            this.notifyThrottle(true, sinceChangeMs);
         }
         if ((idle || busyMs === undefined) && durationMs >= THROTTLED_STEP_MS) {
             this.followThrottledStep(durationMs);
@@ -658,14 +670,17 @@ export class DriftLag extends LagMonitor {
 
     /** An error of `onUnreadStep` does not stop the chain of steps. */
     private noteUnreadStep(mode : UnreadStepMode, stepMs : number) : void {
+        const sinceChangeMs = this.readSinceChange();
         this.logger.log("debug", "DriftLag: a long throttled step gave no value.", {
             type : "LagMonitor",
             subtype : "DriftLag",
             stepMs,
             mode,
+            ...(sinceChangeMs === undefined ? {} : { sinceChangeMs }),
         });
         try {
-            this.onUnreadStep?.(mode, stepMs);
+            if (sinceChangeMs === undefined) this.onUnreadStep?.(mode, stepMs);
+            else this.onUnreadStep?.(mode, stepMs, sinceChangeMs);
         } catch (error) {
             this.logger.log("error", "Error in the unread step callback of DriftLag.", {
                 error,
@@ -675,10 +690,25 @@ export class DriftLag extends LagMonitor {
         }
     }
 
-    /** An error of `onThrottle` does not stop the chain of steps. */
-    private notifyThrottle(throttled : boolean) : void {
+    /** An error of `sinceChangeMs` gives no time, and it does not stop the chain of steps. */
+    private readSinceChange() : number | undefined {
         try {
-            this.onThrottle?.(throttled);
+            return this.sinceChangeMs?.();
+        } catch (error) {
+            this.logger.log("error", "Error in the change clock of DriftLag.", {
+                error,
+                type : "LagMonitor",
+                subtype : "DriftLag",
+            });
+            return undefined;
+        }
+    }
+
+    /** An error of `onThrottle` does not stop the chain of steps. */
+    private notifyThrottle(throttled : boolean, sinceChangeMs? : number) : void {
+        try {
+            if (sinceChangeMs === undefined) this.onThrottle?.(throttled);
+            else this.onThrottle?.(throttled, sinceChangeMs);
         } catch (error) {
             this.logger.log("error", "Error in the throttle callback of DriftLag.", {
                 error,
