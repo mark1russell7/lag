@@ -69,6 +69,9 @@ const PROBE_MS = 50;
  */
 const THROTTLED_STEP_MS = 500;
 
+/** The debug log of a long step with a probe that found a busy thread. It tells why a check found no throttling. */
+export const BUSY_CHECK_LOG = "DriftLag: a check of a long step found a busy thread.";
+
 /** While the timers are throttled, a probe checks one step of each this number of steps again. */
 const THROTTLE_RECHECK_STEPS = 30;
 
@@ -461,6 +464,14 @@ export class DriftLag extends LagMonitor {
      */
     private followThrottling(durationMs : number, busyMs : number | undefined, now : number) : boolean {
         const idle = busyMs !== undefined && busyMs < PROBE_MS / 2;
+        if (busyMs !== undefined && !idle && durationMs >= THROTTLED_STEP_MS) {
+            this.logger.log("debug", BUSY_CHECK_LOG, {
+                type : "LagMonitor",
+                subtype : "DriftLag",
+                stepMs : durationMs,
+                busyMs,
+            });
+        }
         if (this.throttledSteps === undefined) {
             if (!idle || durationMs < THROTTLED_STEP_MS) return false;
             // The window has the long step before this step, and possibly earlier throttled steps. It ends

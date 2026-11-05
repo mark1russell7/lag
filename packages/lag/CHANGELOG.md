@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+### Changed
+
+- **DriftLag logs the busy time of a check.** A check of a long step that finds a busy thread gives a debug log with `stepMs` and `busyMs`. No record changes.
+
 ## 0.2.4
 
 ### Fixed

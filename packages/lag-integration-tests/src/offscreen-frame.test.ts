@@ -99,9 +99,11 @@ describe("A frame off the screen", () => {
         };
         const tee = createTeeMeter(createNoopMeter());
         const logs : string[] = [];
+        const busyChecks : number[] = [];
         const { frameViewport, ...deps } = createBrowserDeps({
             logger : { log : (level, message, args) => {
                 logs.push(message);
+                if (message === "DriftLag: a check of a long step found a busy thread.") busyChecks.push(Math.round((args as { busyMs : number }).busyMs));
                 if (level === "error") console.log(`[error] ${message}`, args);
             } },
             meter : tee.meter,
@@ -134,7 +136,7 @@ describe("A frame off the screen", () => {
         const longestFrameGap = Math.max(0, ...tee.records("lag_frame_delta_histogram").filter(record => record.time > offAt).map(record => record.value));
         console.log(`${environment()}${withViewport ? "" : ", without the frame viewport"}: longest step of a 100 ms timeout chain ` +
             `in the frame off the screen ${Math.round(longestOffscreen)} ms; records off the screen ${JSON.stringify(during)}; ` +
-            `longest frame gap after ${Math.round(longestFrameGap)} ms`);
+            `longest frame gap after ${Math.round(longestFrameGap)} ms; busy checks ${JSON.stringify(busyChecks)}`);
         return { longestOffscreen, during, resumed, logs, longestFrameGap };
     }
 
