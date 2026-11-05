@@ -151,6 +151,15 @@ jobs:
         run: |
           caffeinate -dimsu -t 600 &
           LAG_SAFARI=1 LAG_SAFARI_READ=focus pnpm exec vitest run --project "browser (safari)"
+      # The same read with a real click each 20 s: is it the time since the last input, or since the page loaded?
+      - name: Read the grid of the timers on a page with input
+        if: always()
+        continue-on-error: true
+        working-directory: packages/lag-integration-tests
+        shell: bash
+        run: |
+          caffeinate -dimsu -t 600 &
+          LAG_SAFARI=1 LAG_SAFARI_READ=input pnpm exec vitest run --project "browser (safari)"
       # A skip of the load cases keeps this job green. It is no read, so the check and the summary say so.
       - name: Report a no read of the load cases
         if: always()
