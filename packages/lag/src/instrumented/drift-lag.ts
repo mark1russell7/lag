@@ -11,11 +11,11 @@ import { createHandle, validatedRecorder } from "./shared.js";
 import { IDLE_GRID_CHANGE_MS, createPageChangeClock } from "../page-change.js";
 
 /** The page at the start of the throttling: no change for `IDLE_GRID_CHANGE_MS` or more, a more recent change, or no clock. */
-type PageState = "idle" | "changed" | "not-read";
+type PageState = "unchanged" | "changed" | "not-read";
 
 function pageState(sinceChangeMs : number | undefined) : PageState {
     if (sinceChangeMs === undefined) return "not-read";
-    return sinceChangeMs >= IDLE_GRID_CHANGE_MS ? "idle" : "changed";
+    return sinceChangeMs >= IDLE_GRID_CHANGE_MS ? "unchanged" : "changed";
 }
 
 /**
@@ -42,7 +42,7 @@ function pageState(sinceChangeMs : number | undefined) : PageState {
  *
  * With `deps.pageChanges`, the monitor reads the time since the last change of the page at the start of the
  * throttling and at each unread step. `lag_drift_throttle_starts` and `lag_drift_unread_steps` get the attribute
- * `page`: `idle` after no change for 30 s or more, the idle grid of Safari, which is not lag.
+ * `page`: `unchanged` when the source saw no change for 30 s or more. That does not prove that the page did not repaint.
  */
 export function createInstrumentedDriftLag(
     deps : CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">> & Partial<PageChangeDeps>,

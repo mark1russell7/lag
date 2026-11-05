@@ -207,11 +207,11 @@ describe("createInstrumentedDriftLag with MessageChannel", () => {
     /** A source that saw no change: the clock counts from its start, at the creation of the monitor. */
     const stillPage : PageChangeSource = { observe : () => () => {}, animating : () => false };
 
-    it("gives the time since the last change of the page to the throttle counters: idle from 30 s, changed before", () => {
+    it("gives the time since the last change of the page to the throttle counters: unchanged from 30 s, changed before", () => {
         // The block ends the throttling, and the throttling starts again after it: two starts
         const late = throttledBlock(undefined, undefined, stillPage, 31_000);
-        expect(late.starts).toEqual([{ value : 1, attributes : { page : "idle" } }, { value : 1, attributes : { page : "idle" } }]);
-        expect(late.unread).toEqual([{ value : 1, attributes : { mode : "option-off", page : "idle" } }]);
+        expect(late.starts).toEqual([{ value : 1, attributes : { page : "unchanged" } }, { value : 1, attributes : { page : "unchanged" } }]);
+        expect(late.unread).toEqual([{ value : 1, attributes : { mode : "option-off", page : "unchanged" } }]);
         const start = late.logger.log.mock.calls.find(([, message]) => String(message).includes("throttles the timers"));
         expect(start?.[2]).toMatchObject({ sinceChangeMs : expect.any(Number) as number });
         expect((start?.[2] as { sinceChangeMs : number }).sinceChangeMs).toBeGreaterThanOrEqual(31_000);

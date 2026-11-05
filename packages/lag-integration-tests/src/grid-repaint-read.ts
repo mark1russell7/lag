@@ -17,6 +17,8 @@ import { readPeriod, type Period } from "./grid-read.js";
  * The change clock of lag (`domPageChanges`) operates in each arm. Each period gives `sinceChangeMs` at its end.
  * In the repaint arm, the clock must see each change. In the input arm, the clock must not be a change.
  * Else the input arm does not fall to the grid, and the clock removes the condition that it reports.
+ * The third arm scrolls an element each 20 s, with no change of the document. The clock must see each scroll.
+ * Else a page that only scrolls gets `unchanged`, and a real lag on it looks like the grid.
  */
 
 /** The time of each period. */
@@ -48,7 +50,7 @@ async function readArm(change : (index : number) => Promise<void>) : Promise<Arm
     return periods;
 }
 
-describe("The grid of 1 s of Safari on a CI runner: a repaint or an input", () => {
+describe("The grid of 1 s of Safari on a CI runner: a repaint, an input or a scroll", () => {
     it("reads the timer chain on a page that changes one text node each 20 s, with no input", async () => {
         const before = pageState();
         const text = document.createElement("p");
@@ -76,5 +78,26 @@ describe("The grid of 1 s of Safari on a CI runner: a repaint or an input", () =
         });
         target.remove();
         console.log(`grid-repaint read ${JSON.stringify({ arm : "input", userAgent : navigator.userAgent, before, clicks, periods })}`);
+    }, PERIODS * PERIOD_MS + 60_000);
+
+    it("reads the timer chain on a page that scrolls an element each 20 s, with no change of the document", async () => {
+        const before = pageState();
+        const box = document.createElement("div");
+        box.style.cssText = "width:120px;height:40px;overflow:auto";
+        const content = document.createElement("div");
+        content.style.cssText = "height:4000px";
+        box.append(content);
+        let scrolls = 0;
+        box.addEventListener("scroll", () => {
+            scrolls += 1;
+        }, { passive : true });
+        document.body.append(box);
+        // A scroll changes no node and no attribute, so only the scroll listener of the clock can see it
+        const periods = await readArm(async (index) => {
+            box.scrollTop = (index + 1) * 10;
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+        });
+        box.remove();
+        console.log(`grid-repaint read ${JSON.stringify({ arm : "scroll", userAgent : navigator.userAgent, before, scrolls, periods })}`);
     }, PERIODS * PERIOD_MS + 60_000);
 });

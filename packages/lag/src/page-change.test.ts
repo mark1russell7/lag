@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { IDLE_GRID_CHANGE_MS, createPageChangeClock, domPageChanges, type MutationObserverConstructor, type PageChangeSource } from "./page-change.js";
+import { IDLE_GRID_CHANGE_MS, PAGE_CHANGE_EVENTS, createPageChangeClock, domPageChanges, type MutationObserverConstructor, type PageChangeSource } from "./page-change.js";
 
 /** A source whose changes and animations the test sets. */
 function manualSource() {
@@ -46,7 +46,7 @@ describe("createPageChangeClock", () => {
         expect(stop).toHaveBeenCalledTimes(1);
     });
 
-    it("names 30 s as the time of the idle grid, the earliest start of 4 rows on macOS CI", () => {
+    it("names 30 s as the time with no change seen, the earliest start of the grid in 4 rows on macOS CI", () => {
         expect(IDLE_GRID_CHANGE_MS).toBe(30_000);
     });
 });
@@ -81,6 +81,32 @@ describe("domPageChanges", () => {
         expect(onChange).toHaveBeenCalledTimes(1);
         stop();
         expect(observer.disconnect).toHaveBeenCalledTimes(1);
+    });
+
+    it("listens to scroll and media events in the capture phase, passive, and stops", () => {
+        const observer = fakeObserver();
+        const listeners = new Map<string, () => void>();
+        const added : unknown[] = [];
+        const removed : unknown[] = [];
+        const document = {
+            documentElement : {},
+            addEventListener(type : string, listener : () => void, options : unknown) {
+                listeners.set(type, listener);
+                added.push([type, options]);
+            },
+            removeEventListener(type : string, listener : () => void, options : unknown) {
+                if (listeners.get(type) === listener) removed.push([type, options]);
+            },
+        };
+        const onChange = vi.fn();
+        const stop = domPageChanges(observer.Observer, document).observe(onChange);
+        expect(PAGE_CHANGE_EVENTS).toEqual(["scroll", "playing", "timeupdate"]);
+        expect(added).toEqual(PAGE_CHANGE_EVENTS.map((type) => [type, { capture : true, passive : true }]));
+        listeners.get("scroll")?.();
+        listeners.get("timeupdate")?.();
+        expect(onChange).toHaveBeenCalledTimes(2);
+        stop();
+        expect(removed).toEqual(added);
     });
 
     it("finds a running animation, and no animation without getAnimations", () => {

@@ -27,6 +27,7 @@ BusyTimeProbe: dist/BusyTimeProbe.d.ts#BusyTimeProbe
 type CancelAnimationFrameFn: dist/FrameTimingMonitor.d.ts#CancelAnimationFrameFn
 type CancelIdleCallbackFn: dist/IdleAvailabilityMonitor.d.ts#CancelIdleCallbackFn
 type ChangeDocument: dist/page-change.d.ts#ChangeDocument
+type ChangeListenerOptions: dist/page-change.d.ts#ChangeListenerOptions
 type ClearIntervalFn: dist/types.d.ts#ClearIntervalFn
 type ClearTimeoutFn: dist/types.d.ts#ClearTimeoutFn
 type Clock: dist/types.d.ts#Clock
@@ -174,6 +175,7 @@ type OtelTraceApiLike: dist/otel-span-adapter.d.ts#OtelTraceApiLike
 type OtelTracerLike: dist/otel-span-adapter.d.ts#OtelTracerLike
 type OtlpAttributeValue: dist/otlp-json.d.ts#OtlpAttributeValue
 type OtlpLogRecordInput: dist/otlp-json.d.ts#OtlpLogRecordInput
+PAGE_CHANGE_EVENTS: dist/page-change.d.ts#PAGE_CHANGE_EVENTS
 PEER_BEAT_INTERVAL_MS: dist/PeerHangWatch.d.ts#PEER_BEAT_INTERVAL_MS
 PEER_CHANNEL_NAME: dist/PeerHangWatch.d.ts#PEER_CHANNEL_NAME
 PEER_CLAIM_HOLD_MS: dist/PeerHangWatch.d.ts#PEER_CLAIM_HOLD_MS
@@ -1948,6 +1950,14 @@ export type ChangeDocument = {
     getAnimations?(): readonly {
         readonly playState: string;
     }[];
+    addEventListener?(type: string, listener: () => void, options: ChangeListenerOptions): void;
+    removeEventListener?(type: string, listener: () => void, options: ChangeListenerOptions): void;
+};
+
+### dist/page-change.d.ts#ChangeListenerOptions
+export type ChangeListenerOptions = {
+    readonly capture: true;
+    readonly passive: true;
 };
 
 ### dist/page-change.d.ts#IDLE_GRID_CHANGE_MS
@@ -1966,6 +1976,9 @@ export type MutationObserverLike = {
     }): void;
     disconnect(): void;
 };
+
+### dist/page-change.d.ts#PAGE_CHANGE_EVENTS
+export declare const PAGE_CHANGE_EVENTS: readonly string[];
 
 ### dist/page-change.d.ts#PageChangeClock
 export type PageChangeClock = {

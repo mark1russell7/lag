@@ -4,12 +4,12 @@
 
 ### Added
 
-- **The time since the last change of the page, at each start of the throttling.** In Safari on macOS, the timers of a page with no repaint go to the grid of 1 s. That is the idle grid of Safari, not lag. The log of the start has the field `sinceChangeMs`.
-- **The counter `lag_drift_throttle_starts`, and the attribute `page` of it and of `lag_drift_unread_steps`.** The value `idle` means no change for 30 s or more. The value `changed` means a more recent change, and `not-read` means no change clock.
-- **The change clock: `createPageChangeClock`, `domPageChanges` and `IDLE_GRID_CHANGE_MS`.** `createBrowserDeps()` makes it from a `MutationObserver` and `document.getAnimations()`. The option `pageChanges: false` turns it off.
+- **The time since the last change of the page, at each start of the throttling.** In Safari on macOS, the timers of a page with no repaint go to the grid of 1 s. The log of the start has the field `sinceChangeMs`.
+- **The counter `lag_drift_throttle_starts`, and the attribute `page` of it and of `lag_drift_unread_steps`.** The value `unchanged` means no change seen for 30 s or more. The value `changed` means a more recent change, and `not-read` means no change clock.
+- **The change clock: `createPageChangeClock`, `domPageChanges`, `PAGE_CHANGE_EVENTS` and `IDLE_GRID_CHANGE_MS`.** `createBrowserDeps()` makes it from a `MutationObserver`, `document.getAnimations()`, and passive listeners for scroll and media events. The option `pageChanges: false` turns it off.
 - **The option `sinceChangeMs` of `DriftLag`.** `onThrottle` and `onUnreadStep` get the time as a last argument.
 
-A script cannot see a repaint. The clock does not see a canvas that draws, a video that plays or a scroll. The 30 s come from 4 rows on macOS CI runners, and they tell nothing about an iPhone.
+A script cannot see a repaint. The clock does not see a canvas that draws or a style that changes on a hover, so `unchanged` does not prove that a step is not lag. The 30 s come from 4 rows on macOS CI runners, and they tell nothing about an iPhone.
 
 ## 0.4.1
 

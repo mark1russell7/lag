@@ -40,8 +40,8 @@ export type DriftLagOptions = {
     /**
      * This function gives the milliseconds since the last change of the page, for example `sinceChangeMs` of
      * `createPageChangeClock`. The monitor reads it only at the start of the throttling and at an unread step. Then the
-     * log, `onThrottle` and `onUnreadStep` get it. In Safari on macOS, a page with no repaint for 30 s or more gets the
-     * grid of 1 s. That is the idle grid of Safari, not lag (`IDLE_GRID_CHANGE_MS`).
+     * log, `onThrottle` and `onUnreadStep` get it. In Safari on macOS, a page with no repaint for 30 s or more can get
+     * the grid of 1 s (`IDLE_GRID_CHANGE_MS`). The time tells only what the source saw.
      */
     sinceChangeMs? : () => number | undefined;
 };

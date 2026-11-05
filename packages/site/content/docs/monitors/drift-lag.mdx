@@ -140,7 +140,7 @@ A browser test puts a frame off the screen for 6 s, without the pause of the fra
 
 ### The idle grid of Safari
 
-In Safari on macOS, the timers of a page with no repaint go to the grid of 1 s. A step of approximately 1 s on an idle page is then the idle grid of Safari. **It is not lag.** A Safari read of lag tells the two cases apart (`grid-repaint-read.ts`, pull request 117):
+In Safari on macOS, the timers of a page with no repaint go to the grid of 1 s. A Safari read of lag shows which pages get it (`grid-repaint-read.ts`, pull request 117):
 
 | Arm, 15 periods of 10 s | Jobs | Timer callbacks in each period |
 | --- | --- | --- |
@@ -149,10 +149,16 @@ In Safari on macOS, the timers of a page with no repaint go to the grid of 1 s. 
 
 Thus a repaint holds off the grid, and an input with no change of the look does not. These are 4 rows on GitHub macOS runners with Safari 26.6.2, not a rate. **They tell nothing about an iPhone.** This page claims nothing for iOS until a read on a real device.
 
-DriftLag gives the time since the last change of the page with each start of the throttling. `createBrowserDeps()` makes the change clock from a `MutationObserver` of the document and from the running animations of `document.getAnimations()`. A script cannot see a repaint, so the clock sees only these changes. It does not see a canvas that draws, a video that plays or a scroll. The observer does not change the page. The clock operates in each arm of the read, so the read checks that the input arm still falls to the grid with it.
+DriftLag gives the time since the last change of the page with each start of the throttling. `createBrowserDeps()` makes the change clock from these sources:
+
+- a `MutationObserver` of all of the document,
+- the running animations of `document.getAnimations()`,
+- passive listeners in the capture phase for `scroll`, and for `playing` and `timeupdate` of a media element (`PAGE_CHANGE_EVENTS`).
+
+A script cannot see a repaint, so the clock sees only these changes. **It does not see a canvas that draws, or a style that changes on a hover.** Thus `unchanged` tells what the clock saw. It does not prove that the page did not repaint, and it does not prove that a step is not lag. The observer and the listeners do not change the page. The clock operates in each arm of the read. So the read checks that the input arm still falls to the grid, and that a scroll is a change.
 
 - The log of the start of the throttling has the field `sinceChangeMs`. The options `onThrottle` and `onUnreadStep` get it as a last argument.
-- The counter `lag_drift_throttle_starts` and the counter `lag_drift_unread_steps` have the attribute `page`. The value `idle` means no change for 30 s or more (`IDLE_GRID_CHANGE_MS`), the earliest start of the 4 rows. That is the idle grid of Safari, not lag. The value `changed` means a more recent change. The value `not-read` means that the monitor has no change clock.
+- The counter `lag_drift_throttle_starts` and the counter `lag_drift_unread_steps` have the attribute `page`. The value `unchanged` means no change seen for 30 s or more (`IDLE_GRID_CHANGE_MS`), the earliest start of the grid in the 4 rows. The value `changed` means a more recent change. The value `not-read` means that the monitor has no change clock.
 - The option `pageChanges: false` of `createBrowserDeps()` turns the clock off.
 
 ### Windows and records

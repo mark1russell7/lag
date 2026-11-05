@@ -2,9 +2,11 @@
 export { DriftLag, type DriftLagOptions, type UnreadStepMode } from "./DriftLag.js";
 export {
     IDLE_GRID_CHANGE_MS,
+    PAGE_CHANGE_EVENTS,
     createPageChangeClock,
     domPageChanges,
     type ChangeDocument,
+    type ChangeListenerOptions,
     type MutationObserverConstructor,
     type MutationObserverLike,
     type PageChangeClock,
