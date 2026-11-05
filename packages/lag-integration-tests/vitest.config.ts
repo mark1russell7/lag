@@ -75,6 +75,9 @@ function crossOriginIsolation() : Plugin {
         };
     }
 
+    /** The reads that a Safari job starts alone, each in a new session, by the value of `LAG_SAFARI_READ`. */
+    const SAFARI_READS : Readonly<Record<string, string[]>> = { "1" : ["src/grid-time-read.ts"], focus : ["src/grid-focus-read.ts"] };
+
     /**
      * Safari on macOS, through safaridriver (WebDriver). The project exists only
      * with LAG_SAFARI=1, because only macOS has Safari. Safari has no headless
@@ -85,7 +88,7 @@ function crossOriginIsolation() : Plugin {
             extends : true,
             test : {
                 name : "safari",
-                include : process.env["LAG_SAFARI_READ"] === "1" ? ["src/grid-time-read.ts"] : ["src/*.test.ts"],
+                include : SAFARI_READS[process.env["LAG_SAFARI_READ"] ?? ""] ?? ["src/*.test.ts"],
                 fileParallelism : false,
                 browser : {
                     enabled : true,
