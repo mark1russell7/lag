@@ -119,7 +119,7 @@ With `MessageChannel`, the monitor finds this case:
 - A probe examines one throttled step of each 30. A shorter step, or a probe that finds a busy thread, ends the throttling. The monitor logs "DriftLag: the timers are not throttled. The windows continue."
 - The option `onThrottle` gets `true` and `false` at these changes, and `false` at a stop during the throttling. The factory gives the state to the measurement conditions, and the [frame-timing monitor](/docs/monitors/frame-timing) pauses with it.
 
-During the throttling, a block gives no value by default. **Thus no value in that time does not tell that no block occurred.** The option `recordThrottledSteps` changes this:
+During the throttling, a block gives no value by default. **Thus no value in that time does not tell that no block occurred.** The counter `lag_drift_unread_steps` tells that a throttled step was too long for the grid and gave no value, with the reason in its attribute `mode`. A block that ends before the next step of the grid changes no step, so this counter does not see it. The option `recordThrottledSteps` changes this:
 
 - Two throttled steps in a row that agree within 10% give the grid.
 - A step of more than 2.2 grids gives a value of its duration minus one grid. The next step must be shorter than a grid, and the two steps must give whole grids within 5%.

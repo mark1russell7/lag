@@ -97,9 +97,10 @@ jobs:
           path: packages/lag-integration-tests/src/**/__screenshots__/
           if-no-files-found: ignore
 
-  # The real Safari, through safaridriver. Only macOS has it. The job reports, but it does not
-  # block: Safari on a shared macOS runner sometimes slows the timers of its window (by 9 s one
-  # time), and then a timing test fails for a reason that is not in the code.
+  # The real Safari, through safaridriver. Only macOS has it. Safari on a shared macOS runner
+  # sometimes slows the timers of its window (by 9 s one time), and then a timing test fails for a
+  # reason that is not in the code. The rules of main require this check, so a failure blocks a pull
+  # request, even with continue-on-error.
   safari:
     name: Browser tests (safari)
     runs-on: macos-latest
@@ -127,10 +128,30 @@ jobs:
           defaults write NSGlobalDomain NSAppSleepDisabled -bool YES
       - name: Browser tests in Safari
         working-directory: packages/lag-integration-tests
+        shell: bash
         # caffeinate keeps the display awake: WebKit slows the timers of a window that it does not show
         run: |
           caffeinate -dimsu -t 3600 &
-          pnpm run test:safari
+          pnpm run test:safari 2>&1 | tee "$RUNNER_TEMP/safari-tests.log"
+      # A skip of the load cases keeps this job green. It is no read, so the check and the summary say so.
+      - name: Report a no read of the load cases
+        if: always()
+        shell: bash
+        run: |
+          safari=$(defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString)
+          echo "Safari $safari, macOS $(sw_vers -productVersion), image $ImageOS $ImageVersion"
+          pmset -g | grep -iE "lowpowermode|displaysleep" || true
+          log="$RUNNER_TEMP/safari-tests.log"
+          [ -f "$log" ] || exit 0
+          count=$(grep -c "drift-load cannot decide" "$log" || true)
+          [ "$count" -gt 0 ] || exit 0
+          message="no read: $count load cases of drift-load in Safari $safari, image $ImageOS $ImageVersion. This green job is not a read of these cases."
+          echo "::warning title=No read of the load cases::$message"
+          {
+            echo "### No read of the load cases"
+            echo
+            echo "$message"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Safari on iOS in the iOS Simulator of a macOS runner, through safaridriver. The job reports,
   # but it does not block: a simulator has the CPU and the power of the Mac, not of a phone, and

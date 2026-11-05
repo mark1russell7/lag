@@ -5,6 +5,7 @@ import { environment, recordMeasurement } from "./commands.js";
 import { pageState } from "./animation-frames.js";
 import { gapsBetween, watchTimers } from "./timer-watch.js";
 import { MIN_IDLE_MESSAGES, idleProbe } from "./idle-probe.js";
+import { loadRead } from "./load-read.js";
 
 /**
  * DriftLag during a sustained load of equal tasks (experiment E5). Before
@@ -121,6 +122,17 @@ async function measureLoad(test : TestContext, kind : "message" | "timer", taskM
         console.log(`Timer chain of 5 ms (${timers.count} callbacks): mean step ${idleSteps.meanMs.toFixed(2)} ms before the load and ` +
             `${afterSteps.meanMs.toFixed(2)} ms after it, longest gap ${idleSteps.maxGapMs.toFixed(0)} ms before and ${afterSteps.maxGapMs.toFixed(0)} ms after; ` +
             `${stalled} of ${idleAll.length + afterAll.length} windows overlap a gap of more than ${STALL_MS} ms`);
+        console.log(`Page state in the load test: ${pageState()}`);
+        // load-read.ts decides this from the gaps of the timer chain, the version of Safari and the date. See its flips.
+        const read = loadRead({ lateWindows : late.length, stalls : timers.stalls, userAgent : navigator.userAgent, now : Date.now() });
+        const gaps = timers.stalls.map(stall => Math.round(stall.end - stall.start)).join(" ");
+        if (late.length === 0) console.log(`Gaps of the chain with no window in the load: ${gaps}`);
+        if (read !== "read") {
+            console.log(`drift-load cannot decide: no read of ${kind} tasks of ${taskMs} ms, ${timers.count} callbacks, ${navigator.userAgent}`);
+        }
+        expect(read, "The no read of the load cases passed its end date: find a page that the browser does not throttle.").not.toBe("no-read-ended");
+        test.skip(read === "no-read",
+            `No read: the browser held the timers of the page on a grid of 1 s, and no window ended in the load. Gaps of the chain: ${gaps} (${pageState()}).`);
         await recordMeasurement(`drift-load/${kind}-${taskMs}ms/lag_fraction`, "%", [100 * lagFraction], { scenario : `${kind}-${taskMs}ms` });
 
         expect(late.length).toBeGreaterThan(0);

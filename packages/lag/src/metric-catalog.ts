@@ -69,7 +69,7 @@ const BOUNDARIES_OF_UNIT : Readonly<Record<string, readonly number[]>> = {
 };
 
 export type MetricKey =
-    | "drift" | "driftBaseline" | "macrotask"
+    | "drift" | "driftBaseline" | "driftUnreadSteps" | "macrotask"
     | "samplesDiscarded" | "stalls" | "stallDuration"
     | "workerMainBlock" | "workerSelfLag" | "workerClockOffset" | "hangs" | "hangDuration"
     | "loafBlocking" | "loafDuration"
@@ -111,6 +111,9 @@ export const METRICS : Readonly<Record<MetricKey, MetricDefinition>> = {
     drift : metric("lag_drift_histogram", "histogram", "ms", "DriftLag",
         "The lag of one window (approximately 100 ms) of chained timeouts: its duration minus the idle duration of its steps. Each block of the main thread in the window adds to the lag. The attribute `source` marks a value of one long step of throttled timers: that value can be false, because one timer that wakes off the grid gives the same steps as a block.",
         { source : ["throttled-step"] }),
+    driftUnreadSteps : metric("lag_drift_unread_steps", "counter", "{step}", "DriftLag",
+        "The number of throttled steps that were too long for the grid and gave no value, by the reason. During the throttling, no value does not tell that no block occurred: this count tells that a step was not read. A block that ends before the next step of the grid changes no step, so this count does not see it.",
+        { mode : ["option-off", "too-short", "refused", "no-grid"] }),
     driftBaseline : metric("lag_drift_baseline_histogram", "histogram", "ms", "DriftLag",
         "The idle duration of one timer step: the mean of the recent steps that are not blocks. An increase needs a probe that shows an idle thread. It is the timer granularity of the browser and the operating system. DriftLag subtracts it."),
     macrotask : metric("lag_macrotask_histogram", "histogram", "ms", "MacrotaskLag",

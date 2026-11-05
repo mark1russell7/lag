@@ -265,6 +265,8 @@ const NOT_IN_NORMAL_ACTIVITY = new Set([
     METRICS.hangs.name,
     METRICS.hangDuration.name,
     METRICS.clockJumps.name,
+    // A long step of a throttled page: DriftLag.replay.test.ts and instrumented/drift-lag.test.ts cover it
+    METRICS.driftUnreadSteps.name,
     METRICS.lifecycleTransitions.name,
     // Fake time does not advance in the checker's tight loop; ClockReliabilityChecker tests cover it
     METRICS.clockResolution.name,

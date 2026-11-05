@@ -1,5 +1,5 @@
 // --- Timer-based lag monitors ---
-export { DriftLag, type DriftLagOptions } from "./DriftLag.js";
+export { DriftLag, type DriftLagOptions, type UnreadStepMode } from "./DriftLag.js";
 export { MacrotaskLag } from "./MacrotaskLag.js";
 export { createMessageTaskQueue, type MessageTaskQueue, type PostTaskFn } from "./message-task.js";
 export { BusyTimeProbe } from "./BusyTimeProbe.js";
