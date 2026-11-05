@@ -133,6 +133,15 @@ jobs:
         run: |
           caffeinate -dimsu -t 3600 &
           pnpm run test:safari 2>&1 | tee "$RUNNER_TEMP/safari-tests.log"
+      # A read with no check: the chain of 5 ms timers over time, on a page with no load, in a new session.
+      - name: Read the grid of the timers over time
+        if: always()
+        continue-on-error: true
+        working-directory: packages/lag-integration-tests
+        shell: bash
+        run: |
+          caffeinate -dimsu -t 600 &
+          LAG_SAFARI=1 LAG_SAFARI_READ=1 pnpm exec vitest run --project "browser (safari)"
       # A skip of the load cases keeps this job green. It is no read, so the check and the summary say so.
       - name: Report a no read of the load cases
         if: always()
