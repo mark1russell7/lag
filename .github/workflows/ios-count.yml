@@ -7,12 +7,16 @@ on:
   workflow_dispatch:
   schedule:
     # Every Monday at 06:23 UTC
-    - cron: "23 6 * * 1"
+    - cron: "44 6 * * 1"
 
 permissions:
   actions: read
   contents: read
   issues: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   count:

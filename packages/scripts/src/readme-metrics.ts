@@ -6,7 +6,7 @@
  * Usage: `pnpm readme:metrics` writes the table. `pnpm readme:metrics --check`
  * fails if the README does not agree with the catalog.
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { METRIC_CATALOG, type MetricDefinition } from "@mark1russell7/lag";
@@ -63,4 +63,4 @@ function main() : void {
     writeFileSync(readmePath, next);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) main();
+if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) main();

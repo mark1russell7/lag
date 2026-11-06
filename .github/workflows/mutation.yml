@@ -9,10 +9,14 @@ on:
         default: false
   schedule:
     # Every Sunday at 03:41 UTC
-    - cron: "41 3 * * 0"
+    - cron: "2 3 * * 0"
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   stryker:
