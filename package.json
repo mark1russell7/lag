@@ -73,6 +73,12 @@
           ".github/workflows/site-check.yml"
         ],
         "reason": "lag keeps no roadmap file yet, so the Status page has no roadmap to show."
+      },
+      "pages-site": {
+        "ignore": [
+          ".github/workflows/pages.yml"
+        ],
+        "reason": "pages.yml builds the site with the reports of five browser jobs, and reusable-pages takes no reports of other jobs. pages.yml uses the actions site-pages, site-check and data-stamps of the template, and deploys."
       }
     }
   }
