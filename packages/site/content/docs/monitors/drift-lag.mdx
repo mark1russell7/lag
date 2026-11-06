@@ -157,6 +157,16 @@ DriftLag gives the time since the last change of the page with each start of the
 
 A script cannot see a repaint, so the clock sees only these changes. **It does not see a canvas that draws, or a style that changes on a hover.** Thus `unchanged` tells what the clock saw. It does not prove that the page did not repaint, and it does not prove that a step is not lag. The observer and the listeners do not change the page. The clock operates in each arm of the read. So the read checks that the input arm still falls to the grid, and that a scroll is a change.
 
+The read with the clock (pull request 119) has 3 arms. The scroll arm scrolls a box with no visible content each 20 s:
+
+| Arm, 15 periods of 10 s | Jobs | Timer callbacks in each period | Time since the last change, at the end of each period |
+| --- | --- | --- | --- |
+| One text node changes each 20 s | 2 | 948 to 1104 in each period, for 150 s | 10 s, then 20 s |
+| A real click each 20 s, with no change of the look | 2 | On the grid of 1 s from period 6 in both jobs (19 to 20 callbacks) | It grows by 10 s in each period, to 150 s |
+| A scroll each 20 s, with no change of the document | 2 | On the grid of 1 s from period 7 in one job and from period 9 in the other | 10 s, then 20 s |
+
+Thus the clock saw each change and each scroll, and the click was not a change for it. The scroll arm also went to the grid. Its box had no visible content, so a scroll changed no pixel. A grid step on such a page gets `changed`. Then the label does not explain the grid step, but it does not call a lag `unchanged`. These are 6 rows from 2 jobs on GitHub macOS runners with Safari 26.6.2, not a rate.
+
 - The log of the start of the throttling has the field `sinceChangeMs`. The options `onThrottle` and `onUnreadStep` get it as a last argument.
 - The counter `lag_drift_throttle_starts` and the counter `lag_drift_unread_steps` have the attribute `page`. The value `unchanged` means no change seen for 30 s or more (`IDLE_GRID_CHANGE_MS`), the earliest start of the grid in the 4 rows. The value `changed` means a more recent change. The value `not-read` means that the monitor has no change clock.
 - The option `pageChanges: false` of `createBrowserDeps()` turns the clock off.
