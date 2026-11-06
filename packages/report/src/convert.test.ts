@@ -36,7 +36,7 @@ describe("relativePath", () => {
     });
 
     it("removes the part before the packages folder of a file from another machine", () => {
-        expect(relativePath("/Users/mark/git/lag/packages/lag/src/a.ts", "/home/runner/work/lag/lag")).toBe("packages/lag/src/a.ts");
+        expect(relativePath("/Users/<you>/git/lag/packages/lag/src/a.ts", "/home/runner/work/lag/lag")).toBe("packages/lag/src/a.ts");
         expect(relativePath("packages/lag/src/a.ts", "/repo")).toBe("packages/lag/src/a.ts");
     });
 });

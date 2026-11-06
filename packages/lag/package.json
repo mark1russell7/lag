@@ -76,7 +76,7 @@
   "scripts": {
     "build": "tsc -b tsconfig.json tsconfig.worker.json",
     "prepack": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -b tsconfig.json tsconfig.worker.json",
-    "typecheck": "tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.config.json",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "mutation": "stryker run",

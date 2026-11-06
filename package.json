@@ -6,6 +6,7 @@
   "scripts": {
     "new": "tsx packages/scripts/src/new-package.ts",
     "build": "tsc -b",
+    "check:conventions": "conventions check",
     "typecheck": "tsc -b && pnpm -r --if-present typecheck",
     "test": "pnpm --filter @mark1russell7/lag --filter @lag/load --filter @lag/report --filter @lag/scripts --filter @lag/experiments test",
     "test:browser": "pnpm --filter @lag/integration-tests test:browser",
@@ -26,8 +27,59 @@
   },
   "devDependencies": {
     "@mark1russell7/api-report": "^0.4.0",
-    "@mark1russell7/ste-lint": "github:mark1russell7/ste-lint",
+    "@mark1russell7/conventions": "^0.33.0",
+    "@mark1russell7/ste-lint": "^0.1.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "conventions": {
+    "rules": {
+      "no-build-output": {
+        "ignore": [
+          "packages/site/build/**"
+        ],
+        "reason": "packages/site/build holds the source of the Vite plugins of the site and their tests. It is not build output."
+      },
+      "source-main": {
+        "ignore": [
+          "packages/lag/package.json",
+          "packages/load/package.json",
+          "packages/report/package.json"
+        ],
+        "reason": "These packages build to dist/ with the project references of tsc -b. The move to source packages changes each build, so it has its own pull request."
+      },
+      "cue-preset": {
+        "ignore": [
+          "packages/experiments/tsconfig.json",
+          "packages/lag/tsconfig.json",
+          "packages/lag-integration-tests/tsconfig.json",
+          "packages/load/tsconfig.json",
+          "packages/report/tsconfig.json",
+          "packages/scripts/tsconfig.json",
+          "packages/site/tsconfig.json"
+        ],
+        "reason": "The packages extend ts/config, an old copy of the presets of @mark1russell7/cue. The move to the cue presets has its own pull request, with the code that site hides from noPropertyAccessFromIndexSignature."
+      },
+      "typed-scripts": {
+        "ignore": [
+          ".github/scripts/boot-ios-simulator.sh",
+          ".github/scripts/test-ios.sh",
+          "packages/lag-integration-tests/public/lag-sw-probe.js"
+        ],
+        "reason": "The iOS scripts start only on the macOS runners, so their move to TypeScript needs runs of the iOS job. The browser loads lag-sw-probe.js as a static service worker."
+      },
+      "roadmap-parses": {
+        "ignore": [
+          ".github/workflows/site-check.yml"
+        ],
+        "reason": "lag keeps no roadmap file yet, so the Status page has no roadmap to show."
+      },
+      "pages-site": {
+        "ignore": [
+          ".github/workflows/pages.yml"
+        ],
+        "reason": "pages.yml builds the site with the reports of five browser jobs, and reusable-pages takes no reports of other jobs. pages.yml uses the actions site-pages, site-check and data-stamps of the template, and deploys."
+      }
+    }
   }
 }
