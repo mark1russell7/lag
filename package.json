@@ -26,11 +26,26 @@
     "readme:metrics:check": "tsx packages/scripts/src/readme-metrics.ts --check"
   },
   "devDependencies": {
-    "@mark1russell7/api-report": "^0.4.0",
+    "@mark1russell7/api-report": "^0.4.1",
     "@mark1russell7/conventions": "^0.33.0",
     "@mark1russell7/ste-lint": "^0.1.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "apiReport": {
+    "pages": [
+      {
+        "package": "packages/lag",
+        "pages": [
+          "packages/site/content/docs/api.mdx"
+        ],
+        "reference": "packages/site/content/docs/api-exports.mdx",
+        "frontmatter": {
+          "order": 42,
+          "status": "final"
+        }
+      }
+    ]
   },
   "conventions": {
     "rules": {

@@ -1,0 +1,1941 @@
+---
+# The command `api-report update` writes this file from the report of the package. Do not edit it.
+title: "Each export of @mark1russell7/lag"
+description: "Each entry point of @mark1russell7/lag, with its exports and their declarations."
+order: 42
+status: "final"
+---
+
+The report of the API of the package makes this page, so the page and the package have the same names. Each section is one entry point. A declaration shows one time, in the first section that has it.
+
+## `@mark1russell7/lag`
+
+```ts
+import {
+  type AbortControllerConstructor, type AbortControllerLike, type AbortSignalLike,
+  type AbsoluteClock, type AbsoluteClockDeps, type AckMessage, type AllMonitorDeps,
+  type AllMonitorHandles, type AttributeValue, type Attributes, type BroadcastChannelConstructor,
+  type BroadcastChannelLike, type BrowserDepsOptions, type BrowserGlobals, type BrowserReport,
+  BrowserReportMonitor, type BrowserReportType, BusyTimeProbe, type CancelAnimationFrameFn,
+  type CancelIdleCallbackFn, type ChangeDocument, type ChangeListenerOptions, type ClearIntervalFn,
+  type ClearTimeoutFn, type Clock, ClockDriftMonitor, type ClockDriftOptions, type ClockDriftSample,
+  type ClockJump, ClockReliabilityChecker, type ClockSyncResult, ClsCalculator,
+  ComputePressureMonitor, type ContextMessage, type CoreDeps, type Counter,
+  type CrashReportContextLike, type CrashReportDeps, type DiscardReason, DriftLag,
+  type DriftLagOptions, EVENTS, EVENT_CATALOG, EVENT_TIME_ATTRIBUTE, type EventAttributes,
+  type EventDefinition, type EventDeps, type EventEntryLike, type EventKey,
+  type EventLoopLagAttributes, type EventOptions, type EventSink, type EventTimingEntry,
+  EventTimingMonitor, type EventTimingReport, type FinalizationRegistryConstructor,
+  type FinalizationRegistryInstance, type ForwardedInstrument, type ForwardedMetricMessage,
+  type ForwardedRecords, type ForwardingMeter, type ForwardingMeterOptions, type FrameDeps,
+  type FrameMeasurement, FrameTimingMonitor, type FrameViewport, type GCDeps, GCSignalDetector,
+  HANG_JOURNAL_STALE_MS, HANG_JOURNAL_WRITE_INTERVAL_MS, HANG_REPORT_MARK_PREFIX,
+  HISTOGRAM_BOUNDARIES, type HangEndedMessage, type HangEvent, type HangJournal, type HangOptions,
+  type HangRecord, type HangReportMarks, type HangReportTarget, type HeartbeatMessage,
+  type Histogram, IDLE_GRID_CHANGE_MS, type IdbFactoryLike, IdleAvailabilityMonitor,
+  type IdleDeadline, type IdleDeps, type IdleMeasurement, InpCalculator, type InstrumentAdvice,
+  type InstrumentOptions, type IntersectionEntryLike, type IntersectionObserverInit,
+  LIVENESS_BUFFER_BYTES, LagLogger, type LagMeasurement, LagMonitor, type LagMonitorConstructor,
+  type LagValueSource, type LayoutShiftEntry, type LayoutShiftEntryLike, LayoutShiftMonitor,
+  type LayoutShiftReport, type LayoutShiftSource, type LegacyMemory, type LifecycleDeps,
+  type LifecycleDocument, type LifecycleEventTarget, type LifecycleListener,
+  type LifecycleListenerOptions, type LifecycleMark, type LifecycleState, LifecycleStateMachine,
+  type LifecycleSummary, type LifecycleTrigger, type LifecycleWindow, type LivenessBeacon,
+  type LivenessBlock, type LivenessBlockMessage, type LivenessStartMessage,
+  type LivenessStopMessage, LivenessWatcher, type LivenessWatcherOptions, type LoafEntry,
+  type LoafReport, type LoafScriptEntry, type LoafScriptSummary, type LockManagerLike, type Logger,
+  LongAnimationFrameMonitor, MAX_EVENT_TIME_OFFSET_MS, METRICS, METRIC_CATALOG, MacrotaskLag,
+  type MainToWorkerMessage, type MeasureMemoryResult, type MeasurementConditions,
+  type MeasurementConditionsOptions, type MemoryDeps, type MemoryMeasurement, MemoryMonitor,
+  type MemorySource, type MessageChannelConstructor, type MessageChannelLike, type MessagePortLike,
+  type MessageTarget, type MessageTaskQueue, type Meter, type MetricDefinition, type MetricKey,
+  type MetricKind, type MonitorFactory, type MonitorHandle, MonitorRegistry,
+  type MutationObserverConstructor, type MutationObserverLike, NAVIGATION_TYPES,
+  type NavigationInfo, type NavigationType, type ObserverDeps, ObserverMonitor, type OpenSpan,
+  type OtelEventSinkOptions, type OtelLogger, type OtelSpanContext, type OtelSpanLike,
+  type OtelTraceApiLike, type OtelTracerLike, type OtlpAttributeValue, type OtlpLogRecordInput,
+  PAGE_CHANGE_EVENTS, PEER_BEAT_INTERVAL_MS, PEER_CHANNEL_NAME, PEER_CLAIM_HOLD_MS, PEER_GRACE_MS,
+  PEER_HANG_THRESHOLD_MS, type PageChangeClock, type PageChangeDeps, type PageChangeSource,
+  type PageContextReceiver, type PageDeps, type PageDocument, type PagePerformance, type PageSource,
+  type PageView, type PageViewContext, type PageViewSpans, PageViewVitals, type PageViewVitalsDeps,
+  type Pausable, type PauseOptions, type PeerDeps, PeerHangWatch, type PeerHangWatchDeps,
+  type PeerHangWatchOptions, type PeerMessage, type PerformanceDeps, type PerformanceEntryLike,
+  type PerformanceEntryList, type PerformanceLike, type PerformanceObserverInit,
+  type PerformanceObserverInstance, type PerformanceObserverOptions, type PostTaskFn,
+  type PressureDeps, type PressureMeasurement, type PressureObserverInit,
+  type PressureObserverInstance, type PressureRecord, type PressureSource, type PressureState,
+  type QueueMicrotaskFn, RateLimiter, type Rating, ReliabilityTracker, type ReportLike,
+  type ReportingDeps, type ReportingObserverInit, type ReportingObserverInstance,
+  type RequestAnimationFrameFn, type RequestIdleCallbackFn, SHORT_INTERACTION_ESTIMATE_MS, SPANS,
+  SPAN_CATALOG, type SampleValidator, type SchedulingDeps, SchedulingFairnessMonitor,
+  type SchedulingMeasurement, type SetIntervalFn, type SetTimeoutFn, type SetupDeps,
+  SharedLivenessMonitor, type SharedLivenessOptions, type SharedMemoryDeps, type SpanDefinition,
+  type SpanDeps, type SpanIdentity, type SpanKey, type SpanOptions, type SpanSink, type StallKind,
+  type StartMessage, type StateTransition, type StopMessage, type StorageLike,
+  type SyncReplyMessage, type SyncRequestMessage, type SystemStall, type ThrottleCalibration,
+  type ThrottleDetectorDeps, type TimerDeps, type TimerThrottleConfig, TimerThrottleDetector,
+  type UnreadStepMode, type UnreliableInterval, type UnreliableReason, VITAL_THRESHOLDS,
+  ViewCollector, type ViewportDeps, type VitalName, type VitalValue, type VitalsReport,
+  type WallClock, type WallClockDeps, WorkerClockSync, type WorkerDeps, type WorkerHandler,
+  type WorkerLagEvents, type WorkerLagMeasurement, WorkerLagMonitor, type WorkerLagMonitorOptions,
+  type WorkerLike, type WorkerMonitorDeps, type WorkerToMainMessage, beatingSetTimeout,
+  createAbsoluteClock, createBrowserDeps, createCounter, createForwardingMeter, createFrameViewport,
+  createHandle, createHistogram, createIndexedDbHangJournal, createInstrumentedBrowserReports,
+  createInstrumentedClockDrift, createInstrumentedClockReliability,
+  createInstrumentedComputePressure, createInstrumentedDriftLag, createInstrumentedEventTiming,
+  createInstrumentedFrameTiming, createInstrumentedGCSignal, createInstrumentedIdleAvailability,
+  createInstrumentedLayoutShift, createInstrumentedLifecycle, createInstrumentedLoaf,
+  createInstrumentedMacrotaskLag, createInstrumentedMemory, createInstrumentedPageViewContext,
+  createInstrumentedPageViewVitals, createInstrumentedPeerHangWatch,
+  createInstrumentedSchedulingFairness, createInstrumentedSharedLiveness,
+  createInstrumentedThrottleDetector, createInstrumentedWorkerLag, createLivenessBeacon,
+  createMeasurementConditions, createMemoryHangJournal, createMessageTaskQueue, createMeterReceiver,
+  createNoopEventSink, createNoopMeter, createNoopSpanSink, createOtelEventSink,
+  createOtelLoggerAdapter, createOtelSpanSink, createPageChangeClock, createPageSource,
+  createPageViewSpans, createRandomId, createStorageHangReportMarks, createTeeLogger,
+  createWorkerHandler, defaultMemoryIntervalMs, describeNode, domPageChanges, driftStepMs,
+  encodeOtlpLogs, findAbandonedHangs, highFrequencyLagIntervalMs, interactionType, isPeerMessage,
+  isSpanIdentity, isVisibleState, lagLoggingIntervalMs, longLagDuration, longLagThreshold,
+  macrotaskLagIntervalMs, millisToUnixNanoString, peerLockName, placeEventTime,
+  pressureStateOrdinals, rateVital, setupAllMonitors, shortLagDuration, shortLagThreshold,
+  stripUrlParameters, summarizeTransitions, validatedRecorder, withEventContext,
+} from "@mark1russell7/lag";
+```
+
+```ts
+type AbortControllerConstructor = new () => AbortControllerLike;
+
+type AbortControllerLike = {
+    readonly signal: AbortSignalLike;
+    abort(): void;
+};
+
+type AbortSignalLike = {
+    readonly aborted: boolean;
+    addEventListener(type: "abort", listener: () => void): void;
+};
+
+type AbsoluteClock = {
+    readonly origin: number;
+    now(): number;
+    monotonic(): number;
+};
+
+type AbsoluteClockDeps = {
+    absoluteClock: AbsoluteClock;
+};
+
+type AckMessage = {
+    type: "ack";
+    seq: number;
+};
+
+type AllMonitorDeps = CoreDeps & TimerDeps & LifecycleDeps & Partial<ObserverDeps> & Partial<FrameDeps> & Partial<ViewportDeps> & Partial<IdleDeps> & Partial<SchedulingDeps> & Partial<MemoryDeps> & Partial<PressureDeps> & Partial<GCDeps> & Partial<WorkerMonitorDeps> & Partial<PerformanceDeps> & Partial<WallClockDeps> & {
+    readonly recordThrottledSteps?: boolean;
+} & Partial<EventDeps> & Partial<ReportingDeps> & Partial<SharedMemoryDeps> & Partial<PageDeps> & Partial<PageChangeDeps> & Partial<AbsoluteClockDeps> & Partial<CrashReportDeps> & Partial<PeerDeps> & Partial<Pick<SpanDeps, "spans">>;
+
+type AllMonitorHandles = {
+    readonly registry: MonitorRegistry;
+    stop(): void;
+    flush(event?: unknown): void;
+    add<T>(factory: MonitorFactory<T>): MonitorHandle<T>;
+    readonly conditions: MeasurementConditions | undefined;
+    readonly vitals: PageViewVitals | undefined;
+    readonly driftLag: DriftLag | undefined;
+    readonly macrotaskLag: MacrotaskLag | undefined;
+    readonly lifecycleStateMachine: LifecycleStateMachine | undefined;
+    readonly loafMonitor: LongAnimationFrameMonitor | undefined;
+    readonly eventTimingMonitor: EventTimingMonitor | undefined;
+    readonly layoutShiftMonitor: LayoutShiftMonitor | undefined;
+    readonly frameMonitor: FrameTimingMonitor | undefined;
+    readonly idleMonitor: IdleAvailabilityMonitor | undefined;
+    readonly schedulingMonitor: SchedulingFairnessMonitor | undefined;
+    readonly memoryMonitor: MemoryMonitor | undefined;
+    readonly workerMonitor: WorkerLagMonitor | undefined;
+    readonly pressureMonitor: ComputePressureMonitor | undefined;
+    readonly gcSignal: GCSignalDetector | undefined;
+    readonly throttleDetector: TimerThrottleDetector | undefined;
+    readonly clockChecker: ClockReliabilityChecker | undefined;
+    readonly clockDrift: ClockDriftMonitor | undefined;
+    readonly browserReports: BrowserReportMonitor | undefined;
+    readonly sharedLiveness: SharedLivenessMonitor | undefined;
+    readonly peerHangWatch: PeerHangWatch | undefined;
+    readonly pageViewContext: PageViewContext | undefined;
+};
+
+type AttributeValue = string | number | boolean | Array<null | undefined | string> | Array<null | undefined | number> | Array<null | undefined | boolean>;
+
+type Attributes = {
+    [key: string]: AttributeValue | undefined;
+};
+
+type BroadcastChannelConstructor = new (name: string) => BroadcastChannelLike;
+
+type BroadcastChannelLike = {
+    postMessage(message: unknown): void;
+    onmessage: ((event: {
+        readonly data: unknown;
+    }) => void) | null;
+    close(): void;
+};
+
+type BrowserDepsOptions = {
+    logger: Logger;
+    meter: Meter;
+    events?: EventSink;
+    spans?: SpanSink;
+    worker?: WorkerLike;
+    workerHeartbeatIntervalMs?: number;
+    workerHangReport?: HangReportTarget;
+    memoryIntervalMs?: number;
+    pressureSources?: PressureSource[];
+    softNavigations?: boolean;
+    sharedMemory?: boolean;
+    hangJournal?: boolean;
+    crashReportContext?: boolean;
+    peerHangWatch?: boolean;
+    pageChanges?: boolean;
+    pageContext?: () => Readonly<Record<string, string>>;
+    sharedLifecycle?: boolean;
+};
+
+type BrowserGlobals = LifecycleWindow & {
+    document: LifecycleDocument & PageDocument;
+    performance: PerformanceLike & {
+        getEntriesByType?(type: string): readonly PerformanceEntryLike[];
+        readonly memory?: unknown;
+        readonly measureUserAgentSpecificMemory?: unknown;
+    };
+    setTimeout(handler: () => void, timeout: number): number;
+    clearTimeout(handle: number): void;
+    setInterval(handler: () => void, timeout: number): number;
+    clearInterval(handle: number): void;
+    readonly PerformanceObserver?: unknown;
+    readonly requestAnimationFrame?: unknown;
+    readonly cancelAnimationFrame?: unknown;
+    readonly requestIdleCallback?: unknown;
+    readonly cancelIdleCallback?: unknown;
+    readonly MessageChannel?: unknown;
+    readonly queueMicrotask?: unknown;
+    readonly FinalizationRegistry?: unknown;
+    readonly ReportingObserver?: unknown;
+    readonly PressureObserver?: unknown;
+    readonly SharedArrayBuffer?: unknown;
+    readonly crossOriginIsolated?: unknown;
+    readonly indexedDB?: unknown;
+    readonly localStorage?: unknown;
+    readonly crashReport?: unknown;
+    readonly BroadcastChannel?: unknown;
+    readonly AbortController?: unknown;
+    readonly navigator?: unknown;
+    readonly IntersectionObserver?: unknown;
+    readonly MutationObserver?: unknown;
+    readonly top?: unknown;
+};
+
+type BrowserReport = {
+    type: BrowserReportType;
+    id: string;
+    message: string;
+    sourceFile: string;
+    lineNumber: number;
+};
+
+class BrowserReportMonitor {
+    constructor(report: (report: BrowserReport) => void, logger: Logger, ReportingObserverCtor: ReportingObserverInit, types?: readonly BrowserReportType[]);
+    start(): void;
+    stop(): void;
+}
+
+type BrowserReportType = "intervention" | "deprecation";
+
+class BusyTimeProbe {
+    constructor(postTask: PostTaskFn, clock: Clock);
+    isRunning(): boolean;
+    start(limitMs?: number, freeLimitMs?: number): void;
+    stop(): number;
+    foundFreeStretch(): boolean;
+}
+
+type CancelAnimationFrameFn = (handle: number) => void;
+
+type CancelIdleCallbackFn = (handle: number) => void;
+
+type ChangeDocument = {
+    readonly documentElement: unknown;
+    getAnimations?(): readonly {
+        readonly playState: string;
+    }[];
+    addEventListener?(type: string, listener: () => void, options: ChangeListenerOptions): void;
+    removeEventListener?(type: string, listener: () => void, options: ChangeListenerOptions): void;
+};
+
+type ChangeListenerOptions = {
+    readonly capture: true;
+    readonly passive: true;
+};
+
+type ClearIntervalFn = (handle: number) => void;
+
+type ClearTimeoutFn = (handle: number) => void;
+
+type Clock = {
+    now: () => number;
+};
+
+class ClockDriftMonitor {
+    constructor(report: (sample: ClockDriftSample) => void, onJump: (jump: ClockJump) => void, logger: Logger, clock: AbsoluteClock, wallClock: WallClock, setIntervalFn: SetIntervalFn, clearIntervalFn: ClearIntervalFn, options?: ClockDriftOptions);
+    start(): void;
+    stop(): void;
+    getSkewMs(): number;
+}
+
+type ClockDriftOptions = {
+    intervalMs?: number;
+    minJumpMs?: number;
+    jumpRate?: number;
+    suspendMinMs?: number;
+};
+
+type ClockDriftSample = {
+    skewMs: number;
+    driftMs: number;
+    intervalMs: number;
+};
+
+type ClockJump = {
+    direction: "forward" | "backward";
+    kind: "suspend" | "step";
+    magnitudeMs: number;
+    skewMs: number;
+    latenessMs: number;
+    intervalMs: number;
+};
+
+class ClockReliabilityChecker {
+    constructor(performance: PerformanceLike);
+    getResolutionMs(): number;
+    isHighResolution(): boolean;
+    getTimeOrigin(): number;
+}
+
+type ClockSyncResult = {
+    offsetMs: number;
+    roundTripMs: number;
+};
+
+class ClsCalculator {
+    add(startTime: number, value: number, sources?: readonly unknown[]): number;
+    getCLS(): number;
+    getLargestShiftSources(): readonly unknown[];
+    getLargestShiftTime(): number | undefined;
+    reset(): void;
+}
+
+class ComputePressureMonitor {
+    constructor(sources: PressureSource[], report: (measurement: PressureMeasurement) => void, logger: Logger, PressureObserverCtor: PressureObserverInit, sampleIntervalMs?: number);
+    start(): void;
+    stop(): void;
+    getCurrentState(source: PressureSource): PressureState | undefined;
+    getWorstStateOrdinal(): number;
+}
+
+type ContextMessage = {
+    type: "context";
+    attributes: Record<string, string>;
+};
+
+type CoreDeps = {
+    logger: Logger;
+    clock: Clock;
+    meter: Meter;
+};
+
+type Counter<A extends Attributes = Attributes> = {
+    add(value: number, attributes?: A): void;
+};
+
+type CrashReportContextLike = {
+    initialize?(length: number): unknown;
+    set(key: string, value: string): unknown;
+    delete?(key: string): unknown;
+};
+
+type CrashReportDeps = {
+    crashReport: CrashReportContextLike;
+};
+
+type DiscardReason = UnreliableReason;
+
+class DriftLag extends LagMonitor {
+    constructor(...args: [...ConstructorParameters<typeof LagMonitor>, options?: DriftLagOptions]);
+    start(): void;
+    stop(): void;
+    getBaselineMs(): number;
+    getLastWindowMs(): number;
+    measure(): number;
+}
+
+type DriftLagOptions = {
+    stepMs?: number;
+    baselineSteps?: number;
+    postTask?: PostTaskFn;
+    onThrottle?: (throttled: boolean, sinceChangeMs?: number) => void;
+    recordThrottledSteps?: boolean;
+    onUnreadStep?: (mode: UnreadStepMode, stepMs: number, sinceChangeMs?: number) => void;
+    sinceChangeMs?: () => number | undefined;
+};
+
+const EVENTS: Readonly<Record<EventKey, EventDefinition>>;
+
+const EVENT_CATALOG: readonly EventDefinition[];
+
+const EVENT_TIME_ATTRIBUTE = "lag.event.time";
+
+type EventAttributes = Readonly<Record<string, AttributeValue>>;
+
+type EventDefinition = {
+    name: string;
+    monitor: string;
+    description: string;
+    attributes: readonly string[];
+};
+
+type EventDeps = {
+    events: EventSink;
+};
+
+type EventEntryLike = {
+    name: string;
+    startTime: number;
+    duration: number;
+    processingStart: number;
+    processingEnd: number;
+    interactionId?: number;
+    target?: unknown;
+};
+
+type EventKey = "webVital" | "hang" | "clockJump" | "longAnimationFrame" | "browserReport" | "stall" | "lifecycleTransition" | "pageViewStart" | "pressureChange" | "longCallback";
+
+type EventLoopLagAttributes = {
+    wasHidden: boolean;
+    [key: string]: unknown;
+};
+
+type EventOptions = {
+    time?: number;
+};
+
+type EventSink = {
+    emit(name: string, attributes: EventAttributes, options?: EventOptions): void;
+};
+
+type EventTimingEntry = PerformanceEntryLike & {
+    entryType: "event";
+    processingStart: number;
+    processingEnd: number;
+    interactionId: number;
+    cancelable: boolean;
+};
+
+class EventTimingMonitor extends ObserverMonitor {
+    constructor(report: (entry: EventTimingReport) => void, logger: Logger, PerformanceObserverCtor: PerformanceObserverInit, readInteractionCount?: () => number | undefined);
+    protected processEntry(entry: PerformanceEntryLike): void;
+    getWorstInteractionDuration(): number;
+    getINP(): number;
+    getInteractionCount(): number;
+}
+
+type EventTimingReport = {
+    duration: number;
+    inputDelay: number;
+    processingDuration: number;
+    presentationDelay: number;
+    interactionId: number;
+    name: string;
+    startTime: number;
+    target: unknown;
+};
+
+type FinalizationRegistryConstructor = new <T>(cleanup: (heldValue: T) => void) => FinalizationRegistryInstance<T>;
+
+type FinalizationRegistryInstance<T> = {
+    register(target: object, heldValue: T, unregisterToken?: object): void;
+    unregister(unregisterToken: object): void;
+};
+
+type ForwardedInstrument = {
+    id: number;
+    kind: "histogram" | "counter";
+    name: string;
+    options: InstrumentOptions;
+};
+
+type ForwardedMetricMessage = ForwardedRecords;
+
+type ForwardedRecords = {
+    type: "records";
+    sender: string;
+    instruments: ForwardedInstrument[];
+    records: Array<[number, number, Attributes | undefined]>;
+};
+
+type ForwardingMeter = {
+    readonly meter: Meter;
+    flush(): void;
+    dispose(): void;
+};
+
+type ForwardingMeterOptions = {
+    setIntervalFn: SetIntervalFn;
+    clearIntervalFn: ClearIntervalFn;
+    flushIntervalMs?: number;
+    maxBufferedRecords?: number;
+    senderId?: string;
+};
+
+type FrameDeps = {
+    requestAnimationFrame: RequestAnimationFrameFn;
+    cancelAnimationFrame: CancelAnimationFrameFn;
+};
+
+type FrameMeasurement = {
+    frameDeltaMs: number;
+    fps: number;
+    droppedFrames: number;
+    isDropped: boolean;
+    targetFrameTimeMs: number;
+};
+
+class FrameTimingMonitor {
+    constructor(report: (measurement: FrameMeasurement) => void, logger: Logger, requestAnimationFrameFn: RequestAnimationFrameFn, cancelAnimationFrameFn: CancelAnimationFrameFn, clock: Clock, targetFps?: number | typeof AUTO_FRAME_RATE);
+    getFrameIntervalMs(): number;
+    start(): void;
+    stop(): void;
+    getDroppedFrameRate(): number;
+    getDroppedTotal(): number;
+    getObservedTotal(): number;
+    resetCounters(): void;
+}
+
+type FrameViewport = {
+    isShown(): boolean;
+    subscribe(listener: (shown: boolean) => void): () => void;
+};
+
+type GCDeps = {
+    FinalizationRegistry: FinalizationRegistryConstructor;
+};
+
+class GCSignalDetector {
+    constructor(FinalizationRegistryCtor: FinalizationRegistryConstructor, clock: Clock, logger: Logger, onGC?: (timestamp: number) => void, historySize?: number);
+    start(): void;
+    stop(): void;
+    didGCRecently(withinMs: number): boolean;
+    getRecentGCEvents(windowMs: number): number;
+    getTotalGCEvents(): number;
+    getEventTimestamps(): readonly number[];
+}
+
+const HANG_JOURNAL_STALE_MS = 30000;
+
+const HANG_JOURNAL_WRITE_INTERVAL_MS = 1000;
+
+const HANG_REPORT_MARK_PREFIX = "lag-hang-reported:";
+
+const HISTOGRAM_BOUNDARIES: Readonly<Record<"duration" | "score" | "ordinal" | "bytes", readonly number[]>>;
+
+type HangEndedMessage = {
+    type: "hang-ended";
+    startedAt: number;
+    durationMs: number;
+};
+
+type HangEvent = {
+    phase: "started" | "ended";
+    startedAt: number;
+    durationMs: number;
+    attributes: Readonly<Record<string, string>>;
+};
+
+type HangJournal = {
+    put(record: HangRecord): Promise<void>;
+    remove(pageId: string): Promise<void>;
+    list(): Promise<HangRecord[]>;
+    take(pageId: string, latestSeenAt: number): Promise<HangRecord | undefined>;
+};
+
+type HangOptions = {
+    thresholdMs: number;
+    report?: HangReportTarget;
+};
+
+type HangRecord = {
+    pageId: string;
+    startedAt: number;
+    lastSeenAt: number;
+    attributes: Readonly<Record<string, string>>;
+};
+
+type HangReportMarks = {
+    add(pageId: string, reportedAt: number): void;
+    take(pageId: string): boolean;
+    prune(before: number, keep: ReadonlySet<string>): void;
+};
+
+type HangReportTarget = {
+    url: string;
+    resource?: Record<string, string>;
+};
+
+type HeartbeatMessage = {
+    type: "heartbeat";
+    seq: number;
+    sentAt: number;
+    workerSelfLagMs: number;
+};
+
+type Histogram<A extends Attributes = Attributes> = {
+    record(value: number, attributes?: A): void;
+};
+
+const IDLE_GRID_CHANGE_MS = 30000;
+
+type IdbFactoryLike = {
+    open(name: string, version?: number): IdbOpenRequestLike;
+};
+
+class IdleAvailabilityMonitor {
+    constructor(report: (measurement: IdleMeasurement) => void, logger: Logger, requestIdleCallbackFn: RequestIdleCallbackFn, cancelIdleCallbackFn: CancelIdleCallbackFn, clock: Clock, timeoutMs?: number);
+    start(): void;
+    stop(): void;
+    getTimeoutRate(): number;
+    resetCounters(): void;
+}
+
+type IdleDeadline = {
+    didTimeout: boolean;
+    timeRemaining(): number;
+};
+
+type IdleDeps = {
+    requestIdleCallback: RequestIdleCallbackFn;
+    cancelIdleCallback: CancelIdleCallbackFn;
+};
+
+type IdleMeasurement = {
+    timeRemainingMs: number;
+    timeSinceLastIdleMs: number;
+    didTimeout: boolean;
+};
+
+class InpCalculator {
+    constructor(readInteractionCount?: (() => number | undefined) | undefined,
+    baseline?: number);
+    add(interactionId: number, duration: number): void;
+    getInteractionCount(): number;
+    getINP(): number;
+    getINPInteractionId(): number;
+    getLongestDuration(): number;
+    has(interactionId: number): boolean;
+    reset(baseline?: number): void;
+}
+
+type InstrumentAdvice = {
+    explicitBucketBoundaries?: number[];
+};
+
+type InstrumentOptions = {
+    unit: string;
+    description?: string;
+    advice?: InstrumentAdvice;
+};
+
+type IntersectionEntryLike = {
+    readonly isIntersecting: boolean;
+};
+
+type IntersectionObserverInit = new (callback: (entries: readonly IntersectionEntryLike[]) => void) => {
+    observe(target: object): void;
+    disconnect(): void;
+};
+
+const LIVENESS_BUFFER_BYTES = 4;
+
+class LagLogger {
+    constructor(
+    measurementIntervalMs: number, logger: Logger);
+    addMeasurement({ value, attributes, intervalMs }: LagMeasurement): void;
+}
+
+type LagMeasurement = {
+    value: number;
+    attributes: EventLoopLagAttributes;
+    intervalMs?: number;
+};
+
+abstract class LagMonitor {
+    readonly expectedElapsedTimeMs: number;
+    readonly report: (value: number, source?: LagValueSource) => void;
+    protected readonly logger: Logger;
+    protected readonly setIntervalFn: SetIntervalFn;
+    protected readonly clearIntervalFn: ClearIntervalFn;
+    protected readonly setTimeoutFn: SetTimeoutFn;
+    protected readonly clearTimeoutFn: ClearTimeoutFn;
+    protected readonly clock: Clock;
+    abstract start(): void;
+    abstract stop(): void;
+    constructor(expectedElapsedTimeMs: number, report: (value: number, source?: LagValueSource) => void, logger: Logger, setIntervalFn: SetIntervalFn, clearIntervalFn: ClearIntervalFn, setTimeoutFn: SetTimeoutFn, clearTimeoutFn: ClearTimeoutFn, clock: Clock);
+}
+
+type LagMonitorConstructor<T extends LagMonitor = LagMonitor> = new (...args: ConstructorParameters<typeof LagMonitor>) => T;
+
+type LagValueSource = "throttled-step";
+
+type LayoutShiftEntry = PerformanceEntryLike & {
+    entryType: "layout-shift";
+    value: number;
+    hadRecentInput: boolean;
+    lastInputTime: number;
+    sources: LayoutShiftSource[];
+};
+
+type LayoutShiftEntryLike = {
+    startTime: number;
+    value: number;
+    hadRecentInput: boolean;
+    sources?: ReadonlyArray<{
+        node?: unknown;
+    }>;
+};
+
+class LayoutShiftMonitor extends ObserverMonitor {
+    constructor(report: (entry: LayoutShiftReport) => void, logger: Logger, PerformanceObserverCtor: PerformanceObserverInit);
+    protected processEntry(entry: PerformanceEntryLike): void;
+    getCLS(): number;
+}
+
+type LayoutShiftReport = {
+    value: number;
+    startTime: number;
+    sessionValue: number;
+    worstSessionValue: number;
+    sources: LayoutShiftEntry["sources"];
+};
+
+type LayoutShiftSource = {
+    node: unknown;
+    previousRect: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    };
+    currentRect: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+    };
+};
+
+type LegacyMemory = {
+    usedJSHeapSize: number;
+    totalJSHeapSize: number;
+    jsHeapSizeLimit: number;
+};
+
+type LifecycleDeps = {
+    document: LifecycleDocument;
+    window: LifecycleWindow;
+    lifecycleTracker?: LifecycleStateMachine;
+};
+
+// LifecycleDocument comes from the package page-lifecycle-tracker.
+
+// LifecycleEventTarget comes from the package page-lifecycle-tracker.
+
+// LifecycleListener comes from the package page-lifecycle-tracker.
+
+// LifecycleListenerOptions comes from the package page-lifecycle-tracker.
+
+// LifecycleMark comes from the package page-lifecycle-tracker.
+
+// LifecycleState comes from the package page-lifecycle-tracker.
+
+// LifecycleStateMachine comes from the package page-lifecycle-tracker.
+
+// LifecycleSummary comes from the package page-lifecycle-tracker.
+
+// LifecycleTrigger comes from the package page-lifecycle-tracker.
+
+// LifecycleWindow comes from the package page-lifecycle-tracker.
+
+type LivenessBeacon = {
+    beat(): void;
+};
+
+type LivenessBlock = {
+    startedAt: number;
+    durationMs: number;
+};
+
+type LivenessBlockMessage = {
+    type: "liveness-block";
+    startedAt: number;
+    durationMs: number;
+};
+
+type LivenessStartMessage = {
+    type: "liveness-start";
+    buffer: SharedArrayBuffer;
+    thresholdMs: number;
+    pollIntervalMs: number;
+};
+
+type LivenessStopMessage = {
+    type: "liveness-stop";
+};
+
+class LivenessWatcher {
+    constructor(buffer: SharedArrayBuffer, onBlock: (block: LivenessBlock) => void, clock: Clock, setIntervalFn: SetIntervalFn, clearIntervalFn: ClearIntervalFn, options?: LivenessWatcherOptions);
+    start(): void;
+    stop(): void;
+}
+
+type LivenessWatcherOptions = {
+    thresholdMs?: number;
+    pollIntervalMs?: number;
+};
+
+type LoafEntry = PerformanceEntryLike & {
+    entryType: "long-animation-frame";
+    blockingDuration: number;
+    renderStart: number;
+    styleAndLayoutStart: number;
+    scripts: LoafScriptEntry[];
+};
+
+type LoafReport = {
+    blockingDuration: number;
+    duration: number;
+    startTime: number;
+    renderDuration: number;
+    scriptCount: number;
+    hasForceLayout: boolean;
+    topScript: LoafScriptSummary | undefined;
+};
+
+type LoafScriptEntry = {
+    name: string;
+    invoker: string;
+    invokerType: string;
+    startTime: number;
+    executionStart: number;
+    duration: number;
+    forcedStyleAndLayoutDuration: number;
+    pauseDuration?: number;
+    sourceURL: string;
+    sourceFunctionName?: string;
+    sourceCharPosition?: number;
+};
+
+type LoafScriptSummary = {
+    invoker: string;
+    invokerType: string;
+    sourceURL: string;
+    sourceFunctionName: string;
+    duration: number;
+};
+
+type LockManagerLike = {
+    request(name: string, options: {
+        ifAvailable?: boolean;
+        signal?: AbortSignalLike;
+    }, callback: (lock: unknown) => unknown): Promise<unknown>;
+};
+
+type Logger = {
+    log(level: string, message: string, args: unknown): void;
+};
+
+class LongAnimationFrameMonitor extends ObserverMonitor {
+    constructor(report: (entry: LoafReport) => void, logger: Logger, PerformanceObserverCtor: PerformanceObserverInit);
+    protected processEntry(entry: PerformanceEntryLike): void;
+}
+
+const MAX_EVENT_TIME_OFFSET_MS: number;
+
+const METRICS: Readonly<Record<MetricKey, MetricDefinition>>;
+
+const METRIC_CATALOG: readonly MetricDefinition[];
+
+class MacrotaskLag extends LagMonitor {
+    constructor(...args: [...ConstructorParameters<typeof LagMonitor>, postTask?: PostTaskFn]);
+    start(): void;
+    stop(): void;
+    measure(): Promise<number>;
+}
+
+type MainToWorkerMessage = StartMessage | StopMessage | AckMessage | SyncRequestMessage | ContextMessage | LivenessStartMessage | LivenessStopMessage;
+
+type MeasureMemoryResult = {
+    bytes: number;
+    breakdown: Array<{
+        bytes: number;
+        attribution: Array<{
+            url?: string;
+            scope?: string;
+        }>;
+        types: string[];
+    }>;
+};
+
+type MeasurementConditions = {
+    readonly tracker: ReliabilityTracker;
+    createValidator(): SampleValidator;
+    pauseWhileHidden(monitor: Pausable, options?: PauseOptions): () => void;
+    setTimersThrottled(throttled: boolean): void;
+    dispose(): void;
+};
+
+type MeasurementConditionsOptions = {
+    clock: Clock;
+    setTimeoutFn: SetTimeoutFn;
+    clearTimeoutFn: ClearTimeoutFn;
+    lifecycle?: LifecycleStateMachine;
+    viewport?: FrameViewport;
+    tracker?: ReliabilityTracker;
+    outlierThresholdMs?: number;
+    confirmDelayMs?: number;
+    onStall?: (kind: StallKind, valueMs: number, startTime: number) => void;
+    onDiscard?: (reason: DiscardReason) => void;
+};
+
+type MemoryDeps = {
+    memorySource: MemorySource;
+    memoryIntervalMs?: number;
+};
+
+type MemoryMeasurement = {
+    source: "legacy" | "modern";
+    usedBytes: number;
+    totalBytes: number | undefined;
+    limitBytes: number | undefined;
+    usagePercent: number | undefined;
+    timestamp: number;
+};
+
+class MemoryMonitor {
+    constructor(intervalMs: number, source: MemorySource, report: (measurement: MemoryMeasurement) => void, logger: Logger, setIntervalFn: SetIntervalFn, clearIntervalFn: ClearIntervalFn, clock: Clock);
+    start(): void;
+    stop(): void;
+}
+
+type MemorySource = {
+    readLegacy?: () => LegacyMemory | undefined;
+    measureModern?: () => Promise<MeasureMemoryResult>;
+};
+
+type MessageChannelConstructor = new () => MessageChannelLike;
+
+type MessageChannelLike = {
+    port1: MessagePortLike;
+    port2: MessagePortLike;
+};
+
+type MessagePortLike = {
+    postMessage(data: unknown): void;
+    onmessage: ((event: never) => void) | null;
+    start?: () => void;
+    close?: () => void;
+};
+
+type MessageTarget = {
+    postMessage(message: ForwardedMetricMessage): void;
+};
+
+type MessageTaskQueue = {
+    post(callback: () => void): void;
+    close(): void;
+};
+
+type Meter = {
+    createHistogram<A extends Attributes = Attributes>(name: string, options: InstrumentOptions): Histogram<A>;
+    createCounter<A extends Attributes = Attributes>(name: string, options: InstrumentOptions): Counter<A>;
+};
+
+type MetricDefinition = {
+    name: string;
+    kind: MetricKind;
+    unit: string;
+    monitor: string;
+    description: string;
+    attributes: Readonly<Record<string, readonly string[]>>;
+    advice?: {
+        readonly explicitBucketBoundaries: readonly number[];
+    };
+};
+
+type MetricKey = "drift" | "driftBaseline" | "driftUnreadSteps" | "driftThrottleStarts" | "macrotask" | "samplesDiscarded" | "stalls" | "stallDuration" | "workerMainBlock" | "workerSelfLag" | "workerClockOffset" | "hangs" | "hangDuration" | "loafBlocking" | "loafDuration" | "eventDuration" | "eventInputDelay" | "eventProcessing" | "eventPresentationDelay" | "layoutShift" | "vitalInp" | "vitalCls" | "vitalLcp" | "vitalFcp" | "vitalTtfb" | "frameDelta" | "frames" | "idleTimeRemaining" | "idleGap" | "idleCallbacks" | "schedulingMicrotask" | "schedulingMacrotask" | "schedulingMessageChannel" | "memoryUsed" | "memoryUsage" | "pressureState" | "gcEvents" | "lifecycleTransitions" | "timerCalibrations" | "clockResolution" | "clockSkew" | "clockJumps" | "browserReports" | "livenessBlock" | "longCallbackDuration";
+
+type MetricKind = "histogram" | "counter";
+
+type MonitorFactory<T> = (deps: SetupDeps) => MonitorHandle<T>;
+
+type MonitorHandle<T = unknown> = {
+    readonly name: string;
+    readonly monitor: T | undefined;
+    stop(): void;
+};
+
+class MonitorRegistry {
+    add<T>(handle: MonitorHandle<T>): MonitorHandle<T>;
+    stopAll(): void;
+    get<T>(name: string): MonitorHandle<T> | undefined;
+    getAll(): readonly MonitorHandle[];
+    get size(): number;
+}
+
+type MutationObserverConstructor = new (callback: () => void) => MutationObserverLike;
+
+type MutationObserverLike = {
+    observe(target: unknown, options: {
+        subtree: boolean;
+        childList: boolean;
+        attributes: boolean;
+        characterData: boolean;
+    }): void;
+    disconnect(): void;
+};
+
+const NAVIGATION_TYPES: readonly NavigationType[];
+
+type NavigationInfo = {
+    type: "navigate" | "reload" | "back-forward" | "prerender";
+    activationStart: number;
+    responseStart: number;
+    url: string;
+};
+
+type NavigationType = "navigate" | "reload" | "back-forward" | "back-forward-cache" | "prerender" | "restore" | "soft-navigation";
+
+type ObserverDeps = {
+    PerformanceObserver: PerformanceObserverInit;
+};
+
+abstract class ObserverMonitor {
+    protected readonly entryType: string;
+    protected readonly logger: Logger;
+    constructor(entryType: string, logger: Logger, PerformanceObserverCtor: PerformanceObserverInit, observeOptions?: PerformanceObserverOptions);
+    start(): void;
+    stop(): void;
+    takeRecords(): void;
+    protected takePendingEntries(): PerformanceEntryLike[];
+    protected receive(entries: readonly PerformanceEntryLike[]): void;
+    protected processEntries(entries: readonly PerformanceEntryLike[]): void;
+    protected abstract processEntry(entry: PerformanceEntryLike): void;
+}
+
+type OpenSpan = {
+    readonly identity: SpanIdentity | undefined;
+    setAttributes(attributes: EventAttributes): void;
+    end(endTime: number): void;
+};
+
+type OtelEventSinkOptions = {
+    maxTimeOffsetMs?: number;
+    now?: () => number;
+};
+
+type OtelLogger = {
+    emit(logRecord: {
+        eventName?: string;
+        severityText?: string;
+        severityNumber?: number;
+        body?: string;
+        attributes?: Record<string, AttributeValue>;
+        timestamp?: number;
+        observedTimestamp?: number;
+    }): void;
+};
+
+type OtelSpanContext = {
+    traceId: string;
+    spanId: string;
+    traceFlags: number;
+    isRemote?: boolean;
+};
+
+type OtelSpanLike = {
+    spanContext(): OtelSpanContext;
+    setAttributes(attributes: Record<string, AttributeValue>): unknown;
+    end(endTime?: number): void;
+};
+
+type OtelTraceApiLike = {
+    trace: {
+        setSpanContext(context: unknown, spanContext: OtelSpanContext): unknown;
+    };
+    ROOT_CONTEXT: unknown;
+};
+
+type OtelTracerLike = {
+    startSpan(name: string, options?: {
+        startTime?: number;
+        attributes?: Record<string, AttributeValue>;
+        links?: Array<{
+            context: OtelSpanContext;
+        }>;
+    }, context?: unknown): OtelSpanLike;
+};
+
+type OtlpAttributeValue = string | number | boolean;
+
+type OtlpLogRecordInput = {
+    timeMs: number;
+    observedTimeMs?: number;
+    eventName: string;
+    severityText: string;
+    severityNumber: number;
+    body: string;
+    attributes: Record<string, OtlpAttributeValue>;
+};
+
+const PAGE_CHANGE_EVENTS: readonly string[];
+
+const PEER_BEAT_INTERVAL_MS = 1000;
+
+const PEER_CHANNEL_NAME = "lag-peer-hang-watch";
+
+const PEER_CLAIM_HOLD_MS = 60000;
+
+const PEER_GRACE_MS = 1000;
+
+const PEER_HANG_THRESHOLD_MS = 5000;
+
+type PageChangeClock = {
+    sinceChangeMs(): number;
+    dispose(): void;
+};
+
+type PageChangeDeps = {
+    pageChanges: PageChangeSource;
+};
+
+type PageChangeSource = {
+    observe(onChange: () => void): () => void;
+    animating(): boolean;
+};
+
+type PageContextReceiver = {
+    setContext(attributes: Record<string, string>): void;
+};
+
+type PageDeps = {
+    page: PageSource;
+    describeNode?: (node: unknown) => string;
+    softNavigations?: boolean;
+    pageContext?: () => Readonly<Record<string, string>>;
+};
+
+type PageDocument = {
+    readonly prerendering?: boolean;
+    readonly wasDiscarded?: boolean;
+    readonly location?: {
+        readonly href: string;
+    } | null;
+    addEventListener(type: string, listener: LifecycleListener, options?: LifecycleListenerOptions): void;
+    removeEventListener(type: string, listener: LifecycleListener, options?: LifecycleListenerOptions): void;
+};
+
+type PagePerformance = {
+    now(): number;
+    getEntriesByType?(type: string): readonly PerformanceEntryLike[];
+};
+
+type PageSource = {
+    navigation(): NavigationInfo | undefined;
+    isPrerendering(): boolean;
+    wasDiscarded(): boolean;
+    hiddenTimes(): readonly number[];
+    url?(): string | undefined;
+    onActivation(listener: () => void): () => void;
+};
+
+type PageView = {
+    readonly id: string;
+    readonly navigationType: NavigationType;
+    readonly startTime: number;
+    readonly interactionId?: number;
+    readonly url?: string;
+};
+
+type PageViewContext = {
+    getAttributes(): Record<string, string>;
+};
+
+type PageViewSpans = {
+    viewStarted(view: PageView): void;
+    viewHidden(view: PageView, values: readonly VitalValue[], time: number): void;
+    viewEnded(view: PageView, values: readonly VitalValue[]): void;
+    current(): SpanIdentity | undefined;
+};
+
+class PageViewVitals {
+    constructor(report: (report: VitalsReport) => void, deps: PageViewVitalsDeps);
+    getView(): PageView;
+    getValues(): VitalValue[];
+    subscribe(listener: (view: PageView) => void): () => void;
+    flush(): void;
+    stop(): void;
+}
+
+type PageViewVitalsDeps = {
+    logger: Logger;
+    clock: Clock;
+    PerformanceObserver: PerformanceObserverInit;
+    lifecycle: LifecycleStateMachine;
+    page?: PageSource;
+    requestAnimationFrame?: RequestAnimationFrameFn;
+    readInteractionCount?: () => number | undefined;
+    describeNode?: (node: unknown) => string;
+    createId?: () => string;
+    inputTarget?: LifecycleEventTarget;
+    softNavigations?: boolean;
+};
+
+type Pausable = {
+    start(): void;
+    stop(): void;
+};
+
+type PauseOptions = {
+    offscreen?: boolean;
+    throttled?: boolean;
+};
+
+type PeerDeps = {
+    BroadcastChannel: BroadcastChannelConstructor;
+    locks: LockManagerLike;
+    AbortController?: AbortControllerConstructor;
+};
+
+class PeerHangWatch {
+    constructor(deps: PeerHangWatchDeps, options: PeerHangWatchOptions);
+    setContext(attributes: Record<string, string>): void;
+    show(): void;
+    hide(closing?: boolean): void;
+    noteHangEnded(): void;
+    suspend(): void;
+    resume(): void;
+    stop(): void;
+}
+
+type PeerHangWatchDeps = {
+    BroadcastChannel: BroadcastChannelConstructor;
+    locks: LockManagerLike;
+    AbortController?: AbortControllerConstructor;
+    wallClock: WallClock;
+    clock: Clock;
+    setTimeoutFn: SetTimeoutFn;
+    clearTimeoutFn: ClearTimeoutFn;
+    setIntervalFn: SetIntervalFn;
+    clearIntervalFn: ClearIntervalFn;
+    logger: Logger;
+};
+
+type PeerHangWatchOptions = {
+    pageId: string;
+    visible: boolean;
+    beatIntervalMs?: number;
+    thresholdMs?: number;
+    graceMs?: number;
+    journal?: HangJournal;
+    marks?: HangReportMarks;
+    onAbandonedHang: (hang: HangRecord, source: AbandonedHangSource) => void;
+};
+
+type PeerMessage =
+{
+    type: "beat";
+    pageId: string;
+    sentAt: number;
+    attributes: Readonly<Record<string, string>>;
+}
+ | {
+    type: "away";
+    pageId: string;
+    sentAt: number;
+};
+
+type PerformanceDeps = {
+    performance: PerformanceLike;
+};
+
+type PerformanceEntryLike = {
+    entryType: string;
+    name: string;
+    startTime: number;
+    duration: number;
+};
+
+type PerformanceEntryList = {
+    getEntries(): PerformanceEntryLike[];
+};
+
+type PerformanceLike = {
+    now: () => number;
+    timeOrigin: number;
+    readonly interactionCount?: number;
+};
+
+type PerformanceObserverInit = {
+    new (callback: (list: PerformanceEntryList, observer: PerformanceObserverInstance) => void): PerformanceObserverInstance;
+    readonly supportedEntryTypes?: readonly string[];
+};
+
+type PerformanceObserverInstance = {
+    observe(options: PerformanceObserverOptions & {
+        type: string;
+        buffered?: boolean;
+    }): void;
+    disconnect(): void;
+    takeRecords?(): PerformanceEntryLike[];
+};
+
+type PerformanceObserverOptions = {
+    durationThreshold?: number;
+};
+
+type PostTaskFn = (callback: () => void) => void;
+
+type PressureDeps = {
+    PressureObserver: PressureObserverInit;
+    pressureSources?: PressureSource[];
+    pressureSampleIntervalMs?: number;
+};
+
+type PressureMeasurement = {
+    source: PressureSource;
+    state: PressureState;
+    stateOrdinal: number;
+    timestamp: number;
+};
+
+type PressureObserverInit = new (callback: (records: PressureRecord[], observer: PressureObserverInstance) => void) => PressureObserverInstance;
+
+type PressureObserverInstance = {
+    observe(source: PressureSource, options?: {
+        sampleInterval?: number;
+    }): Promise<void>;
+    disconnect(): void;
+    takeRecords(): PressureRecord[];
+};
+
+type PressureRecord = {
+    source: PressureSource;
+    state: PressureState;
+    time: number;
+};
+
+type PressureSource = "cpu" | "thermals" | "power" | "memory";
+
+type PressureState = "nominal" | "fair" | "serious" | "critical";
+
+type QueueMicrotaskFn = (callback: () => void) => void;
+
+class RateLimiter {
+    constructor(clock: Clock, limit: number, windowMs: number);
+    tryAcquire(): boolean;
+}
+
+type Rating = "good" | "needs-improvement" | "poor";
+
+class ReliabilityTracker {
+    constructor(clock: Clock, retentionMs?: number);
+    open(reason: UnreliableReason): () => void;
+    add(start: number, end: number, reason: UnreliableReason): void;
+    findOverlap(start: number, end: number, reason?: UnreliableReason): UnreliableInterval | undefined;
+    isUnreliableNow(): boolean;
+    subscribe(listener: (interval: UnreliableInterval) => void): () => void;
+    getIntervalCount(): number;
+}
+
+type ReportLike = {
+    type: string;
+    url: string;
+    body: unknown;
+};
+
+type ReportingDeps = {
+    ReportingObserver: ReportingObserverInit;
+};
+
+type ReportingObserverInit = new (callback: (reports: ReportLike[], observer: ReportingObserverInstance) => void, options?: {
+    types?: string[];
+    buffered?: boolean;
+}) => ReportingObserverInstance;
+
+type ReportingObserverInstance = {
+    observe(): void;
+    disconnect(): void;
+};
+
+type RequestAnimationFrameFn = (callback: (time: number) => void) => number;
+
+type RequestIdleCallbackFn = (callback: (deadline: IdleDeadline) => void, options?: {
+    timeout?: number;
+}) => number;
+
+const SHORT_INTERACTION_ESTIMATE_MS = 8;
+
+const SPANS: Readonly<Record<SpanKey, SpanDefinition>>;
+
+const SPAN_CATALOG: readonly SpanDefinition[];
+
+type SampleValidator = {
+    submit(value: number, windowMs: number, record: (value: number) => void): void;
+    dispose(): void;
+};
+
+type SchedulingDeps = {
+    MessageChannel: MessageChannelConstructor;
+    queueMicrotask: QueueMicrotaskFn;
+};
+
+class SchedulingFairnessMonitor {
+    constructor(intervalMs: number, report: (measurement: SchedulingMeasurement) => void, logger: Logger, setIntervalFn: SetIntervalFn, clearIntervalFn: ClearIntervalFn, setTimeoutFn: SetTimeoutFn, queueMicrotaskFn: QueueMicrotaskFn, MessageChannelCtor: MessageChannelConstructor, clock: Clock);
+    start(): void;
+    stop(): void;
+}
+
+type SchedulingMeasurement = {
+    macrotaskMs: number;
+    microtaskMs: number;
+    messageChannelMs: number;
+};
+
+type SetIntervalFn = (handler: () => void, timeout: number) => number;
+
+type SetTimeoutFn = (handler: () => void, timeout: number) => number;
+
+type SetupDeps = AllMonitorDeps & Partial<SpanDeps>;
+
+class SharedLivenessMonitor {
+    constructor(worker: WorkerLike, buffer: SharedArrayBuffer, report: (blockDurationMs: number) => void, logger: Logger, options?: SharedLivenessOptions);
+    start(): void;
+    stop(): void;
+}
+
+type SharedLivenessOptions = {
+    thresholdMs?: number;
+    pollIntervalMs?: number;
+};
+
+type SharedMemoryDeps = {
+    SharedArrayBuffer: new (byteLength: number) => SharedArrayBuffer;
+};
+
+type SpanDefinition = {
+    name: string;
+    monitor: string;
+    description: string;
+    attributes: readonly string[];
+};
+
+type SpanDeps = {
+    spans: SpanSink;
+    pageViewSpans?: PageViewSpans;
+};
+
+type SpanIdentity = {
+    readonly traceId: string;
+    readonly spanId: string;
+    readonly sampled?: boolean;
+};
+
+type SpanKey = "pageView" | "hang" | "stall" | "longAnimationFrame" | "hidden" | "frozen" | "longCallback";
+
+type SpanOptions = {
+    startTime: number;
+    attributes?: EventAttributes;
+    parent?: SpanIdentity;
+    links?: readonly SpanIdentity[];
+};
+
+type SpanSink = {
+    start(name: string, options: SpanOptions): OpenSpan;
+    record(name: string, options: SpanOptions & {
+        endTime: number;
+    }): void;
+};
+
+type StallKind = "hang" | "suspend";
+
+type StartMessage = {
+    type: "start";
+    intervalMs: number;
+    hang?: HangOptions;
+    pageId?: string;
+};
+
+// StateTransition comes from the package page-lifecycle-tracker.
+
+type StopMessage = {
+    type: "stop";
+};
+
+type StorageLike = {
+    readonly length: number;
+    key(index: number): string | null;
+    getItem(key: string): string | null;
+    setItem(key: string, value: string): void;
+    removeItem(key: string): void;
+};
+
+type SyncReplyMessage = {
+    type: "sync-reply";
+    id: number;
+    workerTime: number;
+};
+
+type SyncRequestMessage = {
+    type: "sync";
+    id: number;
+};
+
+type SystemStall = {
+    start: number;
+    end: number;
+    durationMs: number;
+};
+
+type ThrottleCalibration = {
+    throttled: boolean;
+    throttledSamples: number;
+    blockedSamples: number;
+    totalSamples: number;
+};
+
+type ThrottleDetectorDeps = CoreDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<Pick<SchedulingDeps, "MessageChannel">> & {
+    throttleConfig?: TimerThrottleConfig;
+};
+
+type TimerDeps = {
+    setTimeoutFn: SetTimeoutFn;
+    clearTimeoutFn: ClearTimeoutFn;
+    setIntervalFn: SetIntervalFn;
+    clearIntervalFn: ClearIntervalFn;
+};
+
+type TimerThrottleConfig = {
+    calibrationTargetMs?: number;
+    throttleThresholdMs?: number;
+    calibrationSamples?: number;
+    calibrationIntervalMs?: number;
+};
+
+class TimerThrottleDetector {
+    constructor(report: (calibration: ThrottleCalibration) => void, setTimeoutFn: SetTimeoutFn, clearTimeoutFn: ClearTimeoutFn, clock: Clock, logger: Logger, config?: TimerThrottleConfig, postTask?: PostTaskFn | undefined);
+    start(): void;
+    stop(): void;
+    isThrottled(): boolean;
+}
+
+type UnreadStepMode = "option-off" | "too-short" | "refused" | "no-grid";
+
+type UnreliableInterval = {
+    start: number;
+    end: number;
+    reason: UnreliableReason;
+};
+
+type UnreliableReason = "hidden" | "frozen" | "suspend";
+
+const VITAL_THRESHOLDS: Readonly<Record<VitalName, {
+    good: number;
+    poor: number;
+}>>;
+
+class ViewCollector {
+    readonly view: PageView;
+    constructor(view: PageView, describeNode: (node: unknown) => string, readInteractionCount?: () => number | undefined);
+    addEvent(entry: EventEntryLike): void;
+    addLayoutShift(entry: LayoutShiftEntryLike): void;
+    setFcp(value: number): void;
+    setLcp(value: number, attribution?: Readonly<Record<string, string | number>>, renderTime?: number): void;
+    finalizeLcpAt(time: number): void;
+    setTtfb(value: number): void;
+    values(): VitalValue[];
+}
+
+type ViewportDeps = {
+    frameViewport: FrameViewport;
+};
+
+type VitalName = "INP" | "CLS" | "LCP" | "FCP" | "TTFB";
+
+type VitalValue = {
+    name: VitalName;
+    value: number;
+    attribution: Readonly<Record<string, string | number>>;
+    time?: number;
+};
+
+type VitalsReport = {
+    view: PageView;
+    values: VitalValue[];
+    final: boolean;
+};
+
+type WallClock = {
+    now: () => number;
+};
+
+type WallClockDeps = {
+    wallClock: WallClock;
+};
+
+class WorkerClockSync {
+    constructor(sendRequest: (id: number) => void, nowAbsolute: () => number, onResult: (result: ClockSyncResult) => void, sampleCount?: number);
+    begin(): void;
+    onReply(id: number, workerTime: number): void;
+    getCorrectionMs(): number;
+    getResult(): ClockSyncResult | undefined;
+}
+
+type WorkerDeps = {
+    postMessage: (message: WorkerToMainMessage) => void;
+    setTimeoutFn: SetTimeoutFn;
+    clearTimeoutFn: ClearTimeoutFn;
+    clock: Clock;
+    reportHang?: (event: HangEvent, options: HangOptions) => void;
+    setIntervalFn?: SetIntervalFn;
+    clearIntervalFn?: ClearIntervalFn;
+    journal?: HangJournal;
+    wallClock?: WallClock;
+};
+
+type WorkerHandler = {
+    handleMessage: (message: MainToWorkerMessage) => void;
+    readonly running: boolean;
+};
+
+type WorkerLagEvents = {
+    onSystemStall?: (stall: SystemStall) => void;
+    onHangEnded?: (durationMs: number, startedAt: number) => void;
+    onClockSync?: (result: ClockSyncResult) => void;
+};
+
+type WorkerLagMeasurement = {
+    deliveryDelayMs: number;
+    workerSelfLagMs: number;
+    seq: number;
+};
+
+class WorkerLagMonitor {
+    constructor(worker: WorkerLike, report: (measurement: WorkerLagMeasurement) => void, logger: Logger,
+    clock: AbsoluteClock, options: WorkerLagMonitorOptions);
+    start(): void;
+    setContext(attributes: Record<string, string>): void;
+    stop(): void;
+    dispose(): void;
+    getClockSync(): ClockSyncResult | undefined;
+}
+
+type WorkerLagMonitorOptions = {
+    heartbeatIntervalMs: number;
+    setTimeoutFn: SetTimeoutFn;
+    clearTimeoutFn: ClearTimeoutFn;
+    hang?: HangOptions;
+    systemStallThresholdMs?: number;
+    clockSyncIntervalMs?: number;
+    events?: WorkerLagEvents;
+    pageId?: string;
+};
+
+type WorkerLike = {
+    postMessage(message: MainToWorkerMessage): void;
+    addEventListener(type: "message", handler: (event: {
+        data: WorkerToMainMessage;
+    }) => void): void;
+    removeEventListener(type: "message", handler: (event: {
+        data: WorkerToMainMessage;
+    }) => void): void;
+};
+
+type WorkerMonitorDeps = {
+    worker: WorkerLike;
+    workerHeartbeatIntervalMs?: number;
+    workerHangReport?: HangReportTarget;
+    hangJournal?: HangJournal;
+    hangReportMarks?: HangReportMarks;
+    pageId?: string;
+};
+
+type WorkerToMainMessage = HeartbeatMessage | SyncReplyMessage | HangEndedMessage | LivenessBlockMessage;
+
+function beatingSetTimeout(setTimeoutFn: SetTimeoutFn, beacon: LivenessBeacon): SetTimeoutFn;
+
+function createAbsoluteClock(performance: PerformanceLike): AbsoluteClock;
+
+function createBrowserDeps(globals: BrowserGlobals, options: BrowserDepsOptions): AllMonitorDeps;
+
+function createCounter<A extends Attributes = Attributes>(meter: Meter, definition: MetricDefinition): Counter<A>;
+
+function createForwardingMeter(target: MessageTarget, options: ForwardingMeterOptions): ForwardingMeter;
+
+function createFrameViewport(IntersectionObserverCtor: IntersectionObserverInit, target: object): FrameViewport;
+
+function createHandle<T>(name: string, logger: Logger, build: () => {
+    monitor: T;
+    stop: () => void;
+}): MonitorHandle<T>;
+
+function createHistogram<A extends Attributes = Attributes>(meter: Meter, definition: MetricDefinition): Histogram<A>;
+
+function createIndexedDbHangJournal(factory: IdbFactoryLike, name?: string): HangJournal;
+
+function createInstrumentedBrowserReports(deps: CoreDeps & ReportingDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>): MonitorHandle<BrowserReportMonitor>;
+
+function createInstrumentedClockDrift(deps: CoreDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & WallClockDeps & Pick<TimerDeps, "setIntervalFn" | "clearIntervalFn"> & Partial<EventDeps>, conditions?: MeasurementConditions): MonitorHandle<ClockDriftMonitor>;
+
+function createInstrumentedClockReliability(deps: CoreDeps & PerformanceDeps & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn">): MonitorHandle<ClockReliabilityChecker>;
+
+function createInstrumentedComputePressure(deps: CoreDeps & PressureDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>): MonitorHandle<ComputePressureMonitor>;
+
+function createInstrumentedDriftLag(deps: CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">> & Partial<PageChangeDeps>, conditions?: MeasurementConditions, options?: {
+    readonly recordThrottledSteps?: boolean;
+}): MonitorHandle<DriftLag>;
+
+function createInstrumentedEventTiming(deps: CoreDeps & ObserverDeps & Partial<PerformanceDeps>): MonitorHandle<EventTimingMonitor>;
+
+function createInstrumentedFrameTiming(deps: CoreDeps & FrameDeps, conditions?: MeasurementConditions): MonitorHandle<FrameTimingMonitor>;
+
+function createInstrumentedGCSignal(deps: CoreDeps & GCDeps): MonitorHandle<GCSignalDetector>;
+
+function createInstrumentedIdleAvailability(deps: CoreDeps & IdleDeps, conditions?: MeasurementConditions): MonitorHandle<IdleAvailabilityMonitor>;
+
+function createInstrumentedLayoutShift(deps: CoreDeps & ObserverDeps): MonitorHandle<LayoutShiftMonitor>;
+
+function createInstrumentedLifecycle(deps: CoreDeps & LifecycleDeps & Partial<EventDeps> & Partial<SpanDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>): MonitorHandle<LifecycleStateMachine>;
+
+function createInstrumentedLoaf(deps: CoreDeps & ObserverDeps & Partial<EventDeps> & Partial<SpanDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>): MonitorHandle<LongAnimationFrameMonitor>;
+
+function createInstrumentedMacrotaskLag(deps: CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">>, conditions?: MeasurementConditions): MonitorHandle<MacrotaskLag>;
+
+function createInstrumentedMemory(deps: CoreDeps & MemoryDeps & Pick<TimerDeps, "setIntervalFn" | "clearIntervalFn">): MonitorHandle<MemoryMonitor>;
+
+function createInstrumentedPageViewContext(deps: Pick<CoreDeps, "logger"> & Partial<CrashReportDeps> & Partial<Pick<PageDeps, "page" | "pageContext">> & Partial<Pick<SpanDeps, "pageViewSpans">>, vitals: PageViewVitals, receivers: readonly PageContextReceiver[]): MonitorHandle<PageViewContext>;
+
+function createInstrumentedPageViewVitals(deps: CoreDeps & ObserverDeps & Partial<PerformanceDeps> & Partial<AbsoluteClockDeps> & Partial<EventDeps> & Partial<Pick<SpanDeps, "pageViewSpans">> & Partial<Pick<FrameDeps, "requestAnimationFrame">> & Partial<PageDeps> & Partial<Pick<LifecycleDeps, "window">>, lifecycle: LifecycleStateMachine): MonitorHandle<PageViewVitals>;
+
+function createInstrumentedPeerHangWatch(deps: CoreDeps & PeerDeps & WallClockDeps & TimerDeps & Partial<EventDeps> & Partial<SpanDeps> & Pick<WorkerMonitorDeps, "hangJournal" | "hangReportMarks" | "pageId">, lifecycle: LifecycleStateMachine): MonitorHandle<PeerHangWatch>;
+
+function createInstrumentedSchedulingFairness(deps: CoreDeps & TimerDeps & SchedulingDeps, conditions?: MeasurementConditions, intervalMs?: number): MonitorHandle<SchedulingFairnessMonitor>;
+
+function createInstrumentedSharedLiveness(deps: CoreDeps & Pick<WorkerMonitorDeps, "worker"> & {
+    livenessBuffer: SharedArrayBuffer;
+    livenessOptions?: SharedLivenessOptions;
+}, conditions?: MeasurementConditions): MonitorHandle<SharedLivenessMonitor>;
+
+function createInstrumentedThrottleDetector(deps: ThrottleDetectorDeps): MonitorHandle<TimerThrottleDetector>;
+
+function createInstrumentedWorkerLag(deps: CoreDeps & WorkerMonitorDeps & PerformanceDeps & Partial<AbsoluteClockDeps> & Partial<WallClockDeps> & Pick<TimerDeps, "setTimeoutFn" | "clearTimeoutFn"> & Partial<EventDeps> & Partial<SpanDeps>, conditions?: MeasurementConditions): MonitorHandle<WorkerLagMonitor>;
+
+function createLivenessBeacon(buffer: SharedArrayBuffer): LivenessBeacon;
+
+function createMeasurementConditions(options: MeasurementConditionsOptions): MeasurementConditions;
+
+function createMemoryHangJournal(): HangJournal;
+
+function createMessageTaskQueue(MessageChannelCtor: MessageChannelConstructor): MessageTaskQueue;
+
+function createMeterReceiver(meter: Meter): {
+    handleMessage(message: ForwardedMetricMessage): void;
+};
+
+function createNoopEventSink(): EventSink;
+
+function createNoopMeter(): Meter;
+
+function createNoopSpanSink(): SpanSink;
+
+function createOtelEventSink(otelLogger: OtelLogger, sinkOptions?: OtelEventSinkOptions): EventSink;
+
+function createOtelLoggerAdapter(otelLogger: OtelLogger): Logger;
+
+function createOtelSpanSink(tracer: OtelTracerLike, api: OtelTraceApiLike): SpanSink;
+
+function createPageChangeClock(source: PageChangeSource, clock: Clock): PageChangeClock;
+
+function createPageSource(document: PageDocument, performance: PagePerformance): PageSource;
+
+function createPageViewSpans(spans: SpanSink, clock: AbsoluteClock | undefined): PageViewSpans;
+
+function createRandomId(): string;
+
+function createStorageHangReportMarks(storage: StorageLike): HangReportMarks;
+
+function createTeeLogger(...loggers: Logger[]): Logger;
+
+function createWorkerHandler(deps: WorkerDeps): WorkerHandler;
+
+const defaultMemoryIntervalMs: number;
+
+function describeNode(node: unknown, maxLength?: number): string;
+
+function domPageChanges(MutationObserver: MutationObserverConstructor, document: ChangeDocument): PageChangeSource;
+
+const driftStepMs: 5;
+
+function encodeOtlpLogs(resource: Record<string, string>, scopeName: string, records: readonly OtlpLogRecordInput[]): string;
+
+function findAbandonedHangs(records: readonly HangRecord[], now: number, ownPageId: string, staleMs?: number): HangRecord[];
+
+const highFrequencyLagIntervalMs: number;
+
+function interactionType(eventName: string): "pointer" | "keyboard" | "other";
+
+function isPeerMessage(value: unknown): value is PeerMessage;
+
+function isSpanIdentity(value: {
+    traceId?: unknown;
+    spanId?: unknown;
+} | undefined): value is SpanIdentity;
+
+// isVisibleState comes from the package page-lifecycle-tracker.
+
+const lagLoggingIntervalMs: number;
+
+const longLagDuration: number;
+
+const longLagThreshold: 50;
+
+const macrotaskLagIntervalMs: 5000;
+
+function millisToUnixNanoString(timeMs: number): string;
+
+const peerLockName: (pageId: string) => string;
+
+function placeEventTime(time: number | undefined, now: number, maxOffsetMs?: number): {
+    timestamp: number | undefined;
+    attributes: EventAttributes;
+};
+
+const pressureStateOrdinals: Readonly<Record<PressureState, number>>;
+
+function rateVital(name: VitalName, value: number): Rating;
+
+function setupAllMonitors(rootDeps: AllMonitorDeps): AllMonitorHandles;
+
+const shortLagDuration: number;
+
+const shortLagThreshold: 100;
+
+function stripUrlParameters(url: string): string;
+
+// summarizeTransitions comes from the package page-lifecycle-tracker.
+
+function validatedRecorder(conditions: MeasurementConditions | undefined, record: (value: number, windowMs: number) => void): {
+    submit: (value: number, windowMs: number) => void;
+    dispose: () => void;
+};
+
+function withEventContext(sink: EventSink, context: () => EventAttributes): EventSink;
+```
+
+## `@mark1russell7/lag/worker`
+
+```ts
+import {
+  LagWorker, createLagWorker,
+} from "@mark1russell7/lag/worker";
+```
+
+```ts
+type LagWorker = WorkerLike & {
+    terminate(): void;
+};
+
+function createLagWorker(): LagWorker;
+```
+
+## `@mark1russell7/lag/async-context`
+
+```ts
+import {
+  ANONYMOUS_CALLBACK, type AddCallbackHookFn, CALLBACK_SOURCE_KINDS, type CallbackHookDeps,
+  type CallbackHookLike, type CallbackSourceKind, LONG_CALLBACK_THRESHOLD_MS, type LongCallback,
+  LongCallbackMonitor, type LongCallbackOptions, type OtelActiveSpanApiLike, activeSpanName,
+  callbackSourceKind, createInstrumentedLongCallbacks, setupLongCallbacks,
+} from "@mark1russell7/lag/async-context";
+```
+
+```ts
+const ANONYMOUS_CALLBACK = "(anonymous)";
+
+type AddCallbackHookFn = (hook: CallbackHookLike) => () => void;
+
+const CALLBACK_SOURCE_KINDS: readonly ["timer", "promise", "event", "await", "observer", "stream", "lock", "frame", "other"];
+
+type CallbackHookDeps = {
+    addCallbackHook: AddCallbackHookFn;
+};
+
+type CallbackHookLike = {
+    before?(callback: Function, source: string): void;
+    after?(callback: Function, source: string): void;
+};
+
+type CallbackSourceKind = typeof CALLBACK_SOURCE_KINDS[number];
+
+const LONG_CALLBACK_THRESHOLD_MS = 50;
+
+type LongCallback = {
+    readonly name: string;
+    readonly source: string;
+    readonly sourceKind: CallbackSourceKind;
+    readonly durationMs: number;
+    readonly startTime: number;
+    readonly operation: string | undefined;
+};
+
+class LongCallbackMonitor {
+    constructor(addCallbackHook: AddCallbackHookFn, report: (callback: LongCallback) => void, clock: Clock, logger: Logger, options?: LongCallbackOptions);
+    get running(): boolean;
+    stop(): void;
+}
+
+type LongCallbackOptions = {
+    thresholdMs?: number;
+    operation?: () => string | undefined;
+};
+
+type OtelActiveSpanApiLike = {
+    trace: {
+        getActiveSpan(): object | undefined;
+    };
+};
+
+function activeSpanName(api: OtelActiveSpanApiLike): () => string | undefined;
+
+function callbackSourceKind(source: string): CallbackSourceKind;
+
+function createInstrumentedLongCallbacks(deps: CoreDeps & CallbackHookDeps & Partial<EventDeps> & Partial<SpanDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>, options?: LongCallbackOptions): MonitorHandle<LongCallbackMonitor>;
+
+function setupLongCallbacks(monitors: Pick<AllMonitorHandles, "add">, addCallbackHook: AddCallbackHookFn, options?: LongCallbackOptions): MonitorHandle<LongCallbackMonitor>;
+```
+
+## `@mark1russell7/lag/event-line.js`
+
+```ts
+import {
+  formatEventLine,
+} from "@mark1russell7/lag/event-line.js";
+```
+
+```ts
+function formatEventLine(name: string, attributes: Readonly<Record<string, AttributeValue>>): string;
+```
