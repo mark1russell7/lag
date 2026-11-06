@@ -22,10 +22,12 @@ on:
 permissions:
   contents: read
 
-# One deployment at a time. A newer push cancels a deployment that waits.
+# One deployment at a time. A deployment in progress always ends: GitHub keeps only the newest run that waits, and
+# cancels an older run that waits. With cancel-in-progress true, each push, release and schedule cancelled the run in
+# progress: after the deployment of 2026-11-05 15:06Z, the next 15 runs were cancelled (the rule main-runs-finish).
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   # The browser tests of each engine on its own runner, one project at a time, as the
