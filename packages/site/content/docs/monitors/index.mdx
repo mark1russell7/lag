@@ -115,6 +115,7 @@ Each factory has an error boundary. If the construction of a monitor fails, its 
 - The hang journal in IndexedDB only with a `worker`, and only when the option `hangJournal` is not false.
 - `crashReport` only when `window.crashReport` has a `set()` function and the option `crashReportContext` is not false.
 - `BroadcastChannel` and `locks` only when the browser has both, and only when the option `peerHangWatch` is not false. `locks.request` is bound to `navigator.locks`.
+- `pageChanges` only when the browser has `MutationObserver` and the document has `documentElement`, and only when the option `pageChanges` is not false. DriftLag reads it at the start of the throttling.
 - `memorySource` only when the browser has `performance.memory` or `measureUserAgentSpecificMemory()`.
 - `pressureSources` with the default `["cpu"]`.
 

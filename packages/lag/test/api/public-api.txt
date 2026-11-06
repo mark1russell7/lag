@@ -26,6 +26,8 @@ type BrowserReportType: dist/BrowserReportMonitor.d.ts#BrowserReportType
 BusyTimeProbe: dist/BusyTimeProbe.d.ts#BusyTimeProbe
 type CancelAnimationFrameFn: dist/FrameTimingMonitor.d.ts#CancelAnimationFrameFn
 type CancelIdleCallbackFn: dist/IdleAvailabilityMonitor.d.ts#CancelIdleCallbackFn
+type ChangeDocument: dist/page-change.d.ts#ChangeDocument
+type ChangeListenerOptions: dist/page-change.d.ts#ChangeListenerOptions
 type ClearIntervalFn: dist/types.d.ts#ClearIntervalFn
 type ClearTimeoutFn: dist/types.d.ts#ClearTimeoutFn
 type Clock: dist/types.d.ts#Clock
@@ -85,6 +87,7 @@ type HangReportMarks: dist/hang-journal.d.ts#HangReportMarks
 type HangReportTarget: dist/worker-protocol.d.ts#HangReportTarget
 type HeartbeatMessage: dist/worker-protocol.d.ts#HeartbeatMessage
 type Histogram: dist/meter.d.ts#Histogram
+IDLE_GRID_CHANGE_MS: dist/page-change.d.ts#IDLE_GRID_CHANGE_MS
 type IdbFactoryLike: dist/browser/indexeddb-journal.d.ts#IdbFactoryLike
 IdleAvailabilityMonitor: dist/IdleAvailabilityMonitor.d.ts#IdleAvailabilityMonitor
 type IdleDeadline: dist/IdleAvailabilityMonitor.d.ts#IdleDeadline
@@ -156,6 +159,8 @@ type MetricKind: dist/metric-catalog.d.ts#MetricKind
 type MonitorFactory: dist/setup-all-monitors.d.ts#MonitorFactory
 type MonitorHandle: dist/monitor-handle.d.ts#MonitorHandle
 MonitorRegistry: dist/monitor-registry.d.ts#MonitorRegistry
+type MutationObserverConstructor: dist/page-change.d.ts#MutationObserverConstructor
+type MutationObserverLike: dist/page-change.d.ts#MutationObserverLike
 NAVIGATION_TYPES: dist/vitals/types.d.ts#NAVIGATION_TYPES
 type NavigationInfo: dist/vitals/types.d.ts#NavigationInfo
 type NavigationType: dist/vitals/types.d.ts#NavigationType
@@ -170,11 +175,15 @@ type OtelTraceApiLike: dist/otel-span-adapter.d.ts#OtelTraceApiLike
 type OtelTracerLike: dist/otel-span-adapter.d.ts#OtelTracerLike
 type OtlpAttributeValue: dist/otlp-json.d.ts#OtlpAttributeValue
 type OtlpLogRecordInput: dist/otlp-json.d.ts#OtlpLogRecordInput
+PAGE_CHANGE_EVENTS: dist/page-change.d.ts#PAGE_CHANGE_EVENTS
 PEER_BEAT_INTERVAL_MS: dist/PeerHangWatch.d.ts#PEER_BEAT_INTERVAL_MS
 PEER_CHANNEL_NAME: dist/PeerHangWatch.d.ts#PEER_CHANNEL_NAME
 PEER_CLAIM_HOLD_MS: dist/PeerHangWatch.d.ts#PEER_CLAIM_HOLD_MS
 PEER_GRACE_MS: dist/PeerHangWatch.d.ts#PEER_GRACE_MS
 PEER_HANG_THRESHOLD_MS: dist/PeerHangWatch.d.ts#PEER_HANG_THRESHOLD_MS
+type PageChangeClock: dist/page-change.d.ts#PageChangeClock
+type PageChangeDeps: dist/dep-groups.d.ts#PageChangeDeps
+type PageChangeSource: dist/page-change.d.ts#PageChangeSource
 type PageContextReceiver: dist/instrumented/page-view-context.d.ts#PageContextReceiver
 type PageDeps: dist/dep-groups.d.ts#PageDeps
 type PageDocument: dist/browser/page-source.d.ts#PageDocument
@@ -311,6 +320,7 @@ createNoopSpanSink: dist/spans.d.ts#createNoopSpanSink
 createOtelEventSink: dist/otel-logger-adapter.d.ts#createOtelEventSink
 createOtelLoggerAdapter: dist/otel-logger-adapter.d.ts#createOtelLoggerAdapter
 createOtelSpanSink: dist/otel-span-adapter.d.ts#createOtelSpanSink
+createPageChangeClock: dist/page-change.d.ts#createPageChangeClock
 createPageSource: dist/browser/page-source.d.ts#createPageSource
 createPageViewSpans: dist/instrumented/page-view-spans.d.ts#createPageViewSpans
 createRandomId: dist/random-id.d.ts#createRandomId
@@ -319,6 +329,7 @@ createTeeLogger: dist/otel-logger-adapter.d.ts#createTeeLogger
 createWorkerHandler: dist/lag-worker.d.ts#createWorkerHandler
 defaultMemoryIntervalMs: dist/MemoryMonitor.d.ts#defaultMemoryIntervalMs
 describeNode: dist/vitals/selector.d.ts#describeNode
+domPageChanges: dist/page-change.d.ts#domPageChanges
 driftStepMs: dist/constants.d.ts#driftStepMs
 encodeOtlpLogs: dist/otlp-json.d.ts#encodeOtlpLogs
 findAbandonedHangs: dist/hang-journal.d.ts#findAbandonedHangs
@@ -530,9 +541,10 @@ export type DriftLagOptions = {
     stepMs?: number;
     baselineSteps?: number;
     postTask?: PostTaskFn;
-    onThrottle?: (throttled: boolean) => void;
+    onThrottle?: (throttled: boolean, sinceChangeMs?: number) => void;
     recordThrottledSteps?: boolean;
-    onUnreadStep?: (mode: UnreadStepMode, stepMs: number) => void;
+    onUnreadStep?: (mode: UnreadStepMode, stepMs: number, sinceChangeMs?: number) => void;
+    sinceChangeMs?: () => number | undefined;
 };
 
 ### dist/DriftLag.d.ts#UnreadStepMode
@@ -1133,6 +1145,7 @@ export type BrowserDepsOptions = {
     hangJournal?: boolean;
     crashReportContext?: boolean;
     peerHangWatch?: boolean;
+    pageChanges?: boolean;
     pageContext?: () => Readonly<Record<string, string>>;
     sharedLifecycle?: boolean;
 };
@@ -1168,6 +1181,7 @@ export type BrowserGlobals = LifecycleWindow & {
     readonly AbortController?: unknown;
     readonly navigator?: unknown;
     readonly IntersectionObserver?: unknown;
+    readonly MutationObserver?: unknown;
     readonly top?: unknown;
 };
 
@@ -1288,6 +1302,11 @@ export type MemoryDeps = {
 ### dist/dep-groups.d.ts#ObserverDeps
 export type ObserverDeps = {
     PerformanceObserver: PerformanceObserverInit;
+};
+
+### dist/dep-groups.d.ts#PageChangeDeps
+export type PageChangeDeps = {
+    pageChanges: PageChangeSource;
 };
 
 ### dist/dep-groups.d.ts#PageDeps
@@ -1532,7 +1551,7 @@ export declare function createInstrumentedClockReliability(deps: CoreDeps & Perf
 export declare function createInstrumentedComputePressure(deps: CoreDeps & PressureDeps & Partial<EventDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>): MonitorHandle<ComputePressureMonitor>;
 
 ### dist/instrumented/drift-lag.d.ts#createInstrumentedDriftLag
-export declare function createInstrumentedDriftLag(deps: CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">>, conditions?: MeasurementConditions, options?: {
+export declare function createInstrumentedDriftLag(deps: CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">> & Partial<PageChangeDeps>, conditions?: MeasurementConditions, options?: {
     readonly recordThrottledSteps?: boolean;
 }): MonitorHandle<DriftLag>;
 
@@ -1793,7 +1812,7 @@ export type MetricDefinition = {
 };
 
 ### dist/metric-catalog.d.ts#MetricKey
-export type MetricKey = "drift" | "driftBaseline" | "driftUnreadSteps" | "macrotask" | "samplesDiscarded" | "stalls" | "stallDuration" | "workerMainBlock" | "workerSelfLag" | "workerClockOffset" | "hangs" | "hangDuration" | "loafBlocking" | "loafDuration" | "eventDuration" | "eventInputDelay" | "eventProcessing" | "eventPresentationDelay" | "layoutShift" | "vitalInp" | "vitalCls" | "vitalLcp" | "vitalFcp" | "vitalTtfb" | "frameDelta" | "frames" | "idleTimeRemaining" | "idleGap" | "idleCallbacks" | "schedulingMicrotask" | "schedulingMacrotask" | "schedulingMessageChannel" | "memoryUsed" | "memoryUsage" | "pressureState" | "gcEvents" | "lifecycleTransitions" | "timerCalibrations" | "clockResolution" | "clockSkew" | "clockJumps" | "browserReports" | "livenessBlock" | "longCallbackDuration";
+export type MetricKey = "drift" | "driftBaseline" | "driftUnreadSteps" | "driftThrottleStarts" | "macrotask" | "samplesDiscarded" | "stalls" | "stallDuration" | "workerMainBlock" | "workerSelfLag" | "workerClockOffset" | "hangs" | "hangDuration" | "loafBlocking" | "loafDuration" | "eventDuration" | "eventInputDelay" | "eventProcessing" | "eventPresentationDelay" | "layoutShift" | "vitalInp" | "vitalCls" | "vitalLcp" | "vitalFcp" | "vitalTtfb" | "frameDelta" | "frames" | "idleTimeRemaining" | "idleGap" | "idleCallbacks" | "schedulingMicrotask" | "schedulingMacrotask" | "schedulingMessageChannel" | "memoryUsed" | "memoryUsage" | "pressureState" | "gcEvents" | "lifecycleTransitions" | "timerCalibrations" | "clockResolution" | "clockSkew" | "clockJumps" | "browserReports" | "livenessBlock" | "longCallbackDuration";
 
 ### dist/metric-catalog.d.ts#MetricKind
 export type MetricKind = "histogram" | "counter";
@@ -1925,6 +1944,60 @@ export declare function encodeOtlpLogs(resource: Record<string, string>, scopeNa
 ### dist/otlp-json.d.ts#millisToUnixNanoString
 export declare function millisToUnixNanoString(timeMs: number): string;
 
+### dist/page-change.d.ts#ChangeDocument
+export type ChangeDocument = {
+    readonly documentElement: unknown;
+    getAnimations?(): readonly {
+        readonly playState: string;
+    }[];
+    addEventListener?(type: string, listener: () => void, options: ChangeListenerOptions): void;
+    removeEventListener?(type: string, listener: () => void, options: ChangeListenerOptions): void;
+};
+
+### dist/page-change.d.ts#ChangeListenerOptions
+export type ChangeListenerOptions = {
+    readonly capture: true;
+    readonly passive: true;
+};
+
+### dist/page-change.d.ts#IDLE_GRID_CHANGE_MS
+export declare const IDLE_GRID_CHANGE_MS = 30000;
+
+### dist/page-change.d.ts#MutationObserverConstructor
+export type MutationObserverConstructor = new (callback: () => void) => MutationObserverLike;
+
+### dist/page-change.d.ts#MutationObserverLike
+export type MutationObserverLike = {
+    observe(target: unknown, options: {
+        subtree: boolean;
+        childList: boolean;
+        attributes: boolean;
+        characterData: boolean;
+    }): void;
+    disconnect(): void;
+};
+
+### dist/page-change.d.ts#PAGE_CHANGE_EVENTS
+export declare const PAGE_CHANGE_EVENTS: readonly string[];
+
+### dist/page-change.d.ts#PageChangeClock
+export type PageChangeClock = {
+    sinceChangeMs(): number;
+    dispose(): void;
+};
+
+### dist/page-change.d.ts#PageChangeSource
+export type PageChangeSource = {
+    observe(onChange: () => void): () => void;
+    animating(): boolean;
+};
+
+### dist/page-change.d.ts#createPageChangeClock
+export declare function createPageChangeClock(source: PageChangeSource, clock: Clock): PageChangeClock;
+
+### dist/page-change.d.ts#domPageChanges
+export declare function domPageChanges(MutationObserver: MutationObserverConstructor, document: ChangeDocument): PageChangeSource;
+
 ### dist/perf-types.d.ts#EventTimingEntry
 export type EventTimingEntry = PerformanceEntryLike & {
     entryType: "event";
@@ -2054,7 +2127,7 @@ export type UnreliableReason = "hidden" | "frozen" | "suspend";
 ### dist/setup-all-monitors.d.ts#AllMonitorDeps
 export type AllMonitorDeps = CoreDeps & TimerDeps & LifecycleDeps & Partial<ObserverDeps> & Partial<FrameDeps> & Partial<ViewportDeps> & Partial<IdleDeps> & Partial<SchedulingDeps> & Partial<MemoryDeps> & Partial<PressureDeps> & Partial<GCDeps> & Partial<WorkerMonitorDeps> & Partial<PerformanceDeps> & Partial<WallClockDeps> & {
     readonly recordThrottledSteps?: boolean;
-} & Partial<EventDeps> & Partial<ReportingDeps> & Partial<SharedMemoryDeps> & Partial<PageDeps> & Partial<AbsoluteClockDeps> & Partial<CrashReportDeps> & Partial<PeerDeps> & Partial<Pick<SpanDeps, "spans">>;
+} & Partial<EventDeps> & Partial<ReportingDeps> & Partial<SharedMemoryDeps> & Partial<PageDeps> & Partial<PageChangeDeps> & Partial<AbsoluteClockDeps> & Partial<CrashReportDeps> & Partial<PeerDeps> & Partial<Pick<SpanDeps, "spans">>;
 
 ### dist/setup-all-monitors.d.ts#AllMonitorHandles
 export type AllMonitorHandles = {

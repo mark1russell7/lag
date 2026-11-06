@@ -51,6 +51,7 @@ import type { AbortControllerConstructor, BroadcastChannelConstructor, LockManag
 import type { ReportingObserverInit } from "./BrowserReportMonitor.js";
 import type { PageSource } from "./vitals/types.js";
 import type { AbsoluteClock } from "./absolute-clock.js";
+import type { PageChangeSource } from "./page-change.js";
 import type {
     LifecycleDocument,
     LifecycleStateMachine,
@@ -256,6 +257,14 @@ export type PageDeps = {
  * Shared memory for the liveness watcher. Give it only in a
  * cross-origin-isolated page (`globalThis.crossOriginIsolated`).
  */
+/**
+ * The changes of the page that a script can see. DriftLag gives the time since the last change at the start of the
+ * throttling. `createBrowserDeps` makes it from `MutationObserver` and `document.getAnimations()`.
+ */
+export type PageChangeDeps = {
+    pageChanges : PageChangeSource;
+};
+
 export type SharedMemoryDeps = {
     SharedArrayBuffer : new (byteLength : number) => SharedArrayBuffer;
 };

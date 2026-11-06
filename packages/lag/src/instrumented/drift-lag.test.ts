@@ -5,6 +5,7 @@ import type { FrameViewport } from "../frame-viewport.js";
 import { createRecordingMeter, expectCatalogInstruments } from "../test-utils.js";
 import { SimulatedThread } from "../test-thread.js";
 import type { MessageChannelConstructor, MessagePortLike } from "../SchedulingFairnessMonitor.js";
+import type { PageChangeSource } from "../page-change.js";
 
 /** DriftLag on fake timers. `delayOf(step)` gives the extra delay of each timer step, from step 1. */
 function setup(delayOf : (step : number) => number, conditions? : MeasurementConditions) {
@@ -146,7 +147,12 @@ describe("createInstrumentedDriftLag with MessageChannel", () => {
     });
 
     /** A monitor at a grid of 1 s. The block starts off the grid. `during` starts after the block, before the next step. */
-    function throttledBlock(recordThrottledSteps : boolean | undefined, during? : (conditions : MeasurementConditions, now : number) => void) {
+    function throttledBlock(
+        recordThrottledSteps : boolean | undefined,
+        during? : (conditions : MeasurementConditions, now : number) => void,
+        pageChanges? : PageChangeSource,
+        beforeGridMs = 3_000,
+    ) {
         const thread = new SimulatedThread(1 / 64);
         thread.nestedTimerAlignmentMs = 4;
         const conditions = createMeasurementConditions({
@@ -165,8 +171,9 @@ describe("createInstrumentedDriftLag with MessageChannel", () => {
             setIntervalFn : thread.setInterval,
             clearIntervalFn : thread.clearInterval,
             MessageChannel : simulatedChannel(thread).Channel,
+            ...(pageChanges ? { pageChanges } : {}),
         }, conditions, recordThrottledSteps === undefined ? undefined : { recordThrottledSteps });
-        thread.advance(3_000);
+        thread.advance(beforeGridMs);
         thread.setNestedTimerAlignment(1_000);
         thread.advance(6_370);
         thread.post(() => thread.busy(2_500));
@@ -176,7 +183,8 @@ describe("createInstrumentedDriftLag with MessageChannel", () => {
         handle.stop();
         const recorded = meter.instruments().find(instrument => instrument.name === "lag_drift_histogram")?.values ?? [];
         const unread = meter.instruments().find(instrument => instrument.name === "lag_drift_unread_steps")?.values ?? [];
-        return { marked : recorded.filter(({ attributes }) => attributes?.["source"] === "throttled-step"), recorded, unread, meter };
+        const starts = meter.instruments().find(instrument => instrument.name === "lag_drift_throttle_starts")?.values ?? [];
+        return { marked : recorded.filter(({ attributes }) => attributes?.["source"] === "throttled-step"), recorded, unread, starts, meter, logger };
     }
 
     it("marks the value of a long throttled step, with the option", () => {
@@ -191,9 +199,34 @@ describe("createInstrumentedDriftLag with MessageChannel", () => {
         for (const option of [undefined, false]) {
             const { recorded, unread, meter } = throttledBlock(option);
             expect(recorded.filter(({ value }) => value > 500)).toEqual([]);
-            expect(unread).toEqual([{ value : 1, attributes : { mode : "option-off" } }]);
+            expect(unread).toEqual([{ value : 1, attributes : { mode : "option-off", page : "not-read" } }]);
             expectCatalogInstruments(meter);
         }
+    });
+
+    /** A source that saw no change: the clock counts from its start, at the creation of the monitor. */
+    const stillPage : PageChangeSource = { observe : () => () => {}, animating : () => false };
+
+    it("gives the time since the last change of the page to the throttle counters: unchanged from 30 s, changed before", () => {
+        // The block ends the throttling, and the throttling starts again after it: two starts
+        const late = throttledBlock(undefined, undefined, stillPage, 31_000);
+        expect(late.starts).toEqual([{ value : 1, attributes : { page : "unchanged" } }, { value : 1, attributes : { page : "unchanged" } }]);
+        expect(late.unread).toEqual([{ value : 1, attributes : { mode : "option-off", page : "unchanged" } }]);
+        const start = late.logger.log.mock.calls.find(([, message]) => String(message).includes("throttles the timers"));
+        expect(start?.[2]).toMatchObject({ sinceChangeMs : expect.any(Number) as number });
+        expect((start?.[2] as { sinceChangeMs : number }).sinceChangeMs).toBeGreaterThanOrEqual(31_000);
+
+        const early = throttledBlock(undefined, undefined, stillPage);
+        expect(early.starts.map(({ attributes }) => attributes)).toEqual([{ page : "changed" }, { page : "changed" }]);
+        expect(throttledBlock(undefined).starts.map(({ attributes }) => attributes)).toEqual([{ page : "not-read" }, { page : "not-read" }]);
+    });
+
+    it("gives no time when the change clock throws, and the chain of steps goes on", () => {
+        const broken : PageChangeSource = { observe : () => () => {}, animating : () => { throw new Error("broken"); } };
+        const { starts, unread, logger } = throttledBlock(undefined, undefined, broken);
+        expect(starts.map(({ attributes }) => attributes)).toEqual([{ page : "not-read" }, { page : "not-read" }]);
+        expect(unread).toEqual([{ value : 1, attributes : { mode : "option-off", page : "not-read" } }]);
+        expect(logger.log).toHaveBeenCalledWith("error", "Error in the change clock of DriftLag.", expect.anything());
     });
 
     it("discards the value when an unreliable interval overlaps the long step, and keeps it when the interval ends before the step", () => {

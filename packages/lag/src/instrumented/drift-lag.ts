@@ -1,4 +1,4 @@
-import type { CoreDeps, SchedulingDeps, TimerDeps } from "../dep-groups.js";
+import type { CoreDeps, PageChangeDeps, SchedulingDeps, TimerDeps } from "../dep-groups.js";
 import type { MonitorHandle } from "../monitor-handle.js";
 import { DriftLag, type UnreadStepMode } from "../DriftLag.js";
 import type { LagValueSource } from "../LagMonitor.js";
@@ -8,6 +8,15 @@ import type { MeasurementConditions } from "../measurement-conditions.js";
 import { highFrequencyLagIntervalMs } from "../constants.js";
 import { METRICS, createCounter, createHistogram } from "../metric-catalog.js";
 import { createHandle, validatedRecorder } from "./shared.js";
+import { IDLE_GRID_CHANGE_MS, createPageChangeClock } from "../page-change.js";
+
+/** The page at the start of the throttling: no change for `IDLE_GRID_CHANGE_MS` or more, a more recent change, or no clock. */
+type PageState = "unchanged" | "changed" | "not-read";
+
+function pageState(sinceChangeMs : number | undefined) : PageState {
+    if (sinceChangeMs === undefined) return "not-read";
+    return sinceChangeMs >= IDLE_GRID_CHANGE_MS ? "unchanged" : "changed";
+}
 
 /**
  * This factory makes a `DriftLag` monitor that records into
@@ -30,16 +39,23 @@ import { createHandle, validatedRecorder } from "./shared.js";
  * a value. The attribute `source` of `lag_drift_histogram` and the log mark it.
  * The window of that value holds the long step. Thus the conditions discard it
  * when the long step overlaps an unreliable interval.
+ *
+ * With `deps.pageChanges`, the monitor reads the time since the last change of the page at the start of the
+ * throttling and at each unread step. `lag_drift_throttle_starts` and `lag_drift_unread_steps` get the attribute
+ * `page`: `unchanged` when the source saw no change for 30 s or more. That does not prove that the page did not repaint.
  */
 export function createInstrumentedDriftLag(
-    deps : CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">>,
+    deps : CoreDeps & TimerDeps & Partial<Pick<SchedulingDeps, "MessageChannel">> & Partial<PageChangeDeps>,
     conditions? : MeasurementConditions,
     options? : { readonly recordThrottledSteps? : boolean },
 ) : MonitorHandle<DriftLag> {
     return createHandle("drift-lag", deps.logger, () => {
         const histogram = createHistogram(deps.meter, METRICS.drift);
         const baselineHistogram = createHistogram(deps.meter, METRICS.driftBaseline);
-        const unreadSteps = createCounter<{ mode : UnreadStepMode }>(deps.meter, METRICS.driftUnreadSteps);
+        const unreadSteps = createCounter<{ mode : UnreadStepMode; page : PageState }>(deps.meter, METRICS.driftUnreadSteps);
+        const throttleStarts = createCounter<{ page : PageState }>(deps.meter, METRICS.driftThrottleStarts);
+        // Only a probe of message tasks finds throttled timers, so the change clock starts only with one
+        const changes = deps.MessageChannel && deps.pageChanges ? createPageChangeClock(deps.pageChanges, deps.clock) : undefined;
         const lagLogger = new LagLogger(highFrequencyLagIntervalMs, deps.logger);
         const tasks = deps.MessageChannel ? createMessageTaskQueue(deps.MessageChannel) : undefined;
         const record = (source : LagValueSource | undefined) => (lag : number, windowMs : number) : void => {
@@ -67,9 +83,13 @@ export function createInstrumentedDriftLag(
             tasks ? {
                 postTask : (callback) => tasks.post(callback),
                 // The monitors of the rendering pause while the timers of the visible page are throttled
-                ...(conditions ? { onThrottle : (throttled : boolean) => conditions.setTimersThrottled(throttled) } : {}),
+                onThrottle : (throttled : boolean, sinceChangeMs? : number) => {
+                    if (throttled) throttleStarts.add(1, { page : pageState(sinceChangeMs) });
+                    conditions?.setTimersThrottled(throttled);
+                },
                 ...(options?.recordThrottledSteps ? { recordThrottledSteps : true } : {}),
-                onUnreadStep : (mode : UnreadStepMode) => unreadSteps.add(1, { mode }),
+                onUnreadStep : (mode : UnreadStepMode, _stepMs : number, sinceChangeMs? : number) => unreadSteps.add(1, { mode, page : pageState(sinceChangeMs) }),
+                ...(changes ? { sinceChangeMs : () => changes.sinceChangeMs() } : {}),
             } : {},
         );
         // In a frame off the screen, WebKit makes the nested timers of the chain wait approximately 1 s (experiment E9)
@@ -83,6 +103,7 @@ export function createInstrumentedDriftLag(
                 tasks?.close();
                 recorder.dispose();
                 throttledRecorder.dispose();
+                changes?.dispose();
             },
         };
     });

@@ -131,6 +131,27 @@ describe("createBrowserDeps", () => {
         expect(deps).toMatchObject({ softNavigations : true, memoryIntervalMs : 30_000, workerHeartbeatIntervalMs : 500 });
     });
 
+    it("observes the changes of the document for DriftLag, with MutationObserver, if the option permits it", () => {
+        const observed : unknown[] = [];
+        class MutationObserver {
+            observe(target : unknown) {
+                observed.push(target);
+            }
+            disconnect() {}
+        }
+        const root = {};
+        const document = Object.assign(createFakeEventTarget(), { visibilityState : "visible", hasFocus : () => true, documentElement : root });
+        const deps = createBrowserDeps(createGlobals({ MutationObserver, document }), options());
+        deps.pageChanges?.observe(() => {});
+        expect(observed).toEqual([root]);
+        expect(deps.pageChanges?.animating()).toBe(false);
+
+        expect(createBrowserDeps(createGlobals({ MutationObserver, document }), { ...options(), pageChanges : false }).pageChanges).toBeUndefined();
+        expect(createBrowserDeps(createGlobals({ document }), options()).pageChanges).toBeUndefined();
+        // A document with no documentElement has no tree to observe
+        expect(createBrowserDeps(createGlobals({ MutationObserver }), options()).pageChanges).toBeUndefined();
+    });
+
     it("uses IndexedDB for the hang journal only with a worker or the peer hang watch, and only if the option permits it", () => {
         const worker : WorkerLike = { postMessage : vi.fn(), addEventListener : vi.fn(), removeEventListener : vi.fn() };
         const indexedDB = { open : vi.fn() };
