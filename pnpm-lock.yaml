@@ -9,7 +9,7 @@ importers:
   .:
     devDependencies:
       '@mark1russell7/api-report':
-        specifier: ^0.4.0
+        specifier: ^0.4.1
         version: 0.4.1
       '@mark1russell7/conventions':
         specifier: ^0.33.0
