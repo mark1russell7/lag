@@ -101,8 +101,8 @@ importers:
         specifier: workspace:*
         version: link:../lag
       '@mark1russell7/otel-ts':
-        specifier: ^0.2.0
-        version: 0.2.0(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))(zone.js@0.16.1)
+        specifier: ^0.3.0
+        version: 0.3.0(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))(zone.js@0.16.1)
     devDependencies:
       '@mark1russell7/grafana-infra':
         specifier: github:mark1russell7/grafana-infra#ae23ab1937c51f68109bdd69a0f0e99598da4082
@@ -936,8 +936,8 @@ packages:
     resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082}
     version: 0.0.0
 
-  '@mark1russell7/otel-ts@0.2.0':
-    resolution: {integrity: sha512-IoxwzaLpiGXfXQSgaxxciAHbmlMmZgfnNGbG3mMNR4O58lt/fvu6C2raes4aw5PBt40yWirSoxwSZAH7YnBHVA==}
+  '@mark1russell7/otel-ts@0.3.0':
+    resolution: {integrity: sha512-srVcznBhRaq0LXFJjSfFn3hnHQNVAXcynnkXhHTJg753iy6JdJ9wr95ARSwtXCaI9ZAUZZJBhS0q64oDmAvuvg==}
     peerDependencies:
       '@opentelemetry/sdk-node': '>=0.200.0'
     peerDependenciesMeta:
@@ -1743,18 +1743,6 @@ packages:
   astring@1.9.0:
     resolution: {integrity: sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==}
     hasBin: true
-
-  async-browser-context@0.2.4:
-    resolution: {integrity: sha512-ktXTOY5g0p4305FmJ7KynntjbkAN3dMbmY4xlDZo0xFddsdxyfWNr+m/QeIsmis6BakJDiiOyCASGiUosrppHw==}
-    engines: {node: ^22.18.0 || >=24.11.0}
-    peerDependencies:
-      '@opentelemetry/api': ^1.0.0
-      vite: '>=7'
-    peerDependenciesMeta:
-      '@opentelemetry/api':
-        optional: true
-      vite:
-        optional: true
 
   async-browser-context@0.3.0:
     resolution: {integrity: sha512-/sclG5CLbRUHu/oPSJs389E4SpmuK/1z6a4BWHH/29U8o1r/Qj05V9rUZ9FYrxfiQuEfu2/VpEh6zHqJ5oWmlg==}
@@ -4344,7 +4332,7 @@ snapshots:
 
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082': {}
 
-  '@mark1russell7/otel-ts@0.2.0(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))(zone.js@0.16.1)':
+  '@mark1russell7/otel-ts@0.3.0(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))(zone.js@0.16.1)':
     dependencies:
       '@grafana/faro-web-sdk': 2.3.1
       '@grafana/faro-web-tracing': 2.3.1
@@ -4364,7 +4352,7 @@ snapshots:
       '@opentelemetry/sdk-trace-base': 2.6.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-web': 2.6.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.40.0
-      async-browser-context: 0.2.4(@opentelemetry/api@1.9.1)(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
+      async-browser-context: 0.3.0(@opentelemetry/api@1.9.1)(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1))
       page-lifecycle-tracker: 0.1.0
     transitivePeerDependencies:
       - supports-color
@@ -5350,16 +5338,6 @@ snapshots:
       js-tokens: 10.0.0
 
   astring@1.9.0: {}
-
-  async-browser-context@0.2.4(@opentelemetry/api@1.9.1)(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1)):
-    dependencies:
-      '@babel/core': 8.0.7
-      '@babel/helper-module-imports': 8.0.0
-      '@babel/plugin-transform-async-generator-functions': 8.0.6(@babel/core@8.0.7)
-      '@babel/plugin-transform-async-to-generator': 8.0.1(@babel/core@8.0.7)
-    optionalDependencies:
-      '@opentelemetry/api': 1.9.1
-      vite: 7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1)
 
   async-browser-context@0.3.0(@opentelemetry/api@1.9.1)(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.1)):
     dependencies:
