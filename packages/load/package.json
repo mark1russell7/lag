@@ -17,6 +17,7 @@
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "4.1.11",
     "vite": "^7.3.7",
     "vitest": "^4.1.11"
   },

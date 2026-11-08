@@ -40,6 +40,7 @@
     "@vitejs/plugin-react": "^5.2.0",
     "@vitest/browser": "^4.1.11",
     "@vitest/browser-playwright": "^4.1.11",
+    "@vitest/coverage-v8": "4.1.11",
     "playwright": "^1.58.2",
     "rehype-autolink-headings": "^7.1.0",
     "rehype-slug": "^6.0.0",
