@@ -20,7 +20,7 @@ import { chromium, firefox, webkit, type Browser, type Page } from "playwright";
 import { PAGE_DIR } from "./builds.js";
 import { PACKAGE_DIR } from "./environment.js";
 import { serveDirectory } from "./server.js";
-import { median } from "./stats.js";
+import { medianOrNaN } from "./stats.js";
 
 const PROBE_DIR = path.join(PAGE_DIR, "await-probe");
 const OUT_DIR = path.join(PACKAGE_DIR, "dist/e8-await-probe");
@@ -92,9 +92,9 @@ async function main() : Promise<void> {
                         if (repetition > 0) item.times.push(ms);
                     }
                 }
-                const plain = (variant : string) : number => median(cases.find(item => item.kind === "plain" && item.variant === variant)!.times);
+                const plain = (variant : string) : number => medianOrNaN(cases.find(item => item.kind === "plain" && item.variant === variant)!.times);
                 for (const item of cases) {
-                    const ms = median(item.times);
+                    const ms = medianOrNaN(item.times);
                     const base = plain(baseForm(item.variant));
                     rows.push([setup.name, item.kind, `\`${item.variant}\``, ms.toFixed(1), ((ms * 1_000) / COUNT).toFixed(2), `×${(ms / base).toFixed(1)}`]);
                 }

@@ -1,11 +1,14 @@
 /** The statistics of the runner. The functions do no I/O. */
 
-/** The median: the middle value, or the mean of the two middle values. `NaN` for no values. */
-export function median(values : readonly number[]) : number {
-    if (values.length === 0) return Number.NaN;
-    const sorted = [...values].sort((a, b) => a - b);
-    const middle = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
+import { median } from "@mark1russell7/rigor-statistics";
+
+/**
+ * This function gives the median of the values, with `median` of rigor-statistics. For a list with no values or with
+ * a `NaN`, it gives `NaN`, and the tables show no value. The home throws on such a list.
+ */
+export function medianOrNaN(values : readonly number[]) : number {
+    if (values.length === 0 || values.some(value => Number.isNaN(value))) return Number.NaN;
+    return median(values);
 }
 
 /** The median, the lowest and the highest value, and the count. */

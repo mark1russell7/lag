@@ -1,19 +1,51 @@
-import { quantile } from "@mark1russell7/rigor-statistics";
+import { median, quantile } from "@mark1russell7/rigor-statistics";
 import { describe, expect, it } from "vitest";
-import { median, spread } from "./stats.js";
+import { medianOrNaN, spread } from "./stats.js";
 import { roundOrder } from "./plan.js";
 
-describe("median", () => {
+/** The copy of the runner before the move to rigor-statistics, word for word: the reference of the move. */
+function copyMedian(values : readonly number[]) : number {
+    if (values.length === 0) return Number.NaN;
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 1 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
+}
+
+describe("medianOrNaN", () => {
     it("gives the middle value of an odd count", () => {
-        expect(median([5, 1, 3])).toBe(3);
+        expect(medianOrNaN([5, 1, 3])).toBe(3);
     });
 
     it("gives the mean of the two middle values of an even count", () => {
-        expect(median([4, 1, 3, 2])).toBe(2.5);
+        expect(medianOrNaN([4, 1, 3, 2])).toBe(2.5);
     });
 
-    it("gives NaN for no values", () => {
-        expect(median([])).toBeNaN();
+    it("gives NaN for no values, as the copy did, where the home throws", () => {
+        expect(copyMedian([])).toBeNaN();
+        expect(medianOrNaN([])).toBeNaN();
+        expect(() => median([])).toThrow(RangeError);
+    });
+
+    it("gives NaN for a list with a NaN, where the copy gave a value that depends on the order", () => {
+        expect(medianOrNaN([1, Number.NaN, 2])).toBeNaN();
+        expect(() => median([1, Number.NaN, 2])).toThrow(RangeError);
+    });
+
+    it("gives the value of the copy for each list of numbers", () => {
+        // a seeded linear congruential generator gives the same lists in each run
+        let seed = 11;
+        const next = () : number => {
+            seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648;
+            return seed / 2_147_483_648;
+        };
+        let cases = 0;
+        for (let n = 1; n <= 300; n++) {
+            const list = Array.from({ length : n }, () => Math.round(next() * 10_000) / 100 - 20);
+            expect(medianOrNaN(list)).toBe(copyMedian(list));
+            expect(median(list)).toBe(copyMedian(list));
+            cases++;
+        }
+        expect(cases).toBe(300);
     });
 });
 

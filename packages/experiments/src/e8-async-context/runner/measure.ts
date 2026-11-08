@@ -15,10 +15,10 @@
  * 6. The context check.
  */
 import os from "node:os";
-import { quantile } from "@mark1russell7/rigor-statistics";
+import { median, quantile } from "@mark1russell7/rigor-statistics";
 import { chromium, firefox, webkit, type Browser, type CDPSession, type Page } from "playwright";
 import { BLOCKING_TASK_MS, CLICK_TARGET, WORKLOAD_NAMES, type E8Page, type SetupId } from "../shared/types.js";
-import { median } from "./stats.js";
+import { medianOrNaN } from "./stats.js";
 import type { Engine, RunResult } from "./summary.js";
 
 /** The durations of the phases. */
@@ -221,10 +221,10 @@ export async function measureRun(plan : RunPlan) : Promise<RunResult> {
                     scripts.push(after.scriptMs - before.scriptMs);
                 }
             }
-            metrics[`workload.${name}.totalMs`] = median(totals);
+            metrics[`workload.${name}.totalMs`] = medianOrNaN(totals);
             if (tasks.length > 0) {
-                metrics[`workload.${name}.taskMs`] = median(tasks);
-                metrics[`workload.${name}.scriptMs`] = median(scripts);
+                metrics[`workload.${name}.taskMs`] = medianOrNaN(tasks);
+                metrics[`workload.${name}.scriptMs`] = medianOrNaN(scripts);
             }
         }
 
