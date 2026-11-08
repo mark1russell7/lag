@@ -15,8 +15,8 @@ importers:
         specifier: ^0.36.1
         version: 0.36.1
       '@mark1russell7/ste-lint':
-        specifier: ^0.1.2
-        version: 0.1.3
+        specifier: ^0.3.0
+        version: 0.3.0
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -215,8 +215,8 @@ importers:
         version: 7.18.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
     devDependencies:
       '@mark1russell7/site-pages':
-        specifier: ^0.3.5
-        version: 0.3.5
+        specifier: ^0.4.1
+        version: 0.4.1
       '@mdx-js/mdx':
         specifier: ^3.1.1
         version: 3.1.1
@@ -956,13 +956,13 @@ packages:
     resolution: {integrity: sha512-u0uA18ulOXO3f6bJXCulK3J3dTp+7+ruTtAhnrKLfhQmj/czSv5aM27BNA0q1vpVK7uFY2KDIarJhYBTSqVXIQ==}
     engines: {node: '>=22'}
 
-  '@mark1russell7/site-pages@0.3.5':
-    resolution: {integrity: sha512-3/VryGHcANgpTwAdAeyWL08I2qpfyUoXCVBUYtzjRQDpGT4i/wCUgJpAziiJrhY5g8HDOOsKgP/9Nf+kGh0a7Q==}
+  '@mark1russell7/site-pages@0.4.1':
+    resolution: {integrity: sha512-YYPPHH3ee6No2VL+yl+mholtu7m1qdZWTf5ldYLxxZyyrsE55rPFHwIPZOnkxH6OJ7GtzqUn37/cfOg7UJqP9A==}
     engines: {node: '>=22'}
     hasBin: true
 
-  '@mark1russell7/ste-lint@0.1.3':
-    resolution: {integrity: sha512-wDsYHFooJpEtyrKwcmTcvmIG2USVyIplEclYXNz8/WZoBDlbDlIDY7OWNxxMAHee0VKkHspQ/ZYxbrrO+9vvuQ==}
+  '@mark1russell7/ste-lint@0.3.0':
+    resolution: {integrity: sha512-Z5GuoAvFk9Vf4tnN/XTHiffbU2SjtZb0EtcQsLJlSAApkXovQZTPOtCFyvRbcU+qMINiXJMXppwolSsxya6s8A==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -4392,11 +4392,11 @@ snapshots:
     dependencies:
       '@mark1russell7/rigor-generators': 0.1.5
 
-  '@mark1russell7/site-pages@0.3.5':
+  '@mark1russell7/site-pages@0.4.1':
     dependencies:
       '@mark1russell7/rigor-statistics': 0.1.10
 
-  '@mark1russell7/ste-lint@0.1.3':
+  '@mark1russell7/ste-lint@0.3.0':
     dependencies:
       typescript: 6.0.3
 
