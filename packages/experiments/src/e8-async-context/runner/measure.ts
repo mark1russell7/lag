@@ -15,9 +15,10 @@
  * 6. The context check.
  */
 import os from "node:os";
+import { quantile } from "@mark1russell7/rigor-statistics";
 import { chromium, firefox, webkit, type Browser, type CDPSession, type Page } from "playwright";
 import { BLOCKING_TASK_MS, CLICK_TARGET, WORKLOAD_NAMES, type E8Page, type SetupId } from "../shared/types.js";
-import { median, quantile } from "./stats.js";
+import { median } from "./stats.js";
 import type { Engine, RunResult } from "./summary.js";
 
 /** The durations of the phases. */
@@ -98,9 +99,10 @@ async function cpuWindow(session : CDPSession, ms : number) : Promise<{ taskMsPe
 /** This function adds the median, the 95th percentile and the count of `values` as metrics with the prefix `name`. */
 function addDistribution(metrics : Record<string, number>, name : string, values : readonly number[]) : void {
     metrics[`${name}.count`] = values.length;
+    // a list with no values has no quantile: the metrics then have only the count, and the report shows no value
     if (values.length === 0) return;
     metrics[`${name}.medianMs`] = median(values);
-    metrics[`${name}.p95Ms`] = quantile(values, 0.95);
+    metrics[`${name}.p95Ms`] = quantile(values, 0.95, "nearest-rank");
 }
 
 export type RunPlan = {
