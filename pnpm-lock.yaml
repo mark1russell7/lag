@@ -195,6 +195,9 @@ importers:
       '@mark1russell7/lag':
         specifier: workspace:*
         version: link:../lag
+      '@mark1russell7/quantity':
+        specifier: ^0.3.1
+        version: 0.3.1(zod@4.6.7)
       '@mark1russell7/rigor-statistics':
         specifier: ^0.1.24
         version: 0.1.24
@@ -953,6 +956,19 @@ packages:
   '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8':
     resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8}
     version: 0.0.1
+
+  '@mark1russell7/quantity@0.3.1':
+    resolution: {integrity: sha512-b8nbUk0BaZJXOfUGzSs18kNgaQ7KquDP2DRREw8D4p8YywpRmjp1Bv4bX5+AjdPDqdn109PBfRYTZ3Ibt8mvNQ==}
+    engines: {node: '>=22.19'}
+    peerDependencies:
+      zod: ^4.1.0
+    peerDependenciesMeta:
+      zod:
+        optional: true
+
+  '@mark1russell7/rational@0.1.2':
+    resolution: {integrity: sha512-hn2C5jjOFCGKJqFQPHt57C/Cn1l9Lb9MltVNtL71KSu+nRrfPOmg8ujYB5n3oDFFWNdNA4bE/8LLT4tG3lmrGA==}
+    engines: {node: '>=22'}
 
   '@mark1russell7/rigor-generators@0.1.8':
     resolution: {integrity: sha512-6AC/YQdSrMKs/1NcHesjmmxVjKrqTDXjzKaElE8N8TgsqgiApCbsnk5xRoGJfvIJZUX7vJHFB9F+w48OSdRtHQ==}
@@ -4391,6 +4407,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
       - zone.js
+
+  '@mark1russell7/quantity@0.3.1(zod@4.6.7)':
+    dependencies:
+      '@mark1russell7/rational': 0.1.2
+    optionalDependencies:
+      zod: 4.6.7
+
+  '@mark1russell7/rational@0.1.2': {}
 
   '@mark1russell7/rigor-generators@0.1.8': {}
 

@@ -1,5 +1,7 @@
 /** Number and date formats for the whole site. Dates show in UTC, so every reader sees the same text. */
 
+import { BYTES_1024, formatOnScale, quantity } from "@mark1russell7/quantity";
+
 const number1 = new Intl.NumberFormat("en", { maximumFractionDigits : 1 });
 const number2 = new Intl.NumberFormat("en", { maximumFractionDigits : 2 });
 const integer = new Intl.NumberFormat("en", { maximumFractionDigits : 0 });
@@ -34,16 +36,14 @@ export function formatPercent(value : number | undefined) : string {
     return `${number1.format(value)}%`;
 }
 
+/**
+ * This function formats a size in bytes on the scale `BYTES_1024` of `@mark1russell7/quantity`: "512 B", "1.5 KiB",
+ * "1 MiB". The next unit starts when the rounded value is 1,024. Thus, 1,048,575 bytes give "1 MiB", not "1,024 KiB".
+ * A value that is not finite gives "–".
+ */
 export function formatBytes(bytes : number) : string {
     if (!Number.isFinite(bytes)) return "–";
-    const units = ["B", "KB", "MB", "GB"];
-    let value = bytes;
-    let unit = 0;
-    while (Math.abs(value) >= 1024 && unit < units.length - 1) {
-        value /= 1024;
-        unit++;
-    }
-    return `${number1.format(value)} ${units[unit]}`;
+    return formatOnScale(quantity(bytes, "B"), BYTES_1024);
 }
 
 /** This function formats a value in an OpenTelemetry unit ("ms", "%", "By", "ratio", "{gc}"). */
