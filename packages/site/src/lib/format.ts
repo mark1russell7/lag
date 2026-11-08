@@ -1,6 +1,6 @@
 /** Number and date formats for the whole site. Dates show in UTC, so every reader sees the same text. */
 
-import { BYTES_1024, formatOnScale, quantity } from "@mark1russell7/quantity";
+import { BYTES_1024, DURATION_MS, formatOnScale, quantity } from "@mark1russell7/quantity";
 
 const number1 = new Intl.NumberFormat("en", { maximumFractionDigits : 1 });
 const number2 = new Intl.NumberFormat("en", { maximumFractionDigits : 2 });
@@ -12,18 +12,13 @@ export function formatNumber(value : number, maximumFractionDigits : 0 | 1 | 2 =
     return format.format(value);
 }
 
-/** This function formats a duration: "0.42 ms", "3.5 ms", "120 ms", "1.25 s", "2 min 5 s". */
+/**
+ * This function formats a duration on the scale `DURATION_MS` of `@mark1russell7/quantity`: "0.42 ms", "3.5 ms",
+ * "120 ms", "1.25 s", "2 min 5 s", "1 h 2 min". A value that is not finite gives "–".
+ */
 export function formatMs(ms : number) : string {
     if (!Number.isFinite(ms)) return "–";
-    const abs = Math.abs(ms);
-    if (abs < 1) return `${number2.format(ms)} ms`;
-    if (abs < 10) return `${number1.format(ms)} ms`;
-    if (abs < 1000) return `${integer.format(ms)} ms`;
-    // 59 995 ms and more round to 60 s: they show in minutes
-    if (abs < 59_995) return `${number2.format(ms / 1000)} s`;
-    // Round to whole seconds first, thus 119 600 ms gives "2 min 0 s", not "1 min 60 s"
-    const totalSeconds = Math.round(abs / 1000);
-    return `${ms < 0 ? "-" : ""}${Math.floor(totalSeconds / 60)} min ${totalSeconds % 60} s`;
+    return formatOnScale(quantity(ms, "ms"), DURATION_MS);
 }
 
 /** This function formats a percentage from 0 to 100. The value `undefined` means that there is no data. */
