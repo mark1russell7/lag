@@ -32,7 +32,7 @@ describe("format", () => {
         expect(formatPercent(87.54)).toBe("87.5%");
         expect(formatPercent(100)).toBe("100%");
         expect(formatPercent(undefined)).toBe("No data");
-        expect(formatBytes(1536)).toBe("1.5 KB");
+        expect(formatBytes(1536)).toBe("1.5 KiB");
         expect(formatValue(0.25, "ratio")).toBe("25%");
         expect(formatValue(3, "{gc}")).toBe("3 gc");
         expect(formatCount(1, "test")).toBe("1 test");
