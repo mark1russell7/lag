@@ -1,6 +1,6 @@
-# The security scans of this repository: dependency review, osv-scanner and CodeQL (CI.md of
-# mark1russell7/template). A pull request fails only for a new finding at or above high. Pushes to
-# main and the weekly scan upload the findings to the Security tab.
+# The security scans of this repository (the action security-scan, CI.md of mark1russell7/template):
+# dependency review, osv-scanner and CodeQL, in one job. A pull request fails only for a new finding at
+# or above high. Pushes to main and the weekly scan upload the findings to the Security tab.
 name: Security
 
 on:
@@ -18,9 +18,15 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  security:
-    uses: mark1russell7/template/.github/workflows/reusable-security.yml@231fcde0c4907fdde2b343490c9688792b57004a # main
+  # The scans run in one job, so a run asks for one runner (the rule security-one-job).
+  security-ok:
+    name: Security OK
+    runs-on: ubuntu-latest
+    # The time limit of the three scans together
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
       actions: read
+    steps:
+      - uses: mark1russell7/template/.github/actions/security-scan@231fcde0c4907fdde2b343490c9688792b57004a # main
