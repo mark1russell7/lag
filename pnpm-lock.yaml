@@ -142,6 +142,10 @@ importers:
         version: 10.1.0(yauzl@2.10.0)
 
   packages/load:
+    dependencies:
+      '@mark1russell7/rigor-generators':
+        specifier: ^0.1.8
+        version: 0.1.8
     devDependencies:
       vite:
         specifier: ^7.3.7
