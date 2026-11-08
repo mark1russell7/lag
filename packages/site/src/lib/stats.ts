@@ -1,18 +1,19 @@
 /** Statistics for measured values. Percentiles use the nearest-rank method: the result is always a measured value. */
 
+import { quantileSorted } from "@mark1russell7/rigor-statistics";
+
 export function sortedValues(values : readonly number[]) : number[] {
     return values.filter(Number.isFinite).sort((a, b) => a - b);
 }
 
 /**
- * The nearest-rank percentile of sorted values: the smallest value that has
- * at least `p` percent of the values at or below it.
+ * The nearest-rank percentile of sorted values: the smallest value that has at least `p` percent of the values at or
+ * below it. This function uses `quantileSorted` of rigor-statistics. For no values, it gives `undefined`, and the page
+ * shows no value. The home throws on such a list.
  */
 export function percentile(sorted : readonly number[], p : number) : number | undefined {
     if (sorted.length === 0) return undefined;
-    if (p <= 0) return sorted[0];
-    const rank = Math.ceil((p / 100) * sorted.length);
-    return sorted[Math.min(sorted.length, Math.max(1, rank)) - 1];
+    return quantileSorted(sorted, p / 100, "nearest-rank");
 }
 
 export type Summary = {
