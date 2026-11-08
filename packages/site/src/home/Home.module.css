@@ -179,6 +179,10 @@
     line-height: 1.65;
 }
 
+.code pre:global(.scroll-cue) {
+    --scroll-cue-bg: var(--color-surface);
+}
+
 .token-keyword {
     color: var(--color-accent);
     font-weight: 700;

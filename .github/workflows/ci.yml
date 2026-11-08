@@ -89,7 +89,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install the Playwright browser and its system dependencies
-        uses: mark1russell7/template/.github/actions/setup-playwright@e077054e0f2ebb8441e4bc525b56cf2acc2afb6f # main
+        uses: mark1russell7/template/.github/actions/setup-playwright@231fcde0c4907fdde2b343490c9688792b57004a # main
         with:
           browsers: ${{ matrix.playwright }}
           command: pnpm exec playwright
@@ -259,7 +259,7 @@ jobs:
       # The browser tests of the site and the prerender of the site build use Chromium. The shared action
       # installs it from a cache, with a time limit and a second try.
       - name: Install Chromium for the site
-        uses: mark1russell7/template/.github/actions/setup-playwright@e077054e0f2ebb8441e4bc525b56cf2acc2afb6f # main
+        uses: mark1russell7/template/.github/actions/setup-playwright@231fcde0c4907fdde2b343490c9688792b57004a # main
         with:
           browsers: chromium
           command: pnpm exec playwright

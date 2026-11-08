@@ -46,7 +46,7 @@ export function CommandLine({ command } : { command : string }) {
     );
 }
 
-/** A block of TypeScript with a small highlighter and a copy button. */
+/** A block of TypeScript with a small highlighter and a copy button. A long line scrolls, and the class `scroll-cue` shows a shade at the edge with more code. */
 export function CodeBlock({ code, title } : { code : string; title : string }) {
     const tokens = useMemo(() => highlight(code), [code]);
     return (
@@ -55,7 +55,7 @@ export function CodeBlock({ code, title } : { code : string; title : string }) {
                 <span>{title}</span>
                 <CopyButton text={code} label="Copy the code" />
             </figcaption>
-            <pre tabIndex={0}><code>{tokens.map((token, index) => (
+            <pre className="scroll-cue" tabIndex={0}><code>{tokens.map((token, index) => (
                 token.kind === "plain" ? token.text : <span key={index} className={styles[`token-${token.kind}`]}>{token.text}</span>
             ))}</code></pre>
         </figure>
