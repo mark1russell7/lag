@@ -35,6 +35,9 @@ importers:
       '@mark1russell7/otel-ts':
         specifier: github:mark1russell7/otel-ts#92cd39311d7d3dd161b33b884bf23a53d74700b8
         version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.1)
+      '@mark1russell7/rigor-statistics':
+        specifier: ^0.1.24
+        version: 0.1.24
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.9.1
