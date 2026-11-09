@@ -13,11 +13,12 @@ describe("format", () => {
         expect(formatMs(Number.NaN)).toBe("–");
     });
 
-    it("rounds a duration of minutes to whole seconds before it divides them", () => {
-        expect(formatMs(119_600)).toBe("2 min 0 s");
+    it("rounds a duration of minutes to whole seconds before it divides them, and shows no 0 s", () => {
+        expect(formatMs(119_600)).toBe("2 min");
         expect(formatMs(59_400)).toBe("59.4 s");
-        expect(formatMs(59_996)).toBe("1 min 0 s");
-        expect(formatMs(-119_600)).toBe("-2 min 0 s");
+        expect(formatMs(59_996)).toBe("1 min");
+        expect(formatMs(-119_600)).toBe("-2 min");
+        expect(formatMs(3_700_000)).toBe("1 h 2 min");
     });
 
     it("shows 100% and 0% only for exactly 100 and 0", () => {

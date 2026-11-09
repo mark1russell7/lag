@@ -193,12 +193,14 @@ function boxLabel(ctx : Context, variants : readonly string[], x : number, y : n
  * The label of a bar. It is in the visible part of the bar when it fits.
  * Else it is after the bar, when the space to `limit` (the start of the
  * next bar) is large enough. A label does not start left of `minX`, the
- * left edge of the plot.
+ * left edge of the plot. The function `labels` gives the variants, so a bar
+ * with no space for a label formats no text.
  */
-function barLabel(ctx : Context, variants : readonly string[], x0 : number, width : number, y : number, limits : { minX : number; limit : number }, inside : string, outside : string) : void {
+function barLabel(ctx : Context, labels : () => readonly string[], x0 : number, width : number, y : number, limits : { minX : number; limit : number }, inside : string, outside : string) : void {
     const visibleStart = Math.max(x0, limits.minX);
     // The shortest label needs approximately 30 px. Thousands of narrow bars must not measure text.
     if (x0 + width - visibleStart < MIN_LABEL_WIDTH && limits.limit - (x0 + width) < MIN_LABEL_WIDTH) return;
+    const variants = labels();
     const insideText = fittingText(ctx, variants, x0 + width - visibleStart - 10);
     if (insideText) {
         ctx.fillStyle = inside;
@@ -590,6 +592,9 @@ function drawBlocks(frame : Frame, track : TrackLayout) : void {
     const { hangs, stalls } = state.model;
     ctx.font = `600 11px ${state.fonts.sans}`;
     ctx.textBaseline = "middle";
+    // Each label starts with its short form, so a block narrower than the short form shows no label. Such a block
+    // formats no duration and measures no text: a dense timeline has thousands of them in each frame.
+    const shortWidth = { hang : ctx.measureText("hang").width, stall : ctx.measureText("stall").width };
     const rows : Array<[readonly SpanItem[], { top : number; height : number }, boolean]> = [[hangs, ROWS.hangs, false], [stalls, ROWS.stalls, true]];
     for (const [list, row, hatched] of rows) {
         const [first, last] = visibleRange(list, state.viewport, item => item.start, longestOf(list));
@@ -600,15 +605,15 @@ function drawBlocks(frame : Frame, track : TrackLayout) : void {
             const width = Math.max(3, x(item.end) - x0);
             const suspend = item.attributes["kind"] === "suspend";
             const color = suspend ? palette.inkMuted : palette.mark;
-            const duration = formatMs((item.end - item.start) * 1000);
             if (hatched) {
                 fillRect(ctx, x0, top, width, row.height, color, 0.14);
                 hatchRect(ctx, x0, top, width, row.height, color);
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 1;
                 ctx.strokeRect(x0 + 0.5, top + 0.5, width - 1, row.height - 1);
+                if (width - 10 < shortWidth.stall) continue;
                 const kind = String(item.attributes["kind"] ?? "stall");
-                const text = fittingText(ctx, [`stall (${kind}), ${duration}`, "stall"], width - 10);
+                const text = fittingText(ctx, [`stall (${kind}), ${formatMs((item.end - item.start) * 1000)}`, "stall"], width - 10);
                 if (text) {
                     fillRect(ctx, x0 + 2, top + 2, ctx.measureText(text).width + 6, row.height - 4, palette.surface, 0.92);
                     ctx.fillStyle = palette.ink;
@@ -616,7 +621,8 @@ function drawBlocks(frame : Frame, track : TrackLayout) : void {
                 }
             } else {
                 fillRect(ctx, x0, top, width, row.height, color);
-                boxLabel(ctx, [`hang, ${duration}`, "hang"], x0, top + row.height / 2 + 0.5, width, palette.textOn(color));
+                if (width - 10 < shortWidth.hang) continue;
+                boxLabel(ctx, [`hang, ${formatMs((item.end - item.start) * 1000)}`, "hang"], x0, top + row.height / 2 + 0.5, width, palette.textOn(color));
             }
         }
     }
@@ -707,7 +713,7 @@ function drawVitals(frame : Frame, track : TrackLayout) : void {
         const width = Math.max(3, x(item.end) - x0);
         const next = interactions[index + 1];
         const limit = next ? x(next.start) : frame.left + frame.plotWidth;
-        barLabel(ctx, [`${item.names[item.names.length - 1] ?? "event"}, ${formatMs(item.durationMs)}`, formatMs(item.durationMs)], x0, width, top + height / 2 + 0.5, { minX : frame.left, limit }, insideColor, palette.inkSecondary);
+        barLabel(ctx, () => [`${item.names[item.names.length - 1] ?? "event"}, ${formatMs(item.durationMs)}`, formatMs(item.durationMs)], x0, width, top + height / 2 + 0.5, { minX : frame.left, limit }, insideColor, palette.inkSecondary);
     }
 }
 
@@ -735,7 +741,7 @@ function drawLoads(frame : Frame, track : TrackLayout) : void {
         fillRect(ctx, x0, track.contentTop, Math.min(2, width), track.contentHeight, palette.inkSecondary);
         const next = loads[index + 1];
         const limit = next ? x(next.start) : frame.left + frame.plotWidth;
-        barLabel(ctx, item.aborted ? [`${item.label} (stopped)`, item.label] : [item.label], x0, width, track.contentTop + track.contentHeight / 2 + 0.5, { minX : frame.left, limit }, palette.ink, palette.inkSecondary);
+        barLabel(ctx, () => (item.aborted ? [`${item.label} (stopped)`, item.label] : [item.label]), x0, width, track.contentTop + track.contentHeight / 2 + 0.5, { minX : frame.left, limit }, palette.ink, palette.inkSecondary);
     }
 }
 
