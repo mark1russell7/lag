@@ -1,6 +1,6 @@
 {
   "name": "@mark1russell7/lag",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Main-thread lag monitors for browser apps, on the devices of real users: blocked time, hangs, long animation frames, INP and the Core Web Vitals of each page view, as OpenTelemetry metrics, events and spans.",
   "keywords": [
     "main thread",
@@ -54,6 +54,10 @@
       "types": "./dist/async-context/index.d.ts",
       "default": "./dist/async-context/index.js"
     },
+    "./meters": {
+      "types": "./dist/meters.d.ts",
+      "default": "./dist/meters.js"
+    },
     "./event-line.js": {
       "types": "./dist/event-line.d.ts",
       "default": "./dist/event-line.js"
@@ -83,6 +87,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.0",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@vitest/coverage-v8": "4.1.12",
@@ -95,10 +100,14 @@
     "page-lifecycle-tracker": "^0.1.0"
   },
   "peerDependencies": {
-    "async-browser-context": "^0.3.0"
+    "async-browser-context": "^0.3.0",
+    "@opentelemetry/api": "^1.9.0"
   },
   "peerDependenciesMeta": {
     "async-browser-context": {
+      "optional": true
+    },
+    "@opentelemetry/api": {
       "optional": true
     }
   }

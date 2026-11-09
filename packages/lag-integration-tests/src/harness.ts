@@ -9,6 +9,7 @@ import {
     type Meter,
 } from "@mark1russell7/lag";
 import type { LagWorker } from "@mark1russell7/lag/worker";
+import { fanOutMeter } from "@mark1russell7/lag/meters";
 
 /** Block the main thread synchronously for `ms` milliseconds. */
 export function blockMainThread(ms : number) : void {
@@ -89,28 +90,18 @@ export function createTeeMeter(inner : Meter) : TeeMeter {
         return records;
     };
 
-    const meter : Meter = {
-        createHistogram<A extends Attributes>(name : string, options : { unit : string }) {
-            const histogram = inner.createHistogram<A>(name, options);
+    // A meter that keeps the values. The tee is a fan-out of the real meter and this meter.
+    const recorder : Meter = {
+        createHistogram(name) {
             const records = sink(name);
-            return {
-                record(value : number, attributes? : A) {
-                    records.push({ value, attributes, time : performance.now() });
-                    histogram.record(value, attributes);
-                },
-            };
+            return { record : (value, attributes) => void records.push({ value, attributes, time : performance.now() }) };
         },
-        createCounter<A extends Attributes>(name : string, options : { unit : string }) {
-            const counter = inner.createCounter<A>(name, options);
+        createCounter(name) {
             const records = sink(name);
-            return {
-                add(value : number, attributes? : A) {
-                    records.push({ value, attributes, time : performance.now() });
-                    counter.add(value, attributes);
-                },
-            };
+            return { add : (value, attributes) => void records.push({ value, attributes, time : performance.now() }) };
         },
     };
+    const meter = fanOutMeter(inner, recorder);
 
     const recordsOf = (name : string) : RecordedValue[] => recorded.get(name) ?? [];
     return {

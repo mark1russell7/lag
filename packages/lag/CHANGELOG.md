@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+### Changed
+
+- **The types `Meter`, `Histogram`, `Counter`, `Attributes`, `AttributeValue`, `InstrumentOptions`, `InstrumentAdvice` and `OtelSpanContext` come from `@opentelemetry/api`.** They are narrow forms of the types of the API, as types only, so the bundle gets no code from it. `@opentelemetry/api` 1.9 or later is a new optional peer dependency. A TypeScript project that uses the types of lag without `@opentelemetry/api` gets type errors, so this release is a breaking change. Install `@opentelemetry/api`. `InstrumentOptions` now also takes the other fields of `MetricOptions`, for example `valueType`.
+
+### Added
+
+- **The entry `@mark1russell7/lag/meters`: the meter combinators.** `fanOutMeter()` records into each meter of a list. A tee is a fan-out of two meters. The entry also has `createForwardingMeter()`, `createMeterReceiver()`, `createNoopMeter()` and the meter types. The main entry keeps its exports.
+
 ## 0.4.2
 
 ### Added

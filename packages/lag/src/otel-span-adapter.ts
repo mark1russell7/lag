@@ -1,14 +1,10 @@
+import type * as api from "@opentelemetry/api";
 import type { AttributeValue } from "./meter.js";
 import type { EventAttributes } from "./events.js";
 import type { OpenSpan, SpanIdentity, SpanOptions, SpanSink } from "./spans.js";
 
-/** The parts of an OpenTelemetry `SpanContext` that the adapter uses. */
-export type OtelSpanContext = {
-    traceId : string;
-    spanId : string;
-    traceFlags : number;
-    isRemote? : boolean;
-};
+/** The parts of a `SpanContext` of `@opentelemetry/api` that the adapter uses. */
+export type OtelSpanContext = Pick<api.SpanContext, "traceId" | "spanId" | "traceFlags" | "isRemote">;
 
 /** The parts of an OpenTelemetry `Span` that the adapter uses. */
 export type OtelSpanLike = {
