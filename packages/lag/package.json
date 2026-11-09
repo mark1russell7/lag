@@ -85,11 +85,11 @@
   "devDependencies": {
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
-    "@vitest/coverage-v8": "4.1.11",
+    "@vitest/coverage-v8": "4.1.12",
     "async-browser-context": "^0.3.0",
     "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.7.0",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "page-lifecycle-tracker": "^0.1.0"
