@@ -28,3 +28,6 @@ overrides:
   "qs@>=6.7.0 <6.16.1": "^6.17.1"
   "fast-uri@>=3.0.0 <3.1.9": "^3.1.9"
   "esbuild@<0.28.1": "^0.28.2"
+  # @lag/experiments pins otel-ts at commit 92cd393 for E8, and that commit takes @opentelemetry/core 2.6.
+  # Before 2.8.0, the W3C baggage propagator of core could allocate memory with no limit (GHSA-8988-4f7v-96qf).
+  "@opentelemetry/core@<2.8.0": "^2.12.0"
