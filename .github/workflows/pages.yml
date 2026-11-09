@@ -68,7 +68,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install the Playwright browser and its system dependencies
-        uses: mark1russell7/template/.github/actions/setup-playwright@e8ddfd74e9ddfb92a1feba57b265fa9ef62d672e # main
+        uses: mark1russell7/template/.github/actions/setup-playwright@d20d75b11120af71eaf6d2f59385c9cd053fff8b # main
         with:
           browsers: ${{ matrix.playwright }}
           command: pnpm --filter @lag/integration-tests exec playwright
@@ -191,7 +191,7 @@ jobs:
 
       # The browser jobs above test the engines. This job operates the overhead benchmark, which uses Chromium
       - name: Install Chromium for the overhead benchmark
-        uses: mark1russell7/template/.github/actions/setup-playwright@e8ddfd74e9ddfb92a1feba57b265fa9ef62d672e # main
+        uses: mark1russell7/template/.github/actions/setup-playwright@d20d75b11120af71eaf6d2f59385c9cd053fff8b # main
         with:
           browsers: chromium
           command: pnpm --filter @lag/integration-tests exec playwright
@@ -248,7 +248,7 @@ jobs:
       # installed the browsers of the integration tests; this step installs the Chromium of the
       # Playwright version of the site, if the versions are not the same.
       - name: Install Chromium for the site build
-        uses: mark1russell7/template/.github/actions/setup-playwright@e8ddfd74e9ddfb92a1feba57b265fa9ef62d672e # main
+        uses: mark1russell7/template/.github/actions/setup-playwright@d20d75b11120af71eaf6d2f59385c9cd053fff8b # main
         with:
           browsers: chromium
           command: pnpm --filter @lag/site exec playwright
@@ -261,14 +261,14 @@ jobs:
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
 
       # The Releases page and the Status page (releases/, status/ and their data/*.json), at deploy time
-      - uses: mark1russell7/template/.github/actions/site-pages@e8ddfd74e9ddfb92a1feba57b265fa9ef62d672e # main
+      - uses: mark1russell7/template/.github/actions/site-pages@d20d75b11120af71eaf6d2f59385c9cd053fff8b # main
         with:
           out: packages/site/dist
           packages: "@mark1russell7/lag"
           site-name: lag
 
       # The same check as site-check.yml, on the site with the test results. A failed check stops the deploy.
-      - uses: mark1russell7/template/.github/actions/site-check@e8ddfd74e9ddfb92a1feba57b265fa9ef62d672e # main
+      - uses: mark1russell7/template/.github/actions/site-check@d20d75b11120af71eaf6d2f59385c9cd053fff8b # main
         with:
           out: packages/site/dist
           site-check-pages: /playground/,/,/releases/,/status/
@@ -278,7 +278,7 @@ jobs:
       - name: Write the data stamp of the results page
         run: pnpm results:stamp
 
-      - uses: mark1russell7/template/.github/actions/data-stamps@e8ddfd74e9ddfb92a1feba57b265fa9ef62d672e # main
+      - uses: mark1russell7/template/.github/actions/data-stamps@d20d75b11120af71eaf6d2f59385c9cd053fff8b # main
         with:
           stamps: packages/site/dist/data-stamps.json
 
