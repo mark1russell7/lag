@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   site:
-    uses: mark1russell7/template/.github/workflows/reusable-pages.yml@231fcde0c4907fdde2b343490c9688792b57004a # main
+    uses: mark1russell7/template/.github/workflows/reusable-pages.yml@e5528b40a615db0f2e0f341c5ec0fa860ca47cc0 # main
     permissions:
       contents: read
       actions: read
