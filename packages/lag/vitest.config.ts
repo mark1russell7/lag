@@ -10,8 +10,9 @@ export default defineConfig({
             include: ["src/**/*.ts"],
             // src/worker starts a real Web Worker: the browser tests (packages/lag-integration-tests) examine it, not Node
             exclude: ["src/**/*.test.ts", "src/test-utils.ts", "src/test-thread.ts", "src/test-peers.ts", "src/vitals/test-fakes.ts", "src/worker/**", "**/.stryker-tmp/**"],
-            // json-summary writes coverage/coverage-summary.json for the results collector (pnpm results)
-            reporter: [["text", { skipFull: true }], "text-summary", "json-summary", "html"],
+            // json-summary writes coverage/coverage-summary.json for the results collector (pnpm results).
+            // json writes coverage/coverage-final.json, the coverage of each function, for the duplication atlas.
+            reporter: [["text", { skipFull: true }], "text-summary", "json-summary", "json", "html"],
             reportsDirectory: "coverage",
             // The values measured on 2026-10-07 (statements 99.19, branches 97.77, functions 99.15,
             // lines 99.89) minus 1 percentage point, rounded down. Raise them when the coverage rises.
