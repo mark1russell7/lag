@@ -6,6 +6,7 @@
  * The site uses this data in tests and in the "Show sample data" switch,
  * which shows only in development. These are not real results.
  */
+import { mulberry32 } from "@mark1russell7/rigor-generators";
 import {
     SCHEMA_VERSION,
     type BudgetResult,
@@ -18,18 +19,6 @@ import {
     type TestStatus,
 } from "../adapters/lag-report";
 import { MemoryReportSource } from "../results/report-source";
-
-/** mulberry32: a small seeded generator. */
-function createRandom(seed : number) : () => number {
-    let state = seed >>> 0;
-    return () => {
-        state = (state + 0x6D2B79F5) >>> 0;
-        let t = state;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
 
 function normal(random : () => number) : number {
     const u = Math.max(random(), 1e-12);
@@ -362,7 +351,7 @@ function makeRun(options : {
     workerP99 : number;
     driftOverhead : number;
 }) : RunReport {
-    const random = createRandom(options.seed);
+    const random = mulberry32(options.seed);
     const specs : SuiteSpec[] = [
         { id : "core-unit-node", packageName : "@mark1russell7/lag", kind : "unit", environment : "node", files : CORE_FILES, durationMs : 6, outcomes : options.coreOutcomes },
         { id : "load-unit-node", packageName : "@lag/load", kind : "unit", environment : "node", files : LOAD_FILES, durationMs : 9 },

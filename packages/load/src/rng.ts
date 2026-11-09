@@ -1,5 +1,7 @@
+import { mulberry32 } from "@mark1russell7/rigor-generators";
+
 /**
- * A pseudo-random number generator with a seed (mulberry32).
+ * A pseudo-random number generator with a seed (mulberry32 of `@mark1russell7/rigor-generators`).
  *
  * `Math.random()` has no seed. Thus, a test run with it cannot be repeated
  * with the same values. This generator is fast and statistically good for
@@ -24,15 +26,7 @@ export type Rng = {
 };
 
 export function createRng(seed : number = Date.now() >>> 0) : Rng {
-    let state = seed >>> 0;
-
-    const next = () : number => {
-        state = (state + 0x6D2B79F5) >>> 0;
-        let t = state;
-        t = Math.imul(t ^ (t >>> 15), t | 1);
-        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
+    const next = mulberry32(seed);
 
     return {
         next,
