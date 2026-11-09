@@ -118,8 +118,8 @@ importers:
         specifier: workspace:*
         version: link:../lag
       '@mark1russell7/otel-ts':
-        specifier: ^0.6.0
-        version: 0.6.0(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)
+        specifier: ^0.7.4
+        version: 0.7.4(@mark1russell7/lag@packages+lag)(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)
     devDependencies:
       '@mark1russell7/grafana-infra':
         specifier: github:mark1russell7/grafana-infra#ae23ab1937c51f68109bdd69a0f0e99598da4082
@@ -820,9 +820,6 @@ packages:
   '@grafana/faro-web-sdk@2.3.1':
     resolution: {integrity: sha512-WMfErl2YSP+CcfcobMpCdK6apX86hc8bymMXsvYLQpBBkQ0KJjIilEQS/YXd+g/cg6F1kwbeweisBKluNNy5sA==}
 
-  '@grafana/faro-web-tracing@2.13.0':
-    resolution: {integrity: sha512-HANZzP3i3L5LF3B5JrktQ94iCmCm9oqv7HfgGyuxRI3c/yoHQzz7/qJu7iflo8cJrwrdAco2vIHsljgFNeuwWA==}
-
   '@grafana/faro-web-tracing@2.3.1':
     resolution: {integrity: sha512-l4oCDDc294zwg/hQIttmWolfNCsGpju2ac+rRPPcbR1b4BGKwo8zY0YzqpkZ/zTyHB3KaeWSeSMdvAnZDvuHWg==}
 
@@ -1005,11 +1002,14 @@ packages:
     resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082}
     version: 0.0.0
 
-  '@mark1russell7/otel-ts@0.6.0':
-    resolution: {integrity: sha512-l6QIZm0k/VTQg6/XI9Cy+LIEt60R7l6lMaH6yFdgVkt+slurXKsnSF5/w7XwiKfPmMtf5UWtF9nOuB8zFGED8Q==}
+  '@mark1russell7/otel-ts@0.7.4':
+    resolution: {integrity: sha512-+HoEZjMyZgX9vVs8/tzNmPvdULWlxP/S+GkfT7wUciQxLjFvhNrpCr1Mrz2lY+DcjfqYr5cgJyTMkPMQL14q9w==}
     peerDependencies:
+      '@mark1russell7/lag': '>=0.4.2 <0.6.0'
       '@opentelemetry/sdk-node': '>=0.200.0'
     peerDependenciesMeta:
+      '@mark1russell7/lag':
+        optional: true
       '@opentelemetry/sdk-node':
         optional: true
 
@@ -4523,22 +4523,6 @@ snapshots:
       ua-parser-js: 1.0.41
       web-vitals: 5.2.0
 
-  '@grafana/faro-web-tracing@2.13.0':
-    dependencies:
-      '@grafana/faro-web-sdk': 2.13.0
-      '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/exporter-trace-otlp-http': 0.223.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation': 0.223.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation-fetch': 0.223.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/instrumentation-xml-http-request': 0.223.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/otlp-transformer': 0.223.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/resources': 2.12.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/sdk-trace-web': 2.12.0(@opentelemetry/api@1.9.1)
-      '@opentelemetry/semantic-conventions': 1.40.0
-    transitivePeerDependencies:
-      - supports-color
-
   '@grafana/faro-web-tracing@2.3.1':
     dependencies:
       '@grafana/faro-web-sdk': 2.3.1
@@ -4718,10 +4702,9 @@ snapshots:
 
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082': {}
 
-  '@mark1russell7/otel-ts@0.6.0(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)':
+  '@mark1russell7/otel-ts@0.7.4(@mark1russell7/lag@packages+lag)(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)':
     dependencies:
       '@grafana/faro-web-sdk': 2.13.0
-      '@grafana/faro-web-tracing': 2.13.0
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/api-logs': 0.223.0
       '@opentelemetry/auto-instrumentations-web': 0.68.0(@opentelemetry/api@1.9.1)(zone.js@0.16.3)
@@ -4742,6 +4725,8 @@ snapshots:
       '@opentelemetry/semantic-conventions': 1.40.0
       async-browser-context: 0.3.0(@opentelemetry/api@1.9.1)(vite@7.3.7(@types/node@25.3.0)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
       page-lifecycle-tracker: 0.1.0
+    optionalDependencies:
+      '@mark1russell7/lag': link:packages/lag
     transitivePeerDependencies:
       - supports-color
       - vite
