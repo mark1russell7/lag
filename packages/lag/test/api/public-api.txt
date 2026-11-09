@@ -378,6 +378,26 @@ callbackSourceKind: dist/async-context/source-kind.d.ts#callbackSourceKind
 createInstrumentedLongCallbacks: dist/async-context/long-callbacks.d.ts#createInstrumentedLongCallbacks
 setupLongCallbacks: dist/async-context/long-callbacks.d.ts#setupLongCallbacks
 
+## ./meters (dist/meters.d.ts): names
+
+type AttributeValue: dist/meter.d.ts#AttributeValue
+type Attributes: dist/meter.d.ts#Attributes
+type Counter: dist/meter.d.ts#Counter
+type ForwardedInstrument: dist/forwarding-meter.d.ts#ForwardedInstrument
+type ForwardedMetricMessage: dist/forwarding-meter.d.ts#ForwardedMetricMessage
+type ForwardedRecords: dist/forwarding-meter.d.ts#ForwardedRecords
+type ForwardingMeter: dist/forwarding-meter.d.ts#ForwardingMeter
+type ForwardingMeterOptions: dist/forwarding-meter.d.ts#ForwardingMeterOptions
+type Histogram: dist/meter.d.ts#Histogram
+type InstrumentAdvice: dist/meter.d.ts#InstrumentAdvice
+type InstrumentOptions: dist/meter.d.ts#InstrumentOptions
+type MessageTarget: dist/forwarding-meter.d.ts#MessageTarget
+type Meter: dist/meter.d.ts#Meter
+createForwardingMeter: dist/forwarding-meter.d.ts#createForwardingMeter
+createMeterReceiver: dist/forwarding-meter.d.ts#createMeterReceiver
+createNoopMeter: dist/noop-meter.d.ts#createNoopMeter
+fanOutMeter: dist/meters.d.ts#fanOutMeter
+
 ## ./event-line.js (dist/event-line.d.ts): names
 
 formatEventLine: dist/event-line.d.ts#formatEventLine
@@ -1737,33 +1757,23 @@ export type PostTaskFn = (callback: () => void) => void;
 export declare function createMessageTaskQueue(MessageChannelCtor: MessageChannelConstructor): MessageTaskQueue;
 
 ### dist/meter.d.ts#AttributeValue
-export type AttributeValue = string | number | boolean | Array<null | undefined | string> | Array<null | undefined | number> | Array<null | undefined | boolean>;
+export type AttributeValue = api.AttributeValue;
 
 ### dist/meter.d.ts#Attributes
-export type Attributes = {
-    [key: string]: AttributeValue | undefined;
-};
+export type Attributes = api.Attributes;
 
 ### dist/meter.d.ts#Counter
-export type Counter<A extends Attributes = Attributes> = {
-    add(value: number, attributes?: A): void;
-};
+export type Counter<A extends Attributes = Attributes> = Pick<api.Counter<A>, "add">;
 
 ### dist/meter.d.ts#Histogram
-export type Histogram<A extends Attributes = Attributes> = {
-    record(value: number, attributes?: A): void;
-};
+export type Histogram<A extends Attributes = Attributes> = Pick<api.Histogram<A>, "record">;
 
 ### dist/meter.d.ts#InstrumentAdvice
-export type InstrumentAdvice = {
-    explicitBucketBoundaries?: number[];
-};
+export type InstrumentAdvice = api.MetricAdvice;
 
 ### dist/meter.d.ts#InstrumentOptions
-export type InstrumentOptions = {
+export type InstrumentOptions = api.MetricOptions & {
     unit: string;
-    description?: string;
-    advice?: InstrumentAdvice;
 };
 
 ### dist/meter.d.ts#Meter
@@ -1771,6 +1781,9 @@ export type Meter = {
     createHistogram<A extends Attributes = Attributes>(name: string, options: InstrumentOptions): Histogram<A>;
     createCounter<A extends Attributes = Attributes>(name: string, options: InstrumentOptions): Counter<A>;
 };
+
+### dist/meters.d.ts#fanOutMeter
+export declare function fanOutMeter(...meters: readonly Meter[]): Meter;
 
 ### dist/metric-catalog.d.ts#EVENTS
 export declare const EVENTS: Readonly<Record<EventKey, EventDefinition>>;
@@ -1888,12 +1901,7 @@ export declare function createOtelLoggerAdapter(otelLogger: OtelLogger): Logger;
 export declare function createTeeLogger(...loggers: Logger[]): Logger;
 
 ### dist/otel-span-adapter.d.ts#OtelSpanContext
-export type OtelSpanContext = {
-    traceId: string;
-    spanId: string;
-    traceFlags: number;
-    isRemote?: boolean;
-};
+export type OtelSpanContext = Pick<api.SpanContext, "traceId" | "spanId" | "traceFlags" | "isRemote">;
 
 ### dist/otel-span-adapter.d.ts#OtelSpanLike
 export type OtelSpanLike = {

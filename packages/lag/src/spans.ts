@@ -57,7 +57,13 @@ export function createNoopSpanSink() : SpanSink {
     };
 }
 
-/** True when `value` is a span identity: a trace ID of 32 and a span ID of 16 hexadecimal characters, not all zeros. */
+/**
+ * True when `value` is a span identity: a trace ID of 32 and a span ID of 16 hexadecimal characters, not all zeros.
+ *
+ * This check is the same as `isValidTraceId` and `isValidSpanId` of `@opentelemetry/api`. It is a recorded
+ * exception to the one home of these checks (decision D7, 2026-11-09). This package has no runtime dependency.
+ * `@opentelemetry/api` is only an optional peer of its types.
+ */
 export function isSpanIdentity(value : { traceId? : unknown; spanId? : unknown } | undefined) : value is SpanIdentity {
     const { traceId, spanId } = value ?? {};
     return typeof traceId === "string" && /^[0-9a-f]{32}$/.test(traceId) && !/^0+$/.test(traceId)

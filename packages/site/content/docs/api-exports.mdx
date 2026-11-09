@@ -163,11 +163,9 @@ type AllMonitorHandles = {
     readonly pageViewContext: PageViewContext | undefined;
 };
 
-type AttributeValue = string | number | boolean | Array<null | undefined | string> | Array<null | undefined | number> | Array<null | undefined | boolean>;
+type AttributeValue = api.AttributeValue;
 
-type Attributes = {
-    [key: string]: AttributeValue | undefined;
-};
+type Attributes = api.Attributes;
 
 type BroadcastChannelConstructor = new (name: string) => BroadcastChannelLike;
 
@@ -351,9 +349,7 @@ type CoreDeps = {
     meter: Meter;
 };
 
-type Counter<A extends Attributes = Attributes> = {
-    add(value: number, attributes?: A): void;
-};
+type Counter<A extends Attributes = Attributes> = Pick<api.Counter<A>, "add">;
 
 type CrashReportContextLike = {
     initialize?(length: number): unknown;
@@ -595,9 +591,7 @@ type HeartbeatMessage = {
     workerSelfLagMs: number;
 };
 
-type Histogram<A extends Attributes = Attributes> = {
-    record(value: number, attributes?: A): void;
-};
+type Histogram<A extends Attributes = Attributes> = Pick<api.Histogram<A>, "record">;
 
 const IDLE_GRID_CHANGE_MS = 30000;
 
@@ -641,14 +635,10 @@ class InpCalculator {
     reset(baseline?: number): void;
 }
 
-type InstrumentAdvice = {
-    explicitBucketBoundaries?: number[];
-};
+type InstrumentAdvice = api.MetricAdvice;
 
-type InstrumentOptions = {
+type InstrumentOptions = api.MetricOptions & {
     unit: string;
-    description?: string;
-    advice?: InstrumentAdvice;
 };
 
 type IntersectionEntryLike = {
@@ -1060,12 +1050,7 @@ type OtelLogger = {
     }): void;
 };
 
-type OtelSpanContext = {
-    traceId: string;
-    spanId: string;
-    traceFlags: number;
-    isRemote?: boolean;
-};
+type OtelSpanContext = Pick<api.SpanContext, "traceId" | "spanId" | "traceFlags" | "isRemote">;
 
 type OtelSpanLike = {
     spanContext(): OtelSpanContext;
@@ -1926,6 +1911,22 @@ function callbackSourceKind(source: string): CallbackSourceKind;
 function createInstrumentedLongCallbacks(deps: CoreDeps & CallbackHookDeps & Partial<EventDeps> & Partial<SpanDeps> & Partial<AbsoluteClockDeps> & Partial<PerformanceDeps>, options?: LongCallbackOptions): MonitorHandle<LongCallbackMonitor>;
 
 function setupLongCallbacks(monitors: Pick<AllMonitorHandles, "add">, addCallbackHook: AddCallbackHookFn, options?: LongCallbackOptions): MonitorHandle<LongCallbackMonitor>;
+```
+
+## `@mark1russell7/lag/meters`
+
+```ts
+import {
+  type AttributeValue, type Attributes, type Counter, type ForwardedInstrument,
+  type ForwardedMetricMessage, type ForwardedRecords, type ForwardingMeter,
+  type ForwardingMeterOptions, type Histogram, type InstrumentAdvice, type InstrumentOptions,
+  type MessageTarget, type Meter, createForwardingMeter, createMeterReceiver, createNoopMeter,
+  fanOutMeter,
+} from "@mark1russell7/lag/meters";
+```
+
+```ts
+function fanOutMeter(...meters: readonly Meter[]): Meter;
 ```
 
 ## `@mark1russell7/lag/event-line.js`
