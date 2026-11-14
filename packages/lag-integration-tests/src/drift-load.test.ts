@@ -135,7 +135,7 @@ async function measureLoad(test : TestContext, kind : "message" | "timer", taskM
         if (read !== "read") {
             console.log(`drift-load cannot decide: no read of ${kind} tasks of ${taskMs} ms, ${timers.count} callbacks, ${navigator.userAgent}`);
         }
-        expect(read, "The no read of the load cases passed its end date: find a page that the browser does not throttle.").not.toBe("no-read-ended");
+        expect(read, "The no read of the load cases passed its end date: find a page that the browser does not throttle (issue #161).").not.toBe("no-read-ended");
         test.skip(read === "no-read",
             `No read: the browser held the timers of the page on a grid of 1 s, and no window ended in the load. Gaps of the chain: ${gaps} (${pageState()}).`);
         await recordMeasurement(`drift-load/${kind}-${taskMs}ms/lag_fraction`, "%", [100 * lagFraction], { scenario : `${kind}-${taskMs}ms` });
