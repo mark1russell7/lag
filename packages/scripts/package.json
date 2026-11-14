@@ -13,7 +13,7 @@
     "@mark1russell7/lag": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^25.2.3",
+    "@types/node": "^26.0.0",
     "@vitest/coverage-v8": "4.1.12",
     "tsx": "^4.23.15",
     "vitest": "^4.1.12"

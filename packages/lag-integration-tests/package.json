@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@mark1russell7/grafana-infra": "github:mark1russell7/grafana-infra#ae23ab1937c51f68109bdd69a0f0e99598da4082",
-    "@types/node": "^25.3.0",
+    "@types/node": "^26.0.0",
     "@vitest/browser": "^4.1.12",
     "@vitest/browser-playwright": "^4.1.12",
     "@vitest/browser-webdriverio": "^4.1.12",
