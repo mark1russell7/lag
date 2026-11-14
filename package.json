@@ -26,8 +26,8 @@
     "readme:metrics:check": "tsx packages/scripts/src/readme-metrics.ts --check"
   },
   "devDependencies": {
-    "@mark1russell7/api-report": "^0.4.1",
-    "@mark1russell7/conventions": "^0.36.1",
+    "@mark1russell7/api-report": "^0.5.6",
+    "@mark1russell7/conventions": "^0.41.5",
     "@mark1russell7/ste-lint": "^0.3.0",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3"
