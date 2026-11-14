@@ -21,44 +21,28 @@ defaults:
     shell: bash
 
 jobs:
+  # The shared CI of the template (CI.md of mark1russell7/template) starts the scripts of package.json in this
+  # sequence: the conventions, the build, the API report, the typecheck, the unit tests, the coverage with its floors,
+  # the STE lint and the README metric table. Each job of the browsers and of the site stays below.
+  ci:
+    uses: mark1russell7/template/.github/workflows/reusable-ci.yml@4466542421ef76bcb3ccf5b5e1765d4f509f8f4f # main
+    with:
+      scripts: check:conventions build check:api typecheck test coverage lint:ste readme:metrics:check
+      node-versions: '["24"]'
+      timeout-minutes: 20
+
+  # The rules of main require this check by its name. It passes only when each job of the shared CI passed.
   build:
     name: Build, typecheck, unit tests, coverage
+    if: ${{ !cancelled() }}
+    needs: [ci]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
+    permissions: {}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: mark1russell7/template/.github/actions/gate-summary@4466542421ef76bcb3ccf5b5e1765d4f509f8f4f # main
         with:
-          # The whole history, so that check:conventions reads each commit of a pull request
-          fetch-depth: 0
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # The conventions of the repositories (@mark1russell7/conventions). The exceptions and their reasons are in the
-      # field conventions of package.json.
-      - name: Conventions
-        run: pnpm check:conventions
-      - run: pnpm build
-      - name: API report
-        run: pnpm check:api
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm coverage
-      - name: Upload the coverage report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: coverage-core
-          path: packages/lag/coverage/
-          if-no-files-found: ignore
-      # The writing rules (ASD-STE100) of the README, the site and the comments
-      - name: STE lint
-        run: pnpm lint:ste
-      # The metric table of the README must agree with the metric catalog
-      - name: README metric table
-        run: pnpm readme:metrics:check
+          needs: ${{ toJSON(needs) }}
 
   browser:
     name: Browser tests (${{ matrix.engine }})
