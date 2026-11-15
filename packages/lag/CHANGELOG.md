@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1
+
+### Fixed
+
+- **`AttributeValue` keeps its form with `@opentelemetry/api` 1.10.** The type is a primitive, or an array of primitives of one type. In 1.10, the `AttributeValue` of the API is an alias of `AnyValue` (`unknown`). So the `Logger` of `@opentelemetry/api-logs` did not fit `OtelLogger`, and `createOtelLoggerAdapter(otel.getLogger(...))` and `createOtelEventSink(...)` gave type errors. lag defines the type itself, with the form of 1.9. With 1.9, the type does not change.
+
 ## 0.5.0
 
 ### Changed

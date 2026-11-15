@@ -145,8 +145,9 @@ export const setPressureState : BrowserCommand<[state : PressureState | null], v
         await session.send("Emulation.setPressureSourceOverrideEnabled", { enabled : true, source : "cpu" });
         pressureOverridden.add(ctx.sessionId);
     }
-    // setPressureDataOverride replaced setPressureStateOverride (which gives "Internal error" in Chromium 145)
-    await session.send("Emulation.setPressureDataOverride", { source : "cpu", state });
+    // Chromium 150 removed setPressureDataOverride (CL 7863881) and made setPressureStateOverride work again.
+    // In Chromium 145, setPressureStateOverride gave "Internal error".
+    await session.send("Emulation.setPressureStateOverride", { source : "cpu", state });
 };
 
 async function disablePressureOverride(sessionId : string, session : RawSession) : Promise<void> {

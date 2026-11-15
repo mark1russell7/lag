@@ -15,8 +15,20 @@
  */
 import type * as api from "@opentelemetry/api";
 
-/** `AttributeValue` of `@opentelemetry/api`: a primitive, or an array of primitives of one type. */
-export type AttributeValue = api.AttributeValue;
+/**
+ * An attribute value: a primitive, or an array of primitives of one type. It
+ * is the `AttributeValue` of `@opentelemetry/api` 1.9. From 1.10, the API
+ * makes `AttributeValue` an alias of `AnyValue` (`unknown`). Then the logger
+ * adapter cannot give its attributes to the `Logger` of
+ * `@opentelemetry/api-logs`, so this package keeps the 1.9 form.
+ */
+export type AttributeValue =
+    | string
+    | number
+    | boolean
+    | Array<null | undefined | string>
+    | Array<null | undefined | number>
+    | Array<null | undefined | boolean>;
 
 /** `Attributes` of `@opentelemetry/api` */
 export type Attributes = api.Attributes;
