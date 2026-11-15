@@ -35,11 +35,15 @@ const COMMANDS = { ...cdpCommands, ...resultCommands, ...mimirCommands, ...topLe
 /**
  * Chromium in the new headless mode (Chrome for Testing). The default
  * headless shell has no `measureUserAgentSpecificMemory()` and does not hide
- * a page that is behind another page. Chrome stable closes the Vitest
- * connection when a page freezes, so the CDP tests use this build.
+ * a page that is behind another page.
+ *
+ * From Chromium 151, the feature `DisconnectWebSocketOnBFCache` closes each
+ * WebSocket of a frozen page, also after `Page.setWebLifecycleState`. The
+ * Vitest connection is such a WebSocket. The switch below keeps it open.
+ * Playwright sets its own `--disable-features` list, so a second one is not used.
  */
 const newHeadlessChromium = (args : string[] = []) : Provider =>
-    playwright({ launchOptions : { channel : "chromium", ...(args.length > 0 ? { args } : {}) } });
+    playwright({ launchOptions : { channel : "chromium", args : ["--disable-back-forward-cache-for-web-sockets", ...args] } });
 
 /** Chromium with the back/forward cache. Playwright turns off the cache by default with this switch. */
 const chromiumWithBackForwardCache = () : Provider =>
