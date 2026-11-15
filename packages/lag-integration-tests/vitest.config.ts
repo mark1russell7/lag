@@ -1,3 +1,5 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type TestProjectInlineConfiguration } from "vitest/config";
@@ -44,6 +46,14 @@ const chromiumWithBackForwardCache = () : Provider =>
     playwright({ launchOptions : { channel : "chromium", ignoreDefaultArgs : ["--disable-back-forward-cache"] } });
 
 /**
+ * WebKit with a persistent profile in a new folder for each run. From WebKit 27.2 (Playwright 1.65), OPFS
+ * in a dedicated worker fails with "UnknownError" in the ephemeral session that Playwright opens by default.
+ * Safari users have persistent storage, so the tests use it too. Vitest ignores the option when the files run in parallel.
+ */
+const persistentWebKit = () : Provider =>
+    playwright({ persistentContext : mkdtempSync(path.join(tmpdir(), "lag-webkit-")) });
+
+/**
  * This plugin sends COOP and COEP with every response, so the page is
  * cross-origin isolated. A plugin is necessary because the browser server of
  * a project replaces the project's `server` options (Vitest 4.1). Thus,
@@ -66,7 +76,7 @@ function crossOriginIsolation() : Plugin {
 
     function instance(project : string, environment : Environment, provider? : Provider, e2e = false) : Instance {
         const chrome = environment === "chrome" ? playwright({ launchOptions : { channel : "chrome" } }) : undefined;
-        const chosen = provider ?? chrome;
+        const chosen = provider ?? chrome ?? (environment === "webkit" ? persistentWebKit() : undefined);
         return {
             browser : environment === "chrome" ? "chromium" : environment,
             name : `${project} (${environment})`,
