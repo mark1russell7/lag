@@ -17,6 +17,12 @@ const CHROMIUM_ONLY_TYPES = ["element", "layout-shift", "long-animation-frame", 
 
 const isChromium = (env : string) : boolean => env === "chromium" || env === "chrome";
 
+/** The first version of Chromium that has soft navigations by default. */
+const SOFT_NAVIGATION_CHROMIUM = 151;
+
+/** The major version of Chromium in the user agent. Other engines give 0. */
+const chromiumVersion = () : number => Number(/Chrome\/(\d+)\./.exec(navigator.userAgent)?.[1] ?? 0);
+
 describe("Facts of the engines", () => {
     it("gives the entry types of the research", () => {
         const env = environment();
@@ -28,8 +34,9 @@ describe("Facts of the engines", () => {
         } else {
             expect(types).toEqual(NOT_CHROMIUM_TYPES);
         }
-        // Chrome 151 and later have soft navigations by default. Chromium 145 of Playwright does not.
-        expect(types.includes("soft-navigation")).toBe(env === "chrome");
+        // Chromium 151 and later have soft navigations by default: Chrome, and the Chromium of Playwright 1.65 (158).
+        // Chromium 145 of Playwright 1.58 does not have them.
+        expect(types.includes("soft-navigation"), navigator.userAgent).toBe(chromiumVersion() >= SOFT_NAVIGATION_CHROMIUM);
     });
 
     it("starts the listeners at window in the order of experiment E1", () => {

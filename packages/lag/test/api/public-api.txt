@@ -1757,7 +1757,7 @@ export type PostTaskFn = (callback: () => void) => void;
 export declare function createMessageTaskQueue(MessageChannelCtor: MessageChannelConstructor): MessageTaskQueue;
 
 ### dist/meter.d.ts#AttributeValue
-export type AttributeValue = api.AttributeValue;
+export type AttributeValue = string | number | boolean | Array<null | undefined | string> | Array<null | undefined | number> | Array<null | undefined | boolean>;
 
 ### dist/meter.d.ts#Attributes
 export type Attributes = api.Attributes;
