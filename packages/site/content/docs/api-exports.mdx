@@ -163,7 +163,7 @@ type AllMonitorHandles = {
     readonly pageViewContext: PageViewContext | undefined;
 };
 
-type AttributeValue = api.AttributeValue;
+type AttributeValue = string | number | boolean | Array<null | undefined | string> | Array<null | undefined | number> | Array<null | undefined | boolean>;
 
 type Attributes = api.Attributes;
 
