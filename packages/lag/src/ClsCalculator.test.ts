@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
+import { uniformDouble } from "@mark1russell7/rigor-testkit/arbitrary";
 import { ClsCalculator } from "./ClsCalculator.js";
 
 /**
@@ -127,8 +128,9 @@ describe("ClsCalculator", () => {
     });
 
     it("agrees with the reference definition for any sequence of shifts (property test)", () => {
+        // fc.double draws over the floats of the range, and the floats are dense near 0. uniformDouble draws uniformly by value.
         fc.assert(fc.property(
-            fc.array(fc.record({ dt : fc.integer({ min : 0, max : 3_000 }), v : fc.double({ min : 0, max : 0.5, noNaN : true }) }), { maxLength : 200 }),
+            fc.array(fc.record({ dt : fc.integer({ min : 0, max : 3_000 }), v : uniformDouble({ min : 0, max : 0.5 }) }), { maxLength : 200 }),
             (steps) => {
                 let t = 0;
                 const shifts = steps.map(({ dt, v }) => ({ t : (t += dt), v }));

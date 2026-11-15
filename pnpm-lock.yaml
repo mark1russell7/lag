@@ -84,6 +84,9 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0
     devDependencies:
+      '@mark1russell7/rigor-testkit':
+        specifier: ^0.1.8
+        version: 0.1.8(@opentelemetry/api-logs@0.223.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@0.223.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@2.12.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(fast-check@4.10.2)
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.10.0
@@ -1058,7 +1061,7 @@ packages:
     hasBin: true
 
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082':
-    resolution: {gitHosted: true, integrity: sha512-fwzfWhA0RfrKOGly5zjdAeSwnAGa10C+4FV4jFuiC9s7HiCF6fpEW6mrs4lsalZI5KWLRvbFcBuThm16P6dp6w==, tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082}
     version: 0.0.0
 
   '@mark1russell7/otel-ts@0.7.4':
@@ -1073,7 +1076,7 @@ packages:
         optional: true
 
   '@mark1russell7/otel-ts@https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8':
-    resolution: {gitHosted: true, integrity: sha512-89zre93hf5A3cPYP3E2oC4pQbHDZYeT4i7aRvhjNZnd8Ao5RIxLUOxBmYmMpLPLcKE3rIES/W4sCtHg59U/Z2A==, tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8}
+    resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8}
     version: 0.0.1
 
   '@mark1russell7/quantity@0.3.3':
@@ -1096,6 +1099,30 @@ packages:
   '@mark1russell7/rigor-statistics@0.1.24':
     resolution: {integrity: sha512-w5iRFZqnu8o0rK3s5NGCxz6zK2i2Q/X4owQu8OqiqzgF+owQ2YE0yc0fh+yhML4fkMlQc3uC3+HjloF9wwy7dg==}
     engines: {node: '>=22'}
+
+  '@mark1russell7/rigor-testkit@0.1.8':
+    resolution: {integrity: sha512-ooiuN7e8SqJAYAEVQ5RAa80HqkQKKno1Gw5Me09g5dN2Th7iK1YGiFhCMByCkY1SOqEoU8OmnH+l1g0vs27bKQ==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      '@opentelemetry/api': ^1.9.0
+      '@opentelemetry/api-logs': ^0.213.0 || ^0.223.0
+      '@opentelemetry/sdk-logs': ^0.223.0 || ^3.0.0
+      '@opentelemetry/sdk-metrics': ^2.12.0 || ^3.0.0
+      '@opentelemetry/sdk-trace-base': ^2.12.0
+      fast-check: ^4.0.0
+    peerDependenciesMeta:
+      '@opentelemetry/api':
+        optional: true
+      '@opentelemetry/api-logs':
+        optional: true
+      '@opentelemetry/sdk-logs':
+        optional: true
+      '@opentelemetry/sdk-metrics':
+        optional: true
+      '@opentelemetry/sdk-trace-base':
+        optional: true
+      fast-check:
+        optional: true
 
   '@mark1russell7/site-pages@0.4.1':
     resolution: {integrity: sha512-YYPPHH3ee6No2VL+yl+mholtu7m1qdZWTf5ldYLxxZyyrsE55rPFHwIPZOnkxH6OJ7GtzqUn37/cfOg7UJqP9A==}
@@ -4973,6 +5000,15 @@ snapshots:
   '@mark1russell7/rigor-statistics@0.1.24':
     dependencies:
       '@mark1russell7/rigor-generators': 0.1.8
+
+  '@mark1russell7/rigor-testkit@0.1.8(@opentelemetry/api-logs@0.223.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@0.223.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@2.12.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(fast-check@4.10.2)':
+    optionalDependencies:
+      '@opentelemetry/api': 1.10.0
+      '@opentelemetry/api-logs': 0.223.0
+      '@opentelemetry/sdk-logs': 0.223.0(@opentelemetry/api@1.10.0)
+      '@opentelemetry/sdk-metrics': 2.12.0(@opentelemetry/api@1.10.0)
+      '@opentelemetry/sdk-trace-base': 2.12.0(@opentelemetry/api@1.10.0)
+      fast-check: 4.10.2
 
   '@mark1russell7/site-pages@0.4.1':
     dependencies:
