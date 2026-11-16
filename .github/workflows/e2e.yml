@@ -32,7 +32,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install Chromium and its system dependencies
-        uses: mark1russell7/template/.github/actions/setup-playwright@4466542421ef76bcb3ccf5b5e1765d4f509f8f4f # main
+        uses: mark1russell7/template/.github/actions/setup-playwright@e34da837089781ed64d4619b1391938e1219664c # main
         with:
           browsers: chromium
           command: pnpm exec playwright
