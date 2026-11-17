@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   site:
-    uses: mark1russell7/template/.github/workflows/reusable-pages.yml@2030c7dec9485afebb504772f79f41f23bdb2df7 # main
+    uses: mark1russell7/template/.github/workflows/reusable-pages.yml@94adcfe753a1ec7d03cc03f445f1f0559d5c205f # main
     permissions:
       contents: read
       actions: read
@@ -26,7 +26,10 @@ jobs:
       pages: write
       id-token: write
     with:
-      build: pnpm --filter @lag/site exec playwright install --with-deps chromium && pnpm build && pnpm --filter @lag/site build
+      build: pnpm build && pnpm --filter @lag/site build
+      # The action setup-playwright of the template installs Chromium from a cache, with a time limit, before the build.
+      playwright-browsers: chromium
+      playwright-command: pnpm --filter @lag/site exec playwright
       out: packages/site/dist
       env: '{"SITE_BASE": "lag", "SITE_URL": "https://mark1russell7.github.io/lag/"}'
       node-version: "24"
