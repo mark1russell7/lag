@@ -45,7 +45,7 @@ importers:
         version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.3)
       '@mark1russell7/rigor-statistics':
         specifier: ^0.2.7
-        version: 0.2.8
+        version: 0.2.10
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.10.0
@@ -86,7 +86,7 @@ importers:
     devDependencies:
       '@mark1russell7/rigor-testkit':
         specifier: ^0.1.8
-        version: 0.1.15(@mark1russell7/rigor-generators@0.1.18)(@opentelemetry/api-logs@0.223.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@0.223.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@2.12.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(fast-check@4.10.2)
+        version: 0.1.20(@mark1russell7/rigor-generators@0.2.0)(@opentelemetry/api-logs@0.223.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@0.223.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@2.12.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(fast-check@4.10.2)
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.10.0
@@ -164,8 +164,8 @@ importers:
   packages/load:
     dependencies:
       '@mark1russell7/rigor-generators':
-        specifier: ^0.1.8
-        version: 0.1.18
+        specifier: ^0.2.0
+        version: 0.2.0
     devDependencies:
       '@vitest/coverage-v8':
         specifier: 4.1.12
@@ -232,11 +232,11 @@ importers:
         specifier: ^0.4.1
         version: 0.4.1(zod@4.6.7)
       '@mark1russell7/rigor-generators':
-        specifier: ^0.1.8
-        version: 0.1.18
+        specifier: ^0.2.0
+        version: 0.2.0
       '@mark1russell7/rigor-statistics':
         specifier: ^0.2.7
-        version: 0.2.8
+        version: 0.2.10
       '@observablehq/plot':
         specifier: ^0.6.17
         version: 0.6.19
@@ -1059,30 +1059,34 @@ packages:
     resolution: {integrity: sha512-hn2C5jjOFCGKJqFQPHt57C/Cn1l9Lb9MltVNtL71KSu+nRrfPOmg8ujYB5n3oDFFWNdNA4bE/8LLT4tG3lmrGA==}
     engines: {node: '>=22'}
 
-  '@mark1russell7/rigor-generators@0.1.18':
-    resolution: {integrity: sha512-z5Ia9gDuS/I9pV/4rOoRx3o2DAhW2VE2UYoqIlHo88pmLPX7SWJcympg2N+QS9sSA6Dn0vTPcicxeDX6oXzAGw==}
+  '@mark1russell7/rigor-generators@0.2.0':
+    resolution: {integrity: sha512-eTyJhK4Nowx1KQ3QrsQqLiAlhFoL+8m1OT6He+X0Lf0G/0f9OyQC8ponQLViQKRkP/ef10B6oACFjtjnKErobg==}
     engines: {node: '>=22'}
 
-  '@mark1russell7/rigor-statistics@0.2.8':
-    resolution: {integrity: sha512-wPRQe/5351Xr16MIzgHTJyUYeaMh4ScadJ2AHCHZDf5NQdEDD6pG8zhWc0UPKbApTPWU/f7tDqnotSoyWmCqMQ==}
+  '@mark1russell7/rigor-statistics@0.2.10':
+    resolution: {integrity: sha512-2YQKwuR9DHh5l98U8G9ADvVpjBfsZ/smMslBuPf4ryYUVSefS+xl06pulhoeH+Ya7s5uUsS7yEovg8h64E3jOw==}
     engines: {node: '>=22'}
 
-  '@mark1russell7/rigor-testkit@0.1.15':
-    resolution: {integrity: sha512-Zk5RQyH4hKQfsb8FvNJJhBC8vl2fokzs3uiwwPTETvZZo74pjJRquqnuhBzaHQ52uD9M8FAEJbM3fykPmP/B0g==}
+  '@mark1russell7/rigor-testkit@0.1.20':
+    resolution: {integrity: sha512-1gnSTqu73O+hV6IZ0pZMBMCwFdILTebBAJu1Y78q+BndXOZzWSRDhsHr83dk3qoLIGubnQuTB++19kmH+/PZ5g==}
     engines: {node: '>=22'}
     peerDependencies:
       '@mark1russell7/rigor-chaos': ^0.3.2
-      '@mark1russell7/rigor-generators': ^0.1.18
+      '@mark1russell7/rigor-generators': ^0.1.18 || ^0.2.0
+      '@mark1russell7/rigor-proxy': ^0.4.1
       '@opentelemetry/api': ^1.9.0
       '@opentelemetry/api-logs': ^0.213.0 || ^0.223.0
       '@opentelemetry/sdk-logs': ^0.223.0 || ^3.0.0
       '@opentelemetry/sdk-metrics': ^2.12.0 || ^3.0.0
       '@opentelemetry/sdk-trace-base': ^2.12.0
       fast-check: ^4.0.0
+      ltx: ^3.1.2
     peerDependenciesMeta:
       '@mark1russell7/rigor-chaos':
         optional: true
       '@mark1russell7/rigor-generators':
+        optional: true
+      '@mark1russell7/rigor-proxy':
         optional: true
       '@opentelemetry/api':
         optional: true
@@ -1095,6 +1099,8 @@ packages:
       '@opentelemetry/sdk-trace-base':
         optional: true
       fast-check:
+        optional: true
+      ltx:
         optional: true
 
   '@mark1russell7/site-pages@0.7.0':
@@ -4896,15 +4902,15 @@ snapshots:
 
   '@mark1russell7/rational@0.1.2': {}
 
-  '@mark1russell7/rigor-generators@0.1.18': {}
+  '@mark1russell7/rigor-generators@0.2.0': {}
 
-  '@mark1russell7/rigor-statistics@0.2.8':
+  '@mark1russell7/rigor-statistics@0.2.10':
     dependencies:
-      '@mark1russell7/rigor-generators': 0.1.18
+      '@mark1russell7/rigor-generators': 0.2.0
 
-  '@mark1russell7/rigor-testkit@0.1.15(@mark1russell7/rigor-generators@0.1.18)(@opentelemetry/api-logs@0.223.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@0.223.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@2.12.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(fast-check@4.10.2)':
+  '@mark1russell7/rigor-testkit@0.1.20(@mark1russell7/rigor-generators@0.2.0)(@opentelemetry/api-logs@0.223.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@0.223.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@2.12.0(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace-base@2.12.0(@opentelemetry/api@1.10.0))(fast-check@4.10.2)':
     optionalDependencies:
-      '@mark1russell7/rigor-generators': 0.1.18
+      '@mark1russell7/rigor-generators': 0.2.0
       '@opentelemetry/api': 1.10.0
       '@opentelemetry/api-logs': 0.223.0
       '@opentelemetry/sdk-logs': 0.223.0(@opentelemetry/api@1.10.0)
@@ -4914,7 +4920,7 @@ snapshots:
 
   '@mark1russell7/site-pages@0.7.0':
     dependencies:
-      '@mark1russell7/rigor-statistics': 0.2.8
+      '@mark1russell7/rigor-statistics': 0.2.10
 
   '@mark1russell7/ste-lint@0.3.2':
     dependencies:
