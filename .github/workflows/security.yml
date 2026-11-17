@@ -29,4 +29,4 @@ jobs:
       security-events: write
       actions: read
     steps:
-      - uses: mark1russell7/template/.github/actions/security-scan@b5eb616fa9d07c06edd4cdafb033ee093d617140 # main
+      - uses: mark1russell7/template/.github/actions/security-scan@2030c7dec9485afebb504772f79f41f23bdb2df7 # main
