@@ -17,11 +17,11 @@ importers:
   .:
     devDependencies:
       '@mark1russell7/api-report':
-        specifier: ^0.4.1
-        version: 0.4.1
+        specifier: ^0.5.11
+        version: 0.5.11
       '@mark1russell7/conventions':
-        specifier: ^0.36.1
-        version: 0.36.1
+        specifier: ^0.45.0
+        version: 0.45.0
       '@mark1russell7/ste-lint':
         specifier: ^0.3.0
         version: 0.3.2
@@ -261,7 +261,7 @@ importers:
     devDependencies:
       '@mark1russell7/site-pages':
         specifier: ^0.7.0
-        version: 0.7.0
+        version: 0.7.1
       '@mdx-js/mdx':
         specifier: ^3.1.1
         version: 3.1.1
@@ -1017,13 +1017,13 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@mark1russell7/api-report@0.4.1':
-    resolution: {integrity: sha512-kx3vmIdzwGJf+aZ66qoYWm65IlrEzrbSXckAQed0I+fxs6+wFygVoum6ZVBeKdz05rHHLD9kiarwQQcI5LhsDQ==}
+  '@mark1russell7/api-report@0.5.11':
+    resolution: {integrity: sha512-EpkbsXPvwJ+26gpAhJ64QiytBNBYcYHy0cwH/Vdhz0OEjFqgHNGR9MvJvOysuY1PThmZSkN6aTzkzZX6u+HqqA==}
     engines: {node: '>=22'}
     hasBin: true
 
-  '@mark1russell7/conventions@0.36.1':
-    resolution: {integrity: sha512-Fb9YVVIYWTYX/+2yvtubLB4a0ognZrCs2Gy+U7RARQ9GP9jF1h4oqH5pDZiao1MUOYH070xOerUBqL4PsqnBGQ==}
+  '@mark1russell7/conventions@0.45.0':
+    resolution: {integrity: sha512-POko5BiOSnb68g7+Z4a3A8eZWaMDUbzW9gOQRGMpCVqyh3l5qhtLF56cecoSNQjqi0S+ueKjuzAuxpY6p9AVvQ==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -1103,8 +1103,8 @@ packages:
       ltx:
         optional: true
 
-  '@mark1russell7/site-pages@0.7.0':
-    resolution: {integrity: sha512-nFiaxs1D/IAxj54KUow0AkU35fxWj6iCHAcQ2GG2ISv0yD+YwnOoDHNmO1mV1g+roRV7G5czJNZlzv+3lcT2vg==}
+  '@mark1russell7/site-pages@0.7.1':
+    resolution: {integrity: sha512-iqRkCLWbqUZzPdvKn0JtRPkT6NiAU7gyojNQjQIWnak19Vab7hnE1QulZiRBL3wA/0xPn0e5vW4J+UxjPtJ4rg==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -1112,6 +1112,10 @@ packages:
     resolution: {integrity: sha512-0WRNon1oYKX1mmTP/AhrPnpoGAGolmpkJWHaTkHXc4SKe1tQhUvPrY/0TQ4gvu7aN+TEPpypiZDIkOjYZG8qBA==}
     engines: {node: '>=22'}
     hasBin: true
+
+  '@mark1russell7/text@0.0.13':
+    resolution: {integrity: sha512-8Tu7DTTpfmpXIy0F2JCyOW1RD91X7tm38c5xiqz3cLdmEkUQViH/06kTBLj+hrzuQPMBGVyxd7snqVG6EpNLdQ==}
+    engines: {node: '>=22.12'}
 
   '@mdx-js/mdx@3.1.1':
     resolution: {integrity: sha512-f6ZO2ifpwAQIpzGWaBQT2TXxPv6z3RBzQKpVftEWN78Vl/YweF1uwussDx8ECAXVtr3Rs89fKyG9YlzUs9DyGQ==}
@@ -4831,10 +4835,13 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@mark1russell7/api-report@0.4.1': {}
-
-  '@mark1russell7/conventions@0.36.1':
+  '@mark1russell7/api-report@0.5.11':
     dependencies:
+      '@mark1russell7/conventions': 0.45.0
+
+  '@mark1russell7/conventions@0.45.0':
+    dependencies:
+      '@mark1russell7/text': 0.0.13
       yaml: 2.9.1
 
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082': {}
@@ -4918,13 +4925,15 @@ snapshots:
       '@opentelemetry/sdk-trace-base': 2.12.0(@opentelemetry/api@1.10.0)
       fast-check: 4.10.2
 
-  '@mark1russell7/site-pages@0.7.0':
+  '@mark1russell7/site-pages@0.7.1':
     dependencies:
       '@mark1russell7/rigor-statistics': 0.2.10
 
   '@mark1russell7/ste-lint@0.3.2':
     dependencies:
       typescript: 6.0.3
+
+  '@mark1russell7/text@0.0.13': {}
 
   '@mdx-js/mdx@3.1.1':
     dependencies:
