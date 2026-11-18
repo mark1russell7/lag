@@ -23,8 +23,8 @@ importers:
         specifier: ^0.45.0
         version: 0.45.0
       '@mark1russell7/ste-lint':
-        specifier: ^0.3.0
-        version: 0.3.2
+        specifier: ^0.4.0
+        version: 0.4.0
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -260,8 +260,8 @@ importers:
         version: 7.18.5(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
     devDependencies:
       '@mark1russell7/site-pages':
-        specifier: ^0.7.0
-        version: 0.7.1
+        specifier: ^0.8.0
+        version: 0.8.0
       '@mdx-js/mdx':
         specifier: ^3.1.1
         version: 3.1.1
@@ -1027,6 +1027,10 @@ packages:
     engines: {node: '>=22'}
     hasBin: true
 
+  '@mark1russell7/files@0.0.4':
+    resolution: {integrity: sha512-Pb978ZnvlAxzcdWtRtqTGb7mZFCvlNrdKnpZqhxQ7gafzeNGf1JqYFuB4RWiLbJzRuFUWjEoAVG5f2TndCIlSg==}
+    engines: {node: '>=22'}
+
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082':
     resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082}
     version: 0.0.0
@@ -1103,13 +1107,13 @@ packages:
       ltx:
         optional: true
 
-  '@mark1russell7/site-pages@0.7.1':
-    resolution: {integrity: sha512-iqRkCLWbqUZzPdvKn0JtRPkT6NiAU7gyojNQjQIWnak19Vab7hnE1QulZiRBL3wA/0xPn0e5vW4J+UxjPtJ4rg==}
+  '@mark1russell7/site-pages@0.8.0':
+    resolution: {integrity: sha512-OlqsZfj5yNovI1ysfPJEIVsRnON3KgEP9ELMIH5CO+kP9FY5Vu873oCY+Zja5dKB8wTVgU3YewEcTqH9ncDurg==}
     engines: {node: '>=22'}
     hasBin: true
 
-  '@mark1russell7/ste-lint@0.3.2':
-    resolution: {integrity: sha512-0WRNon1oYKX1mmTP/AhrPnpoGAGolmpkJWHaTkHXc4SKe1tQhUvPrY/0TQ4gvu7aN+TEPpypiZDIkOjYZG8qBA==}
+  '@mark1russell7/ste-lint@0.4.0':
+    resolution: {integrity: sha512-V58Mtpt7WOW2wRBreSuuIO4am0WOdrJq8603+NNtqyI5EY0/LpPiQFxEDx+yNOgkN5ddnpPTkjalRTmBF+9GXQ==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -4844,6 +4848,8 @@ snapshots:
       '@mark1russell7/text': 0.0.13
       yaml: 2.9.1
 
+  '@mark1russell7/files@0.0.4': {}
+
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082': {}
 
   '@mark1russell7/otel-ts@0.7.5(@mark1russell7/lag@packages+lag)(vite@7.3.8(@types/node@25.9.9)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)':
@@ -4925,12 +4931,13 @@ snapshots:
       '@opentelemetry/sdk-trace-base': 2.12.0(@opentelemetry/api@1.10.0)
       fast-check: 4.10.2
 
-  '@mark1russell7/site-pages@0.7.1':
+  '@mark1russell7/site-pages@0.8.0':
     dependencies:
       '@mark1russell7/rigor-statistics': 0.2.10
 
-  '@mark1russell7/ste-lint@0.3.2':
+  '@mark1russell7/ste-lint@0.4.0':
     dependencies:
+      '@mark1russell7/files': 0.0.4
       typescript: 6.0.3
 
   '@mark1russell7/text@0.0.13': {}
