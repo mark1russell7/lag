@@ -21,7 +21,7 @@ importers:
         version: 0.5.17
       '@mark1russell7/conventions':
         specifier: ^0.49.0
-        version: 0.49.0
+        version: 0.49.3
       '@mark1russell7/ste-lint':
         specifier: ^0.4.0
         version: 0.4.0
@@ -45,7 +45,7 @@ importers:
         version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.3)
       '@mark1russell7/rigor-statistics':
         specifier: ^0.2.7
-        version: 0.2.16
+        version: 0.2.17
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.10.0
@@ -236,7 +236,7 @@ importers:
         version: 0.2.0
       '@mark1russell7/rigor-statistics':
         specifier: ^0.2.7
-        version: 0.2.16
+        version: 0.2.17
       '@observablehq/plot':
         specifier: ^0.6.17
         version: 0.6.19
@@ -1022,8 +1022,8 @@ packages:
     engines: {node: '>=22'}
     hasBin: true
 
-  '@mark1russell7/conventions@0.49.0':
-    resolution: {integrity: sha512-nSuJfGKy8ATorRwPbSa7jywQeRFI+9DzDqE3Pd0N/kXIRXTFjzuRcAajcGyTyjjP3wm8eyVL3ItHG3yZt/v/eA==}
+  '@mark1russell7/conventions@0.49.3':
+    resolution: {integrity: sha512-jUATwa6VDq38uQMl5dskeXthQKnmCgmWSDx1rNcgcdrpUfeYDb8qDTDUQ47zhROotxUo8dwyG78rFeCIW/DiEQ==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -1068,8 +1068,8 @@ packages:
     resolution: {integrity: sha512-eTyJhK4Nowx1KQ3QrsQqLiAlhFoL+8m1OT6He+X0Lf0G/0f9OyQC8ponQLViQKRkP/ef10B6oACFjtjnKErobg==}
     engines: {node: '>=22'}
 
-  '@mark1russell7/rigor-statistics@0.2.16':
-    resolution: {integrity: sha512-FCyXbHeORy7itn7Yp1TyIOjlsnkeJrZ3tqseXAB5ClymeB9zShjTWneUbLKpvasyQvY99zqGOAePdSmb7NOGQg==}
+  '@mark1russell7/rigor-statistics@0.2.17':
+    resolution: {integrity: sha512-+z/7h7C+ERO2wnM3RgZJ5D+egYPzFezPvWFqePB0DyBUqkD03WOpVPK63+xHmacJvkhtwmNBCKA/Zb3GK1DdnQ==}
     engines: {node: '>=22'}
 
   '@mark1russell7/rigor-testkit@0.2.0':
@@ -4880,9 +4880,9 @@ snapshots:
 
   '@mark1russell7/api-report@0.5.17':
     dependencies:
-      '@mark1russell7/conventions': 0.49.0
+      '@mark1russell7/conventions': 0.49.3
 
-  '@mark1russell7/conventions@0.49.0':
+  '@mark1russell7/conventions@0.49.3':
     dependencies:
       '@mark1russell7/text': 0.0.17
       yaml: 2.9.1
@@ -4954,7 +4954,7 @@ snapshots:
 
   '@mark1russell7/rigor-generators@0.2.0': {}
 
-  '@mark1russell7/rigor-statistics@0.2.16':
+  '@mark1russell7/rigor-statistics@0.2.17':
     dependencies:
       '@mark1russell7/rigor-generators': 0.2.0
 
@@ -4970,7 +4970,7 @@ snapshots:
 
   '@mark1russell7/site-pages@0.8.1':
     dependencies:
-      '@mark1russell7/rigor-statistics': 0.2.16
+      '@mark1russell7/rigor-statistics': 0.2.17
 
   '@mark1russell7/ste-lint@0.4.0':
     dependencies:
