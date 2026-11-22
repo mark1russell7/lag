@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.3
+
+### Added
+
+- **The busy part of the event loop in each span of `watchEventLoop()`.** The new field `busy` of a span has `activeMs`, `idleMs` and `utilization` (the active part, from 0 to 1), from `performance.eventLoopUtilization()`.
+  - The new optional dependency `activity` of `EventLoopWatchDeps` gives the activity of the loop. Deps without it give spans with no busy part, as before.
+  - The new types are `LoopBusy` and `LoopActivity`.
+
 ## 0.5.2
 
 ### Added

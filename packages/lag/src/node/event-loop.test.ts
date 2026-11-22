@@ -4,7 +4,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { watchEventLoop, type DelayHistogram, type EventLoopWatchDeps, type EventLoopWatchOptions } from "./event-loop.js";
+import { watchEventLoop, type DelayHistogram, type EventLoopWatchDeps, type EventLoopWatchOptions, type LoopActivity } from "./event-loop.js";
 
 type FakeTimer = {
     readonly handler : () => void;
@@ -150,6 +150,51 @@ describe("watchEventLoop", () => {
         expect(watch.span().delay).toBeUndefined();
     });
 
+    it("gives the busy part of each span from the activity of the loop, and no busy part for a span with no time", () => {
+        const { deps, setNow } = fakeDeps();
+        let activity : LoopActivity = { active : 0, idle : 0 };
+        const watch = watchEventLoop({}, { ...deps, activity : () => activity });
+        activity = { active : 30, idle : 90 };
+        setNow(120);
+        expect(watch.span().busy).toEqual({ activeMs : 30, idleMs : 90, utilization : 0.25 });
+        expect(watch.span().busy).toBeUndefined();
+        activity = { active : 80, idle : 140 };
+        setNow(220);
+        expect(watch.span().busy).toEqual({ activeMs : 50, idleMs : 50, utilization : 0.5 });
+    });
+
+    it("gives no busy part when the deps give no activity", () => {
+        const { deps, setNow } = fakeDeps();
+        const watch = watchEventLoop({}, deps);
+        setNow(100);
+        expect(watch.span().busy).toBeUndefined();
+    });
+
+    it("gives busy parts from 0 to 1 that add up to the activity of the whole watch (property test)", () => {
+        const step = fc.record({ active : fc.integer({ min : 0, max : 1000 }), idle : fc.integer({ min : 0, max : 1000 }) });
+        fc.assert(fc.property(fc.array(step, { maxLength : 50 }), (steps) => {
+            const { deps, setNow } = fakeDeps();
+            let activity : LoopActivity = { active : 0, idle : 0 };
+            const watch = watchEventLoop({}, { ...deps, activity : () => activity });
+            let active = 0;
+            let idle = 0;
+            steps.forEach((each, index) => {
+                activity = { active : activity.active + each.active, idle : activity.idle + each.idle };
+                setNow(index + 1);
+                const busy = watch.span().busy;
+                if (busy === undefined) {
+                    expect(each.active + each.idle).toBe(0);
+                    return;
+                }
+                expect(busy.utilization).toBeGreaterThanOrEqual(0);
+                expect(busy.utilization).toBeLessThanOrEqual(1);
+                active += busy.activeMs;
+                idle += busy.idleMs;
+            });
+            expect({ active, idle }).toEqual(activity);
+        }));
+    });
+
     it("keeps the first blocks up to its maximum, and counts each block", () => {
         const { deps, tickAt, setNow } = fakeDeps();
         const watch = watchEventLoop({ maxBlocks : 2 }, deps);
@@ -225,7 +270,7 @@ describe("watchEventLoop", () => {
 });
 
 describe("watchEventLoop on Node.js", () => {
-    it("finds a busy wait of 120 ms as a block, and in the histogram", async () => {
+    it("finds a busy wait of 120 ms as a block, in the histogram and in the busy part of the loop", async () => {
         const watch = watchEventLoop({ limitMs : 50 });
         await sleep(30);
         const end = performance.now() + 120;
@@ -239,6 +284,9 @@ describe("watchEventLoop on Node.js", () => {
         expect(span.blocks.some((block) => block.durationMs >= 120)).toBe(true);
         expect(span.longestMs).toBeGreaterThanOrEqual(120);
         expect(span.delay?.maxMs ?? 0).toBeGreaterThanOrEqual(100);
+        // The busy wait is active time of the loop.
+        expect(span.busy?.activeMs ?? 0).toBeGreaterThanOrEqual(100);
+        expect(span.busy?.utilization ?? 2).toBeLessThanOrEqual(1);
     });
 
     it("does not keep a process alive", () => {
