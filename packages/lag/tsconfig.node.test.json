@@ -1,0 +1,16 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig",
+    // The type check of the entry "./node" and its tests, with the Node.js types. tsconfig.test.json checks the other files.
+    "extends": "../../ts/config/node.json",
+    "compilerOptions": {
+        "types": ["node", "vitest/globals"],
+        "noEmit": true,
+        "composite": false,
+        "incremental": false,
+        "declaration": false,
+        "declarationMap": false,
+        "isolatedDeclarations": false
+    },
+    "include": ["src/node/**/*"],
+    "exclude": []
+}

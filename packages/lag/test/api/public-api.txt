@@ -398,6 +398,21 @@ createMeterReceiver: dist/forwarding-meter.d.ts#createMeterReceiver
 createNoopMeter: dist/noop-meter.d.ts#createNoopMeter
 fanOutMeter: dist/meters.d.ts#fanOutMeter
 
+## ./node (dist/node/index.d.ts): names
+
+type DelayHistogram: dist/node/event-loop.d.ts#DelayHistogram
+EVENT_LOOP_BLOCK_LIMIT_MS: dist/node/event-loop.d.ts#EVENT_LOOP_BLOCK_LIMIT_MS
+EVENT_LOOP_MAX_BLOCKS: dist/node/event-loop.d.ts#EVENT_LOOP_MAX_BLOCKS
+EVENT_LOOP_RESOLUTION_MS: dist/node/event-loop.d.ts#EVENT_LOOP_RESOLUTION_MS
+type EventLoopWatch: dist/node/event-loop.d.ts#EventLoopWatch
+type EventLoopWatchDeps: dist/node/event-loop.d.ts#EventLoopWatchDeps
+type EventLoopWatchOptions: dist/node/event-loop.d.ts#EventLoopWatchOptions
+type LoopBlock: dist/node/event-loop.d.ts#LoopBlock
+type LoopDelay: dist/node/event-loop.d.ts#LoopDelay
+type LoopSpan: dist/node/event-loop.d.ts#LoopSpan
+type NodeTimer: dist/node/event-loop.d.ts#NodeTimer
+watchEventLoop: dist/node/event-loop.d.ts#watchEventLoop
+
 ## ./event-line.js (dist/event-line.d.ts): names
 
 formatEventLine: dist/event-line.d.ts#formatEventLine
@@ -1868,6 +1883,88 @@ export declare class MonitorRegistry {
     getAll(): readonly MonitorHandle[];
     get size(): number;
 }
+
+### dist/node/event-loop.d.ts#DelayHistogram
+export type DelayHistogram = {
+    enable(): unknown;
+    disable(): unknown;
+    reset(): void;
+    readonly count: number;
+    readonly min: number;
+    readonly max: number;
+    readonly mean: number;
+    readonly stddev: number;
+    percentile(percentile: number): number;
+};
+
+### dist/node/event-loop.d.ts#EVENT_LOOP_BLOCK_LIMIT_MS
+export declare const EVENT_LOOP_BLOCK_LIMIT_MS: 50;
+
+### dist/node/event-loop.d.ts#EVENT_LOOP_MAX_BLOCKS
+export declare const EVENT_LOOP_MAX_BLOCKS: 1000;
+
+### dist/node/event-loop.d.ts#EVENT_LOOP_RESOLUTION_MS
+export declare const EVENT_LOOP_RESOLUTION_MS: 10;
+
+### dist/node/event-loop.d.ts#EventLoopWatch
+export type EventLoopWatch = {
+    span(): LoopSpan;
+    stop(): void;
+};
+
+### dist/node/event-loop.d.ts#EventLoopWatchDeps
+export type EventLoopWatchDeps<Timer extends NodeTimer> = {
+    readonly clock: Clock;
+    readonly setTimeout: (handler: () => void, ms: number) => Timer;
+    readonly clearTimeout: (timer: Timer) => void;
+    readonly histogram: (resolutionMs: number) => DelayHistogram;
+};
+
+### dist/node/event-loop.d.ts#EventLoopWatchOptions
+export type EventLoopWatchOptions = {
+    readonly resolutionMs?: number;
+    readonly limitMs?: number;
+    readonly maxBlocks?: number;
+};
+
+### dist/node/event-loop.d.ts#LoopBlock
+export type LoopBlock = {
+    readonly startedAt: number;
+    readonly durationMs: number;
+};
+
+### dist/node/event-loop.d.ts#LoopDelay
+export type LoopDelay = {
+    readonly count: number;
+    readonly minMs: number;
+    readonly maxMs: number;
+    readonly meanMs: number;
+    readonly stddevMs: number;
+    readonly p50Ms: number;
+    readonly p90Ms: number;
+    readonly p99Ms: number;
+};
+
+### dist/node/event-loop.d.ts#LoopSpan
+export type LoopSpan = {
+    readonly startedAt: number;
+    readonly durationMs: number;
+    readonly resolutionMs: number;
+    readonly limitMs: number;
+    readonly longestMs: number;
+    readonly blockCount: number;
+    readonly blocks: readonly LoopBlock[];
+    readonly delay: LoopDelay | undefined;
+};
+
+### dist/node/event-loop.d.ts#NodeTimer
+export type NodeTimer = {
+    unref(): unknown;
+};
+
+### dist/node/event-loop.d.ts#watchEventLoop
+export declare function watchEventLoop(options?: EventLoopWatchOptions): EventLoopWatch;
+export declare function watchEventLoop<Timer extends NodeTimer>(options: EventLoopWatchOptions, deps: EventLoopWatchDeps<Timer>): EventLoopWatch;
 
 ### dist/noop-meter.d.ts#createNoopMeter
 export declare function createNoopMeter(): Meter;

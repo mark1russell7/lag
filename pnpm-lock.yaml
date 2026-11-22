@@ -96,6 +96,9 @@ importers:
       '@stryker-mutator/vitest-runner':
         specifier: ^10.0.0
         version: 10.1.1(@stryker-mutator/core@10.1.1(@types/node@25.9.9))(vitest@4.1.12)
+      '@types/node':
+        specifier: ^25.3.0
+        version: 25.9.9
       '@vitest/coverage-v8':
         specifier: 4.1.12
         version: 4.1.12(@vitest/browser@4.1.12)(vitest@4.1.12)

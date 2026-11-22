@@ -5,6 +5,7 @@
   "extends": "../../ts/config/ts.json",
   "compilerOptions": {
     "lib": ["esnext", "dom"],
+    "types": [],
     "tsBuildInfoFile": "${configDir}/dist/worker/.tsbuildinfo"
   },
   "include": ["src/worker/**/*"],

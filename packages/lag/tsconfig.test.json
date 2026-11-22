@@ -12,5 +12,6 @@
         "isolatedDeclarations": false
     },
     "include": ["src/**/*"],
-    "exclude": []
+    // tsconfig.node.test.json checks src/node with the Node.js types.
+    "exclude": ["src/node/**/*"]
 }
