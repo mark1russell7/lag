@@ -275,3 +275,16 @@ jobs:
           test -s packages/site/dist/og/docs/getting-started.png
           grep -q '<loc>https://mark1russell7.github.io/lag/docs/getting-started</loc>' packages/site/dist/sitemap.xml
           grep -q 'content="noindex"' packages/site/dist/404.html
+
+  ci-ok:
+    name: CI OK
+    if: ${{ !cancelled() }}
+    needs: [ci, build, browser, safari, ios, site]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - uses: mark1russell7/template/.github/actions/gate-summary@f05c6eeb35e33a040bdfdcd7d07a1d2c00640f8d # main
+        with:
+          needs: ${{ toJSON(needs) }}
+          allow-skip: build
