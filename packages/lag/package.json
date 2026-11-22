@@ -1,11 +1,13 @@
 {
   "name": "@mark1russell7/lag",
-  "version": "0.5.1",
-  "description": "Main-thread lag monitors for browser apps, on the devices of real users: blocked time, hangs, long animation frames, INP and the Core Web Vitals of each page view, as OpenTelemetry metrics, events and spans.",
+  "version": "0.5.2",
+  "description": "Main-thread lag monitors for browser apps, on the devices of real users: blocked time, hangs, long animation frames, INP and the Core Web Vitals of each page view, as OpenTelemetry metrics, events and spans. The entry /node watches the event loop of Node.js.",
   "keywords": [
     "main thread",
     "main thread lag",
     "event loop lag",
+    "event loop delay",
+    "node",
     "long tasks",
     "long animation frames",
     "loaf",
@@ -58,6 +60,10 @@
       "types": "./dist/meters.d.ts",
       "default": "./dist/meters.js"
     },
+    "./node": {
+      "types": "./dist/node/index.d.ts",
+      "default": "./dist/node/index.js"
+    },
     "./event-line.js": {
       "types": "./dist/event-line.d.ts",
       "default": "./dist/event-line.js"
@@ -78,9 +84,9 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsc -b tsconfig.json tsconfig.worker.json",
-    "prepack": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -b tsconfig.json tsconfig.worker.json",
-    "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.config.json",
+    "build": "tsc -b tsconfig.json tsconfig.worker.json tsconfig.node.json",
+    "prepack": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc -b tsconfig.json tsconfig.worker.json tsconfig.node.json",
+    "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.config.json && tsc -p tsconfig.node.test.json",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
     "mutation": "stryker run",
@@ -91,6 +97,7 @@
     "@opentelemetry/api": "^1.9.0",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
+    "@types/node": "^25.3.0",
     "@vitest/coverage-v8": "4.1.12",
     "async-browser-context": "^0.3.0",
     "fake-indexeddb": "^6.2.5",

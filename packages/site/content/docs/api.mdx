@@ -15,13 +15,15 @@ This page explains the main calls. [Each export of @mark1russell7/lag](/docs/api
 npm install @mark1russell7/lag
 ```
 
-The package has four entry points:
+The package has six entry points:
 
 | Entry point | What it contains |
 |---|---|
 | `@mark1russell7/lag` | The exports of the sections from [Setup](#setup) to [Utilities](#utilities). |
 | `@mark1russell7/lag/worker` | `createLagWorker()` and the worker module that it starts. Refer to the section `@mark1russell7/lag/worker`. |
 | `@mark1russell7/lag/async-context` | The optional add-on with async-browser-context: the long callbacks. Refer to the section `@mark1russell7/lag/async-context`. |
+| `@mark1russell7/lag/meters` | The meter combinators: `fanOutMeter()`, `createForwardingMeter()` with `createMeterReceiver()`, `createNoopMeter()` and the meter types. |
+| `@mark1russell7/lag/node` | `watchEventLoop()`, the watch of the event loop of Node.js. Refer to the section `@mark1russell7/lag/node`. |
 | `@mark1russell7/lag/event-line.js` | `formatEventLine()`, which makes the line of each event. |
 
 `@lag/load` and `@lag/report` are private packages of the repository. They are not on npm.
@@ -194,6 +196,18 @@ This entry point is an optional add-on. It finds the function and the operation 
 | `activeSpanName(api)` | An `operation` function that gives the name of the active span. `api` is the module `@opentelemetry/api`. |
 | `CALLBACK_SOURCE_KINDS`, `callbackSourceKind(source)`, `CallbackSourceKind` | The 9 source kinds and the function that gives the kind of a source. |
 | `AddCallbackHookFn`, `CallbackHookLike`, `LONG_CALLBACK_THRESHOLD_MS`, `ANONYMOUS_CALLBACK` | The type of `addCallbackHook`, the type of a hook, the default threshold (50 ms), and the name of a callback without a name. |
+
+## @mark1russell7/lag/node
+
+This entry point watches the event loop of Node.js. It is the only entry point that imports a `node:` module. The other entry points get no Node.js types, thus their build fails on such an import.
+
+| Export | What it does |
+|---|---|
+| `watchEventLoop(options?)` | Starts a watch and gives an `EventLoopWatch`. `span()` gives the `LoopSpan` to this call and starts the next span. `stop()` stops the timer and the histogram. |
+| `LoopSpan`, `LoopBlock`, `LoopDelay` | The record of a span: its longest gap, its blocks (`startedAt`, `durationMs`), and the histogram of `monitorEventLoopDelay` in milliseconds. |
+| `EventLoopWatchOptions` | `resolutionMs` (default 10), `limitMs` (default 50) and `maxBlocks` (default 1000). |
+| `EventLoopWatchDeps`, `NodeTimer`, `DelayHistogram` | The clock, the timers and the histogram of a watch, for a test. |
+| `EVENT_LOOP_RESOLUTION_MS`, `EVENT_LOOP_BLOCK_LIMIT_MS`, `EVENT_LOOP_MAX_BLOCKS` | The defaults of the options. |
 
 ## @lag/load
 

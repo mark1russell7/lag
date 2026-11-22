@@ -4,7 +4,7 @@
 [![CI](https://github.com/mark1russell7/lag/actions/workflows/ci.yml/badge.svg)](https://github.com/mark1russell7/lag/actions/workflows/ci.yml)
 [![license](https://img.shields.io/npm/l/@mark1russell7/lag)](https://github.com/mark1russell7/lag/blob/main/packages/lag/LICENSE)
 
-`@mark1russell7/lag` measures the lag of the main thread in browser apps, on the devices of real users. It sends the results as OpenTelemetry metrics, events and spans.
+`@mark1russell7/lag` measures the lag of the main thread in browser apps, on the devices of real users. It sends the results as OpenTelemetry metrics, events and spans. The entry `@mark1russell7/lag/node` watches the event loop of Node.js.
 
 The website has the documentation, a live playground, the thesis and the test results: <https://mark1russell7.github.io/lag/>.
 
@@ -94,6 +94,26 @@ To stop the monitors, use `monitors.stop()`, then `worker.terminate()`. The work
 
 For the events, the spans and the hang reports of the worker, refer to the [quick start](https://mark1russell7.github.io/lag/docs/getting-started) on the website. The [OpenTelemetry setup](https://mark1russell7.github.io/lag/docs/operations/opentelemetry) gives the SDK settings for the metrics of many browsers, for example exponential histograms.
 
+## Node.js
+
+`watchEventLoop()` of `@mark1russell7/lag/node` watches the event loop of a Node.js process. Each call of `span()` gives the record of one span and starts the next span.
+
+```ts
+import { watchEventLoop } from "@mark1russell7/lag/node";
+
+const watch = watchEventLoop({ limitMs: 100 });
+await startService();
+const { longestMs, blocks, delay } = watch.span();
+watch.stop();
+```
+
+- `delay` is the histogram of `monitorEventLoopDelay` for the span, in milliseconds. It has the count, the minimum, the maximum, the mean, the standard deviation and the percentiles 50, 90 and 99.
+- `longestMs` is the longest gap between two ticks of the timer of the watch.
+- `blocks` has each gap over `limitMs` (50 ms by default), with the time of the tick before it. A block of `d` ms gives a gap from `d` to `d` plus the resolution (10 ms by default).
+- The block records have the shape of the browser monitors: `startedAt` and `durationMs`.
+- The watch uses `unref()` on each timer. Thus the watch does not keep the process alive.
+- The watch gives records, not metrics. For OpenTelemetry metrics of the event loop, use the runtime instrumentation of Node.js (`@opentelemetry/instrumentation-runtime-node`).
+
 ## Exports
 
 | Export | What it contains |
@@ -102,6 +122,7 @@ For the events, the spans and the hang reports of the worker, refer to the [quic
 | `@mark1russell7/lag/worker` | `createLagWorker()` and the worker module that it starts. |
 | `@mark1russell7/lag/async-context` | An optional add-on: the function, the API and the operation of each long callback, in all browsers. It uses the callback hook of [async-browser-context](https://www.npmjs.com/package/async-browser-context) 0.2.2 or later, an optional peer dependency. |
 | `@mark1russell7/lag/meters` | The meter combinators, on the types of `@opentelemetry/api` only: `fanOutMeter()` (a tee is a fan-out of two meters), and `createForwardingMeter()` with `createMeterReceiver()`, which send the records to a worker. |
+| `@mark1russell7/lag/node` | `watchEventLoop()`: for each span, the histogram of `monitorEventLoopDelay`, the longest gap of its timer, and each block over a limit. It is the only entry that imports a `node:` module. |
 | `@mark1russell7/lag/event-line.js` | `formatEventLine()`, which makes the body line of each event record. |
 
 The types of the meter, the attributes and the span context come from `@opentelemetry/api`, as types only. Thus the bundle gets no code from it. For the TypeScript types, install `@opentelemetry/api` 1.9 or later, an optional peer dependency.

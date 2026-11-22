@@ -1,10 +1,16 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
+  // No Node.js types and no DOM types: the modules of the package get each runtime API as an argument.
+  // Only tsconfig.node.json (the export "./node") has the Node.js types, and only tsconfig.worker.json has the DOM types.
   "extends": "../../ts/config/ts.json",
+  "compilerOptions": {
+    "types": []
+  },
   "exclude": [
     "node_modules",
     "dist",
     "src/worker",
+    "src/node",
     "**/*.spec.ts",
     "**/*.test.ts",
     "**/test-*.ts"

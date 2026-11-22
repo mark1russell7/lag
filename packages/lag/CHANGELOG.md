@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.2
+
+### Added
+
+- **The entry `@mark1russell7/lag/node`: the watch of the event loop of Node.js.** `watchEventLoop()` gives a record of each span. The record has the histogram of `monitorEventLoopDelay`, the longest gap of the timer of the watch, and each block over a limit.
+  - A block has the shape of the block records of the browser monitors: `startedAt` (the tick before the block) and `durationMs`.
+  - The watch uses `unref()` on each timer. Thus the watch does not keep the process alive.
+  - The other entries get no Node.js types. Thus their build fails on an import of a `node:` module.
+
 ## 0.5.1
 
 ### Fixed

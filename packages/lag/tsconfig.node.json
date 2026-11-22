@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  // The export "./node": watchEventLoop(). Only these files use the Node.js types.
+  // The other entries get no Node.js types (tsconfig.json has "types": []), thus their build fails on an import of a node: module.
+  "extends": "../../ts/config/node.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "${configDir}/dist/node/.tsbuildinfo"
+  },
+  "include": ["src/node/**/*"],
+  "exclude": ["**/*.test.ts"],
+  "references": [
+    {
+      "path": "./tsconfig.json"
+    }
+  ]
+}

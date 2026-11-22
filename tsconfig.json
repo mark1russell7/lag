@@ -12,6 +12,9 @@
       "path": "packages/lag/tsconfig.worker.json"
     },
     {
+      "path": "packages/lag/tsconfig.node.json"
+    },
+    {
       "path": "packages/lag-integration-tests"
     },
     {
