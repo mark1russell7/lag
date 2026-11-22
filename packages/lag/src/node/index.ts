@@ -3,8 +3,8 @@
  * that imports a `node:` module. The other entries get no Node.js types (`tsconfig.json`), thus their build fails on
  * such an import.
  *
- * - `watchEventLoop()` gives a record of each span. The record has the histogram of `monitorEventLoopDelay`, the
- *   longest gap of the timer of the watch, each block over a limit with its start, and the busy part of the loop.
+ * - `watchEventLoop()` gives a record of each span. The record has the histogram of `monitorEventLoopDelay` and the
+ *   longest gap of the timer of the watch. It also has each block over a limit with its start, and the busy part of the loop.
  * - The block records have the shape of the browser monitors (`startedAt`, `durationMs`).
  */
 export {

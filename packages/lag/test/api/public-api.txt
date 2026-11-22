@@ -407,7 +407,9 @@ EVENT_LOOP_RESOLUTION_MS: dist/node/event-loop.d.ts#EVENT_LOOP_RESOLUTION_MS
 type EventLoopWatch: dist/node/event-loop.d.ts#EventLoopWatch
 type EventLoopWatchDeps: dist/node/event-loop.d.ts#EventLoopWatchDeps
 type EventLoopWatchOptions: dist/node/event-loop.d.ts#EventLoopWatchOptions
+type LoopActivity: dist/node/event-loop.d.ts#LoopActivity
 type LoopBlock: dist/node/event-loop.d.ts#LoopBlock
+type LoopBusy: dist/node/event-loop.d.ts#LoopBusy
 type LoopDelay: dist/node/event-loop.d.ts#LoopDelay
 type LoopSpan: dist/node/event-loop.d.ts#LoopSpan
 type NodeTimer: dist/node/event-loop.d.ts#NodeTimer
@@ -1918,6 +1920,7 @@ export type EventLoopWatchDeps<Timer extends NodeTimer> = {
     readonly setTimeout: (handler: () => void, ms: number) => Timer;
     readonly clearTimeout: (timer: Timer) => void;
     readonly histogram: (resolutionMs: number) => DelayHistogram;
+    readonly activity?: (() => LoopActivity) | undefined;
 };
 
 ### dist/node/event-loop.d.ts#EventLoopWatchOptions
@@ -1927,10 +1930,23 @@ export type EventLoopWatchOptions = {
     readonly maxBlocks?: number;
 };
 
+### dist/node/event-loop.d.ts#LoopActivity
+export type LoopActivity = {
+    readonly active: number;
+    readonly idle: number;
+};
+
 ### dist/node/event-loop.d.ts#LoopBlock
 export type LoopBlock = {
     readonly startedAt: number;
     readonly durationMs: number;
+};
+
+### dist/node/event-loop.d.ts#LoopBusy
+export type LoopBusy = {
+    readonly activeMs: number;
+    readonly idleMs: number;
+    readonly utilization: number;
 };
 
 ### dist/node/event-loop.d.ts#LoopDelay
@@ -1955,6 +1971,7 @@ export type LoopSpan = {
     readonly blockCount: number;
     readonly blocks: readonly LoopBlock[];
     readonly delay: LoopDelay | undefined;
+    readonly busy?: LoopBusy | undefined;
 };
 
 ### dist/node/event-loop.d.ts#NodeTimer
