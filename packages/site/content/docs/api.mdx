@@ -204,9 +204,9 @@ This entry point watches the event loop of Node.js. It is the only entry point t
 | Export | What it does |
 |---|---|
 | `watchEventLoop(options?)` | Starts a watch and gives an `EventLoopWatch`. `span()` gives the `LoopSpan` to this call and starts the next span. `stop()` stops the timer and the histogram. |
-| `LoopSpan`, `LoopBlock`, `LoopDelay` | The record of a span: its longest gap, its blocks (`startedAt`, `durationMs`), and the histogram of `monitorEventLoopDelay` in milliseconds. |
+| `LoopSpan`, `LoopBlock`, `LoopDelay`, `LoopBusy` | The record of a span: its longest gap, its blocks (`startedAt`, `durationMs`), the histogram of `monitorEventLoopDelay` in milliseconds, and the busy part of the loop (`activeMs`, `idleMs`, `utilization`). |
 | `EventLoopWatchOptions` | `resolutionMs` (default 10), `limitMs` (default 50) and `maxBlocks` (default 1000). |
-| `EventLoopWatchDeps`, `NodeTimer`, `DelayHistogram` | The clock, the timers and the histogram of a watch, for a test. |
+| `EventLoopWatchDeps`, `NodeTimer`, `DelayHistogram`, `LoopActivity` | The clock, the timers, the histogram and the activity of the loop of a watch, for a test. |
 | `EVENT_LOOP_RESOLUTION_MS`, `EVENT_LOOP_BLOCK_LIMIT_MS`, `EVENT_LOOP_MAX_BLOCKS` | The defaults of the options. |
 
 ## @lag/load

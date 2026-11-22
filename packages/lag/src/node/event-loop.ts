@@ -38,6 +38,19 @@ export type LoopDelay = {
     readonly p99Ms : number;
 };
 
+/**
+ * The busy part of the event loop in one span, from `performance.eventLoopUtilization()`, in milliseconds. The loop is idle
+ * while it waits for events, and it is active for the rest of the time.
+ */
+export type LoopBusy = {
+    /** The time of the span that the loop was active. */
+    readonly activeMs : number;
+    /** The time of the span that the loop waited for events. */
+    readonly idleMs : number;
+    /** The active part of the span: `activeMs` divided by the sum of `activeMs` and `idleMs`, from 0 to 1. */
+    readonly utilization : number;
+};
+
 /** The record of one span of the event loop. All times are on the clock of the watch, in milliseconds. */
 export type LoopSpan = {
     readonly startedAt : number;
@@ -54,6 +67,8 @@ export type LoopSpan = {
     readonly blocks : readonly LoopBlock[];
     /** The histogram of the span. It is `undefined` when the span has no sample. */
     readonly delay : LoopDelay | undefined;
+    /** The busy part of the loop in the span. It is `undefined` when the deps give no activity, or when the span has no time. */
+    readonly busy? : LoopBusy | undefined;
 };
 
 /** The options of `watchEventLoop()`. */
@@ -84,12 +99,23 @@ export type DelayHistogram = {
     percentile(percentile : number) : number;
 };
 
+/**
+ * The part of `performance.eventLoopUtilization()` of `node:perf_hooks` that the watch reads: the active time and the idle
+ * time of the loop from its start, in milliseconds.
+ */
+export type LoopActivity = {
+    readonly active : number;
+    readonly idle : number;
+};
+
 /** The dependencies of `watchEventLoop()`. A test gives a clock, timers and a histogram that it controls. */
 export type EventLoopWatchDeps<Timer extends NodeTimer> = {
     readonly clock : Clock;
     readonly setTimeout : (handler : () => void, ms : number) => Timer;
     readonly clearTimeout : (timer : Timer) => void;
     readonly histogram : (resolutionMs : number) => DelayHistogram;
+    /** This function gives the activity of the loop. Without it, the spans have no busy part. */
+    readonly activity? : (() => LoopActivity) | undefined;
 };
 
 /** A running watch of the event loop. */
@@ -110,6 +136,7 @@ const NODE_DEPS : EventLoopWatchDeps<NodeJS.Timeout> = {
         clearTimeout(timer);
     },
     histogram : (resolutionMs) => monitorEventLoopDelay({ resolution : resolutionMs }),
+    activity : () => performance.eventLoopUtilization(),
 };
 
 const NS_PER_MS = 1e6;
@@ -129,17 +156,28 @@ function delayOf(histogram : DelayHistogram) : LoopDelay | undefined {
     };
 }
 
+/** This function gives the busy part of a span from the activity at its start and at its end. A span with no time has none. */
+function busyOf(start : LoopActivity | undefined, end : LoopActivity | undefined) : LoopBusy | undefined {
+    if (start === undefined || end === undefined) return undefined;
+    const activeMs = end.active - start.active;
+    const idleMs = end.idle - start.idle;
+    const totalMs = activeMs + idleMs;
+    if (!(totalMs > 0)) return undefined;
+    return { activeMs, idleMs, utilization : activeMs / totalMs };
+}
+
 function checked(name : string, value : number, valid : boolean) : number {
     if (!valid) throw new RangeError(`The option ${name} of watchEventLoop() is not valid: ${String(value)}.`);
     return value;
 }
 
 /**
- * This function starts a watch of the event loop of Node.js. The watch has two meters, and each span of the caller
- * gets a record of both.
+ * This function starts a watch of the event loop of Node.js. The watch has three meters, and each span of the caller
+ * gets a record of each.
  *
  * - The histogram of `monitorEventLoopDelay` gives the distribution of the delay of the loop.
  * - A timer of the watch ticks at each step. Each gap between two ticks over the limit is a block, with its start.
+ * - `performance.eventLoopUtilization()` gives the busy part of the loop: its active time and its idle time.
  *
  * The watch uses `unref()` on each timer, thus the watch does not keep the process alive.
  *
@@ -171,6 +209,7 @@ function watchWith<Timer extends NodeTimer>(options : EventLoopWatchOptions, dep
     const histogram = deps.histogram(resolutionMs);
     histogram.enable();
     let spanStart = deps.clock.now();
+    let activityStart = deps.activity?.();
     let last = spanStart;
     let longestMs = 0;
     let blockCount = 0;
@@ -202,6 +241,7 @@ function watchWith<Timer extends NodeTimer>(options : EventLoopWatchOptions, dep
         span : () => {
             if (stopped) throw new Error("watchEventLoop(): span() after stop().");
             const now = deps.clock.now();
+            const activity = deps.activity?.();
             close(now);
             const record : LoopSpan = {
                 startedAt : spanStart,
@@ -212,9 +252,11 @@ function watchWith<Timer extends NodeTimer>(options : EventLoopWatchOptions, dep
                 blockCount,
                 blocks,
                 delay : delayOf(histogram),
+                busy : busyOf(activityStart, activity),
             };
             histogram.reset();
             spanStart = now;
+            activityStart = activity;
             longestMs = 0;
             blockCount = 0;
             blocks = [];

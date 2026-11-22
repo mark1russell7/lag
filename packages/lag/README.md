@@ -103,11 +103,12 @@ import { watchEventLoop } from "@mark1russell7/lag/node";
 
 const watch = watchEventLoop({ limitMs: 100 });
 await startService();
-const { longestMs, blocks, delay } = watch.span();
+const { longestMs, blocks, delay, busy } = watch.span();
 watch.stop();
 ```
 
 - `delay` is the histogram of `monitorEventLoopDelay` for the span, in milliseconds. It has the count, the minimum, the maximum, the mean, the standard deviation and the percentiles 50, 90 and 99.
+- `busy` is the busy part of the loop in the span, from `performance.eventLoopUtilization()`: `activeMs`, `idleMs` and `utilization` (the active part, from 0 to 1).
 - `longestMs` is the longest gap between two ticks of the timer of the watch.
 - `blocks` has each gap over `limitMs` (50 ms by default), with the time of the tick before it. A block of `d` ms gives a gap from `d` to `d` plus the resolution (10 ms by default).
 - The block records have the shape of the browser monitors: `startedAt` and `durationMs`.
@@ -122,7 +123,7 @@ watch.stop();
 | `@mark1russell7/lag/worker` | `createLagWorker()` and the worker module that it starts. |
 | `@mark1russell7/lag/async-context` | An optional add-on: the function, the API and the operation of each long callback, in all browsers. It uses the callback hook of [async-browser-context](https://www.npmjs.com/package/async-browser-context) 0.2.2 or later, an optional peer dependency. |
 | `@mark1russell7/lag/meters` | The meter combinators, on the types of `@opentelemetry/api` only: `fanOutMeter()` (a tee is a fan-out of two meters), and `createForwardingMeter()` with `createMeterReceiver()`, which send the records to a worker. |
-| `@mark1russell7/lag/node` | `watchEventLoop()`: for each span, the histogram of `monitorEventLoopDelay`, the longest gap of its timer, and each block over a limit. It is the only entry that imports a `node:` module. |
+| `@mark1russell7/lag/node` | `watchEventLoop()`: for each span, the histogram of `monitorEventLoopDelay`, the longest gap of its timer, each block over a limit and the busy part of the loop. It is the only entry that imports a `node:` module. |
 | `@mark1russell7/lag/event-line.js` | `formatEventLine()`, which makes the body line of each event record. |
 
 The types of the meter, the attributes and the span context come from `@opentelemetry/api`, as types only. Thus the bundle gets no code from it. For the TypeScript types, install `@opentelemetry/api` 1.9 or later, an optional peer dependency.

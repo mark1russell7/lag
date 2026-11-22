@@ -1934,8 +1934,8 @@ function fanOutMeter(...meters: readonly Meter[]): Meter;
 ```ts
 import {
   type DelayHistogram, EVENT_LOOP_BLOCK_LIMIT_MS, EVENT_LOOP_MAX_BLOCKS, EVENT_LOOP_RESOLUTION_MS,
-  type EventLoopWatch, type EventLoopWatchDeps, type EventLoopWatchOptions, type LoopBlock,
-  type LoopDelay, type LoopSpan, type NodeTimer, watchEventLoop,
+  type EventLoopWatch, type EventLoopWatchDeps, type EventLoopWatchOptions, type LoopActivity,
+  type LoopBlock, type LoopBusy, type LoopDelay, type LoopSpan, type NodeTimer, watchEventLoop,
 } from "@mark1russell7/lag/node";
 ```
 
@@ -1968,6 +1968,7 @@ type EventLoopWatchDeps<Timer extends NodeTimer> = {
     readonly setTimeout: (handler: () => void, ms: number) => Timer;
     readonly clearTimeout: (timer: Timer) => void;
     readonly histogram: (resolutionMs: number) => DelayHistogram;
+    readonly activity?: (() => LoopActivity) | undefined;
 };
 
 type EventLoopWatchOptions = {
@@ -1976,9 +1977,20 @@ type EventLoopWatchOptions = {
     readonly maxBlocks?: number;
 };
 
+type LoopActivity = {
+    readonly active: number;
+    readonly idle: number;
+};
+
 type LoopBlock = {
     readonly startedAt: number;
     readonly durationMs: number;
+};
+
+type LoopBusy = {
+    readonly activeMs: number;
+    readonly idleMs: number;
+    readonly utilization: number;
 };
 
 type LoopDelay = {
@@ -2001,6 +2013,7 @@ type LoopSpan = {
     readonly blockCount: number;
     readonly blocks: readonly LoopBlock[];
     readonly delay: LoopDelay | undefined;
+    readonly busy?: LoopBusy | undefined;
 };
 
 type NodeTimer = {
