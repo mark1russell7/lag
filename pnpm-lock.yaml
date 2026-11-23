@@ -125,7 +125,7 @@ importers:
         version: link:../lag
       '@mark1russell7/otel-ts':
         specifier: ^0.8.2
-        version: 0.8.2(@mark1russell7/lag@packages+lag)(vite@7.3.8(@types/node@25.9.9)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)
+        version: 0.8.4(@mark1russell7/lag@packages+lag)(vite@7.3.8(@types/node@25.9.9)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)
     devDependencies:
       '@mark1russell7/grafana-infra':
         specifier: github:mark1russell7/grafana-infra#ae23ab1937c51f68109bdd69a0f0e99598da4082
@@ -233,7 +233,7 @@ importers:
         version: link:../lag
       '@mark1russell7/quantity':
         specifier: ^0.4.1
-        version: 0.4.3(zod@4.6.7)
+        version: 0.4.4(zod@4.6.7)
       '@mark1russell7/rigor-generators':
         specifier: ^0.2.0
         version: 0.2.0
@@ -1038,8 +1038,8 @@ packages:
     resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082}
     version: 0.0.0
 
-  '@mark1russell7/otel-ts@0.8.2':
-    resolution: {integrity: sha512-wtJdRI9UJhRMl9b3chWhu8PtJa5cwa5FQluZrFu7SEmNdxVrGdZhgsdns7LYbgPArQhc+KF/IEriIpv1JgGgbg==}
+  '@mark1russell7/otel-ts@0.8.4':
+    resolution: {integrity: sha512-1TXQs/tPD/ptzh8xfaenAQiJMKu37/oWT6VsVrDBwIMwGUqbIMfy0DBrU4HdTzs4kmik7VdXGnP6Ypf7r+2TFw==}
     engines: {node: '>=22.15.0'}
     peerDependencies:
       '@mark1russell7/lag': '>=0.4.2 <0.6.0'
@@ -1054,8 +1054,8 @@ packages:
     resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8}
     version: 0.0.1
 
-  '@mark1russell7/quantity@0.4.3':
-    resolution: {integrity: sha512-XtD9tiGDit51uR5ATtCHarXCfAS6004slKst+AGcAPVxd1wcIpi+OVlsxb/PIkkr2NOFL/oG3QCF0kdEWHhu/w==}
+  '@mark1russell7/quantity@0.4.4':
+    resolution: {integrity: sha512-gDAAYNqx/HeeOUF5AE0JHUoxZiMctwZZTcdE/q080lZMfCGRjTdy21bY29ZZjeTg7mK5IjVK/ls3bVdMbL408w==}
     engines: {node: '>=22.19'}
     peerDependencies:
       zod: ^4.1.0
@@ -1170,6 +1170,12 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.10.0
       zone.js: ^0.11.4 || ^0.13.0 || ^0.14.0 || ^0.15.0 || ^0.16.0
+
+  '@opentelemetry/context-async-hooks@3.1.1':
+    resolution: {integrity: sha512-xOosgbes1+6bHPhVnYCd3EihFN8MpafEQwzmxeZ2zKXwWwV4F4780Pb097E326RZjCHTvUkwOYnXOALTfRfHVg==}
+    engines: {node: '>=22.15.0'}
+    peerDependencies:
+      '@opentelemetry/api': '>=1.0.0 <1.11.0'
 
   '@opentelemetry/context-zone-peer-dep@2.12.1':
     resolution: {integrity: sha512-MrKExLJZkEHM4tk1CVINpFkd0k1sY/o3AEgrJzBwtHVGeLmez3DqWrmv05SREIvFyR1J+ASraP+ucXi4Jdx4jQ==}
@@ -4894,11 +4900,12 @@ snapshots:
 
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082': {}
 
-  '@mark1russell7/otel-ts@0.8.2(@mark1russell7/lag@packages+lag)(vite@7.3.8(@types/node@25.9.9)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)':
+  '@mark1russell7/otel-ts@0.8.4(@mark1russell7/lag@packages+lag)(vite@7.3.8(@types/node@25.9.9)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)':
     dependencies:
       '@grafana/faro-web-sdk': 2.13.0
       '@opentelemetry/api': 1.10.0
       '@opentelemetry/auto-instrumentations-web': 0.70.1(@opentelemetry/api@1.10.0)(zone.js@0.16.3)
+      '@opentelemetry/context-async-hooks': 3.1.1(@opentelemetry/api@1.10.0)
       '@opentelemetry/context-zone': 3.1.1(@opentelemetry/api@1.10.0)
       '@opentelemetry/core': 3.1.1(@opentelemetry/api@1.10.0)
       '@opentelemetry/exporter-logs-otlp-http': 0.301.2(@opentelemetry/api@1.10.0)
@@ -4947,7 +4954,7 @@ snapshots:
       - supports-color
       - zone.js
 
-  '@mark1russell7/quantity@0.4.3(zod@4.6.7)':
+  '@mark1russell7/quantity@0.4.4(zod@4.6.7)':
     dependencies:
       '@mark1russell7/rational': 0.1.2
     optionalDependencies:
@@ -5069,6 +5076,10 @@ snapshots:
       zone.js: 0.16.3
     transitivePeerDependencies:
       - supports-color
+
+  '@opentelemetry/context-async-hooks@3.1.1(@opentelemetry/api@1.10.0)':
+    dependencies:
+      '@opentelemetry/api': 1.10.0
 
   '@opentelemetry/context-zone-peer-dep@2.12.1(@opentelemetry/api@1.10.0)(zone.js@0.16.3)':
     dependencies:
