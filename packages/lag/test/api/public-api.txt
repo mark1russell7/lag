@@ -407,6 +407,8 @@ EVENT_LOOP_RESOLUTION_MS: dist/node/event-loop.d.ts#EVENT_LOOP_RESOLUTION_MS
 type EventLoopWatch: dist/node/event-loop.d.ts#EventLoopWatch
 type EventLoopWatchDeps: dist/node/event-loop.d.ts#EventLoopWatchDeps
 type EventLoopWatchOptions: dist/node/event-loop.d.ts#EventLoopWatchOptions
+type GcPause: dist/node/event-loop.d.ts#GcPause
+type GcPauses: dist/node/event-loop.d.ts#GcPauses
 type LoopActivity: dist/node/event-loop.d.ts#LoopActivity
 type LoopBlock: dist/node/event-loop.d.ts#LoopBlock
 type LoopBusy: dist/node/event-loop.d.ts#LoopBusy
@@ -1921,6 +1923,9 @@ export type EventLoopWatchDeps<Timer extends NodeTimer> = {
     readonly clearTimeout: (timer: Timer) => void;
     readonly histogram: (resolutionMs: number) => DelayHistogram;
     readonly activity?: (() => LoopActivity) | undefined;
+    readonly cpu?: (() => number) | undefined;
+    readonly faults?: (() => number) | undefined;
+    readonly gc?: (() => GcPauses) | undefined;
 };
 
 ### dist/node/event-loop.d.ts#EventLoopWatchOptions
@@ -1928,6 +1933,18 @@ export type EventLoopWatchOptions = {
     readonly resolutionMs?: number;
     readonly limitMs?: number;
     readonly maxBlocks?: number;
+};
+
+### dist/node/event-loop.d.ts#GcPause
+export type GcPause = {
+    readonly startTime: number;
+    readonly duration: number;
+};
+
+### dist/node/event-loop.d.ts#GcPauses
+export type GcPauses = {
+    take(): readonly GcPause[];
+    stop(): void;
 };
 
 ### dist/node/event-loop.d.ts#LoopActivity
@@ -1940,6 +1957,9 @@ export type LoopActivity = {
 export type LoopBlock = {
     readonly startedAt: number;
     readonly durationMs: number;
+    readonly cpuMs?: number | undefined;
+    readonly majorFaults?: number | undefined;
+    readonly gcMs?: number | undefined;
 };
 
 ### dist/node/event-loop.d.ts#LoopBusy
