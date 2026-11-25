@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.4
+
+### Added
+
+- **The cause of each block of `watchEventLoop()`.** Each block on Node.js has three new optional fields.
+  - The field `cpuMs` is the CPU time of the thread in the block. A block with much less CPU time than its length waited.
+  - The field `majorFaults` is the count of the major page faults of the process in the block. Each fault is a read of a page from the disk, for example from swap.
+  - The field `gcMs` is the time of the pauses of the garbage collector in the block.
+  - The new optional dependencies `cpu`, `faults` and `gc` of `EventLoopWatchDeps` give these values. Deps without them give blocks with no such fields, as before.
+  - The new types are `GcPause` and `GcPauses`.
+
 ## 0.5.3
 
 ### Added

@@ -1,4 +1,4 @@
-import { monitorEventLoopDelay, performance } from "node:perf_hooks";
+import { monitorEventLoopDelay, performance, PerformanceObserver } from "node:perf_hooks";
 import type { Clock } from "../types.js";
 
 /** The default step of the timer of the watch and the default resolution of its histogram, in milliseconds. */
@@ -20,6 +20,37 @@ export type LoopBlock = {
      * `d` to `d` plus the resolution.
      */
     readonly durationMs : number;
+    /**
+     * The CPU time of the thread from the tick before the block to the tick after it, in milliseconds. A block with much less
+     * CPU time than its length waited: for example for a page of swap or a synchronous read of a disk. It is `undefined` when
+     * the deps give no CPU time.
+     */
+    readonly cpuMs? : number | undefined;
+    /**
+     * The count of the major page faults of the process in the block. Each fault is a read of a page from the disk, for
+     * example from swap. A block that waited with no fault waited for something else, for example a synchronous read of a file. It is
+     * `undefined` when the deps give no fault count.
+     */
+    readonly majorFaults? : number | undefined;
+    /**
+     * The time of the pauses of the garbage collector inside the block, in milliseconds. It is `undefined` when the deps give
+     * no pauses. A pause that the deps give after the read of the span counts in no block.
+     */
+    readonly gcMs? : number | undefined;
+};
+
+/** A pause of the garbage collector: a `gc` entry of `PerformanceObserver`, on the clock of the watch. */
+export type GcPause = {
+    readonly startTime : number;
+    readonly duration : number;
+};
+
+/** A source of the pauses of the garbage collector. */
+export type GcPauses = {
+    /** This method gives the pauses since its previous call, and it forgets them. */
+    take() : readonly GcPause[];
+    /** This method stops the source. */
+    stop() : void;
 };
 
 /**
@@ -116,6 +147,12 @@ export type EventLoopWatchDeps<Timer extends NodeTimer> = {
     readonly histogram : (resolutionMs : number) => DelayHistogram;
     /** This function gives the activity of the loop. Without it, the spans have no busy part. */
     readonly activity? : (() => LoopActivity) | undefined;
+    /** This function gives the CPU time of the thread from its start, in milliseconds. Without it, the blocks have no CPU time. */
+    readonly cpu? : (() => number) | undefined;
+    /** This function gives the count of the major page faults of the process from its start. Without it, the blocks have no count. */
+    readonly faults? : (() => number) | undefined;
+    /** This function starts a source of the pauses of the garbage collector. Without it, the blocks have no pause time. */
+    readonly gc? : (() => GcPauses) | undefined;
 };
 
 /** A running watch of the event loop. */
@@ -137,7 +174,43 @@ const NODE_DEPS : EventLoopWatchDeps<NodeJS.Timeout> = {
     },
     histogram : (resolutionMs) => monitorEventLoopDelay({ resolution : resolutionMs }),
     activity : () => performance.eventLoopUtilization(),
+    cpu : threadCpuMs,
+    faults : () => process.resourceUsage().majorPageFault,
+    gc : observeGc,
 };
+
+/** This function gives the CPU time of the thread. A Node.js with no `process.threadCpuUsage` gives the time of the process. */
+function threadCpuMs() : number {
+    const used = typeof process.threadCpuUsage === "function" ? process.threadCpuUsage() : process.cpuUsage();
+    return (used.user + used.system) / 1000;
+}
+
+/** This function observes the `gc` entries of `node:perf_hooks`. The observer does not keep the process alive. */
+function observeGc() : GcPauses {
+    let pauses : GcPause[] = [];
+    const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) pauses.push({ startTime : entry.startTime, duration : entry.duration });
+    });
+    observer.observe({ entryTypes : ["gc"] });
+    return {
+        take : () => {
+            const taken = pauses;
+            pauses = [];
+            return taken;
+        },
+        stop : () => {
+            observer.disconnect();
+        },
+    };
+}
+
+/** This function gives the time of the pauses inside a block. A pause across an edge of the block counts with its part inside. */
+function gcInside(block : LoopBlock, pauses : readonly GcPause[]) : number {
+    const end = block.startedAt + block.durationMs;
+    let sum = 0;
+    for (const pause of pauses) sum += Math.max(0, Math.min(end, pause.startTime + pause.duration) - Math.max(block.startedAt, pause.startTime));
+    return sum;
+}
 
 const NS_PER_MS = 1e6;
 
@@ -172,12 +245,14 @@ function checked(name : string, value : number, valid : boolean) : number {
 }
 
 /**
- * This function starts a watch of the event loop of Node.js. The watch has three meters, and each span of the caller
+ * This function starts a watch of the event loop of Node.js. The watch has meters, and each span of the caller
  * gets a record of each.
  *
  * - The histogram of `monitorEventLoopDelay` gives the distribution of the delay of the loop.
  * - A timer of the watch ticks at each step. Each gap between two ticks over the limit is a block, with its start.
  * - `performance.eventLoopUtilization()` gives the busy part of the loop: its active time and its idle time.
+ * - Three meters give the cause of each block. They are the CPU time of the thread, the major page faults of the process
+ *   and the `gc` entries of `PerformanceObserver`. Thus a block that waited shows apart from a block of work.
  *
  * The watch uses `unref()` on each timer, thus the watch does not keep the process alive.
  *
@@ -210,7 +285,10 @@ function watchWith<Timer extends NodeTimer>(options : EventLoopWatchOptions, dep
     histogram.enable();
     let spanStart = deps.clock.now();
     let activityStart = deps.activity?.();
+    const gc = deps.gc?.();
     let last = spanStart;
+    let lastCpu = deps.cpu?.();
+    let lastFaults = deps.faults?.();
     let longestMs = 0;
     let blockCount = 0;
     let blocks : LoopBlock[] = [];
@@ -219,12 +297,20 @@ function watchWith<Timer extends NodeTimer>(options : EventLoopWatchOptions, dep
     // The step of the fold over the ticks: the gap from the previous tick to this time.
     const close = (now : number) : void => {
         const gap = now - last;
+        const cpu = deps.cpu?.();
+        const faults = deps.faults?.();
         if (gap > longestMs) longestMs = gap;
         if (gap > limitMs) {
             blockCount += 1;
-            if (blocks.length < maxBlocks) blocks.push({ startedAt : last, durationMs : gap });
+            const cpuMs = cpu === undefined || lastCpu === undefined ? undefined : Math.max(0, cpu - lastCpu);
+            const majorFaults = faults === undefined || lastFaults === undefined ? undefined : Math.max(0, faults - lastFaults);
+            if (blocks.length < maxBlocks) {
+                blocks.push({ startedAt : last, durationMs : gap, ...(cpuMs === undefined ? {} : { cpuMs }), ...(majorFaults === undefined ? {} : { majorFaults }) });
+            }
         }
         last = now;
+        lastCpu = cpu;
+        lastFaults = faults;
     };
     const schedule = () : Timer => {
         const next = deps.setTimeout(tick, resolutionMs);
@@ -243,6 +329,8 @@ function watchWith<Timer extends NodeTimer>(options : EventLoopWatchOptions, dep
             const now = deps.clock.now();
             const activity = deps.activity?.();
             close(now);
+            const pauses = gc?.take();
+            const timed = pauses === undefined ? blocks : blocks.map((block) => ({ ...block, gcMs : gcInside(block, pauses) }));
             const record : LoopSpan = {
                 startedAt : spanStart,
                 durationMs : now - spanStart,
@@ -250,7 +338,7 @@ function watchWith<Timer extends NodeTimer>(options : EventLoopWatchOptions, dep
                 limitMs,
                 longestMs,
                 blockCount,
-                blocks,
+                blocks : timed,
                 delay : delayOf(histogram),
                 busy : busyOf(activityStart, activity),
             };
@@ -267,6 +355,7 @@ function watchWith<Timer extends NodeTimer>(options : EventLoopWatchOptions, dep
             stopped = true;
             deps.clearTimeout(timer);
             histogram.disable();
+            gc?.stop();
         },
     };
 }

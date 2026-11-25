@@ -5,7 +5,8 @@
  *
  * - `watchEventLoop()` gives a record of each span. The record has the histogram of `monitorEventLoopDelay` and the
  *   longest gap of the timer of the watch. It also has each block over a limit with its start, and the busy part of the loop.
- * - The block records have the shape of the browser monitors (`startedAt`, `durationMs`).
+ * - The block records have the shape of the browser monitors (`startedAt`, `durationMs`). On Node.js, each block also has the
+ *   CPU time of the thread and the pause time of the garbage collector inside it.
  */
 export {
     EVENT_LOOP_BLOCK_LIMIT_MS,
@@ -16,6 +17,8 @@ export {
     type EventLoopWatch,
     type EventLoopWatchDeps,
     type EventLoopWatchOptions,
+    type GcPause,
+    type GcPauses,
     type LoopActivity,
     type LoopBlock,
     type LoopBusy,
