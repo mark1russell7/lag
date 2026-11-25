@@ -1934,8 +1934,9 @@ function fanOutMeter(...meters: readonly Meter[]): Meter;
 ```ts
 import {
   type DelayHistogram, EVENT_LOOP_BLOCK_LIMIT_MS, EVENT_LOOP_MAX_BLOCKS, EVENT_LOOP_RESOLUTION_MS,
-  type EventLoopWatch, type EventLoopWatchDeps, type EventLoopWatchOptions, type LoopActivity,
-  type LoopBlock, type LoopBusy, type LoopDelay, type LoopSpan, type NodeTimer, watchEventLoop,
+  type EventLoopWatch, type EventLoopWatchDeps, type EventLoopWatchOptions, type GcPause,
+  type GcPauses, type LoopActivity, type LoopBlock, type LoopBusy, type LoopDelay, type LoopSpan,
+  type NodeTimer, watchEventLoop,
 } from "@mark1russell7/lag/node";
 ```
 
@@ -1969,12 +1970,25 @@ type EventLoopWatchDeps<Timer extends NodeTimer> = {
     readonly clearTimeout: (timer: Timer) => void;
     readonly histogram: (resolutionMs: number) => DelayHistogram;
     readonly activity?: (() => LoopActivity) | undefined;
+    readonly cpu?: (() => number) | undefined;
+    readonly faults?: (() => number) | undefined;
+    readonly gc?: (() => GcPauses) | undefined;
 };
 
 type EventLoopWatchOptions = {
     readonly resolutionMs?: number;
     readonly limitMs?: number;
     readonly maxBlocks?: number;
+};
+
+type GcPause = {
+    readonly startTime: number;
+    readonly duration: number;
+};
+
+type GcPauses = {
+    take(): readonly GcPause[];
+    stop(): void;
 };
 
 type LoopActivity = {
@@ -1985,6 +1999,9 @@ type LoopActivity = {
 type LoopBlock = {
     readonly startedAt: number;
     readonly durationMs: number;
+    readonly cpuMs?: number | undefined;
+    readonly majorFaults?: number | undefined;
+    readonly gcMs?: number | undefined;
 };
 
 type LoopBusy = {
