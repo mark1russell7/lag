@@ -25,7 +25,7 @@ jobs:
   # the conventions, the build, the API report, the typecheck, the unit tests, the coverage of the core, the writing
   # rules (ASD-STE100) and the metric table of the README.
   ci:
-    uses: mark1russell7/template/.github/workflows/reusable-ci.yml@19a14ae7da54e6e529ef90c5c4ab872867f152b9 # main
+    uses: mark1russell7/template/.github/workflows/reusable-ci.yml@7c83f30551e066c06852ea75bf0140eadfc49961 # main
     with:
       scripts: check:conventions build check:api typecheck test coverage lint:ste readme:metrics:check
       node-versions: '["24"]'
@@ -82,7 +82,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Install the Playwright browser and its system dependencies
-        uses: mark1russell7/template/.github/actions/setup-playwright@19a14ae7da54e6e529ef90c5c4ab872867f152b9 # main
+        uses: mark1russell7/template/.github/actions/setup-playwright@7c83f30551e066c06852ea75bf0140eadfc49961 # main
         with:
           browsers: ${{ matrix.playwright }}
           command: pnpm exec playwright
@@ -252,7 +252,7 @@ jobs:
       # The browser tests of the site and the prerender of the site build use Chromium. The shared action
       # installs it from a cache, with a time limit and a second try.
       - name: Install Chromium for the site
-        uses: mark1russell7/template/.github/actions/setup-playwright@19a14ae7da54e6e529ef90c5c4ab872867f152b9 # main
+        uses: mark1russell7/template/.github/actions/setup-playwright@7c83f30551e066c06852ea75bf0140eadfc49961 # main
         with:
           browsers: chromium
           command: pnpm exec playwright
@@ -284,7 +284,7 @@ jobs:
     timeout-minutes: 2
     permissions: {}
     steps:
-      - uses: mark1russell7/template/.github/actions/gate-summary@19a14ae7da54e6e529ef90c5c4ab872867f152b9 # main
+      - uses: mark1russell7/template/.github/actions/gate-summary@7c83f30551e066c06852ea75bf0140eadfc49961 # main
         with:
           needs: ${{ toJSON(needs) }}
           allow-skip: build
