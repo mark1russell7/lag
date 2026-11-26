@@ -45,7 +45,7 @@ importers:
         version: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8(zone.js@0.16.3)
       '@mark1russell7/rigor-statistics':
         specifier: ^0.2.7
-        version: 0.2.25
+        version: 0.2.29
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.10.0
@@ -86,7 +86,7 @@ importers:
     devDependencies:
       '@mark1russell7/rigor-testkit':
         specifier: ^0.2.0
-        version: 0.2.1(@mark1russell7/rigor-generators@0.2.4)(@opentelemetry/api-logs@0.223.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace@3.1.1(@opentelemetry/api@1.10.0))(fast-check@4.10.3)
+        version: 0.2.1(@mark1russell7/rigor-generators@0.2.6)(@opentelemetry/api-logs@0.223.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace@3.1.1(@opentelemetry/api@1.10.0))(fast-check@4.10.3)
       '@opentelemetry/api':
         specifier: ^1.9.0
         version: 1.10.0
@@ -124,8 +124,8 @@ importers:
         specifier: workspace:*
         version: link:../lag
       '@mark1russell7/otel-ts':
-        specifier: ^0.8.2
-        version: 0.8.5(@mark1russell7/lag@packages+lag)(vite@7.3.8(@types/node@25.9.9)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)
+        specifier: ^0.10.0
+        version: 0.10.0(@mark1russell7/lag@packages+lag)(vite@7.3.8(@types/node@25.9.9)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)
     devDependencies:
       '@mark1russell7/grafana-infra':
         specifier: github:mark1russell7/grafana-infra#ae23ab1937c51f68109bdd69a0f0e99598da4082
@@ -168,7 +168,7 @@ importers:
     dependencies:
       '@mark1russell7/rigor-generators':
         specifier: ^0.2.0
-        version: 0.2.4
+        version: 0.2.6
     devDependencies:
       '@vitest/coverage-v8':
         specifier: 4.1.12
@@ -232,14 +232,14 @@ importers:
         specifier: workspace:*
         version: link:../lag
       '@mark1russell7/quantity':
-        specifier: ^0.4.1
-        version: 0.4.8(zod@4.6.7)
+        specifier: ^0.5.0
+        version: 0.5.0(zod@4.6.7)
       '@mark1russell7/rigor-generators':
         specifier: ^0.2.0
-        version: 0.2.4
+        version: 0.2.6
       '@mark1russell7/rigor-statistics':
         specifier: ^0.2.7
-        version: 0.2.25
+        version: 0.2.29
       '@observablehq/plot':
         specifier: ^0.6.17
         version: 0.6.19
@@ -264,7 +264,7 @@ importers:
     devDependencies:
       '@mark1russell7/site-pages':
         specifier: ^0.8.0
-        version: 0.8.4
+        version: 0.8.7
       '@mdx-js/mdx':
         specifier: ^3.1.1
         version: 3.1.1
@@ -1038,8 +1038,8 @@ packages:
     resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082}
     version: 0.0.0
 
-  '@mark1russell7/otel-ts@0.8.5':
-    resolution: {integrity: sha512-tlhtI5HhsYahFbb54Zqr2aCsVEdiOR05el7lfXRVqs6Q71KAZigwdIaNU5Dyzvzr5/Qz33UQSWdFkFQMp8bujQ==}
+  '@mark1russell7/otel-ts@0.10.0':
+    resolution: {integrity: sha512-oHY7jTw+Nj0Vqs2Llm2oDvziqNln0YHf0TK81PM1sChh+qZJtTiWClZgOT9XZq89hlTxi0YTiUtt1kj7b8xylA==}
     engines: {node: '>=22.15.0'}
     peerDependencies:
       '@mark1russell7/lag': '>=0.4.2 <0.6.0'
@@ -1054,8 +1054,8 @@ packages:
     resolution: {gitHosted: true, tarball: https://codeload.github.com/mark1russell7/otel-ts/tar.gz/92cd39311d7d3dd161b33b884bf23a53d74700b8}
     version: 0.0.1
 
-  '@mark1russell7/quantity@0.4.8':
-    resolution: {integrity: sha512-E0R4RoDMdNN+oqSCGsWXVIUo/RCGJozvumrBSoBlWcooJ7ALgW3+OxJ3B2PyrMkvBDNSBBEL7jTZ5I53xkaOrQ==}
+  '@mark1russell7/quantity@0.5.0':
+    resolution: {integrity: sha512-Ol1MzmUod+yd7UZVNmNzk5VlzE1BMMYS2ma46VyB4LnapzilGcBE8PooyonPEnjgnLOSKKeGnHXXZEYqS3OR6Q==}
     engines: {node: '>=22.19'}
     peerDependencies:
       zod: ^4.1.0
@@ -1067,12 +1067,12 @@ packages:
     resolution: {integrity: sha512-hn2C5jjOFCGKJqFQPHt57C/Cn1l9Lb9MltVNtL71KSu+nRrfPOmg8ujYB5n3oDFFWNdNA4bE/8LLT4tG3lmrGA==}
     engines: {node: '>=22'}
 
-  '@mark1russell7/rigor-generators@0.2.4':
-    resolution: {integrity: sha512-9eem6sh2XT0dEqhtDhJTeJWlY9vWsmiEG9hwTcQwdt+MF1jTALHjEzJqvkRP9DwdvGRAoMYBnXfo1kavTkqzMg==}
+  '@mark1russell7/rigor-generators@0.2.6':
+    resolution: {integrity: sha512-twMYvM//nGt/oumhZ2uFiXpC+ve59B1Zl8hinUnAaru4Vy5MiybhKggrESyDhvc519dWIGTbwWd000hsLkhVsA==}
     engines: {node: '>=22'}
 
-  '@mark1russell7/rigor-statistics@0.2.25':
-    resolution: {integrity: sha512-rYx7IHbt2VD1x/Eo12VcxS3rskiYQu8ZUJY3eKanDBSMe4eUeWFyK1ILB35FvduBZkxRUdkfesXvnpcO6fdWJg==}
+  '@mark1russell7/rigor-statistics@0.2.29':
+    resolution: {integrity: sha512-GxO8w/R0UNey0qMdzn3bFUQqHYfyGWKzuairOrZG3c9CINCv8mJbL2gn7ghoFChwPqzfEqfEwBcwaryafGCEHg==}
     engines: {node: '>=22'}
 
   '@mark1russell7/rigor-testkit@0.2.1':
@@ -1111,8 +1111,8 @@ packages:
       ltx:
         optional: true
 
-  '@mark1russell7/site-pages@0.8.4':
-    resolution: {integrity: sha512-pC0qcQqIsfQg5jTg+peUP/DGBXb4d1PQYiu6TCeCE1ALc5X8nyGhj9vMYKBCdhK7uHm8Chtx7INLKPWPmxpK3w==}
+  '@mark1russell7/site-pages@0.8.7':
+    resolution: {integrity: sha512-0U814F6nv69ueZ82B+PKkHH/Y8qapXNTFo2KMchvfqBcEkYh+2eQYAGdPzJANR+xni9HJZVpeC2nu+/lCeaEDQ==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -1123,6 +1123,10 @@ packages:
 
   '@mark1russell7/text@0.0.17':
     resolution: {integrity: sha512-jFqqVfCTQ0N65qvMP/gANAbnqB7ewpA3IeNxPeQTuF3IoSZkTgTl92PE47F5IOOfgz0Q0dF723crrYB8T6pR3g==}
+    engines: {node: '>=22.12'}
+
+  '@mark1russell7/text@0.0.20':
+    resolution: {integrity: sha512-HrjBak4BE0fDC+bLzFi/c4NDCHqiUm7VhYR5YhJmkApRSB8mUOao4bFiO9Jy3xwpsCGJCj4echVDCUxXjV+3NA==}
     engines: {node: '>=22.12'}
 
   '@mdx-js/mdx@3.1.1':
@@ -4900,9 +4904,10 @@ snapshots:
 
   '@mark1russell7/grafana-infra@https://codeload.github.com/mark1russell7/grafana-infra/tar.gz/ae23ab1937c51f68109bdd69a0f0e99598da4082': {}
 
-  '@mark1russell7/otel-ts@0.8.5(@mark1russell7/lag@packages+lag)(vite@7.3.8(@types/node@25.9.9)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)':
+  '@mark1russell7/otel-ts@0.10.0(@mark1russell7/lag@packages+lag)(vite@7.3.8(@types/node@25.9.9)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zone.js@0.16.3)':
     dependencies:
       '@grafana/faro-web-sdk': 2.13.0
+      '@mark1russell7/text': 0.0.20
       '@opentelemetry/api': 1.10.0
       '@opentelemetry/auto-instrumentations-web': 0.70.1(@opentelemetry/api@1.10.0)(zone.js@0.16.3)
       '@opentelemetry/context-async-hooks': 3.1.1(@opentelemetry/api@1.10.0)
@@ -4954,7 +4959,7 @@ snapshots:
       - supports-color
       - zone.js
 
-  '@mark1russell7/quantity@0.4.8(zod@4.6.7)':
+  '@mark1russell7/quantity@0.5.0(zod@4.6.7)':
     dependencies:
       '@mark1russell7/rational': 0.1.2
     optionalDependencies:
@@ -4962,15 +4967,15 @@ snapshots:
 
   '@mark1russell7/rational@0.1.2': {}
 
-  '@mark1russell7/rigor-generators@0.2.4': {}
+  '@mark1russell7/rigor-generators@0.2.6': {}
 
-  '@mark1russell7/rigor-statistics@0.2.25':
+  '@mark1russell7/rigor-statistics@0.2.29':
     dependencies:
-      '@mark1russell7/rigor-generators': 0.2.4
+      '@mark1russell7/rigor-generators': 0.2.6
 
-  '@mark1russell7/rigor-testkit@0.2.1(@mark1russell7/rigor-generators@0.2.4)(@opentelemetry/api-logs@0.223.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace@3.1.1(@opentelemetry/api@1.10.0))(fast-check@4.10.3)':
+  '@mark1russell7/rigor-testkit@0.2.1(@mark1russell7/rigor-generators@0.2.6)(@opentelemetry/api-logs@0.223.0)(@opentelemetry/api@1.10.0)(@opentelemetry/sdk-logs@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-metrics@3.1.1(@opentelemetry/api@1.10.0))(@opentelemetry/sdk-trace@3.1.1(@opentelemetry/api@1.10.0))(fast-check@4.10.3)':
     optionalDependencies:
-      '@mark1russell7/rigor-generators': 0.2.4
+      '@mark1russell7/rigor-generators': 0.2.6
       '@opentelemetry/api': 1.10.0
       '@opentelemetry/api-logs': 0.223.0
       '@opentelemetry/sdk-logs': 3.1.1(@opentelemetry/api@1.10.0)
@@ -4978,9 +4983,9 @@ snapshots:
       '@opentelemetry/sdk-trace': 3.1.1(@opentelemetry/api@1.10.0)
       fast-check: 4.10.3
 
-  '@mark1russell7/site-pages@0.8.4':
+  '@mark1russell7/site-pages@0.8.7':
     dependencies:
-      '@mark1russell7/rigor-statistics': 0.2.25
+      '@mark1russell7/rigor-statistics': 0.2.29
 
   '@mark1russell7/ste-lint@0.6.0':
     dependencies:
@@ -4988,6 +4993,8 @@ snapshots:
       typescript: 6.0.3
 
   '@mark1russell7/text@0.0.17': {}
+
+  '@mark1russell7/text@0.0.20': {}
 
   '@mdx-js/mdx@3.1.1':
     dependencies:
