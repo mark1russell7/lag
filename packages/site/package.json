@@ -17,7 +17,7 @@
     "@lag/load": "workspace:*",
     "@lag/report": "workspace:*",
     "@mark1russell7/lag": "workspace:*",
-    "@mark1russell7/quantity": "^0.4.1",
+    "@mark1russell7/quantity": "^0.5.0",
     "@mark1russell7/rigor-generators": "^0.2.0",
     "@mark1russell7/rigor-statistics": "^0.2.7",
     "@observablehq/plot": "^0.6.17",
